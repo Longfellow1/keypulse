@@ -225,8 +225,8 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 ## 📬 联系方式
 
 - GitHub Issues: https://github.com/Longfellow1/keypulse/issues
-- Email: [你的邮箱]
+- Email: Harland5588@outlook.com
+
 
 ---
 
-**Made with ❤️ for macOS**
