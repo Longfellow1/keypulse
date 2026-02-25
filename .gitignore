@@ -1,0 +1,56 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode
+build/
+.derivedData/
+*.xcworkspace
+!contents.xcworkspacedata
+*.xcuserstate
+*.xcccheckout
+*.hmp
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift
+.build/
+Packages/
+Package.pins
+Package.resolved
+*.xcodeproj
+project.xcworkspace/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 数据文件
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# 日志
+*.log
+logs/
+
+# 配置文件（包含敏感信息）
+config.local.json
+*.key
+
+# 测试
+coverage/
+*.gcda
+*.gcno
+
+# 临时文件
+tmp/
+temp/
+*.tmp
