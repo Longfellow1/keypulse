@@ -9,15 +9,18 @@ class ActivityMonitor {
     var lastApp: String?
     var lastWindow: String?
     var lastCheck: Date = Date()
-    var eventBuffer: [ActivityEvent] = []
+    var sessionStart: Date = Date()
     
     // 低功耗配置
     let checkInterval: TimeInterval = 10.0  // 10 秒校验
-    let batchThreshold = 10  // 累积 10 条写入
     let idleTimeout: TimeInterval = 300.0  // 5 分钟无活动暂停
     
     func start() {
         isRunning = true
+        sessionStart = Date()
+        
+        // 启动键盘输入捕获
+        KeystrokeCounter.shared.start()
         
         // 1. 事件驱动监听
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -35,18 +38,31 @@ class ActivityMonitor {
     
     func stop() {
         isRunning = false
-        flushToDB()
+        
+        // 保存最后一次活动
+        saveCurrentActivity()
+        
+        // 停止键盘输入捕获
+        KeystrokeCounter.shared.stop()
+        
         print("⏹️ ActivityMonitor 已停止")
     }
     
     @objc func appChanged(_ notification: Notification) {
         guard isRunning else { return }
+        
+        // 保存上一个活动
+        saveCurrentActivity()
+        
+        // 开始新活动
         if let app = NSWorkspace.shared.frontmostApplication {
-            handleActivity(app: app.localizedName, window: nil)
+            lastApp = app.localizedName
+            lastWindow = getWindowTitle(for: app)
+            lastCheck = Date()
         }
     }
     
-    @objc func startFallbackTimer() {
+    func startFallbackTimer() {
         Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
             self?.validateIfNeeded()
         }
@@ -54,50 +70,86 @@ class ActivityMonitor {
     
     func validateIfNeeded() {
         guard isRunning else { return }
-        let app = NSWorkspace.shared.frontmostApplication
+        
+        guard let app = NSWorkspace.shared.frontmostApplication else { return }
         let appName = app.localizedName
         let windowTitle = getWindowTitle(for: app)
         
+        // 如果应用或窗口变化，保存旧活动并开始新活动
         if appName != lastApp || windowTitle != lastWindow {
-            handleActivity(app: appName, window: windowTitle)
+            saveCurrentActivity()
+            lastApp = appName
+            lastWindow = windowTitle
+            lastCheck = Date()
         }
     }
     
-    func handleActivity(app: String?, window: String?) {
-        guard let app = app else { return }
+    func saveCurrentActivity() {
+        guard let app = lastApp else { return }
         
-        // 快速闪切过滤（< 3 秒忽略）
         let now = Date()
-        if now.timeIntervalSince(lastCheck) < 3.0 { return }
-        lastCheck = now
+        let duration = now.timeIntervalSince(lastCheck)
         
-        let event = ActivityEvent(timestamp: now, app: app, window: window, duration: now.timeIntervalSince(lastCheck))
-        eventBuffer.append(event)
+        // 过滤太短的活动（< 3 秒）
+        guard duration >= 3.0 else { return }
         
-        if eventBuffer.count >= batchThreshold {
-            flushToDB()
+        // 获取捕获的输入数据
+        let capturedInput = KeystrokeCounter.shared.getAndResetInput(for: app)
+        
+        // 提取数据
+        let keystrokeCount = capturedInput?.keystrokeCount ?? 0
+        let desensitizedText = capturedInput?.desensitizedText
+        let keywords = capturedInput?.keywords ?? []
+        let category = capturedInput?.category.rawValue
+        
+        // 保存到数据库
+        DatabaseManager.shared.insertActivity(
+            timestamp: lastCheck,
+            app: app,
+            window: lastWindow,
+            keystrokeCount: keystrokeCount,
+            duration: duration,
+            desensitizedText: desensitizedText,
+            keywords: keywords,
+            category: category
+        )
+        
+        // 打印日志
+        var logMessage = "💾 保存活动：\(app)"
+        if let window = lastWindow {
+            logMessage += " - \(window)"
         }
+        logMessage += " (\(Int(duration))秒, \(keystrokeCount)键击"
+        if let text = desensitizedText, !text.isEmpty {
+            logMessage += ", 内容: \(text.prefix(50))..."
+        }
+        logMessage += ")"
         
-        lastApp = app
-        lastWindow = window
-        print("📝 记录：\(app) - \(window ?? "无窗口")")
+        print(logMessage)
     }
     
-    func flushToDB() {
-        guard !eventBuffer.isEmpty else { return }
-        print("💾 批量写入 \(eventBuffer.count) 条事件到数据库")
-        eventBuffer.removeAll()
-    }
-    
-    func getWindowTitle(for app: NSRunningApplication) -> String? {
+    func getWindowTitle(for app: NSRunningApplication?) -> String? {
+        guard let app = app else { return nil }
+        
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        var title: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &title)
-        if result == .success, let window = title {
-            var windowTitle: CFTypeRef?
-            AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &windowTitle)
-            return windowTitle as? String
+        var focusedWindow: CFTypeRef?
+        
+        let result = AXUIElementCopyAttributeValue(
+            axApp,
+            kAXFocusedWindowAttribute as CFString,
+            &focusedWindow
+        )
+        
+        if result == .success, let window = focusedWindow {
+            var title: CFTypeRef?
+            AXUIElementCopyAttributeValue(
+                window as! AXUIElement,
+                kAXTitleAttribute as CFString,
+                &title
+            )
+            return title as? String
         }
+        
         return nil
     }
 }
