@@ -875,5 +875,98 @@ def rules_disable(rule_id):
     console.print(f"[green]Policy {rule_id} disabled.[/green]")
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# RECALL  — single LLM-optimised context dump (used by skill)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.command()
+@click.argument("query", default="")
+@click.option("--since", default="7d", help="Time window (7d / 24h / YYYY-MM-DD)")
+@click.option("--limit", default=5, help="Max results per section")
+def recall(query: str, since: str, limit: int):
+    """
+    Return a compact, LLM-ready context summary.
+    Combines FTS search + recent clipboard + today timeline + manual saves.
+    Designed for skill/agent consumption — plain text, low token.
+    """
+    cfg = get_config()
+    require_db(cfg)
+
+    lines: list[str] = []
+
+    def _fmt_ts(ts: str) -> str:
+        try:
+            dt = datetime.fromisoformat(ts).astimezone()
+            now = datetime.now(dt.tzinfo)
+            delta = now - dt
+            if delta.days == 0:
+                return dt.strftime("今天 %H:%M")
+            elif delta.days == 1:
+                return dt.strftime("昨天 %H:%M")
+            else:
+                return dt.strftime("%m-%d %H:%M")
+        except Exception:
+            return ts
+
+    # ── 1. FTS keyword search ───────────────────────────────────────────
+    if query:
+        results = search(query, since=since, limit=limit)
+        lines.append(f"[搜索: {query}]")
+        if results:
+            for r in results:
+                ts = _fmt_ts(r.get("created_at", ""))
+                rtype = r.get("ref_type", "")
+                app = r.get("app_name") or ""
+                content = (r.get("body") or r.get("title") or "")[:120]
+                lines.append(f"  {ts} [{rtype}] {app}: {content}")
+        else:
+            lines.append("  (无匹配记录)")
+        lines.append("")
+
+    # ── 2. Recent clipboard ─────────────────────────────────────────────
+    clips = recent_clipboard(limit)
+    lines.append("[最近剪贴板]")
+    if clips:
+        for c in clips:
+            ts = _fmt_ts(c.get("created_at", ""))
+            body = (c.get("body") or "")[:100]
+            app = c.get("app_name") or ""
+            lines.append(f"  {ts} {app}: {body}")
+    else:
+        lines.append("  (无记录)")
+    lines.append("")
+
+    # ── 3. Today's top sessions (by duration) ───────────────────────────
+    from keypulse.services.sessionizer import sessions_for_today
+    today_sessions = sessions_for_today()
+    today_sessions.sort(key=lambda s: s.get("duration_sec") or 0, reverse=True)
+    lines.append("[今日主要活动]")
+    if today_sessions:
+        for s in today_sessions[:limit]:
+            dur = s.get("duration_sec") or 0
+            m = dur // 60
+            app = s.get("app_name") or ""
+            title = (s.get("primary_window_title") or "")[:60]
+            start = _fmt_ts(s.get("started_at", ""))
+            lines.append(f"  {start} {app} ({m}min): {title}")
+    else:
+        lines.append("  (无记录)")
+    lines.append("")
+
+    # ── 4. Manual saves ─────────────────────────────────────────────────
+    saves = recent_manual(limit)
+    if saves:
+        lines.append("[手动保存]")
+        for s in saves:
+            ts = _fmt_ts(s.get("created_at", ""))
+            body = (s.get("body") or "")[:100]
+            tags = s.get("tags") or ""
+            tag_str = f" #{tags}" if tags else ""
+            lines.append(f"  {ts}{tag_str}: {body}")
+        lines.append("")
+
+    print("\n".join(lines))
+
+
 if __name__ == "__main__":
     main()
