@@ -1,0 +1,44 @@
+[app]
+db_path = "~/.keypulse/keypulse.db"
+log_path = "~/.keypulse/keypulse.log"
+flush_interval_sec = 5
+retention_days = 30
+
+[watchers]
+window = true
+idle = true
+clipboard = true
+manual = true
+browser = false
+
+[idle]
+threshold_sec = 180
+
+[clipboard]
+max_text_length = 2000
+dedup_window_sec = 600
+
+[privacy]
+redact_emails = true
+redact_phones = true
+redact_tokens = true
+
+[[policies]]
+scope_type = "app"
+scope_value = "1Password"
+mode = "deny"
+
+[[policies]]
+scope_type = "app"
+scope_value = "Keychain Access"
+mode = "deny"
+
+[[policies]]
+scope_type = "app"
+scope_value = "Terminal"
+mode = "metadata-only"
+
+[[policies]]
+scope_type = "window"
+scope_value = "login"
+mode = "deny"
