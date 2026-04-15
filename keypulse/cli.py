@@ -79,6 +79,16 @@ def start(config_path):
     # Init DB in parent so errors surface here
     require_db(cfg)
 
+    # Warn about Accessibility permission before forking (visible to user)
+    from keypulse.app import _check_accessibility
+    if not _check_accessibility():
+        console.print(
+            "[yellow]⚠  Accessibility permission not granted.[/yellow]\n"
+            "   Window titles won't be captured until you allow access:\n"
+            "   System Settings → Privacy & Security → Accessibility → KeyPulse\n"
+            "   Run [bold]keypulse doctor[/bold] to recheck."
+        )
+
     # Fork to daemon
     pid = os.fork()
     if pid == 0:

@@ -1,265 +1,315 @@
-# KeyPulse 本地测试指南
+# KeyPulse — Testing Guide
 
-## 🧪 测试环境要求
-
-- macOS 12.0+
-- 已编译的 keypulse 二进制文件
-- 辅助功能权限
-
-## 📋 测试步骤
-
-### 1. 编译项目（如果还没编译）
-
-```bash
-cd /tmp/keypulse
-swift build -c release
-```
-
-### 2. 安装到本地（可选）
-
-```bash
-# 复制到用户目录
-mkdir -p ~/bin
-cp .build/release/keypulse ~/bin/
-
-# 或者安装到系统目录
-sudo cp .build/release/keypulse /usr/local/bin/
-```
-
-### 3. 授予辅助功能权限
-
-**重要：** 必须先授权才能运行！
-
-1. 打开 **系统设置**
-2. 进入 **隐私与安全性** → **辅助功能**
-3. 点击 **+** 添加应用
-4. 找到并添加 `keypulse` 二进制文件
-5. 确保开关已打开
-
-### 4. 测试基础命令
-
-```bash
-# 查看帮助
-keypulse help
-
-# 查看状态
-keypulse status
-```
-
-**预期输出：**
-```
-📊 KeyPulse 运行状态
-⏸️  监控状态：未运行
-💡 使用 'keypulse start' 启动监控
-```
-
-### 5. 启动监控
-
-```bash
-# 在一个终端窗口启动
-keypulse start
-```
-
-**预期输出：**
-```
-🚀 启动 KeyPulse 监控...
-✅ KeyPulse 正在运行
-💡 使用 'keypulse report' 生成今日报告
-```
-
-**注意：** 这个命令会持续运行，不要关闭终端。
-
-### 6. 测试工作流程
-
-**在另一个终端窗口：**
-
-#### 步骤 1：正常工作 10-15 分钟
-- 打开 VSCode 写代码
-- 打开浏览器查资料
-- 打开终端运行命令
-- 打开飞书/钉钉聊天
-
-#### 步骤 2：查看状态
-```bash
-keypulse status
-```
-
-**预期输出：**
-```
-✅ 监控状态：运行中
-📈 今日统计：
-   工作时长：0h15m
-   总键击数：234 次
-   活动记录：8 条
-```
-
-#### 步骤 3：生成日报
-```bash
-keypulse report
-```
-
-**预期输出：**
-```
-📊 生成今日工作日报...
-
-## 2026-02-27 工作日报
-
-### keypulse 项目（0.3h）
-- 15:20-15:35 代码编写（VSCode，高强度，234 键击，代码）
-  内容：func, class, test
-  **关键词：** Swift, test, build
-
-### 浏览器（0.1h）
-- 15:35-15:41 技术查询（Safari，低强度，12 键击，浏览）
+> Platform: macOS 12.0+  
+> Runtime: Python 3.11+
 
 ---
-💡 **今日工作统计**
-- 总时长：0h24m
-- 总键击：246 次
-- 活动分布：
-  - 代码：0.3h
-  - 浏览：0.1h
 
-✅ 报告已复制到剪贴板，可直接粘贴到飞书/钉钉
-```
+## 1. Environment Setup
 
-#### 步骤 4：验证剪贴板
 ```bash
-# 粘贴到任意文本编辑器，检查内容
+git clone https://github.com/longfellow1/keypulse
+cd keypulse
+pip install -e .
 ```
 
-### 7. 测试脱敏功能
+Verify installation:
 
-#### 测试代码脱敏
-1. 打开 VSCode
-2. 输入一些代码：
-   ```swift
-   let username = "zhangsan@company.com"
-   let password = "secret123"
-   ```
-3. 生成报告，检查是否只显示关键词
+```bash
+keypulse --help
+```
 
-**预期：** 不应该看到具体的变量值和字符串内容
+---
 
-#### 测试敏感应用保护
-1. 打开 1Password 或 Keychain Access
-2. 输入一些内容
-3. 生成报告
+## 2. Pre-flight Check
 
-**预期：** 这些应用不应该出现在报告中
+Run the doctor command to verify dependencies and permissions:
 
-### 8. 测试停止功能
+```bash
+keypulse doctor
+```
+
+Expected output:
+
+```
+Python >= 3.11          OK
+pyobjc-framework-AppKit OK
+pyobjc-framework-Quartz OK
+Accessibility permission OK   ← must be OK for window watcher
+DB path writable        OK
+```
+
+**If Accessibility shows FAIL:**  
+System Settings → Privacy & Security → Accessibility → add your terminal app.
+
+---
+
+## 3. Daemon Lifecycle
+
+### Start
+
+```bash
+keypulse start
+# Expected: KeyPulse started (PID 12345)
+```
+
+### Status
+
+```bash
+keypulse status
+# Expected: running=yes, enabled_watchers=window,idle,clipboard,manual
+```
+
+### Pause / Resume
+
+```bash
+keypulse pause
+keypulse status   # status=paused
+keypulse resume
+keypulse status   # status=running
+```
+
+### Stop
 
 ```bash
 keypulse stop
+# Expected: KeyPulse stopped.
+keypulse status   # running=no
 ```
-
-**预期输出：**
-```
-⏹️  停止 KeyPulse 监控...
-💾 保存活动：VSCode - main.swift (15秒, 23键击, 内容: func, class...)
-✅ 已停止
-```
-
-### 9. 测试数据清空
-
-```bash
-keypulse clear
-```
-
-**预期输出：**
-```
-⚠️  确定要清空所有数据吗？(y/N): y
-✅ 所有数据已清空
-```
-
-## 🐛 常见问题排查
-
-### 问题 1：权限错误
-```
-❌ 无法创建事件监听器，请检查辅助功能权限
-```
-
-**解决：**
-- 检查系统设置中是否已授权
-- 尝试移除后重新添加
-- 重启终端
-
-### 问题 2：没有数据
-```
-📭 今日暂无工作记录
-```
-
-**原因：**
-- 监控时间太短（< 3 秒的活动会被过滤）
-- 没有键盘输入
-- 应用在黑名单中
-
-**解决：**
-- 确保工作至少 5 分钟
-- 确保有键盘输入
-- 检查应用是否在黑名单
-
-### 问题 3：报告内容太少
-```
-只显示应用名，没有工作内容
-```
-
-**原因：**
-- 键击太少
-- 内容被完全脱敏
-
-**解决：**
-- 正常工作，多输入一些内容
-- 检查是否是敏感应用
-
-## ✅ 测试检查清单
-
-- [ ] 编译成功
-- [ ] 授予辅助功能权限
-- [ ] `keypulse help` 正常显示
-- [ ] `keypulse status` 正常显示
-- [ ] `keypulse start` 成功启动
-- [ ] 工作 10-15 分钟
-- [ ] `keypulse status` 显示统计数据
-- [ ] `keypulse report` 生成日报
-- [ ] 日报内容合理（有项目名、关键词）
-- [ ] 敏感信息已脱敏
-- [ ] 报告已复制到剪贴板
-- [ ] `keypulse stop` 正常停止
-- [ ] `keypulse clear` 可以清空数据
-
-## 📊 测试结果记录
-
-### 基础功能
-- [ ] ✅ 编译通过
-- [ ] ✅ 命令可用
-- [ ] ✅ 权限正常
-
-### 核心功能
-- [ ] ✅ 监控启动
-- [ ] ✅ 数据记录
-- [ ] ✅ 日报生成
-- [ ] ✅ 剪贴板复制
-
-### 脱敏功能
-- [ ] ✅ 代码脱敏
-- [ ] ✅ 关键词提取
-- [ ] ✅ 敏感应用保护
-
-### 性能表现
-- [ ] ✅ CPU < 1%
-- [ ] ✅ 内存 < 50MB
-- [ ] ✅ 无卡顿
-
-## 🎯 下一步
-
-测试通过后：
-1. 记录测试结果
-2. 截图保存
-3. 反馈问题
-4. 优化改进
 
 ---
 
-**开始测试吧！有问题随时告诉我。**
+## 4. Data Capture — Manual Verification
+
+Start the daemon, switch between a few apps, then:
+
+```bash
+keypulse timeline --today
+```
+
+Expected: table of sessions showing app names, window titles, duration.
+
+### Clipboard capture
+
+Copy some text in any app, wait 2 seconds, then:
+
+```bash
+keypulse recent --type clipboard --limit 5
+```
+
+Expected: your copied text appears (possibly desensitised if it matched privacy patterns).
+
+### Manual save
+
+```bash
+keypulse save --text "Test note for keypulse" --tag test
+keypulse recent --type manual
+```
+
+Expected: your note appears.
+
+Via stdin:
+
+```bash
+echo "stdin note" | keypulse save --tag test
+```
+
+---
+
+## 5. Search
+
+```bash
+keypulse search "keypulse"
+keypulse search "keypulse" --app Terminal
+keypulse search "keypulse" --since 1d
+keypulse search "keypulse" --source manual
+```
+
+Expected: results table with Time / Type / App / Content columns.
+
+Plain output (for scripting / skill use):
+
+```bash
+keypulse search "keypulse" --plain
+# TSV: timestamp\ttype\tapp\ttitle\tbody
+```
+
+---
+
+## 6. Recall Command (LLM-optimised)
+
+```bash
+keypulse recall "keypulse"
+```
+
+Expected: compact multi-section output:
+
+```
+[搜索: keypulse]
+  今天 14:32 [manual] Terminal: Test note for keypulse
+
+[最近剪贴板]
+  今天 14:28 Terminal: ...
+
+[今日主要活动]
+  今天 09:00 Terminal (5min): keypulse — main.py
+
+[手动保存]
+  今天 14:32 #test: Test note for keypulse
+```
+
+---
+
+## 7. Stats & Export
+
+```bash
+keypulse stats --days 7
+keypulse stats --days 7 --plain
+```
+
+```bash
+keypulse export --format json --days 1
+keypulse export --format csv  --days 1
+keypulse export --format md   --date $(date +%Y-%m-%d)
+keypulse export --format json --output /tmp/kp_export.json --days 7
+```
+
+---
+
+## 8. Session Commands
+
+```bash
+keypulse session list
+keypulse session list --date $(date +%Y-%m-%d)
+```
+
+Grab an ID from the output, then:
+
+```bash
+keypulse session show <session-id>
+```
+
+---
+
+## 9. Privacy & Policy
+
+### Verify desensitisation
+
+Copy a string containing a fake email or token, e.g.:  
+`token=sk-abc123XYZ user@example.com`
+
+Then check:
+
+```bash
+keypulse recent --type clipboard --limit 1
+```
+
+Expected: email and token replaced with `[EMAIL]` / `[API_KEY]` markers.
+
+### Policy rules
+
+```bash
+keypulse rules list
+keypulse rules add --scope-type app --scope-value "1Password" --mode deny
+keypulse rules list   # new rule appears
+keypulse rules disable <id>
+```
+
+---
+
+## 10. Purge & Retention
+
+```bash
+# Dry-run (shows what would be deleted)
+keypulse purge --last-hours 1
+
+# Confirm deletion
+keypulse purge --last-hours 1 --confirm
+
+# Delete by app
+keypulse purge --app Slack --confirm
+
+# Clear everything from today
+keypulse purge --today --confirm
+```
+
+---
+
+## 11. Config
+
+```bash
+keypulse config show
+keypulse config path
+```
+
+Edit `~/.keypulse/config.toml` to toggle watchers or adjust thresholds, then restart:
+
+```bash
+keypulse stop && keypulse start
+```
+
+---
+
+## 12. Database Schema Verification
+
+```bash
+sqlite3 ~/.keypulse/keypulse.db ".tables"
+```
+
+Expected tables:
+
+```
+_schema_version   app_state   policies   raw_events
+search_docs       search_docs_fts        sessions
+```
+
+Check migration version:
+
+```bash
+sqlite3 ~/.keypulse/keypulse.db "SELECT * FROM _schema_version;"
+# 1|<timestamp>
+```
+
+---
+
+## 13. Single Instance Lock
+
+```bash
+keypulse start
+keypulse start   # Expected: "Already running (PID ...)"
+```
+
+Simulate crash recovery:
+
+```bash
+# Manually write a fake stale PID
+echo "99999" > ~/.keypulse/keypulse.pid
+keypulse start   # Should detect stale lock, start normally
+```
+
+---
+
+## 14. Resource Usage
+
+After 30 minutes of normal use:
+
+```bash
+ps aux | grep keypulse
+# CPU should be < 1%, RSS < 60 MB
+```
+
+```bash
+ls -lh ~/.keypulse/keypulse.db
+# Size should be reasonable (< 5 MB for a day of use)
+```
+
+---
+
+## Known Limitations (MVP)
+
+| Limitation | Notes |
+|-----------|-------|
+| macOS only | Linux/Windows watchers not implemented |
+| No browser URL capture | Only window title captured for browsers |
+| Clipboard: text only | Images/files not indexed |
+| Accessibility required | Without it, window titles fall back to app name only |

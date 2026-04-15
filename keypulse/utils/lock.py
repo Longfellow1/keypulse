@@ -9,16 +9,36 @@ class SingleInstanceLock:
         self.pid_path = get_pid_path()
 
     def acquire(self) -> bool:
-        """Try to acquire lock. Returns True if acquired, False if already running."""
-        if self.pid_path.exists():
+        """
+        Atomically acquire lock using O_CREAT|O_EXCL.
+        Returns True if acquired, False if another instance is running.
+        Stale lock files (left after crash) are detected and removed automatically.
+        """
+        self.pid_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            # Atomic create — raises FileExistsError if file already exists
+            fd = os.open(
+                str(self.pid_path),
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                0o644,
+            )
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            # Lock file exists — check if owning process is still alive
             try:
                 pid = int(self.pid_path.read_text().strip())
-                os.kill(pid, 0)  # Check if process exists
-                return False  # Already running
-            except (ProcessLookupError, ValueError):
-                pass  # Stale PID file
-        self.pid_path.write_text(str(os.getpid()))
-        return True
+                os.kill(pid, 0)  # signal 0: probe only, no actual signal sent
+                return False  # Process alive → already running
+            except (ProcessLookupError, PermissionError):
+                # Stale lock (process gone) → clean up and retry
+                self.pid_path.unlink(missing_ok=True)
+                return self.acquire()
+            except ValueError:
+                # Corrupt PID file → clean up and retry
+                self.pid_path.unlink(missing_ok=True)
+                return self.acquire()
 
     def release(self):
         if self.pid_path.exists():

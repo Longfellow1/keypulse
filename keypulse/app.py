@@ -48,6 +48,15 @@ def daemonize(pid_path: Path):
     pid_path.write_text(str(os.getpid()))
 
 
+def _check_accessibility() -> bool:
+    """Return True if Accessibility permission is granted (macOS)."""
+    try:
+        import ApplicationServices
+        return bool(ApplicationServices.AXIsProcessTrusted())
+    except Exception:
+        return False  # pyobjc not available or non-macOS
+
+
 def run(config: Optional[Config] = None):
     """
     Main daemon execution: starts CaptureManager, blocks until SIGTERM/SIGINT.
@@ -58,6 +67,14 @@ def run(config: Optional[Config] = None):
 
     setup_logging(config.log_path_expanded)
     logger.info("KeyPulse daemon starting")
+
+    # Warn if Accessibility permission is missing — window titles won't be captured
+    if not _check_accessibility():
+        logger.warning(
+            "Accessibility permission not granted. "
+            "Window titles and app names may not be available. "
+            "Grant access in: System Settings → Privacy & Security → Accessibility"
+        )
 
     from keypulse.capture.manager import CaptureManager
 
