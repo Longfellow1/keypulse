@@ -31,6 +31,17 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.keypulse.daemon.plist"
 CONFIG_FILE="$KEYPULSE_DIR/config.toml"
 
+# ── Detect shell profile ───────────────────────────────────────────────────────
+detect_profile() {
+  if [[ -n "${ZSH_VERSION:-}" ]] || [[ "$SHELL" == */zsh ]]; then
+    echo "$HOME/.zshrc"
+  elif [[ -n "${BASH_VERSION:-}" ]] || [[ "$SHELL" == */bash ]]; then
+    [[ -f "$HOME/.bash_profile" ]] && echo "$HOME/.bash_profile" || echo "$HOME/.bashrc"
+  else
+    echo "$HOME/.profile"
+  fi
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 header "KeyPulse Installer"
 echo "  Repo:    $REPO_DIR"
@@ -76,6 +87,13 @@ mkdir -p "$KEYPULSE_DIR"
 
 if [[ -d "$VENV_DIR" ]]; then
   warn "Venv already exists at $VENV_DIR — reusing"
+  # Ensure it's usable
+  if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+    warn "Venv looks broken, recreating…"
+    rm -rf "$VENV_DIR"
+    "$PYTHON" -m venv "$VENV_DIR"
+    success "Venv recreated"
+  fi
 else
   info "Creating venv…"
   "$PYTHON" -m venv "$VENV_DIR"
@@ -85,8 +103,11 @@ fi
 VENV_PYTHON="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
 
-# Upgrade pip silently
-"$VENV_PIP" install --upgrade pip --quiet
+# Disable global pip --user config inside venv (Homebrew Python sets this globally)
+export PIP_USER=false
+
+# Upgrade pip silently (suppress version notice)
+"$VENV_PIP" install --upgrade pip --quiet 2>/dev/null || true
 
 # ── 4. Install KeyPulse ───────────────────────────────────────────────────────
 header "3/6  Installing KeyPulse"
@@ -100,27 +121,42 @@ else
 fi
 success "KeyPulse installed"
 
-# ── 5. Wrapper script in PATH ─────────────────────────────────────────────────
+# Quick sanity check
+"$VENV_DIR/bin/keypulse" --help &>/dev/null && \
+  success "Binary works" || \
+  { error "keypulse binary not working after install"; exit 1; }
+
+# ── 5. Wrapper + PATH ─────────────────────────────────────────────────────────
 header "4/6  Installing keypulse command"
 
 mkdir -p "$BIN_DIR"
 
-cat > "$BIN_DIR/keypulse" << EOF
+# Write wrapper that directly calls into venv (no activation needed)
+cat > "$BIN_DIR/keypulse" << WRAPPER
 #!/usr/bin/env bash
-# KeyPulse wrapper — activates venv automatically
 exec "$VENV_DIR/bin/keypulse" "\$@"
-EOF
+WRAPPER
 chmod +x "$BIN_DIR/keypulse"
-success "Wrapper written to $BIN_DIR/keypulse"
+success "Wrapper written: $BIN_DIR/keypulse"
 
-# Check if ~/.local/bin is in PATH
-if ! echo "$PATH" | tr ':' '\n' | grep -q "$BIN_DIR"; then
-  warn "$BIN_DIR is not in your PATH."
-  echo ""
-  echo "  Add this to your shell profile (~/.zshrc or ~/.bash_profile):"
-  echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-  echo ""
-  echo "  Then reload:  source ~/.zshrc"
+# Auto-add ~/.local/bin to shell profile if not already there
+PROFILE="$(detect_profile)"
+PATH_LINE="export PATH=\"\$HOME/.local/bin:\$PATH\""
+
+if echo "$PATH" | tr ':' '\n' | grep -qx "$BIN_DIR"; then
+  success "~/.local/bin already in PATH"
+else
+  if grep -qF '.local/bin' "$PROFILE" 2>/dev/null; then
+    warn "~/.local/bin line already in $PROFILE (but not active yet)"
+  else
+    echo "" >> "$PROFILE"
+    echo "# Added by KeyPulse installer" >> "$PROFILE"
+    echo "$PATH_LINE" >> "$PROFILE"
+    success "Added ~/.local/bin to $PROFILE"
+  fi
+  warn "PATH updated — run: source $PROFILE"
+  # Also export for the remainder of this script
+  export PATH="$BIN_DIR:$PATH"
 fi
 
 # ── 6. Default config ─────────────────────────────────────────────────────────
@@ -130,7 +166,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
   warn "Config already exists — skipping ($CONFIG_FILE)"
 else
   cp "$REPO_DIR/config.toml" "$CONFIG_FILE"
-  success "Default config copied to $CONFIG_FILE"
+  success "Default config written to $CONFIG_FILE"
 fi
 
 # ── 7. launchd (auto-start on login) ─────────────────────────────────────────
@@ -140,9 +176,10 @@ if [[ "$INSTALL_LAUNCHD" == false ]]; then
   warn "Skipped (--no-launchd)"
 elif [[ -f "$LAUNCHD_PLIST" ]]; then
   warn "launchd plist already exists — skipping"
-  echo "  To reload:  launchctl unload $LAUNCHD_PLIST && launchctl load $LAUNCHD_PLIST"
+  echo "  To reload:  launchctl unload '$LAUNCHD_PLIST' && launchctl load '$LAUNCHD_PLIST'"
 else
-  cat > "$LAUNCHD_PLIST" << EOF
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat > "$LAUNCHD_PLIST" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -172,14 +209,21 @@ else
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <string>$BIN_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
     </dict>
 </dict>
 </plist>
-EOF
-  launchctl load "$LAUNCHD_PLIST" 2>/dev/null && \
-    success "launchd plist installed — KeyPulse will start on login" || \
-    warn "launchd load failed — run manually: launchctl load $LAUNCHD_PLIST"
+PLIST
+
+  if launchctl load "$LAUNCHD_PLIST" 2>/dev/null; then
+    success "launchd plist installed — KeyPulse will start on login"
+  else
+    warn "launchd load failed (may need macOS 13+ syntax)"
+    info "Trying bootstrap…"
+    launchctl bootstrap "gui/$(id -u)" "$LAUNCHD_PLIST" 2>/dev/null && \
+      success "launchd bootstrap succeeded" || \
+      warn "Try manually: launchctl load '$LAUNCHD_PLIST'"
+  fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -190,26 +234,24 @@ echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "  Next steps:"
 echo ""
-echo "  1. Check dependencies:"
+echo -e "  ${BOLD}1. Reload your shell (PATH update):${RESET}"
+echo -e "     ${CYAN}source $PROFILE${RESET}"
+echo ""
+echo -e "  ${BOLD}2. Check dependencies & permissions:${RESET}"
 echo -e "     ${CYAN}keypulse doctor${RESET}"
 echo ""
-echo "  2. Start monitoring:"
+echo -e "  ${BOLD}3. Start monitoring:${RESET}"
 echo -e "     ${CYAN}keypulse start${RESET}"
 echo ""
-echo "  3. View today's activity:"
+echo -e "  ${BOLD}4. View today's activity:${RESET}"
 echo -e "     ${CYAN}keypulse timeline --today${RESET}"
-echo ""
-echo "  4. Search your work context:"
-echo -e "     ${CYAN}keypulse search \"keyword\"${RESET}"
 echo ""
 echo "  Config:  $CONFIG_FILE"
 echo "  Data:    $KEYPULSE_DIR/keypulse.db"
 echo "  Logs:    $KEYPULSE_DIR/keypulse.log"
 echo ""
 
-# Run doctor automatically if keypulse is in PATH now
-if command -v keypulse &>/dev/null || [[ -x "$BIN_DIR/keypulse" ]]; then
-  echo -e "${BOLD}Running keypulse doctor…${RESET}"
-  echo ""
-  "$BIN_DIR/keypulse" doctor 2>/dev/null || true
-fi
+# Run doctor using full path (PATH may not be reloaded yet in this shell)
+echo -e "${BOLD}Running keypulse doctor…${RESET}"
+echo ""
+"$BIN_DIR/keypulse" doctor || true
