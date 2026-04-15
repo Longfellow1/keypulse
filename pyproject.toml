@@ -12,8 +12,12 @@ dependencies = [
     "rich>=13.7",
     "pydantic>=2.5",
     "pydantic-settings>=2.0",
-    "pyobjc-framework-AppKit>=10.0",
-    "pyobjc-framework-Quartz>=10.0",
+]
+
+[project.optional-dependencies]
+macos = [
+    "pyobjc-framework-AppKit",
+    "pyobjc-framework-Quartz",
 ]
 
 [project.scripts]
