@@ -113,13 +113,34 @@ export PIP_USER=false
 header "3/6  Installing KeyPulse"
 
 if [[ "$DEV_MODE" == true ]]; then
-  info "Editable install from $REPO_DIR"
+  info "Editable install (dev mode)…"
   "$VENV_PIP" install -e "$REPO_DIR" --quiet
 else
-  info "Installing from $REPO_DIR"
+  info "Installing KeyPulse…"
   "$VENV_PIP" install "$REPO_DIR" --quiet
 fi
 success "KeyPulse installed"
+
+# Install macOS-specific pyobjc — try prebuilt wheel first, then source
+info "Installing macOS dependencies (pyobjc)…"
+if "$VENV_PIP" install \
+    "pyobjc-framework-AppKit" \
+    "pyobjc-framework-Quartz" \
+    --quiet 2>/dev/null; then
+  success "pyobjc installed"
+else
+  warn "pyobjc wheel not available for this Python — trying with --no-binary (slower)…"
+  if "$VENV_PIP" install \
+      "pyobjc-framework-AppKit" \
+      "pyobjc-framework-Quartz" \
+      --no-binary pyobjc-framework-AppKit,pyobjc-framework-Quartz \
+      --quiet 2>/dev/null; then
+    success "pyobjc installed from source"
+  else
+    warn "pyobjc install failed — window/clipboard watchers will be disabled"
+    warn "Install manually later:  $VENV_PIP install pyobjc-framework-AppKit pyobjc-framework-Quartz"
+  fi
+fi
 
 # Quick sanity check
 "$VENV_DIR/bin/keypulse" --help &>/dev/null && \
