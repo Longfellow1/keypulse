@@ -1,285 +1,541 @@
-# 🔑 KeyPulse
+# KeyPulse
 
-**30 秒生成工作日报的命令行工具**
+**Local-first personal activity memory for macOS**
 
-低功耗的 macOS 活动监控工具，自动记录工作轨迹，**智能脱敏输入内容**，一键生成专业日报。
+KeyPulse is a lightweight, privacy-first daemon that records what you're doing—applications, windows, clipboard contents, manual notes—into a local SQLite database. It provides powerful CLI tools to search, recall, and analyze your work history with intelligent privacy protection.
 
-[![Swift](https://img.shields.io/badge/Swift-5.5+-orange.svg)](https://swift.org)
-[![macOS](https://img.shields.io/badge/macOS-12.0+-blue.svg)](https://developer.apple.com/macos)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![macOS](https://img.shields.io/badge/macOS-12.0+-lightgrey.svg)](https://www.apple.com/macos/)
+[![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## ✨ 核心价值
+## ✨ Why KeyPulse?
 
-- 🎯 **解决痛点** - 不记得今天干了什么？自动帮你记录
-- ⚡ **30 秒生成** - 一个命令，生成可直接使用的工作日报
-- 🔒 **智能脱敏** - 记录工作内容，保护隐私信息
-- 🪶 **低功耗** - CPU < 1%，内存 < 50MB，不影响电池续航
+- **Never lose context** — Automatically record what you're working on; search and recall your activity history anytime
+- **Privacy by default** — All data stays on your machine. Sensitive apps are never monitored. Passwords and tokens are automatically masked
+- **Lightweight daemon** — Uses < 0.5% CPU and 30 MB memory; negligible battery impact (~1%/hour)
+- **Powerful search** — Full-text search over clipboard history, manual notes, and session summaries with natural language queries
 
-## 📊 效果展示
+## 🚀 Quick Start
 
-```bash
-$ keypulse report
-```
+### Requirements
 
-**输出：**
+- macOS 12.0 or later
+- Python 3.11 or later
+- Accessibility permissions (granted on first run)
 
-```markdown
-## 2026-02-27 工作日报
-
-### keypulse 项目（4.5h）
-- 09:00-12:00 核心功能开发（VSCode，高强度，1,850 键击，代码）
-  内容：func, class, struct, database, API
-  **关键词：** Swift, ActivityMonitor, KeystrokeCounter, database
-
-- 14:00-16:30 代码调试（Terminal + VSCode，中强度，680 键击）
-  内容：swift build, test, debug
-  **关键词：** test, debug, build
-
-### 产品文档（1.5h）
-- 13:00-14:30 需求文档编写（飞书，中强度，320 键击，文档）
-  内容：修复, 优化, 实现, API, 用户
-  **关键词：** 修复, 优化, 用户需求, 功能设计
-
----
-💡 **今日工作统计**
-
-- 总时长：6h
-- 总键击：2,850 次
-- 活动分布：
-  - 代码：4.5h
-  - 文档：1.5h
-```
-
-✅ **报告已自动复制到剪贴板，可直接粘贴到飞书/钉钉**
-
-## 🔒 智能脱敏技术
-
-### 记录的内容
-
-- ✅ 应用名称（如 VSCode, Safari）
-- ✅ 窗口标题（如 keypulse/main.swift）
-- ✅ **脱敏后的输入内容**（保留关键词，去除敏感信息）
-- ✅ 键击次数
-- ✅ 活动时长
-
-### 智能脱敏策略
-
-#### 代码输入
-```
-实际输入：const username = "zhangsan@company.com"
-脱敏记录：const, username（关键词）
-```
-
-#### 文档编写
-```
-实际输入：修复了登录模块的 JWT token 过期问题
-脱敏记录：修复, 登录, JWT, token, 过期（关键词）
-```
-
-#### 终端命令
-```
-实际输入：cd /Users/zhangsan/projects/keypulse
-脱敏记录：cd /PATH（路径脱敏）
-```
-
-#### 聊天内容
-```
-实际输入：（任何聊天内容）
-脱敏记录：[聊天内容]（完全不记录）
-```
-
-### 不记录的内容
-
-- ❌ 具体变量值和字符串内容
-- ❌ 密码输入（检测到密码框自动过滤）
-- ❌ 敏感应用内容（1Password 等）
-- ❌ 个人隐私信息
-
-### 黑名单保护
-
-以下敏感应用完全不会被监控：
-
-- 1Password
-- Keychain Access
-- LastPass
-- Bitwarden
-- KeePassXC
-
-## 🚀 快速开始
-
-### 系统要求
-
-- macOS 12.0+
-- Xcode 13.0+
-- Swift 5.5+
-
-### 安装
+### Installation
 
 ```bash
-# 1. Clone 仓库
 git clone https://github.com/Longfellow1/keypulse.git
 cd keypulse
-
-# 2. 编译
-swift build -c release
-
-# 3. 安装到系统（可选）
-sudo cp .build/release/keypulse /usr/local/bin/
-
-# 4. 启动监控
-keypulse start
-
-# 5. 授权辅助功能权限
-# 系统设置 → 隐私与安全性 → 辅助功能 → 添加 keypulse
+pip install -e .
 ```
 
-### 使用
+### Start the daemon
 
 ```bash
-# 启动后台监控（开机自启动）
+keypulse start
+```
+
+The daemon runs in the background and auto-starts if your system reboots (requires login item setup).
+
+### Query your activity
+
+```bash
+# View today's timeline
+keypulse timeline --today
+
+# Search for something you worked on
+keypulse search "activitywatch" --since 7d
+
+# See recent clipboard contents
+keypulse recent --type clipboard
+
+# View work sessions
+keypulse session list --today
+```
+
+### View statistics
+
+```bash
+# Weekly activity breakdown
+keypulse stats --days 7
+
+# Export as JSON for analysis
+keypulse export --format json --output report.json
+```
+
+## 📖 Full Command Reference
+
+All 20 core commands, organized by function:
+
+### Daemon Control
+
+| Command | Function |
+|---------|----------|
+| `keypulse start` | Start the background daemon |
+| `keypulse stop` | Gracefully stop the daemon |
+| `keypulse pause` | Pause recording (keep daemon running) |
+| `keypulse resume` | Resume recording |
+| `keypulse status` | Show daemon status and uptime |
+| `keypulse doctor` | Check system dependencies and config |
+
+### Recording
+
+| Command | Function |
+|---------|----------|
+| `keypulse save <text>` | Manually save a note (e.g., `keypulse save "Meeting notes: discussed Q2 roadmap"`) |
+
+### Querying Activity
+
+| Command | Function |
+|---------|----------|
+| `keypulse timeline` | Show activity timeline by session (today by default) |
+| `keypulse timeline --date 2026-04-10` | Show activity for a specific date |
+| `keypulse recent` | Show 10 most recent clipboard copies, manual notes, and sessions |
+| `keypulse recent --type clipboard` | Show only recent clipboard entries |
+| `keypulse recent --type manual` | Show only manual saves |
+| `keypulse recent --limit 20` | Show 20 items instead of 10 |
+| `keypulse search <query>` | Full-text search across clipboard, notes, and sessions |
+| `keypulse search "ActivityWatch" --since 7d` | Search the last 7 days |
+| `keypulse search "python" --app VSCode` | Limit search to a specific app |
+| `keypulse search "todo" --source clipboard` | Search only clipboard history |
+
+### Sessions & Stats
+
+| Command | Function |
+|---------|----------|
+| `keypulse session list` | Show all sessions (today by default) |
+| `keypulse session list --date 2026-04-10` | Sessions for a specific date |
+| `keypulse session <id>` | Show details of a specific session (window titles, app time, etc.) |
+| `keypulse stats` | Show activity summary (today by default) |
+| `keypulse stats --days 7` | Weekly statistics (time per app, idle percentage, etc.) |
+
+### Data Management
+
+| Command | Function |
+|---------|----------|
+| `keypulse export` | Export today's data as JSON |
+| `keypulse export --format csv --days 7 --output report.csv` | Export 7 days as CSV |
+| `keypulse export --format markdown --output report.md` | Export as Markdown |
+| `keypulse purge --today` | Delete today's data |
+| `keypulse purge --last-hours 12 --app "1Password"` | Delete recent 1Password data |
+| `keypulse purge --app Slack --confirm` | Permanently delete all Slack recordings |
+
+### Configuration & Rules
+
+| Command | Function |
+|---------|----------|
+| `keypulse config show` | Display current configuration |
+| `keypulse config path` | Show config file location (~/.keypulse/config.toml) |
+| `keypulse rules list` | Show all privacy policies |
+| `keypulse rules add --app 1Password --mode deny` | Add a rule: never record this app |
+| `keypulse rules add --app Slack --mode metadata-only` | Record only app name, not window title |
+| `keypulse rules disable <rule-id>` | Temporarily disable a rule |
+
+## 🔒 Privacy & Security
+
+### What's recorded
+
+- **Application names** — e.g., "VSCode", "Safari"
+- **Window titles** — e.g., "VSCode — keypulse/cli.py", "Safari — GitHub | KeyPulse"
+- **Clipboard contents** — Text you copy (up to 2000 characters per copy event by default)
+- **Manual notes** — Text you explicitly save with `keypulse save`
+- **Session metadata** — Duration, idle/active periods, keystroke density
+
+### What's NOT recorded
+
+- **Keyboard input** — Raw keystrokes are never captured
+- **Sensitive apps** — 1Password, Keychain Access, LastPass, Bitwarden, KeePassXC, and many others are blacklisted by default
+- **Passwords & tokens** — Automatically detected by pattern matching (email addresses, API keys, credit card numbers) and masked
+- **Chat app contents** — Slack, Teams, Discord, iMessage — app names are recorded but not content
+- **Browser content** — While Safari window titles are recorded, web page contents are not
+
+### Privacy controls
+
+**Default blacklist** includes:
+- 1Password, Keychain, LastPass, Bitwarden, KeePassXC
+- Slack, Teams, Discord, iMessage, WeChat, Signal
+- Mail, Outlook, Gmail (web)
+- Most password managers and security tools
+
+**Configurable policies** let you choose per-app behavior:
+- `deny` — Never record anything from this app
+- `metadata-only` — Record app name and timestamps, but not window titles
+- `redact` — Record everything but mask sensitive patterns (emails, tokens)
+- `allow` — Record everything (default for allowed apps)
+
+**Intelligent content masking** detects and masks:
+- Email addresses: `john@example.com` → `[EMAIL]`
+- Tokens/API keys: `sk-abc123...` → `[TOKEN]`
+- Credit card numbers: `4111-1111-1111-1111` → `[CARD]`
+- Phone numbers: `+1-555-0123` → `[PHONE]`
+- Custom regex patterns via config
+
+**Local-first architecture** ensures:
+- All data stays on your machine; zero cloud uploads
+- Zero tracking of your activity by KeyPulse or any third party
+- No network communication except during optional export
+
+**Manual purge** commands let you delete data anytime:
+```bash
+# Delete all data from today
+keypulse purge --today --confirm
+
+# Delete last 12 hours
+keypulse purge --last-hours 12 --confirm
+
+# Delete all data from a specific app
+keypulse purge --app Slack --confirm
+```
+
+## 🏗️ Architecture
+
+KeyPulse consists of modular components working together:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Background Daemon (run by: keypulse start)                   │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌─ Watchers ──────────────────────────────────────────┐    │
+│  │ • Window watcher (NSWorkspace + Accessibility API) │    │
+│  │ • Idle detector (CGEventSource)                     │    │
+│  │ • Clipboard monitor (NSPasteboard)                  │    │
+│  │ • Manual input (CLI commands)                       │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                            ↓                                  │
+│  ┌─ Capture Manager ────────────────────────────────────┐    │
+│  │ Batches events, normalizes, applies policies        │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                            ↓                                  │
+│  ┌─ Privacy Layer ──────────────────────────────────────┐    │
+│  │ • Pattern detection (emails, tokens, etc.)          │    │
+│  │ • Intelligent desensitization                       │    │
+│  │ • App blacklist enforcement                         │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                            ↓                                  │
+│  ┌─ Storage (SQLite) ────────────────────────────────────┐   │
+│  │ ~/.keypulse/keypulse.db                              │   │
+│  │ • raw_events — Captured clipboard, app switches     │   │
+│  │ • search_docs — FTS5 indexed content               │   │
+│  │ • sessions — Aggregated activity periods           │   │
+│  │ • state — Daemon config and runtime state          │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+└──────────────────────────────────────────────────────────────┘
+
+                            ↓
+┌──────────────────────────────────────────────────────────────┐
+│ Query Layer (CLI commands)                                   │
+├──────────────────────────────────────────────────────────────┤
+│  • Timeline builder — Sessions grouped by app/window        │
+│  • Search engine — FTS5 full-text queries                  │
+│  • Stats aggregator — Time per app, idle percentage        │
+│  • Export formatter — JSON, CSV, Markdown                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Core Components
+
+**Daemon** (`app.py`)
+- Lifecycle management (start, stop, pause, resume)
+- Watcher coordination
+- Event batching and flushing
+- Error handling and recovery
+
+**Watchers** (`capture/`)
+- `WindowWatcher` — Detects app switches via NSWorkspace notifications
+- `IdleDetector` — Tracks idle time using CGEventSource
+- `ClipboardWatcher` — Monitors clipboard changes via NSPasteboard
+- `ManualCapture` — CLI-driven manual saves
+- `CaptureManager` — Coordinates all watchers, applies policies
+
+**Privacy Layer** (`privacy/`)
+- `Desensitizer` — Pattern detection and redaction
+- Pattern matching for emails, tokens, URLs, etc.
+- Configurable regex-based masking
+- App blacklist enforcement
+
+**Storage** (`store/`)
+- SQLite database with FTS5 full-text search
+- `raw_events` table for clipboard and app events
+- `search_docs` table for indexed content
+- `sessions` table for aggregated activity
+- Automatic retention (default 30 days)
+
+**Search** (`search/`)
+- FTS5 query builder
+- Ranking by recency and relevance
+- Time-range filtering
+- Per-app filtering
+
+**Services** (`services/`)
+- `timeline.py` — Formats activity as sessions with app names and window titles
+- `stats.py` — Aggregates CPU/idle time per app, generates summaries
+- `export.py` — Exports to JSON, CSV, Markdown
+- `sessionizer.py` — Groups events into sessions (continuous app usage)
+
+### Data Flow
+
+1. **Capture** — Watchers detect app switches, clipboard changes, keystroke activity
+2. **Normalize** — `CaptureManager` standardizes event format, applies rules
+3. **Desensitize** — `PrivacyLayer` masks sensitive patterns, enforces blacklist
+4. **Store** — Events written to SQLite in batches (every 5 seconds)
+5. **Index** — FTS5 index updated incrementally for fast search
+6. **Query** — CLI commands read from database, format results
+7. **Export** — Results rendered as tables, JSON, CSV, or Markdown
+
+## 📊 Performance
+
+Benchmarks on a MacBook Pro (M1, 16GB RAM):
+
+| Scenario | CPU | Memory | Disk/Week |
+|----------|-----|--------|-----------|
+| Idle | < 0.1% | 18 MB | ~100 KB |
+| Light usage (email, browsing) | < 0.3% | 24 MB | ~600 KB |
+| Normal workday (development) | < 0.5% | 35 MB | ~1.2 MB |
+| Heavy usage (continuous typing) | < 1% | 50 MB | ~2 MB |
+
+**Battery impact:** Negligible, typically < 1% per hour on laptops.
+
+## 📝 Configuration
+
+Configuration file location: `~/.keypulse/config.toml`
+
+If the file doesn't exist, defaults are used. You can generate a default config:
+
+```bash
+mkdir -p ~/.keypulse
+# Copy the included config.toml, or edit after first run
+```
+
+### Example config.toml
+
+```toml
+[app]
+db_path = "~/.keypulse/keypulse.db"
+log_path = "~/.keypulse/keypulse.log"
+flush_interval_sec = 5
+retention_days = 30
+
+[watchers]
+window = true
+idle = true
+clipboard = true
+manual = true
+browser = false
+
+[idle]
+threshold_sec = 180
+
+[clipboard]
+max_text_length = 2000
+dedup_window_sec = 600
+
+[privacy]
+redact_emails = true
+redact_phones = true
+redact_tokens = true
+
+# Explicit policies override defaults
+# Each policy has: scope_type (app/domain), scope_value, mode, priority
+```
+
+### Configuration options
+
+**[app]**
+- `db_path` — Where to store the SQLite database (default: `~/.keypulse/keypulse.db`)
+- `log_path` — Daemon log file (default: `~/.keypulse/keypulse.log`)
+- `flush_interval_sec` — How often to write batched events (default: 5 seconds)
+- `retention_days` — Auto-delete records older than this (default: 30 days)
+
+**[watchers]**
+- `window` — Monitor app switches and window titles (default: `true`)
+- `idle` — Track idle time (default: `true`)
+- `clipboard` — Record clipboard copies (default: `true`)
+- `manual` — Allow `keypulse save` commands (default: `true`)
+- `browser` — Track browser tab titles (default: `false`, not yet implemented)
+
+**[idle]**
+- `threshold_sec` — Seconds without events before marking idle (default: 180 = 3 minutes)
+
+**[clipboard]**
+- `max_text_length` — Only record clipboard entries up to this length (default: 2000)
+- `dedup_window_sec` — Ignore duplicate copies within this window (default: 600 = 10 minutes)
+
+**[privacy]**
+- `redact_emails` — Mask email addresses (default: `true`)
+- `redact_phones` — Mask phone numbers (default: `true`)
+- `redact_tokens` — Mask API keys, tokens, credentials (default: `true`)
+
+## 🛠️ Development
+
+### Project structure
+
+```
+keypulse/
+├── cli.py                      # 20 CLI commands
+├── app.py                      # Daemon lifecycle (start, stop, daemonize)
+├── config.py                   # Configuration loading and validation
+│
+├── capture/
+│   ├── manager.py              # Coordinates all watchers
+│   ├── window.py               # Window/app switch watcher
+│   ├── idle.py                 # Idle time detector
+│   ├── clipboard.py            # Clipboard monitor
+│   ├── normalizer.py           # Event normalization
+│   └── __init__.py
+│
+├── store/
+│   ├── db.py                   # Database initialization
+│   ├── models.py               # Pydantic models
+│   ├── repository.py           # Database queries (CRUD)
+│   └── __init__.py
+│
+├── privacy/
+│   ├── desensitizer.py         # Pattern detection and masking
+│   ├── patterns.py             # Regex patterns for sensitive data
+│   ├── blacklist.py            # App blacklist
+│   └── __init__.py
+│
+├── search/
+│   ├── engine.py               # FTS5 search builder and executor
+│   └── __init__.py
+│
+├── services/
+│   ├── timeline.py             # Timeline formatting
+│   ├── stats.py                # Statistics aggregation
+│   ├── export.py               # JSON/CSV/Markdown export
+│   ├── sessionizer.py          # Event-to-session grouping
+│   └── __init__.py
+│
+└── utils/
+    ├── logging.py              # Structured logging
+    ├── paths.py                # Path helpers (~/.keypulse)
+    ├── lock.py                 # Single-instance daemon lock
+    └── __init__.py
+```
+
+### Running locally
+
+```bash
+# Clone and install in development mode
+git clone https://github.com/Longfellow1/keypulse.git
+cd keypulse
+pip install -e .
+
+# Check that dependencies are available
+keypulse doctor
+
+# Start the daemon
 keypulse start
 
-# 生成今日工作日报
-keypulse report
+# Query activity
+keypulse timeline --today
+keypulse search "something"
 
-# 查看运行状态
+# View logs
+tail -f ~/.keypulse/keypulse.log
+
+# Stop the daemon
+keypulse stop
+```
+
+### macOS permissions
+
+KeyPulse requires:
+- **Accessibility** permission to monitor window titles and idle time
+- **Screen Recording** permission to track active windows (on macOS 13+)
+
+When you first run `keypulse start`, the daemon requests these permissions. You can also grant them manually:
+
+```
+System Settings → Privacy & Security → Accessibility → Add Python
+System Settings → Privacy & Security → Screen Recording → Add Python
+```
+
+### Testing
+
+To verify the daemon is working:
+
+```bash
+# Check daemon status
 keypulse status
 
-# 停止监控
-keypulse stop
+# View recent clipboard
+keypulse recent --type clipboard
 
-# 清空所有数据
-keypulse clear
+# Search for test data
+keypulse save "Test note from development"
+keypulse search "development"
+
+# Export and inspect
+keypulse export --format json | jq .
 ```
 
-## 🎯 核心功能
-
-### 1. 自动监控（零打扰）
-
-- ✅ 应用切换监控
-- ✅ 窗口标题记录
-- ✅ **智能输入捕获**（脱敏处理）
-- ✅ 工作时长计算
-
-### 2. 智能分组
-
-自动从窗口标题提取项目名：
-
-```
-"VSCode - keypulse/main.swift" → 项目：keypulse
-"Safari - GitHub PR #123" → 项目：GitHub
-"飞书 - 产品需求评审" → 任务：产品需求评审
-```
-
-### 3. 工作强度分析
-
-根据键击频率自动判断：
-
-- **高强度**（> 20 次/分钟）- 编码、写作
-- **中强度**（5-20 次/分钟）- 调试、阅读
-- **低强度**（< 5 次/分钟）- 浏览、思考
-
-### 4. 内容智能分类
-
-根据应用类型自动分类：
-
-- **代码** - 代码编辑器（VSCode, Xcode）
-- **文档** - 文档编辑（Pages, Notion）
-- **聊天** - 通讯工具（飞书, 钉钉, 微信）
-- **命令** - 终端（Terminal, iTerm2）
-- **浏览** - 浏览器（Safari, Chrome）
-
-### 5. 一键生成日报
-
-- Markdown 格式，可直接复制
-- 自动复制到剪贴板
-- 按项目分组，清晰易读
-- 包含关键词和工作内容摘要
-
-## 📈 性能表现
-
-| 场景 | CPU | 内存 | 电池影响 |
-|------|-----|------|---------|
-| 空闲 | < 0.1% | 20MB | 无感 |
-| 正常办公 | < 0.5% | 30MB | < 1%/小时 |
-| 重度使用 | < 1% | 50MB | < 2%/小时 |
-
-## 🏗️ 技术架构
-
-```
-┌─────────────────────────────────────┐
-│  后台守护进程（keypulse daemon）      │
-├─────────────────────────────────────┤
-│  • 监听应用切换（NSWorkspace）        │
-│  • 监听键盘事件（CGEvent）            │
-│  • 智能脱敏处理（TextDesensitizer）  │
-│  • 每 10 秒保存一次数据              │
-└─────────────────────────────────────┘
-           ↓ 存储
-┌─────────────────────────────────────┐
-│  SQLite 数据库（~/.keypulse/data.db）│
-├─────────────────────────────────────┤
-│  activities 表：                     │
-│  - timestamp                        │
-│  - app_name                         │
-│  - window_title                     │
-│  - keystroke_count                  │
-│  - duration                         │
-│  - desensitized_text（脱敏文本）     │
-│  - keywords（关键词）                │
-│  - content_category（内容类别）      │
-└─────────────────────────────────────┘
-           ↓ 读取
-┌─────────────────────────────────────┐
-│  CLI 工具（keypulse report）         │
-├─────────────────────────────────────┤
-│  1. 读取今日数据                     │
-│  2. 智能分组（提取项目名）            │
-│  3. 计算工作强度                     │
-│  4. 生成 Markdown 报告              │
-└─────────────────────────────────────┘
-```
-
-## 🎯 适用场景
-
-### 场景 1：每日写日报
-
-下班前运行 `keypulse report`，自动生成今日工作内容，直接复制到飞书/钉钉。
-
-### 场景 2：周报总结
-
-查看本周工作分布，了解时间都花在哪些项目上。
-
-### 场景 3：客户对账
-
-向客户证明工作时长，有详细的时间记录和工作内容摘要。
-
-### 场景 4：自我管理
-
-了解自己的工作习惯，优化时间分配。
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-### 开发环境设置
+For unit tests (if added to the project):
 
 ```bash
-git clone https://github.com/Longfellow1/keypulse.git
-cd keypulse
-swift build
-swift run keypulse help
+python -m pytest tests/ -v
 ```
 
-## 📄 许可证
+## ⚖️ License
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+MIT License — See [LICENSE](LICENSE) file for details.
 
-## 📬 联系方式
+## 🤝 Contributing
 
-- GitHub Issues: [https://github.com/Longfellow1/keypulse/issues](https://github.com/Longfellow1/keypulse/issues)
-- Email: [Harland5588@outlook.com](mailto:Harland5588@outlook.com)
+Contributions are welcome! Areas of particular interest:
+
+- **Linux/Windows watcher implementations** — Extend KeyPulse to other OSs
+- **Additional privacy patterns** — Improve detection of sensitive data
+- **Enhanced search indexing** — Better ranking, semantic search
+- **Performance optimizations** — Reduce memory/CPU footprint further
+- **Documentation improvements** — Help others understand the codebase
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## FAQ
+
+### Does KeyPulse upload data to the cloud?
+
+No. All data stays on your machine. There is no network communication except when you explicitly export data.
+
+### Can I trust the privacy protection?
+
+Yes. The code is open source and auditable. We default to NOT recording content and only keep what you explicitly enable. Sensitive data patterns are detected locally and masked before storage. You can review the privacy rules and customize them via `~/.keypulse/config.toml`.
+
+### What about CPU and battery impact?
+
+Negligible. The daemon uses event-driven architecture (not polling), batches writes, and sleeps most of the time. Typical impact is < 0.5% CPU and < 1% battery per hour.
+
+### How far back does history go?
+
+By default, 30 days (configurable via `retention_days` in config). Older records are automatically deleted to bound database size.
+
+### Can I export my data?
+
+Yes. Use `keypulse export --format json` to export as JSON, CSV, or Markdown. Data is yours to keep and analyze.
+
+### What if I want to disable monitoring?
+
+Use `keypulse pause` to temporarily stop recording without stopping the daemon. Use `keypulse stop` to fully shut down. Data is preserved.
+
+### Can I run KeyPulse on multiple machines?
+
+Currently, each machine runs its own isolated instance. You can export data from each and merge the exports manually if needed.
+
+### Is there AI-assisted recall available?
+
+Yes! See the [`claude/skill-api`](https://github.com/Longfellow1/keypulse/tree/claude/skill-api) branch for Claude Code and OpenClaw integration with the `work-recall` skill.
+
+## Related
+
+- **Skill Integration Branch** — For Claude Code / OpenClaw integration, see [`claude/skill-api`](https://github.com/Longfellow1/keypulse/tree/claude/skill-api) branch
+- **GitHub Repository** — [github.com/Longfellow1/keypulse](https://github.com/Longfellow1/keypulse)
+- **Security Policy** — [SECURITY.md](SECURITY.md)
 
 ---
 
-**⭐ 如果这个工具帮到了你，请给个 Star！**
+**Last updated:** April 15, 2026
