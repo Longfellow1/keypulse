@@ -1,10 +1,12 @@
-# KeyPulse
+# KeyPulse·笔友
 
-> **A companion that helps you upgrade how you think — not a dashboard that tells you how productive you were.**
+> **一个陪你日常输入的笔友 —— 关注你敲下的每一个碎片，但从不记住任何秘密，每天晚上在 Obsidian 给你留一张小纸条。**
 
-KeyPulse is a local-first activity recorder for macOS that watches what you do, then writes back to you about it. Not as a productivity coach, not as an AI assistant doing work for you — as a **pen-pal** that slowly learns your rhythm and helps you see yourself more clearly.
+KeyPulse 是一个本地优先的 macOS 同行者。它静静地看着你工作的那层表面 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉，然后每天在你自己的 Obsidian 库里，给你写一页今天的小结。不给你打分，也不替你做事。它陪你做的只有三件：**记录、整理、进步** —— 让日子不至于流过去就不见了，让底下那些模式，慢慢浮上来。
 
-*[中文版 → README.zh.md](README.zh.md)*
+一句话愿景：*一个安静的伙伴，看见细节，不留秘密，帮你每天更清楚一点。*
+
+*[English → README.en.md](README.en.md)*
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
@@ -13,202 +15,226 @@ KeyPulse is a local-first activity recorder for macOS that watches what you do, 
 
 ---
 
-## Why this exists
+## 为什么存在
 
-Most activity trackers fall into one of three traps:
+大多数活动记录工具会掉进三个陷阱之一：
 
-- **Dashboards** — beautiful graphs that nobody looks at twice
-- **Quantified self** — "this week: 87/100" (what do you *do* with that?)
-- **AI assistants** — they do your work, so you stop thinking
+- **仪表盘** —— 漂亮的图表，没人看第二次
+- **量化自我** —— "本周 87 分"（所以呢？）
+- **AI 助理** —— 它替你做事，于是你不再思考
 
-KeyPulse is none of these. It records the small stuff — app switches, clipboard, window titles — not to score you, but to give a patient observer enough material to eventually write back:
+KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗口标题 —— 不是为了给你打分，而是给一个耐心的观察者足够素材，过几天再回过头跟你说：
 
-> *"These past three days you kept returning to this terminal — are you stuck on something, or is this the thing you actually want to build?"*
+> *"这三天你反复回到这个终端 —— 是卡住了，还是其实这才是你真正想做的事？"*
 
-That line doesn't come on Day 1. It comes on **Day 5**, after the system has watched long enough to earn the right to ask.
+这句话不会 Day 1 就出现。它会在 **Day 5** 出现 —— 当系统已经看了足够久，赢得了开口的资格。
 
 ---
 
-## What it is, and what it refuses to be
+## 它是什么，它拒绝成为什么
 
-| It **is** | It **refuses to be** |
+| 它**是** | 它**拒绝成为** |
 |---|---|
-| A pen-pal that slowly learns your patterns | A dashboard optimizing for screen-time |
-| A mirror for your thinking | A productivity scoreboard |
-| Your external memory — so you can revisit past selves | An AI that does work *for* you |
-| Local, auditable, on your machine | A SaaS harvesting your focus data |
+| 一个慢慢摸清你模式的笔友 | 一个为屏幕时间优化的仪表盘 |
+| 你思考的镜子 | 一个生产力积分榜 |
+| 你的外部记忆 —— 让你能回访过去的自己 | 替你做事的 AI |
+| 本地、可审计、在你自己机器上 | 收割你注意力数据的 SaaS |
 
 ---
 
-## Relationship, not features — three stages
+## 关系，不是功能 —— 三个阶段
 
-The product unlocks by **calendar days**, not "productive days." Companionship needs real time.
+产品按**自然日**推进，不按"有效日"。陪伴感需要真实时间。
 
-| Stage | Days | Tone | Example line |
+| 阶段 | 自然日 | 它的心态 | 示例语气 |
 |---|---|---|---|
-| **Acquaintance** | 0–3 | "I'm still learning you — but I'm paying attention." | *"Today you spent time on these things."* |
-| **Familiar** | 3–7 | "I noticed something — can I check with you?" | *"You keep coming back here lately. Is that on purpose?"* |
-| **Exploring** | 7+ | "I understand what you're doing, and beginning to see why." | *"Based on the past two weeks, X is getting heavier for you. Where do you want to take it next week?"* |
+| **认知期** | 0–3 天 | "我还不懂你，但我认真在看" | *"今天你记了这些事。"* |
+| **熟悉期** | 3–7 天 | "我注意到一些规律，想跟你求证" | *"你最近反复回到这里，是想做什么？"* |
+| **探索期** | 7 天+ | "我理解你在做什么，也开始理解为什么" | *"基于这两周的你，X 对你越来越重要，下周想怎么推进？"* |
 
-The real signal that the relationship has deepened isn't a feature unlock — it's when **your language shifts from "it" to "we."**
+关系是否真的深了，衡量标准不是功能解锁 —— 而是**你的主语从"它"滑到了"我们"**。
 
 ---
 
-## The voice it speaks in
+## 它说话的口气
 
-| ✗ Machine report | ✓ Pen-pal voice |
+| ✗ 机器腔 | ✓ 笔友腔 |
 |---|---|
-| `2026-04-21 · 10 events · top theme: terminal` | "You stared at the terminal 11 hours today. A little worried about your back." |
-| `Productivity: 87/100` | "You seemed less cheerful this week than last — want to try a different rhythm tomorrow?" |
-| `New theme detected` | "Are you working on something new? I can't quite see it yet, but I sense it brewing." |
+| `2026-04-21 · 10 events · top theme: terminal` | "今天你盯着终端 11 小时，我有点担心你的腰。" |
+| `本周效率 87/100` | "这周你开心的时候比上周少，要不明天换个节奏？" |
+| `New theme detected` | "你是不是在想一个新东西？我还没看全，但感觉在酝酿。" |
 
-Every user-facing string is tested against one question: *would a pen-pal write this?* If not, we rewrite it.
-
----
-
-## What's inside (the engineering)
-
-KeyPulse ships a small stack of things that are harder than they look:
-
-### 🧠 Human/machine **speaker model**
-Every event is tagged `speaker: user` (keyboard, clipboard, manual saves) or `speaker: system` (window titles, AX tree, OCR). Daily reports are split into two columns — **what you did** vs. **what the system showed** — so your voice stays the main line, and the machinery never drowns it out.
-
-### 🔒 Privacy, by architecture (not policy text)
-- **No keystroke logging** — keyboard watcher records *chunks and boundaries*, never raw keys.
-- **35-app default blacklist** — password managers, messengers, banking apps. Entire events dropped before reaching disk.
-- **Field-level desensitization** — emails, tokens, API keys, cards masked at normalize time.
-- **Camera-aware pause** — when macOS CMIO activates (Zoom, FaceTime, Screen recording), capture pauses automatically.
-- **Private-browsing detection** (Safari/Chrome/Firefox incognito windows excluded via AX title inspection).
-
-### ♻️ Self-healing service trio
-Background tools die. KeyPulse assumes this and bakes recovery into the design:
-
-- `keypulse healthcheck` — atomic `health.json` with 6 alert codes (`DAEMON_DEAD`, `STREAM_STALE`, `SPEAKER_MISLABEL_SPIKE`, …). Runs every 10 min via `launchd`.
-- **Hourly incremental Obsidian sync** — cursor-based, dedupe by event identity, **append-safe** (your `## 今日主线` narrative and `## 明天的锚点` tomorrow-plan are never overwritten once written).
-- **Menu bar HUD** — single-glance status emoji prefix (✅ / ⚠️) reading directly from `health.json`.
-
-### 📝 Obsidian as the reading surface
-Daily notes, event cards, topic cards. Checkbox-based feedback (`- [ ] 确认 [ ] 否掉 [ ] 拆分`) flows back to the pipeline — zero context switch, the report *is* the feedback form.
-
-### 🧪 Quality framework
-A **Golden Set** of labeled days keeps the narrative pipeline from silently drifting as we tune thresholds. 333 tests passing, including regression coverage for the migration that once mislabeled 2,341 user events as system events.
+每一句面向用户的文字都过一道关：**这像笔友写信，还是像管家汇报？** 像后者，就重写。
 
 ---
 
-## Architecture
+## 里面有什么（工程层）
+
+一些比看起来要难的东西：
+
+### 🧠 人/机 **说话人模型**
+每条事件带 `speaker: user`（键盘、剪贴板、手动记录）或 `speaker: system`（窗口标题、辅助功能树、OCR）。日报分两栏渲染 —— **你做了什么** vs. **系统显示了什么** —— 你的声音始终是主线，机器的信号永远不压过你。
+
+### 🔒 隐私写在架构里，不是写在政策文本里
+- **不记键盘输入** —— 键盘 watcher 只记**段落与边界**，从不记原始按键。
+- **35 个默认黑名单应用** —— 密码管理器、即时通讯、银行 App。事件在写盘之前就丢掉。
+- **字段级脱敏** —— 邮箱、Token、API key、卡号在 normalize 阶段就被遮盖。
+- **摄像头感知暂停** —— macOS CMIO 激活时（Zoom / FaceTime / 录屏），采集自动暂停。
+- **隐私窗口检测** —— Safari/Chrome/Firefox 的无痕窗口通过 AX 标题识别后排除。
+
+### ♻️ 服务自愈三件套
+后台工具会死。KeyPulse 默认会死，把恢复写进设计：
+
+- `keypulse healthcheck` —— 原子写 `health.json`，6 种告警码（`DAEMON_DEAD` / `STREAM_STALE` / `SPEAKER_MISLABEL_SPIKE` 等）。launchd 每 10 分钟跑一次。
+- **每小时增量 Obsidian sync** —— 基于 cursor，按事件身份去重，**append-safe**：你写过的 `## 今日主线` 叙事和 `## 明天的锚点` 永远不会被覆盖。
+- **菜单栏 HUD** —— 直接读 `health.json`，状态表情前缀（✅ / ⚠️）一眼可见。
+
+### 📝 Obsidian 作为阅读面
+日报、事件卡、主题卡。反馈以 checkbox 内嵌（`- [ ] 确认 [ ] 否掉 [ ] 拆分`），watcher 同步回反馈库 —— 零切换，**报告本身就是反馈表**。
+
+### 🧪 质量保障
+一套**黄金集**（Golden Set）标注日记录，作为叙事 pipeline 的回归基线，防止调阈值时静默退化。333 个测试全绿 —— 包括那次把 2341 条用户事件错标成系统事件的迁移事故的回归覆盖。
+
+---
+
+## 架构一览
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Capture layer                                                │
-│  • Window / AX-text / OCR   (speaker: system)                 │
-│  • Keyboard-chunk / Clipboard / Manual  (speaker: user)       │
-│  • Camera monitor → pauses AX+OCR when CMIO active            │
+│  采集层                                                       │
+│  • 窗口 / AX 文本 / OCR   (speaker: system)                   │
+│  • 键盘段落 / 剪贴板 / 手动记录  (speaker: user)              │
+│  • 摄像头监控 → CMIO 激活时暂停 AX+OCR                        │
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Privacy layer                                                │
-│  • Blacklist (bundle IDs + glob) • Field desensitization      │
+│  隐私层                                                       │
+│  • 黑名单（bundle ID + glob） • 字段脱敏                      │
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Storage — SQLite (raw_events, sessions, FTS5)                │
+│  存储 — SQLite（raw_events, sessions, FTS5）                  │
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  Pipeline                                                     │
-│  • Sessionizer → work-block aggregation (dual-speaker)        │
-│  • Topic extraction (user events only)                        │
-│  • Narrative render (LLM, with deterministic fallback)        │
+│  • Session 化 → 工作块聚合（人机双栏）                        │
+│  • 主题抽取（只看 user 事件）                                 │
+│  • 叙事渲染（LLM + 确定性兜底）                               │
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Surfaces                                                     │
-│  • Obsidian vault (Daily / Events / Topics / Dashboard)       │
-│  • Menu-bar HUD (health + in-session prompt)                  │
-│  • CLI (timeline / search / stats / export)                   │
+│  呈现面                                                       │
+│  • Obsidian vault（Daily / Events / Topics / Dashboard）      │
+│  • 菜单栏 HUD（健康 + 会话提示）                              │
+│  • CLI（timeline / search / stats / export）                  │
 └──────────────────────────────────────────────────────────────┘
 
-                  launchd orchestrates four jobs:
-  daemon  •  healthcheck (10m)  •  obsidian-sync-hourly  •  obsidian-sync-daily
+                launchd 编排四个 job：
+   daemon  •  healthcheck (10m)  •  obsidian-sync-hourly  •  obsidian-sync-daily
 ```
 
 ---
 
-## Quick start
+## 快速开始
 
 ```bash
-# Clone and install (creates a venv at ~/.keypulse/venv, loads launchd jobs)
+# 克隆并安装（会在 ~/.keypulse/venv 建 venv，注册 launchd jobs）
 git clone https://github.com/Longfellow1/keypulse.git
 cd keypulse
 bash install.sh
 
-# Grant Accessibility + Screen Recording permissions when prompted, then:
+# 授权「辅助功能」+「屏幕录制」，然后：
 keypulse start
-keypulse doctor          # verify watchers, permissions, DB
-keypulse hud             # menu-bar indicator (optional)
+keypulse doctor          # 检查 watchers / 权限 / 数据库
+keypulse hud             # 菜单栏状态指示器（可选）
 
-# A day later, read your report:
+# 一天后，看报告：
 open ~/Go/Knowledge/Dashboard/Today.md
 ```
 
-### The commands you'll actually use
+### 常用命令
 
-| | |
+| 命令 | 功能 |
 |---|---|
-| `keypulse timeline --today` | See today's sessions |
-| `keypulse search "<query>"` | Full-text search across your own memory |
-| `keypulse obsidian sync --incremental` | Append new events to today's note (runs hourly) |
-| `keypulse obsidian sync --yesterday` | Generate yesterday's full narrative (runs at 09:05) |
-| `keypulse healthcheck` | Atomic health report → `~/.keypulse/health.json` |
-| `keypulse purge --app Slack --confirm` | Wipe everything from an app, permanently |
+| `keypulse timeline --today` | 查看今日会话 |
+| `keypulse search "<query>"` | 全文搜索你的记忆 |
+| `keypulse obsidian sync --incremental` | 把新事件追加到今日报告（每小时自动） |
+| `keypulse obsidian sync --yesterday` | 生成昨天的完整叙事（每日 09:05 自动） |
+| `keypulse healthcheck` | 原子健康报告 → `~/.keypulse/health.json` |
+| `keypulse purge --app Slack --confirm` | 彻底删除某个应用的全部数据 |
 
-Full CLI reference: `keypulse --help`.
+完整命令参考：`keypulse --help`。
 
 ---
 
-## Privacy summary
+## 隐私一览
 
-| What's recorded | What's never recorded |
+| 会被记录 | 永远不会被记录 |
 |---|---|
-| App names, window titles (outside blacklist) | Raw keystrokes |
-| Clipboard text (≤ 2000 chars, deduped) | Anything from password managers / messengers / banking apps |
-| Manual `keypulse save` notes | Contents during camera-active meetings |
-| Session boundaries, idle periods | Private/incognito browser windows |
+| 应用名、窗口标题（黑名单之外） | 原始按键 |
+| 剪贴板文本（≤ 2000 字符，去重） | 密码管理器 / 即时通讯 / 银行 App 里的任何内容 |
+| 手动 `keypulse save` 笔记 | 摄像头激活期间的内容 |
+| 会话边界、空闲时段 | 隐私 / 无痕浏览窗口 |
 
-All data lives in `~/.keypulse/keypulse.db` on your machine. No cloud, no telemetry, no network — export is explicit.
-
----
-
-## Philosophy: the three red lines
-
-Before shipping any feature, we ask:
-
-1. Does this **deepen the relationship** or just add a function?
-2. Does this text read like a **pen-pal**, or like a **butler reporting receipts**?
-3. Will the user feel *"it gets me"* or *"it's bookkeeping me"*?
-
-Miss any one, redesign.
+全部数据保存在你自己机器上的 `~/.keypulse/keypulse.db`。无云端、无埋点、无网络请求 —— 导出必须你显式执行。
 
 ---
 
-## Status
+## 产品哲学：三条红线
 
-- **Platform:** macOS 12+ (Apple Silicon + Intel)
-- **Tests:** 333 passing (pytest)
-- **Installable:** `bash install.sh` — one-shot, idempotent, launchd-managed
-- **Roadmap:** quarterly/annual memoir-style recall · cross-device merge · voice-prompted reflection
+每个功能上线前问三句：
 
-KeyPulse is early. The pen-pal can hold a conversation about your day; it can't yet hold one about your year. That's next.
+1. 这个设计是在**增加关系**，还是只在增加**功能**？
+2. 这段文字像**笔友**，还是像**管家**？
+3. 用户看到会觉得"它懂我"，还是"它在记账"？
+
+任何一条答错，就该重设计。
 
 ---
 
-## License
+## 要去哪里 —— 从笔记走到方法论
 
-Apache 2.0 — see [LICENSE](LICENSE).
+今天，KeyPulse 每天给你写一张小纸条。**它真正想去的地方**是更大的东西：**读懂你和它一起在 Obsidian 里慢慢长出来的那张图，帮你把「模式」变成「方法」。**
 
-## Author
+Obsidian 不只是一个笔记本，它是一张图。当日报、主题卡、事件卡不断累积、互相链接，它们慢慢构成的不是「你做过什么」，而是**「你是怎么工作的」**。KeyPulse 未来会坐在这张图的上面，像一个有耐心的读者 —— 注意那些反复出现的边、提出关于"你怎么做事"的小假设，然后邀请你去命名它们。
 
-Built by [Harland](https://github.com/Longfellow1) · reach out: haolang95@gmail.com
+方向上，有点像 Karpathy 提过的 *auto-research*，但不是"让模型替你做研究"，而是**"让模型给你提出关于你自己的小问题，由你来回答"**。时间久了，你的答案本身，就成了产出。
 
-> *The goal of KeyPulse is not to make you more efficient.*
-> *It's to help you recognize who you are — and who you're becoming.*
+具体会长成这样：
+
+| 你做了什么 | KeyPulse 最终会说 | 它会变成什么 |
+|---|---|---|
+| 这周五次会话都反复打开同一个文件 | *"这更像是你**思考**的地方，而不是你**改代码**的地方。"* | 你工作流里一个被命名的位置 |
+| 每次都是 docs → 终端 → 编辑器 的顺序 | *"这可能是你进入深度工作的热身仪式。"* | 一个你可以保留、打破、或进一步研究的模式 |
+| 每次 debug 结束都会把一段复制到小本本里 | *"你好像在把 fix 提炼成 lesson —— 要不要为这一类给一个方法论文件？"* | 一个**属于你自己**的方法论库，肉眼可见 |
+
+终态：KeyPulse 不只是帮你记住你做过什么，它帮你看见**你是怎么把事情做好的**，然后把这件事变成一个你可以回看、甚至可以分享的东西。
+
+不是通用的效率 tips。是一座**由你命名、由你塑造、和你一起长**的个人模式库。
+
+> **Obsidian 的图是土壤。KeyPulse 是让这张图变得可读的那个观察者。**
+
+---
+
+## 当前状态
+
+- **平台：** macOS 12+（Apple Silicon + Intel）
+- **测试：** 333 passing（pytest）
+- **安装：** `bash install.sh` —— 一键幂等，launchd 托管
+- **Roadmap：** 季度 / 年度回忆录式整理 · 多设备合并 · 语音反思对话
+
+KeyPulse 还在早期。笔友现在能跟你聊今天，还不能跟你聊今年 —— 这是下一步。
+
+---
+
+## 许可
+
+Apache 2.0 —— 见 [LICENSE](LICENSE)。
+
+## 作者
+
+[Harland](https://github.com/Longfellow1) 出品 · 联系: haolang95@gmail.com
+
+> *KeyPulse 的目标不是让你更高效。*
+> *是帮你认清你是谁，你在变成谁。*
