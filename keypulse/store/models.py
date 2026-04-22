@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 import uuid
 
 
@@ -16,7 +16,7 @@ def _uuid() -> str:
 @dataclass
 class RawEvent:
     source: str          # window|idle|clipboard|manual|browser
-    event_type: str      # window_focus|window_heartbeat|window_blur|idle_start|idle_end|clipboard_copy|manual_save
+    event_type: str      # window_focus|window_title_changed|window_heartbeat|window_blur|idle_start|idle_end|clipboard_copy|manual_save|browser_tab
     ts_start: str
     ts_end: Optional[str] = None
     app_name: Optional[str] = None
@@ -28,6 +28,7 @@ class RawEvent:
     sensitivity_level: int = 0
     skipped_reason: Optional[str] = None
     session_id: Optional[str] = None
+    speaker: Literal["user", "system"] = "system"
     id: Optional[int] = None
     created_at: str = field(default_factory=_now)
 

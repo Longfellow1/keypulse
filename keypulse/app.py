@@ -43,9 +43,7 @@ def daemonize(pid_path: Path):
     os.dup2(devnull, sys.stderr.fileno())
     os.close(devnull)
 
-    # Write PID
-    pid_path.parent.mkdir(parents=True, exist_ok=True)
-    pid_path.write_text(str(os.getpid()))
+    # PID is written by the lock layer inside run().
 
 
 def _check_accessibility() -> bool:
@@ -60,13 +58,18 @@ def _check_accessibility() -> bool:
 def run(config: Optional[Config] = None):
     """
     Main daemon execution: starts CaptureManager, blocks until SIGTERM/SIGINT.
-    Call this AFTER daemonize().
+    Can run in the foreground or after daemonize().
     """
     if config is None:
         config = Config.load()
 
     setup_logging(config.log_path_expanded)
     logger.info("KeyPulse daemon starting")
+
+    lock = SingleInstanceLock()
+    if not lock.acquire():
+        logger.error(f"Another KeyPulse instance is already running (PID {lock.get_pid()})")
+        sys.exit(1)
 
     # Warn if Accessibility permission is missing — window titles won't be captured
     if not _check_accessibility():
@@ -79,8 +82,6 @@ def run(config: Optional[Config] = None):
     from keypulse.capture.manager import CaptureManager
 
     manager = CaptureManager(config)
-    lock = SingleInstanceLock()
-
     def _shutdown(signum, frame):
         logger.info(f"Signal {signum} received, shutting down")
         try:
@@ -103,6 +104,9 @@ def run(config: Optional[Config] = None):
         logger.error(f"Fatal error: {e}")
         lock.release()
         sys.exit(1)
+
+    finally:
+        lock.release()
 
 
 def start_daemon(config: Optional[Config] = None):

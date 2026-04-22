@@ -15,6 +15,10 @@ def get_pid_path() -> Path:
     return get_data_dir() / "keypulse.pid"
 
 
+def get_hud_pid_path() -> Path:
+    return get_data_dir() / "keypulse-hud.pid"
+
+
 def get_log_path() -> Path:
     return get_data_dir() / "keypulse.log"
 

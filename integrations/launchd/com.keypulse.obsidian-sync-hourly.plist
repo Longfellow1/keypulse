@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.keypulse.obsidian-sync-hourly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>keypulse</string>
+        <string>obsidian</string>
+        <string>sync</string>
+        <string>--incremental</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>~/.keypulse/logs/obsidian-sync-hourly.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>~/.keypulse/logs/obsidian-sync-hourly.err</string>
+</dict>
+</plist>

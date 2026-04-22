@@ -10,6 +10,9 @@ idle = true
 clipboard = true
 manual = true
 browser = false
+ax_text = false
+keyboard_chunk = false
+ocr = false
 
 [idle]
 threshold_sec = 180
@@ -18,10 +21,61 @@ threshold_sec = 180
 max_text_length = 2000
 dedup_window_sec = 600
 
+[ax_text]
+poll_interval_sec = 1.0
+
+[browser]
+poll_interval_sec = 1.0
+supported_browsers = ["Safari", "Google Chrome", "Arc", "Brave Browser", "Microsoft Edge"]
+
+[keyboard_chunk]
+silence_sec = 2.0
+force_flush_sec = 2.0
+store_text = true
+
+[ocr]
+provider = "vision_native"
+window_switch_delay_sec = 0.8
+stable_interval_sec = 10.0
+keyboard_quiet_sec = 2.0
+
 [privacy]
 redact_emails = true
 redact_phones = true
 redact_tokens = true
+camera_scene_pause = true
+
+[pipeline]
+llm_mode = "local-first"
+max_llm_calls_per_run = 0
+max_llm_input_chars_per_run = 0
+feedback_path = "~/.keypulse/feedback.jsonl"
+
+[obsidian]
+vault_path = "~/Go/Knowledge"
+vault_name = "KeyPulse"
+export_hour = 9
+export_minute = 5
+
+[integration]
+standalone_output_path = "~/Go/Knowledge"
+state_path = "~/.keypulse/sink-state.json"
+
+[model]
+active_profile = "local-first"
+state_path = "~/.keypulse/model-state.json"
+
+[model.local]
+kind = "lm_studio"
+base_url = "http://127.0.0.1:1234"
+model = "keypulse-local"
+api_key_env = ""
+
+[model.cloud]
+kind = "openai_compatible"
+base_url = "https://api.openai.com/v1"
+model = "keypulse-cloud"
+api_key_env = "OPENAI_API_KEY"
 
 [[policies]]
 scope_type = "app"

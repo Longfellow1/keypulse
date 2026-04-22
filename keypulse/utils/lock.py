@@ -1,12 +1,12 @@
 import os
-import signal
 from pathlib import Path
+
 from keypulse.utils.paths import get_pid_path
 
 
 class SingleInstanceLock:
-    def __init__(self):
-        self.pid_path = get_pid_path()
+    def __init__(self, pid_path: Path | None = None):
+        self.pid_path = pid_path or get_pid_path()
 
     def acquire(self) -> bool:
         """
