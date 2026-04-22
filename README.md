@@ -9,7 +9,7 @@ KeyPulse is a local-first activity recorder for macOS that watches what you do, 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
 [![Tests](https://img.shields.io/badge/tests-333%20passing-brightgreen.svg)](tests/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ---
 
@@ -204,7 +204,7 @@ KeyPulse is early. The pen-pal can hold a conversation about your day; it can't 
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
 
 ## Author
 
