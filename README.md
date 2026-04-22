@@ -235,7 +235,7 @@ Apache 2.0 —— 见 [LICENSE](LICENSE)。
 ## 作者
 **Harland** —— AI Native 产品经理。
 
-- 邮箱: Harland5588@gmail.com
+- 邮箱: Harland5588@outlook.com
 
 > *KeyPulse 的目标不是让你更高效。*
 > *是帮你认清你是谁，你在变成谁。*
