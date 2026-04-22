@@ -1,8 +1,10 @@
 from __future__ import annotations
+import json
 import os
 import sys
 import time
 import signal
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -29,15 +31,33 @@ from keypulse.store.repository import (
 from keypulse.store.models import Policy, RawEvent, SearchDoc
 from keypulse.privacy.desensitizer import desensitize
 from keypulse.utils.paths import get_data_dir, get_db_path, get_pid_path, get_log_path, get_config_path
+from keypulse.utils.paths import get_hud_pid_path
 from keypulse.utils.lock import SingleInstanceLock
 from keypulse.utils.logging import setup_logging
 from keypulse.app import start_daemon, daemonize, run
+from keypulse.integrations import resolve_active_sink
 from keypulse.services.timeline import get_timeline_rows
 from keypulse.services.stats import get_stats
-from keypulse.services.export import export_json, export_csv, export_markdown
+from keypulse.services.export import export_json, export_csv, export_markdown, export_obsidian
 from keypulse.services.sessionizer import sessions_for_today, recent_sessions
 from keypulse.search.engine import search, recent_clipboard, recent_manual, recent_sessions_docs
 from keypulse.capture.normalizer import normalize_manual_event
+from keypulse.utils.dates import local_day_bounds, resolve_local_date
+from keypulse.hud import run_hud
+from keypulse.pipeline import (
+    PipelineInputs,
+    build_daily_draft,
+    append_feedback_event,
+    read_feedback_events,
+    FeedbackEvent,
+    build_pipeline_plan,
+    LLMMode,
+    load_model_gateway,
+    record_theme_feedback,
+    current_theme_profile,
+)
+from keypulse.pipeline.model import ModelGateway
+from keypulse.search.backends import resolve_search_backend
 
 
 # Shared console objects
@@ -53,6 +73,60 @@ def get_config() -> Config:
 def require_db(cfg: Config):
     """Initialize database if not already done."""
     init_db(cfg.db_path_expanded)
+
+
+def _launchd_daemon_plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / "com.keypulse.daemon.plist"
+
+
+def _launchd_label_loaded(label: str) -> bool:
+    try:
+        result = subprocess.run(["launchctl", "list"], check=False, capture_output=True, text=True)
+    except Exception:
+        return False
+    return label in (result.stdout or "")
+
+
+def _launchd_bootout(plist_path: Path) -> bool:
+    commands = [
+        ["launchctl", "bootout", f"gui/{os.getuid()}", str(plist_path)],
+        ["launchctl", "unload", str(plist_path)],
+    ]
+    for cmd in commands:
+        try:
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        except Exception:
+            continue
+        if result.returncode == 0:
+            return True
+    return False
+
+
+def _launchd_bootstrap(plist_path: Path) -> bool:
+    commands = [
+        ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist_path)],
+        ["launchctl", "load", str(plist_path)],
+        ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.keypulse.daemon"],
+    ]
+    for cmd in commands:
+        try:
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        except Exception:
+            continue
+        if result.returncode == 0:
+            return True
+    return False
+
+
+def _load_capture_runtime_state() -> dict | None:
+    raw = get_state("capture_runtime")
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except Exception:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 @click.group()
@@ -71,6 +145,16 @@ def start(config_path):
     """Start the KeyPulse daemon."""
     cfg = Config.load() if not config_path else _load_config_from(config_path)
     lock = SingleInstanceLock()
+    launchd_plist = _launchd_daemon_plist_path()
+
+    if launchd_plist.exists():
+        if _launchd_label_loaded("com.keypulse.daemon"):
+            err_console.print(f"[yellow]Already running under launchd (PID {lock.get_pid() or 'unknown'}).[/yellow]")
+            sys.exit(1)
+        if _launchd_bootstrap(launchd_plist):
+            time.sleep(0.5)
+            console.print(f"[green]KeyPulse started via launchd (PID {lock.get_pid() or 'unknown'}).[/green]")
+            return
 
     if lock.is_running():
         err_console.print(f"[red]Already running (PID {lock.get_pid()})[/red]")
@@ -106,6 +190,14 @@ def start(config_path):
             console.print("[green]KeyPulse started[/green]")
 
 
+@main.command()
+@click.option("--config", "config_path", default=None, help="Path to config.toml")
+def serve(config_path):
+    """Run KeyPulse in the foreground under a supervisor such as launchd."""
+    cfg = Config.load() if not config_path else _load_config_from(config_path)
+    run(cfg)
+
+
 def _load_config_from(path: str) -> Config:
     """Load config from explicit path."""
     import tomllib
@@ -123,6 +215,24 @@ def stop():
     """Stop the KeyPulse daemon."""
     lock = SingleInstanceLock()
     pid = lock.get_pid()
+    launchd_plist = _launchd_daemon_plist_path()
+
+    if launchd_plist.exists() and _launchd_label_loaded("com.keypulse.daemon"):
+        if _launchd_bootout(launchd_plist):
+            if pid:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            for _ in range(50):
+                time.sleep(0.1)
+                if not lock.is_running():
+                    console.print("[green]KeyPulse stopped and launchd supervision disabled.[/green]")
+                    return
+            console.print("[yellow]launchd 已卸载，但旧进程仍在退出中。[/yellow]")
+            return
+        console.print("[yellow]KeyPulse is supervised by launchd, but unload failed.[/yellow]")
+        return
 
     if not pid:
         console.print("[yellow]KeyPulse is not running.[/yellow]")
@@ -184,9 +294,21 @@ def status(plain):
     lock = SingleInstanceLock()
     pid = lock.get_pid()
     is_running = pid is not None
+    supervised = _launchd_label_loaded("com.keypulse.daemon")
     status_val = get_state("status") or "unknown"
     started_at = get_state("started_at") or "—"
     last_flush = get_state("last_flush") or "—"
+    runtime = _load_capture_runtime_state() or {}
+    runtime_counts = runtime.get("multi_source_counts") or {}
+    runtime_watchers = runtime.get("watchers") or {}
+    runtime_pid = runtime.get("pid") or "unknown"
+    runtime_host = runtime.get("host_executable") or "unknown"
+    keyboard_source = ((runtime_watchers.get("keyboard_chunk") or {}).get("source") or {}).get("status") or "unknown"
+    ax_running = bool((runtime_watchers.get("ax_text") or {}).get("running"))
+    ocr_running = bool((runtime_watchers.get("ocr") or {}).get("running"))
+    ax_count = int(runtime_counts.get("ax_text") or 0)
+    ocr_count = int(runtime_counts.get("ocr_text") or 0)
+    keyboard_count = int(runtime_counts.get("keyboard_chunk") or 0)
 
     # DB size
     db_path = cfg.db_path_expanded
@@ -196,36 +318,66 @@ def status(plain):
     # Enabled watchers
     enabled = []
     if cfg.watchers.window:
-        enabled.append("window")
+        enabled.append("窗口活动")
     if cfg.watchers.idle:
-        enabled.append("idle")
+        enabled.append("空闲检测")
     if cfg.watchers.clipboard:
-        enabled.append("clipboard")
+        enabled.append("剪贴板")
     if cfg.watchers.manual:
-        enabled.append("manual")
+        enabled.append("手动保存")
     if cfg.watchers.browser:
-        enabled.append("browser")
+        enabled.append("浏览器")
+    if getattr(cfg.watchers, "ax_text", False):
+        enabled.append("当前看到的正文")
+    if getattr(cfg.watchers, "keyboard_chunk", False):
+        enabled.append("键入整理片段")
+    if getattr(cfg.watchers, "ocr", False):
+        enabled.append("屏幕识别补充")
 
     if plain:
         print(f"running={is_running}")
         print(f"pid={pid or 'none'}")
+        print(f"supervised_by_launchd={supervised}")
         print(f"status={status_val}")
         print(f"started_at={started_at}")
         print(f"db_path={db_path}")
         print(f"db_size_mb={db_size_mb:.2f}")
         print(f"last_flush={last_flush}")
         print(f"enabled_watchers={','.join(enabled)}")
+        print(f"runtime_ax_running={ax_running}")
+        print(f"runtime_ocr_running={ocr_running}")
+        print(f"runtime_keyboard_source={keyboard_source}")
+        print(f"runtime_pid={runtime_pid}")
+        print(f"runtime_host={runtime_host}")
+        print(f"runtime_ax_count={ax_count}")
+        print(f"runtime_ocr_count={ocr_count}")
+        print(f"runtime_keyboard_count={keyboard_count}")
     else:
-        table = Table(show_header=False, box=None)
-        table.add_row("Running", "[green]yes[/green]" if is_running else "[red]no[/red]")
+        status_label = {
+            "running": "运行中",
+            "paused": "已暂停",
+            "stopped": "已停止",
+            "unknown": "未知",
+        }.get(status_val, status_val)
+        table = Table(title="采集状态", show_header=False, box=None)
+        table.add_row("服务状态", "[green]运行中[/green]" if is_running else "[red]未运行[/red]")
         if is_running:
-            table.add_row("PID", str(pid))
-        table.add_row("Status", status_val)
-        table.add_row("Started at", started_at)
-        table.add_row("DB path", str(db_path))
-        table.add_row("DB size", f"{db_size_mb:.2f} MB")
-        table.add_row("Last flush", last_flush)
-        table.add_row("Enabled watchers", ", ".join(enabled))
+            table.add_row("进程 PID", str(pid))
+        table.add_row("运行方式", "launchd 托管" if supervised else "手动启动")
+        table.add_row("采集阶段", status_label)
+        table.add_row("启动时间", started_at)
+        table.add_row("数据库路径", str(db_path))
+        table.add_row("数据库大小", f"{db_size_mb:.2f} MB")
+        table.add_row("最近一次写入", last_flush)
+        table.add_row("已启用采集源", "、".join(enabled) if enabled else "无")
+        table.add_row("正文采集状态", "已运行" if ax_running else "未见运行")
+        table.add_row("屏幕识别状态", "已运行" if ocr_running else "未见运行")
+        table.add_row("键入整理状态", keyboard_source)
+        table.add_row("后台宿主 PID", str(runtime_pid))
+        table.add_row("后台宿主路径", str(runtime_host))
+        table.add_row("正文采集条数", str(ax_count))
+        table.add_row("屏幕识别条数", str(ocr_count))
+        table.add_row("键入整理条数", str(keyboard_count))
         console.print(table)
 
 
@@ -238,64 +390,246 @@ def status(plain):
 def doctor(plain):
     """Check system configuration."""
     checks = {}
+    cfg = get_config()
+    require_db(cfg)
 
     # Python version
     import sys as sys_module
     checks["Python >= 3.11"] = sys_module.version_info >= (3, 11)
 
-    # pyobjc-framework-AppKit
+    # Cocoa / AppKit
     try:
-        import AppKit
-        checks["pyobjc-framework-AppKit"] = True
+        import AppKit  # noqa: F401
+        checks["macOS 原生界面能力"] = True
     except ImportError:
-        checks["pyobjc-framework-AppKit"] = False
+        checks["macOS 原生界面能力"] = False
 
-    # pyobjc-framework-Quartz
+    # Quartz
     try:
         import Quartz
-        checks["pyobjc-framework-Quartz"] = True
+        checks["图像与事件框架"] = True
     except ImportError:
-        checks["pyobjc-framework-Quartz"] = False
+        checks["图像与事件框架"] = False
+
+    try:
+        import Vision  # noqa: F401
+        checks["本地屏幕识别能力"] = True
+    except ImportError:
+        checks["本地屏幕识别能力"] = False
 
     # Accessibility permission
     try:
         from ApplicationServices import AXIsProcessTrusted
-        checks["Accessibility permission"] = AXIsProcessTrusted()
+        checks["辅助功能权限"] = AXIsProcessTrusted()
     except Exception:
-        checks["Accessibility permission"] = False
+        checks["辅助功能权限"] = False
+
+    try:
+        import Quartz
+        preflight_listen = getattr(Quartz, "CGPreflightListenEventAccess", None)
+        checks["键盘监听权限"] = bool(preflight_listen()) if callable(preflight_listen) else False
+    except Exception:
+        checks["键盘监听权限"] = False
+
+    try:
+        import Quartz
+        preflight_screen = getattr(Quartz, "CGPreflightScreenCaptureAccess", None)
+        checks["屏幕录制权限"] = bool(preflight_screen()) if callable(preflight_screen) else False
+    except Exception:
+        checks["屏幕录制权限"] = False
 
     # DB path writable
-    cfg = get_config()
     db_path = cfg.db_path_expanded
     db_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         test_file = db_path.parent / ".write_test"
         test_file.write_text("test")
         test_file.unlink()
-        checks["DB path writable"] = True
+        checks["数据库目录可写"] = True
     except Exception:
-        checks["DB path writable"] = False
+        checks["数据库目录可写"] = False
 
     # Config path exists
     config_path = get_config_path()
-    checks["Config file exists"] = config_path.exists()
+    checks["配置文件存在"] = config_path.exists()
+    runtime = _load_capture_runtime_state() or {}
+    runtime_watchers = runtime.get("watchers") or {}
+    keyboard_source = ((runtime_watchers.get("keyboard_chunk") or {}).get("source") or {}).get("status")
+    if runtime_watchers:
+        checks["后台正文采集线程"] = bool((runtime_watchers.get("ax_text") or {}).get("running"))
+        checks["后台屏幕识别线程"] = bool((runtime_watchers.get("ocr") or {}).get("running"))
+        checks["后台键盘监听线程"] = keyboard_source == "running"
 
     if plain:
         for check_name, passed in checks.items():
             status = "OK" if passed else "FAIL"
             print(f"{check_name}: {status}")
     else:
-        table = Table(title="System Check", show_header=True, header_style="bold cyan")
-        table.add_column("Check")
-        table.add_column("Status")
+        table = Table(title="系统健康检查", show_header=True, header_style="bold cyan")
+        table.add_column("检查项")
+        table.add_column("结果")
         for check_name, passed in checks.items():
-            status = "[green]✓[/green]" if passed else "[red]✗[/red]"
+            status = "[green]正常[/green]" if passed else "[red]未通过[/red]"
             table.add_row(check_name, status)
         console.print(table)
+        if runtime_watchers and keyboard_source not in (None, "running"):
+            console.print(
+                Panel(
+                    f"后台键盘监听当前状态：{keyboard_source}\n"
+                    "如果你已经给终端授权，但后台 launchd 仍然拿不到正文/键入事件，"
+                    "需要把 KeyPulse 实际宿主也加入辅助功能、键盘监听、屏幕录制。",
+                    title="运行时提示",
+                    border_style="yellow",
+                )
+            )
 
     # Exit with error if any check failed
     if not all(checks.values()):
         sys.exit(1)
+
+
+@main.command()
+@click.option("--config", "config_path", default=None)
+def healthcheck(config_path):
+    """Run health check and write ~/.keypulse/health.json."""
+    from keypulse.health import run_healthcheck
+
+    result = run_healthcheck(config_path=config_path)
+    click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+    if result["overall"] == "alert" and any(alert["severity"] == "error" for alert in result["alerts"]):
+        raise SystemExit(1)
+
+
+def _hud_lock() -> SingleInstanceLock:
+    return SingleInstanceLock(get_hud_pid_path())
+
+
+def _find_legacy_hud_pid() -> int | None:
+    try:
+        result = subprocess.run(["pgrep", "-f", "keypulse hud"], check=False, capture_output=True, text=True)
+    except Exception:
+        return None
+
+    current_pid = os.getpid()
+    for line in (result.stdout or "").splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if pid == current_pid:
+            continue
+        try:
+            command_result = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "command="],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            continue
+        command = (command_result.stdout or "").strip()
+        if not command:
+            continue
+        if "keypulse hud" not in command:
+            continue
+        if any(marker in command for marker in [" hud status", " hud stop", " hud close", " hud start"]):
+            continue
+        if command.rstrip().endswith("keypulse hud") or command.rstrip().endswith("keypulse.cli hud"):
+            return pid
+    return None
+
+
+def _start_hud():
+    cfg = get_config()
+    lock = _hud_lock()
+    if not lock.acquire():
+        err_console.print(f"[yellow]HUD already running (PID {lock.get_pid()}).[/yellow]")
+        sys.exit(1)
+    legacy_pid = _find_legacy_hud_pid()
+    if legacy_pid:
+        lock.release()
+        err_console.print(f"[yellow]HUD already running (PID {legacy_pid}).[/yellow]")
+        sys.exit(1)
+
+    require_db(cfg)
+    try:
+        run_hud(cfg)
+    finally:
+        lock.release()
+
+
+def _stop_hud():
+    lock = _hud_lock()
+    pid = lock.get_pid() or _find_legacy_hud_pid()
+
+    if not pid:
+        console.print("[yellow]HUD is not running.[/yellow]")
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        console.print("[yellow]HUD is not running.[/yellow]")
+        return
+
+    for _ in range(50):
+        time.sleep(0.1)
+        if not lock.is_running():
+            console.print("[green]HUD stopped.[/green]")
+            return
+
+    console.print("[yellow]Stop signal sent (HUD may still be shutting down).[/yellow]")
+
+
+def _show_hud_status(plain: bool = False):
+    lock = _hud_lock()
+    pid = lock.get_pid() or _find_legacy_hud_pid()
+    is_running = pid is not None
+
+    if plain:
+        print(f"running={is_running}")
+        print(f"pid={pid or 'none'}")
+        print(f"pid_path={lock.pid_path}")
+        return
+
+    table = Table(show_header=False, box=None)
+    table.add_row("HUD 状态", "[green]运行中[/green]" if is_running else "[yellow]未运行[/yellow]")
+    table.add_row("PID", str(pid or "—"))
+    table.add_row("PID 文件", str(lock.pid_path))
+    console.print(table)
+
+
+@main.group(invoke_without_command=True)
+@click.pass_context
+def hud(ctx):
+    """Manage the macOS status bar HUD."""
+    if ctx.invoked_subcommand is None:
+        _start_hud()
+
+
+@hud.command("start")
+def hud_start():
+    """Launch the macOS status bar HUD."""
+    _start_hud()
+
+
+@hud.command("stop")
+def hud_stop():
+    """Stop the running HUD instance."""
+    _stop_hud()
+
+
+@hud.command("close")
+def hud_close():
+    """Close the running HUD instance."""
+    _stop_hud()
+
+
+@hud.command("status")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def hud_status(plain):
+    """Show HUD process status."""
+    _show_hud_status(plain=plain)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -510,7 +844,7 @@ Manual Saves: {stats_data['manual_count']}
 # 11. SEARCH
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
+@main.command(name="search")
 @click.argument("query")
 @click.option("--app", default=None, help="Filter by app name")
 @click.option("--since", default=None, help="Time filter (7d, 24h, or YYYY-MM-DD)")
@@ -522,7 +856,8 @@ def search_cmd(query, app, since, source, limit, plain):
     cfg = get_config()
     require_db(cfg)
 
-    results = search(query, app_name=app, since=since, source=source, limit=limit)
+    backend = resolve_search_backend()
+    results = backend.search(query, app_name=app, since=since, source=source, limit=limit)
 
     if plain:
         for result in results:
@@ -657,11 +992,265 @@ def session_show(session_id, plain):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 13. EXPORT
+# 13. OBSIDIAN
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def obsidian():
+    """Manage the Obsidian export bridge."""
+    pass
+
+
+def _resolve_obsidian_date(date: Optional[str], yesterday: bool) -> str:
+    return resolve_local_date(date, yesterday=yesterday)
+
+
+def _sync_obsidian_bundle(
+    cfg: Config,
+    date_str: str,
+    output: str | None = None,
+    vault_name: str | None = None,
+    *,
+    incremental: bool = False,
+) -> tuple[int, str, str]:
+    sink = resolve_active_sink(cfg, persist=True)
+    target_output = output or str(sink.output_dir)
+    target_vault = vault_name or cfg.obsidian.vault_name
+    gateway = load_model_gateway(cfg) if hasattr(cfg, "model") else None
+    written = export_obsidian(
+        target_output,
+        date_str=date_str,
+        vault_name=target_vault,
+        model_gateway=gateway,
+        incremental=incremental,
+        db_path=str(cfg.db_path_expanded),
+    )
+    return len(written), target_output, sink.kind
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 13.5 SINKS
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def sinks():
+    """Manage automatic sink discovery."""
+    pass
+
+
+@sinks.command("detect")
+@click.option("--apply", "apply_binding", is_flag=True, default=False, help="Persist the detected sink binding")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def sinks_detect(apply_binding, plain):
+    """Detect the active local sink and optionally persist it."""
+    cfg = get_config()
+    sink = resolve_active_sink(cfg, persist=apply_binding)
+
+    if plain:
+        print(f"kind={sink.kind}")
+        print(f"output_dir={sink.output_dir}")
+        print(f"source={sink.source}")
+    else:
+        console.print(
+            f"[green]{sink.kind}[/green] -> {sink.output_dir} "
+            f"([dim]{sink.source}[/dim])"
+        )
+
+
+@sinks.command("status")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def sinks_status(plain):
+    """Show the active sink binding."""
+    cfg = get_config()
+    sink = resolve_active_sink(cfg)
+
+    if plain:
+        print(f"kind={sink.kind}")
+        print(f"output_dir={sink.output_dir}")
+        print(f"source={sink.source}")
+    else:
+        table = Table(show_header=False, box=None)
+        table.add_row("Kind", sink.kind)
+        table.add_row("Output dir", str(sink.output_dir))
+        table.add_row("Source", sink.source)
+        console.print(table)
+
+
+@obsidian.command("sync")
+@click.option(
+    "--incremental",
+    is_flag=True,
+    default=False,
+    help="Incremental append mode: only add new events, do not re-render narrative.",
+)
+@click.option("--yesterday", is_flag=True, default=False, help="Export yesterday's data (full sync)")
+@click.option("--date", default=None, help="Specific date in YYYY-MM-DD format (mutually exclusive with --incremental and --yesterday)")
+@click.option("--output", default=None, help="Override vault path")
+@click.option("--vault-name", default=None, help="Override vault name")
+def obsidian_sync(date, yesterday, incremental, output, vault_name):
+    """Export a daily Obsidian bundle."""
+    cfg = get_config()
+    require_db(cfg)
+
+    selected_flags = int(bool(incremental)) + int(bool(yesterday)) + int(bool(date))
+    if selected_flags > 1:
+        raise click.UsageError("--incremental, --yesterday, and --date are mutually exclusive.")
+
+    if incremental:
+        date_str = resolve_local_date("today", yesterday=False)
+    elif yesterday:
+        date_str = _resolve_obsidian_date(None, yesterday=True)
+    elif date:
+        date_str = _resolve_obsidian_date(date, yesterday=False)
+    else:
+        date_str = _resolve_obsidian_date(None, yesterday=False)
+
+    written, target_output, sink_kind = _sync_obsidian_bundle(
+        cfg,
+        date_str,
+        output=output,
+        vault_name=vault_name,
+        incremental=incremental,
+    )
+    console.print(f"[green]Exported {written} notes to {target_output}[/green]")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 13.5 PIPELINE
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def pipeline():
+    """Inspect and operate the information pipeline."""
+    pass
+
+
+@pipeline.command("sync")
+@click.option("--date", default=None, help="Specific date in YYYY-MM-DD format")
+@click.option("--yesterday", is_flag=True, default=False, help="Sync yesterday's data")
+@click.option("--output", default=None, help="Override vault path")
+@click.option("--vault-name", default=None, help="Override vault name")
+def pipeline_sync(date, yesterday, output, vault_name):
+    """Run the unified daily sync path."""
+    cfg = get_config()
+    require_db(cfg)
+
+    date_str = _resolve_obsidian_date(date, yesterday)
+    written, target_output, sink_kind = _sync_obsidian_bundle(cfg, date_str, output=output, vault_name=vault_name)
+    print(f"pipeline_sync=ok date={date_str} sink={sink_kind} output={target_output} written={written}")
+
+
+@pipeline.command("draft")
+@click.option("--date", default=None, help="Specific date in YYYY-MM-DD format")
+@click.option("--yesterday", is_flag=True, default=False, help="Build yesterday's draft")
+@click.option("--output", default=None, help="Write the draft to a file instead of stdout")
+def pipeline_draft(date, yesterday, output):
+    """Build a deterministic daily draft from raw events."""
+    cfg = get_config()
+    require_db(cfg)
+
+    date_str = _resolve_obsidian_date(date, yesterday)
+    since, until = local_day_bounds(date_str)
+    events = query_raw_events(since=since, until=until, limit=50000)
+    inputs = PipelineInputs(
+        event_count=len(events),
+        candidate_count=0,
+        topic_count=0,
+        active_days=1,
+    )
+    llm_mode = getattr(cfg.pipeline, "llm_mode", "off")
+    feedback_events = read_feedback_events(Path(cfg.pipeline.feedback_path).expanduser())
+    draft = build_daily_draft(
+        inputs,
+        events,
+        model_gateway=load_model_gateway(cfg) if hasattr(cfg, "model") else None,
+        plan=build_pipeline_plan(LLMMode.OFF if llm_mode == "off" else LLMMode(llm_mode), inputs),
+        feedback_events=feedback_events,
+    )
+
+    if output:
+        Path(output).write_text(draft.body)
+        console.print(f"[green]Draft written to {output}[/green]")
+    else:
+        console.print(draft.body)
+
+
+@pipeline.group()
+def feedback():
+    """Record and inspect pipeline feedback."""
+    pass
+
+
+@feedback.command("add")
+@click.option("--kind", required=True, help="Feedback kind, such as promote or demote")
+@click.option("--target", required=True, help="Target topic, event, or draft")
+@click.option("--note", required=True, help="Short feedback note")
+def feedback_add(kind, target, note):
+    """Append one feedback event to the local feedback log."""
+    cfg = get_config()
+    path = Path(cfg.pipeline.feedback_path).expanduser()
+    append_feedback_event(path, FeedbackEvent(kind=kind, target=target, note=note))
+    console.print(f"[green]Recorded feedback for {target}[/green]")
+
+
+@feedback.command("list")
+@click.option("--path", default=None, help="Override feedback log path")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def feedback_list(path, plain):
+    """List recorded feedback events."""
+    cfg = get_config()
+    feedback_path = Path(path or cfg.pipeline.feedback_path).expanduser()
+    events = read_feedback_events(feedback_path)
+
+    if plain:
+        for event in events:
+            print(f"{event.created_at}\t{event.kind}\t{event.target}\t{event.note}")
+    else:
+        table = Table(show_header=True, box=None)
+        table.add_column("Created at")
+        table.add_column("Kind")
+        table.add_column("Target")
+        table.add_column("Note")
+        for event in events:
+            table.add_row(event.created_at, event.kind, event.target, event.note)
+        console.print(table)
+
+
+@feedback.command("refine")
+@click.option("--theme", "theme_name", required=True, help="Theme name to refine")
+@click.option("--instruction", required=True, help="Refinement instruction")
+@click.option("--state-path", default=None, help="Override theme state path")
+def feedback_refine(theme_name, instruction, state_path):
+    """Persist a theme refinement instruction."""
+    result = record_theme_feedback(state_path, theme_name=theme_name, instruction=instruction)
+    console.print(f"[green]{result['theme_name']} v{result['version']}[/green]")
+
+
+@feedback.command("status")
+@click.option("--state-path", default=None, help="Override theme state path")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def feedback_status(state_path, plain):
+    """Show the active theme profile."""
+    profile = current_theme_profile(state_path)
+    if plain:
+        print(f"theme_name={profile['theme_name']}")
+        print(f"version={profile['version']}")
+        print(f"instructions={'|'.join(profile['instructions'])}")
+        print(f"updated_at={profile['updated_at']}")
+    else:
+        table = Table(show_header=False, box=None)
+        table.add_row("Theme", f"{profile['theme_name']} v{profile['version']}")
+        table.add_row("Instructions", ", ".join(profile["instructions"]))
+        table.add_row("Updated at", str(profile["updated_at"]))
+        console.print(table)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 14. EXPORT
 # ═════════════════════════════════════════════════════════════════════════════
 
 @main.command()
-@click.option("--format", type=click.Choice(["json", "csv", "md"]), default="json",
+@click.option("--format", type=click.Choice(["json", "csv", "md", "obsidian"]), default="json",
               help="Export format")
 @click.option("--days", default=None, type=int, help="Number of days to export")
 @click.option("--date", default=None, help="Specific date in YYYY-MM-DD format")
@@ -677,6 +1266,16 @@ def export(format, days, date, output):
         data = export_csv(days=days, date_str=date)
     elif format == "md":
         data = export_markdown(days=days, date_str=date)
+    elif format == "obsidian":
+        if output:
+            target_output = output
+        else:
+            sink = resolve_active_sink(cfg, persist=True)
+            target_output = str(sink.output_dir)
+        gateway = load_model_gateway(cfg) if hasattr(cfg, "model") else None
+        written = export_obsidian(output_dir=target_output, days=days, date_str=date, vault_name=cfg.obsidian.vault_name, model_gateway=gateway)
+        console.print(f"[green]Exported {len(written)} notes to {target_output}[/green]")
+        return
     else:
         err_console.print(f"[red]Unknown format: {format}[/red]")
         sys.exit(1)
@@ -689,7 +1288,7 @@ def export(format, days, date, output):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 14. PURGE
+# 15. PURGE
 # ═════════════════════════════════════════════════════════════════════════════
 
 @main.command()
@@ -763,7 +1362,7 @@ def purge(today, last_hours, app, confirm):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 15. CONFIG (subgroup)
+# 16. CONFIG (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
 
 @main.group(name="config")
@@ -783,6 +1382,25 @@ def config_show(plain):
         print(f"log_path={cfg.app.log_path}")
         print(f"flush_interval_sec={cfg.app.flush_interval_sec}")
         print(f"retention_days={cfg.app.retention_days}")
+        print(f"obsidian_vault_path={cfg.obsidian.vault_path}")
+        print(f"obsidian_vault_name={cfg.obsidian.vault_name}")
+        print(f"obsidian_export_hour={cfg.obsidian.export_hour}")
+        print(f"obsidian_export_minute={cfg.obsidian.export_minute}")
+        print(f"pipeline_llm_mode={cfg.pipeline.llm_mode}")
+        print(f"pipeline_max_llm_calls_per_run={cfg.pipeline.max_llm_calls_per_run}")
+        print(f"pipeline_max_llm_input_chars_per_run={cfg.pipeline.max_llm_input_chars_per_run}")
+        print(f"pipeline_feedback_path={cfg.pipeline.feedback_path}")
+        print(f"integration_standalone_output_path={cfg.integration.standalone_output_path}")
+        print(f"integration_state_path={cfg.integration.state_path}")
+        print(f"model_active_profile={cfg.model.active_profile}")
+        print(f"model_state_path={cfg.model.state_path}")
+        print(f"model_local_kind={cfg.model.local.kind}")
+        print(f"model_local_base_url={cfg.model.local.base_url}")
+        print(f"model_local_model={cfg.model.local.model}")
+        print(f"model_cloud_kind={cfg.model.cloud.kind}")
+        print(f"model_cloud_base_url={cfg.model.cloud.base_url}")
+        print(f"model_cloud_model={cfg.model.cloud.model}")
+        print(f"model_cloud_api_key_env={cfg.model.cloud.api_key_env}")
         print(f"watchers_window={cfg.watchers.window}")
         print(f"watchers_idle={cfg.watchers.idle}")
         print(f"watchers_clipboard={cfg.watchers.clipboard}")
@@ -805,7 +1423,65 @@ def config_path():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 16. RULES (subgroup)
+# 17. MODEL (subgroup)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def model():
+    """Manage model gateway profiles."""
+    pass
+
+
+@model.command("status")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def model_status(plain):
+    """Show the active model profile and selected backend."""
+    cfg = get_config()
+    gateway = load_model_gateway(cfg)
+    backend = gateway.select_backend("write")
+    if plain:
+        print(f"profile={gateway.active_profile}")
+        print(f"backend_kind={backend.kind}")
+        print(f"backend_model={backend.model}")
+        print(f"backend_base_url={backend.base_url}")
+    else:
+        table = Table(show_header=False, box=None)
+        table.add_row("Profile", gateway.active_profile)
+        table.add_row("Backend", backend.kind)
+        table.add_row("Model", backend.model or "—")
+        table.add_row("Base URL", backend.base_url or "—")
+        console.print(table)
+
+
+@model.command("use")
+@click.argument("profile")
+def model_use(profile):
+    """Persist the active model profile."""
+    cfg = get_config()
+    gateway = load_model_gateway(cfg)
+    try:
+        gateway.use_profile(profile)
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    console.print(f"[green]Model profile set to {profile}[/green]")
+
+
+@model.command("test")
+def model_test():
+    """Test the selected model backend."""
+    cfg = get_config()
+    gateway = load_model_gateway(cfg)
+    result = gateway.test_backend()
+    if result.get("ok"):
+        console.print(f"[green]Model backend ok: {result.get('backend')} / {result.get('model', '—')}[/green]")
+    else:
+        err_console.print(f"[red]Model backend unavailable: {result.get('message') or result.get('error') or 'unknown'}[/red]")
+        sys.exit(1)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 17. RULES (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
 
 @main.group()

@@ -1,0 +1,43 @@
+{"value":"https-www-example-com","layer":"cluster","expected_accept":false,"expected_reason_contains":"url","note":"URL slug"}
+{"value":"https-claude-ai-code-session-011usxdwagg7wyprncpgdbb3","layer":"cluster","expected_accept":false,"expected_reason_contains":"url","note":"URL slug"}
+{"value":"http://foo.bar","layer":"cluster","expected_accept":false,"expected_reason_contains":"url","note":"HTTP URL"}
+{"value":"https-github-com-forrestchang-andrej-karpathy-skills-git","layer":"cluster","expected_accept":false,"expected_reason_contains":"url","note":"URL slug"}
+{"value":"users-harland-downloads-202603-rar","layer":"cluster","expected_accept":false,"expected_reason_contains":"path","note":"path-like slug"}
+{"value":"library-frameworks-python-framework-versions-3-11-bin-python3-11","layer":"cluster","expected_accept":false,"expected_reason_contains":"path","note":"path-like slug"}
+{"value":"opt-homebrew-bin-python3-11","layer":"cluster","expected_accept":false,"expected_reason_contains":"path","note":"path-like slug"}
+{"value":"/etc/hosts","layer":"cluster","expected_accept":false,"expected_reason_contains":"path","note":"absolute path"}
+{"value":"docs-architecture-2026-04-20-obsidian-report-redesign-md","layer":"cluster","expected_accept":false,"expected_reason_contains":"path","note":"extension-like slug"}
+{"value":"01","layer":"cluster","expected_accept":false,"expected_reason_contains":"numeric","note":"numeric"}
+{"value":"04","layer":"cluster","expected_accept":false,"expected_reason_contains":"numeric","note":"numeric"}
+{"value":"1","layer":"cluster","expected_accept":false,"expected_reason_contains":"numeric","note":"numeric"}
+{"value":"181999","layer":"cluster","expected_accept":false,"expected_reason_contains":"numeric","note":"numeric"}
+{"value":"219192","layer":"cluster","expected_accept":false,"expected_reason_contains":"numeric","note":"numeric"}
+{"value":"223-1-12-9","layer":"cluster","expected_accept":false,"expected_reason_contains":"numeric","note":"numeric with separators"}
+{"value":"1-2","layer":"cluster","expected_accept":false,"expected_reason_contains":"numeric","note":"numeric with separators"}
+{"value":"3-13","layer":"cluster","expected_accept":false,"expected_reason_contains":"numeric","note":"numeric with separators"}
+{"value":"sk-sp-7c733ebb6b8541f38e9da3b375d6f7a2","layer":"cluster","expected_accept":false,"expected_reason_contains":"secret","note":"API key-like"}
+{"value":"sk_live_abcdef1234567890abcdef","layer":"cluster","expected_accept":false,"expected_reason_contains":"secret","note":"API key-like"}
+{"value":"7c733ebb6b8541f3","layer":"cluster","expected_accept":false,"expected_reason_contains":"secret","note":"hex digest"}
+{"value":"codex --dangerously-bypass-approvals-and-sandbox","layer":"cluster","expected_accept":false,"expected_reason_contains":"command","note":"command flag"}
+{"value":"claude --dangerously-skip-permissions","layer":"cluster","expected_accept":false,"expected_reason_contains":"command","note":"command flag"}
+{"value":"cli-agent-zsh-zsh-83-58","layer":"cluster","expected_accept":false,"expected_reason_contains":"terminal","note":"terminal resolution"}
+{"value":"harland-zsh-zsh-72-39","layer":"cluster","expected_accept":false,"expected_reason_contains":"terminal","note":"terminal resolution"}
+{"value":"migration-package-zsh-zsh-149-41","layer":"cluster","expected_accept":false,"expected_reason_contains":"terminal","note":"terminal resolution"}
+{"value":"ai","layer":"cluster","expected_accept":false,"expected_reason_contains":"insufficient","note":"too short"}
+{"value":"c","layer":"cluster","expected_accept":false,"expected_reason_contains":"insufficient","note":"too short"}
+{"value":"q1","layer":"cluster","expected_accept":false,"expected_reason_contains":"insufficient","note":"too short"}
+{"value":"hd","layer":"cluster","expected_accept":false,"expected_reason_contains":"insufficient","note":"too short"}
+{"value":"","layer":"cluster","expected_accept":false,"expected_reason_contains":"empty","note":"empty string"}
+{"value":"   ","layer":"cluster","expected_accept":false,"expected_reason_contains":"empty","note":"whitespace only"}
+{"value":"终端","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}
+{"value":"产品设计","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}
+{"value":"销冠智能体","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}
+{"value":"KeyPulse 产品愿景","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"mixed topic"}
+{"value":"migration package plan","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"three-word English topic"}
+{"value":"architecture review plan","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"three-word English topic"}
+{"value":"系统设置","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}
+{"value":"输入监控","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}
+{"value":"软件更新","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}
+{"value":"打开","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}
+{"value":"场景训练能力","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}
+{"value":"智能体训练","layer":"cluster","expected_accept":true,"expected_reason_contains":"","note":"Chinese topic"}

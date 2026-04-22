@@ -107,6 +107,10 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
     CREATE INDEX IF NOT EXISTS idx_search_docs_ref ON search_docs(ref_type, ref_id);
     """,
+    """
+    ALTER TABLE raw_events ADD COLUMN speaker TEXT NOT NULL DEFAULT 'system';
+    CREATE INDEX IF NOT EXISTS idx_raw_events_speaker ON raw_events(speaker);
+    """,
 ]
 
 
@@ -124,11 +128,7 @@ def run_migrations(conn: sqlite3.Connection):
     current = row[0] if row[0] is not None else 0
     for i, sql in enumerate(MIGRATIONS, start=1):
         if i > current:
-            # Some migration entries have multiple statements
-            for stmt in sql.strip().split(";"):
-                stmt = stmt.strip()
-                if stmt:
-                    conn.execute(stmt)
+            conn.executescript(sql.strip())
             conn.execute(
                 "INSERT INTO _schema_version(version, applied_at) VALUES (?, ?)",
                 (i, datetime.now(timezone.utc).isoformat())

@@ -1,0 +1,8 @@
+{"event":{"source":"keyboard_chunk","content_text":"docker compose config","body":"docker compose config","app_name":"Terminal"},"expected_meaningful":true,"note":"keyboard chunk with content"}
+{"event":{"source":"clipboard","content_text":"docker compose config","body":"docker compose config","app_name":"Terminal"},"expected_meaningful":true,"note":"clipboard with content"}
+{"event":{"source":"manual","body":"save the patch","app_name":"Terminal"},"expected_meaningful":true,"note":"manual save"}
+{"event":{"source":"browser","content_text":"docker compose config","body":"docker compose config","app_name":"Chrome"},"expected_meaningful":true,"note":"browser with content"}
+{"event":{"source":"window","title":"终端","window_title":"终端","app_name":"Terminal"},"expected_meaningful":false,"note":"window title changed"}
+{"event":{"source":"ax_text","content_text":"docker compose config","body":"docker compose config","title":"终端","app_name":"Terminal"},"expected_meaningful":false,"note":"ax text capture"}
+{"event":{"source":"ocr","content_text":"docker compose config","body":"docker compose config","app_name":"Terminal"},"expected_meaningful":false,"note":"ocr capture"}
+{"event":{"source":"idle","title":"idle heartbeat","app_name":"Terminal"},"expected_meaningful":false,"note":"idle heartbeat"}

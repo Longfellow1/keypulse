@@ -29,6 +29,9 @@ VENV_DIR="$KEYPULSE_DIR/venv"
 BIN_DIR="$HOME/.local/bin"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.keypulse.daemon.plist"
+OBSIDIAN_PLIST="$HOME/Library/LaunchAgents/com.keypulse.obsidian-sync.plist"
+OBSIDIAN_HOURLY_PLIST="$HOME/Library/LaunchAgents/com.keypulse.obsidian-sync-hourly.plist"
+HEALTHCHECK_PLIST="$HOME/Library/LaunchAgents/com.keypulse.healthcheck.plist"
 CONFIG_FILE="$KEYPULSE_DIR/config.toml"
 
 # ── Detect shell profile ───────────────────────────────────────────────────────
@@ -39,6 +42,39 @@ detect_profile() {
     [[ -f "$HOME/.bash_profile" ]] && echo "$HOME/.bash_profile" || echo "$HOME/.bashrc"
   else
     echo "$HOME/.profile"
+  fi
+}
+
+write_plist_if_needed() {
+  local path="$1"
+  local content="$2"
+  local label="$3"
+
+  if [[ -f "$path" ]] && grep -qF "$label" "$path" && cmp -s <(printf '%s' "$content") "$path"; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$path")"
+  printf '%s' "$content" > "$path"
+}
+
+reload_launchd_plist() {
+  local path="$1"
+  local success_message="$2"
+  local bootstrap_success_message="$3"
+  local fallback_message="$4"
+
+  launchctl unload "$path" 2>/dev/null || true
+  launchctl bootout "gui/$(id -u)" "$path" 2>/dev/null || true
+
+  if launchctl load "$path" 2>/dev/null; then
+    success "$success_message"
+  else
+    warn "launchd load failed (may need macOS 13+ syntax)"
+    info "Trying bootstrap…"
+    launchctl bootstrap "gui/$(id -u)" "$path" 2>/dev/null && \
+      success "$bootstrap_success_message" || \
+      warn "$fallback_message"
   fi
 }
 
@@ -112,13 +148,8 @@ export PIP_USER=false
 # ── 4. Install KeyPulse ───────────────────────────────────────────────────────
 header "3/6  Installing KeyPulse"
 
-if [[ "$DEV_MODE" == true ]]; then
-  info "Editable install (dev mode)…"
-  "$VENV_PIP" install -e "$REPO_DIR" --quiet
-else
-  info "Installing KeyPulse…"
-  "$VENV_PIP" install "$REPO_DIR" --quiet
-fi
+info "Editable install from $REPO_DIR"
+"$VENV_PIP" install --no-user -e "$REPO_DIR" --quiet
 success "KeyPulse installed"
 
 # Install macOS-specific pyobjc — try prebuilt wheel first, then source
@@ -190,17 +221,20 @@ else
   success "Default config written to $CONFIG_FILE"
 fi
 
+# ── 6. sink discovery ────────────────────────────────────────────────────────
+header "6/7  Sink discovery"
+
+info "Detecting the best local sink…"
+"$BIN_DIR/keypulse" sinks detect --apply --plain
+success "Sink binding resolved"
+
 # ── 7. launchd (auto-start on login) ─────────────────────────────────────────
-header "6/6  launchd auto-start"
+header "7/7  launchd auto-start"
 
 if [[ "$INSTALL_LAUNCHD" == false ]]; then
   warn "Skipped (--no-launchd)"
-elif [[ -f "$LAUNCHD_PLIST" ]]; then
-  warn "launchd plist already exists — skipping"
-  echo "  To reload:  launchctl unload '$LAUNCHD_PLIST' && launchctl load '$LAUNCHD_PLIST'"
 else
-  mkdir -p "$HOME/Library/LaunchAgents"
-  cat > "$LAUNCHD_PLIST" << PLIST
+  DAEMON_PLIST_CONTENT=$(cat <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -212,14 +246,17 @@ else
     <key>ProgramArguments</key>
     <array>
         <string>$BIN_DIR/keypulse</string>
-        <string>start</string>
+        <string>serve</string>
     </array>
 
     <key>RunAtLoad</key>
     <true/>
 
     <key>KeepAlive</key>
-    <false/>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
 
     <key>StandardOutPath</key>
     <string>$KEYPULSE_DIR/launchd.log</string>
@@ -235,6 +272,12 @@ else
 </dict>
 </plist>
 PLIST
+)
+
+  if [[ -f "$LAUNCHD_PLIST" ]]; then
+    warn "launchd plist already exists — refreshing managed contents"
+  fi
+  write_plist_if_needed "$LAUNCHD_PLIST" "$DAEMON_PLIST_CONTENT" "com.keypulse.daemon"
 
   if launchctl load "$LAUNCHD_PLIST" 2>/dev/null; then
     success "launchd plist installed — KeyPulse will start on login"
@@ -245,6 +288,170 @@ PLIST
       success "launchd bootstrap succeeded" || \
       warn "Try manually: launchctl load '$LAUNCHD_PLIST'"
   fi
+fi
+
+# ── 8. launchd healthcheck job ───────────────────────────────────────────────
+header "8/9  launchd healthcheck job"
+
+if [[ "$INSTALL_LAUNCHD" == false ]]; then
+  warn "Skipped healthcheck job (--no-launchd)"
+else
+  HEALTHCHECK_PLIST_CONTENT=$(cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.keypulse.healthcheck</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>$BIN_DIR/keypulse</string>
+        <string>healthcheck</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>600</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>$KEYPULSE_DIR/healthcheck.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>$KEYPULSE_DIR/healthcheck.err</string>
+</dict>
+</plist>
+PLIST
+)
+  if [[ -f "$HEALTHCHECK_PLIST" ]]; then
+    warn "healthcheck plist already exists — refreshing managed contents"
+  fi
+  write_plist_if_needed "$HEALTHCHECK_PLIST" "$HEALTHCHECK_PLIST_CONTENT" "com.keypulse.healthcheck"
+
+  if launchctl load "$HEALTHCHECK_PLIST" 2>/dev/null; then
+    success "healthcheck plist installed — will run every 10 minutes"
+  else
+    warn "launchd load failed (may need macOS 13+ syntax)"
+    info "Trying bootstrap…"
+    launchctl bootstrap "gui/$(id -u)" "$HEALTHCHECK_PLIST" 2>/dev/null && \
+      success "launchd bootstrap succeeded for healthcheck" || \
+      warn "Try manually: launchctl load '$HEALTHCHECK_PLIST'"
+  fi
+fi
+
+# ── 9. launchd Obsidian sync jobs ─────────────────────────────────────────────
+header "9/9  Obsidian sync jobs"
+
+if [[ "$INSTALL_LAUNCHD" == false ]]; then
+  warn "Skipped Obsidian sync jobs (--no-launchd)"
+else
+  mkdir -p "$HOME/Library/LaunchAgents"
+  mkdir -p "$KEYPULSE_DIR/logs"
+
+  cat > "$OBSIDIAN_PLIST" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.keypulse.obsidian-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>$BIN_DIR/keypulse</string>
+        <string>obsidian</string>
+        <string>sync</string>
+        <string>--yesterday</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>5</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>$KEYPULSE_DIR/logs/obsidian-sync.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>$KEYPULSE_DIR/logs/obsidian-sync.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>$BIN_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>
+PLIST
+
+  cat > "$OBSIDIAN_HOURLY_PLIST" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.keypulse.obsidian-sync-hourly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>$BIN_DIR/keypulse</string>
+        <string>obsidian</string>
+        <string>sync</string>
+        <string>--incremental</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>$KEYPULSE_DIR/logs/obsidian-sync-hourly.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>$KEYPULSE_DIR/logs/obsidian-sync-hourly.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>$BIN_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>
+PLIST
+
+  reload_launchd_plist \
+    "$OBSIDIAN_PLIST" \
+    "Obsidian daily sync job installed — will run at 09:05" \
+    "launchd bootstrap succeeded for Obsidian daily sync" \
+    "Try manually: launchctl load '$OBSIDIAN_PLIST'"
+
+  reload_launchd_plist \
+    "$OBSIDIAN_HOURLY_PLIST" \
+    "Obsidian hourly incremental sync job installed — will run every 60 minutes" \
+    "launchd bootstrap succeeded for Obsidian hourly sync" \
+    "Try manually: launchctl load '$OBSIDIAN_HOURLY_PLIST'"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -266,6 +473,9 @@ echo -e "     ${CYAN}keypulse start${RESET}"
 echo ""
 echo -e "  ${BOLD}4. View today's activity:${RESET}"
 echo -e "     ${CYAN}keypulse timeline --today${RESET}"
+echo ""
+echo -e "  ${BOLD}5. Run the Obsidian sync manually:${RESET}"
+echo -e "     ${CYAN}keypulse obsidian sync --yesterday${RESET}"
 echo ""
 echo "  Config:  $CONFIG_FILE"
 echo "  Data:    $KEYPULSE_DIR/keypulse.db"

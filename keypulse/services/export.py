@@ -3,15 +3,16 @@ import csv
 import io
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 from keypulse.store.repository import get_sessions, query_raw_events
 from keypulse.store.db import get_conn
+from keypulse.obsidian.exporter import export_obsidian as export_obsidian_notes
+from keypulse.utils.dates import local_day_bounds
 
 
 def _get_date_range(days: Optional[int] = None, date_str: Optional[str] = None):
     if date_str:
-        since = f"{date_str}T00:00:00"
-        until = f"{date_str}T23:59:59"
+        since, until = local_day_bounds(date_str)
     elif days:
         since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         until = None
@@ -88,3 +89,26 @@ def export_markdown(days: Optional[int] = None, date_str: Optional[str] = None) 
         )
 
     return "\n".join(lines)
+
+
+def export_obsidian(
+    output_dir: str,
+    days: Optional[int] = None,
+    date_str: Optional[str] = None,
+    vault_name: str = "KeyPulse",
+    model_gateway: Any = None,
+    incremental: bool = False,
+    db_path: str | None = None,
+    cursor_path: str | None = None,
+) -> list[str]:
+    written = export_obsidian_notes(
+        output_dir=output_dir,
+        vault_name=vault_name,
+        days=days,
+        date_str=date_str,
+        model_gateway=model_gateway,
+        incremental=incremental,
+        db_path=db_path,
+        cursor_path=cursor_path,
+    )
+    return [str(path) for path in written]

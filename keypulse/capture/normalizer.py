@@ -4,6 +4,21 @@ import json
 from datetime import datetime, timezone
 from typing import Optional
 from keypulse.store.models import RawEvent
+from keypulse.capture.policy import redact_url
+
+
+WINDOW_FOCUS_EVENT = "window_focus"
+WINDOW_TITLE_CHANGED_EVENT = "window_title_changed"
+WINDOW_HEARTBEAT_EVENT = "window_heartbeat"
+WINDOW_EVENT_TYPES = {
+    WINDOW_FOCUS_EVENT,
+    WINDOW_TITLE_CHANGED_EVENT,
+    WINDOW_HEARTBEAT_EVENT,
+}
+WINDOW_SESSION_EVENT_TYPES = {
+    WINDOW_FOCUS_EVENT,
+    WINDOW_TITLE_CHANGED_EVENT,
+}
 
 
 def _now() -> str:
@@ -12,6 +27,14 @@ def _now() -> str:
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def is_window_event_type(event_type: str) -> bool:
+    return event_type in WINDOW_EVENT_TYPES
+
+
+def is_window_session_event_type(event_type: str) -> bool:
+    return event_type in WINDOW_SESSION_EVENT_TYPES
 
 
 def normalize_window_event(
@@ -79,4 +102,98 @@ def normalize_manual_event(
         content_text=text,
         content_hash=_hash(text),
         metadata_json=json.dumps({"tags": tags}) if tags else None,
+    )
+
+
+def normalize_ax_text_event(
+    text: str,
+    app_name: Optional[str] = None,
+    window_title: Optional[str] = None,
+    process_name: Optional[str] = None,
+    ts_start: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> RawEvent:
+    return RawEvent(
+        source="ax_text",
+        event_type="ax_text_capture",
+        ts_start=ts_start or _now(),
+        app_name=app_name,
+        window_title=window_title,
+        process_name=process_name,
+        content_text=text,
+        content_hash=_hash(text),
+        metadata_json=json.dumps(metadata) if metadata else None,
+    )
+
+
+def normalize_ocr_text_event(
+    text: str,
+    app_name: Optional[str] = None,
+    window_title: Optional[str] = None,
+    process_name: Optional[str] = None,
+    ts_start: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> RawEvent:
+    return RawEvent(
+        source="ocr_text",
+        event_type="ocr_text_capture",
+        ts_start=ts_start or _now(),
+        app_name=app_name,
+        window_title=window_title,
+        process_name=process_name,
+        content_text=text,
+        content_hash=_hash(text),
+        metadata_json=json.dumps(metadata) if metadata else None,
+    )
+
+
+def normalize_keyboard_chunk_event(
+    text: str,
+    app_name: Optional[str] = None,
+    window_title: Optional[str] = None,
+    process_name: Optional[str] = None,
+    ts_start: Optional[str] = None,
+    ts_end: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> RawEvent:
+    return RawEvent(
+        source="keyboard_chunk",
+        event_type="keyboard_chunk_capture",
+        ts_start=ts_start or _now(),
+        ts_end=ts_end,
+        app_name=app_name,
+        window_title=window_title,
+        process_name=process_name,
+        content_text=text,
+        content_hash=_hash(text),
+        metadata_json=json.dumps(metadata) if metadata else None,
+    )
+
+
+def normalize_browser_tab_event(
+    url: str,
+    title: Optional[str] = None,
+    browser_name: Optional[str] = None,
+    ts_start: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> RawEvent:
+    redacted_url = redact_url(url)
+    tab_hash = hashlib.sha256(redacted_url.encode("utf-8")).hexdigest()[:12]
+    event_metadata = {
+        "url": redacted_url,
+        "title": title,
+        "browser_name": browser_name,
+        "tab_hash": tab_hash,
+    }
+    if metadata:
+        event_metadata.update(metadata)
+    return RawEvent(
+        source="browser",
+        event_type="browser_tab",
+        ts_start=ts_start or _now(),
+        app_name=browser_name,
+        window_title=title,
+        content_text=redacted_url or None,
+        content_hash=tab_hash,
+        metadata_json=json.dumps(event_metadata) if event_metadata else None,
     )

@@ -44,3 +44,7 @@ env/
 *.swp
 *.swo
 *~
+
+# Local tool caches and runtime state
+.codex-home/
+.tmp_*

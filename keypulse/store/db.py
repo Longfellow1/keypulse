@@ -11,6 +11,9 @@ _db_path: Path | None = None
 def init_db(db_path: Path):
     global _db_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    if _db_path is not None and _db_path != db_path and hasattr(_local, "conn") and _local.conn:
+        _local.conn.close()
+        _local.conn = None
     _db_path = db_path
     conn = _get_conn()
     run_migrations(conn)

@@ -18,12 +18,12 @@ def insert_raw_event(e: RawEvent) -> int:
         """INSERT INTO raw_events
            (source, event_type, ts_start, ts_end, app_name, window_title,
             process_name, content_text, content_hash, metadata_json,
-            sensitivity_level, skipped_reason, session_id, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            sensitivity_level, skipped_reason, session_id, speaker, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (e.source, e.event_type, e.ts_start, e.ts_end, e.app_name,
          e.window_title, e.process_name, e.content_text, e.content_hash,
          e.metadata_json, e.sensitivity_level, e.skipped_reason,
-         e.session_id, e.created_at),
+         e.session_id, e.speaker, e.created_at),
     )
     conn.commit()
     return cur.lastrowid
@@ -210,10 +210,14 @@ def apply_retention(retention_days: int):
     """Delete raw_events and clipboard docs older than retention_days."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
     conn = get_conn()
-    conn.execute("DELETE FROM raw_events WHERE created_at < ?", (cutoff,))
-    conn.execute(
+    deleted_raw_events = conn.execute(
+        "DELETE FROM raw_events WHERE created_at < ?",
+        (cutoff,),
+    ).rowcount
+    deleted_clipboard_docs = conn.execute(
         "DELETE FROM search_docs WHERE ref_type='clipboard' AND created_at < ?",
-        (cutoff,)
-    )
-    conn.execute("VACUUM")
+        (cutoff,),
+    ).rowcount
     conn.commit()
+    if deleted_raw_events or deleted_clipboard_docs:
+        conn.execute("VACUUM")

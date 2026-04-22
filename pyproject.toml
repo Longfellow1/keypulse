@@ -16,8 +16,11 @@ dependencies = [
 
 [project.optional-dependencies]
 macos = [
+    "pyobjc-framework-Cocoa",
     "pyobjc-framework-AppKit",
+    "pyobjc-framework-ApplicationServices",
     "pyobjc-framework-Quartz",
+    "pyobjc-framework-Vision",
 ]
 
 [project.scripts]
