@@ -16,6 +16,8 @@ from keypulse.capture.fusion import CaptureFusionEngine
 from keypulse.capture.policy import PolicyEngine
 from keypulse.capture.provider import build_ocr_provider
 from keypulse.capture.normalizer import (
+    WINDOW_FOCUS_EVENT,
+    WINDOW_TITLE_CHANGED_EVENT,
     is_window_session_event_type,
     normalize_manual_event,
 )
@@ -34,7 +36,7 @@ from keypulse.store.repository import (
 from keypulse.utils.logging import get_logger
 
 logger = get_logger("manager")
-_USER_SOURCES = frozenset({"keyboard_chunk", "clipboard", "manual", "browser"})
+_USER_SOURCES = frozenset({"keyboard_chunk", "clipboard", "manual", "browser", "ax_text", "ax_ime_commit", "ax_snapshot_fallback"})
 
 
 def _derive_speaker(event: RawEvent) -> Literal["user", "system"]:
@@ -88,6 +90,7 @@ class CaptureManager:
         for w in self._watchers.values():
             w.stop()
         self._drain_queue()
+        self._flush_window_session(reason="watcher_stop")
         self._aggregator.flush()
         if self._flush_thread:
             self._flush_thread.join(timeout=10)
@@ -311,7 +314,10 @@ class CaptureManager:
             )
             return
 
+        self._sync_window_idle_state(event)
         self._feed_light_capture_watchers(event)
+        if event.source == "window" and event.event_type in {WINDOW_FOCUS_EVENT, WINDOW_TITLE_CHANGED_EVENT}:
+            return
 
         # 1. Policy
         result = self._policy.apply(event)
@@ -344,9 +350,14 @@ class CaptureManager:
                 redact_tokens=self.config.privacy.redact_tokens,
             )
 
+        if result.session_id is None and result.event_type not in {"idle_start", "idle_end"}:
+            session_id = self._current_window_session_id()
+            if session_id:
+                result.session_id = session_id
+
         # 3. Session tracking
         session = self._aggregator.process(result)
-        if session:
+        if session and result.session_id is None:
             result.session_id = session.id
 
         # 4. Persist raw event
@@ -381,6 +392,44 @@ class CaptureManager:
         # window_focus and window_title_changed both mean the frontmost context moved.
         if event.source == "window" and is_window_session_event_type(event.event_type) and hasattr(ocr_watcher, "note_window_change"):
             ocr_watcher.note_window_change()
+            return
+        if event.source == "window" and event.event_type == "window_focus_session" and hasattr(ocr_watcher, "note_window_change"):
+            try:
+                metadata = json.loads(event.metadata_json or "{}")
+            except Exception:
+                metadata = {}
+            if metadata.get("reason") == "app_switch":
+                ocr_watcher.note_window_change()
+
+    def _current_window_session_id(self) -> str | None:
+        watcher = self._watchers.get("window")
+        if watcher is None or not hasattr(watcher, "current_session_id"):
+            return None
+        session_id = watcher.current_session_id()
+        return str(session_id) if session_id else None
+
+    def _flush_window_session(self, reason: str) -> None:
+        watcher = self._watchers.get("window")
+        if watcher is None or not hasattr(watcher, "flush_current_session"):
+            return
+        event = watcher.flush_current_session(
+            ended_at=datetime.now(timezone.utc).isoformat(),
+            ended_at_mono=time.monotonic(),
+            reason=reason,
+        )
+        if event is not None:
+            self._process_event(event)
+
+    def _sync_window_idle_state(self, event: RawEvent) -> None:
+        watcher = self._watchers.get("window")
+        if watcher is None:
+            return
+        if event.event_type == "idle_start":
+            self._flush_window_session(reason="idle_timeout")
+            if hasattr(watcher, "set_idle"):
+                watcher.set_idle(True)
+        elif event.event_type == "idle_end" and hasattr(watcher, "set_idle"):
+            watcher.set_idle(False)
 
     def _record_runtime_event(self, event: RawEvent) -> None:
         self._source_counts[event.source] = self._source_counts.get(event.source, 0) + 1

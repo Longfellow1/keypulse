@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from keypulse.capture.normalizer import (
     WINDOW_FOCUS_EVENT,
+    WINDOW_FOCUS_SESSION_EVENT,
     WINDOW_SESSION_EVENT_TYPES,
     WINDOW_TITLE_CHANGED_EVENT,
 )
@@ -24,6 +25,33 @@ class Aggregator:
         Returns the current session (after update), or None.
         """
         now = event.ts_start
+
+        if event.event_type == WINDOW_FOCUS_SESSION_EVENT:
+            duration_sec = 0
+            if event.metadata_json:
+                try:
+                    metadata = json.loads(event.metadata_json)
+                    duration_sec = max(int(metadata.get("duration_sec") or 0), 0)
+                except Exception:
+                    duration_sec = 0
+            if duration_sec <= 0 and event.ts_end:
+                try:
+                    start = datetime.fromisoformat(event.ts_start)
+                    end = datetime.fromisoformat(event.ts_end)
+                    duration_sec = max(int((end - start).total_seconds()), 0)
+                except Exception:
+                    duration_sec = 0
+            session = Session(
+                id=event.session_id or Session().id,
+                started_at=event.ts_start,
+                ended_at=event.ts_end or event.ts_start,
+                app_name=event.app_name,
+                primary_window_title=event.window_title,
+                duration_sec=duration_sec,
+                event_count=1,
+            )
+            upsert_session(session)
+            return session
 
         # Idle start: close current session
         if event.event_type == "idle_start":

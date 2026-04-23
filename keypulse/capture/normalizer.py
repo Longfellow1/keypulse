@@ -10,14 +10,19 @@ from keypulse.capture.policy import redact_url
 WINDOW_FOCUS_EVENT = "window_focus"
 WINDOW_TITLE_CHANGED_EVENT = "window_title_changed"
 WINDOW_HEARTBEAT_EVENT = "window_heartbeat"
+WINDOW_FOCUS_SESSION_EVENT = "window_focus_session"
 WINDOW_EVENT_TYPES = {
     WINDOW_FOCUS_EVENT,
     WINDOW_TITLE_CHANGED_EVENT,
     WINDOW_HEARTBEAT_EVENT,
+    WINDOW_FOCUS_SESSION_EVENT,
 }
 WINDOW_SESSION_EVENT_TYPES = {
     WINDOW_FOCUS_EVENT,
     WINDOW_TITLE_CHANGED_EVENT,
+}
+WINDOW_PERSISTED_SESSION_EVENT_TYPES = {
+    WINDOW_FOCUS_SESSION_EVENT,
 }
 
 
@@ -35,6 +40,10 @@ def is_window_event_type(event_type: str) -> bool:
 
 def is_window_session_event_type(event_type: str) -> bool:
     return event_type in WINDOW_SESSION_EVENT_TYPES
+
+
+def is_window_persisted_session_event_type(event_type: str) -> bool:
+    return event_type in WINDOW_PERSISTED_SESSION_EVENT_TYPES
 
 
 def normalize_window_event(

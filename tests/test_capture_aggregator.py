@@ -29,7 +29,33 @@ def test_aggregator_tracks_window_title_changes_within_current_session(monkeypat
     assert session is not None
     assert session.app_name == "Code"
     assert session.primary_window_title == "other.py"
-    assert session.event_count == 2
+
+
+def test_aggregator_persists_window_focus_session(monkeypatch):
+    aggregator = Aggregator()
+    writes = []
+    monkeypatch.setattr("keypulse.capture.aggregator.upsert_session", lambda session: writes.append(session))
+
+    session_event = normalize_window_event(
+        event_type="window_focus_session",
+        app_name="Code",
+        window_title="main.py",
+        process_name="com.microsoft.VSCode",
+        ts_start="2026-04-22T09:00:00+00:00",
+        ts_end="2026-04-22T09:03:00+00:00",
+        metadata={"duration_sec": 180},
+    )
+    session_event.session_id = "session-1"
+
+    session = aggregator.process(session_event)
+
+    assert session is not None
+    assert session.id == "session-1"
+    assert session.app_name == "Code"
+    assert session.primary_window_title == "main.py"
+    assert session.duration_sec == 180
+    assert writes and writes[-1].id == "session-1"
+    assert session.event_count == 1
 
 
 def test_aggregator_starts_session_from_window_title_change(monkeypatch):

@@ -122,8 +122,9 @@ def test_window_title_is_desensitized_before_persistence(monkeypatch):
     captured: list[RawEvent] = []
     event = RawEvent(
         source="window",
-        event_type="window_focus",
+        event_type="window_focus_session",
         ts_start="2026-04-18T09:00:00+00:00",
+        ts_end="2026-04-18T09:03:00+00:00",
         app_name="Notes",
         process_name="com.apple.Notes",
         window_title="alice@example.com",
@@ -140,4 +141,4 @@ def test_window_title_is_desensitized_before_persistence(monkeypatch):
     manager._process_event(event)
 
     assert captured
-    assert captured[0].window_title == "[EMAIL]"
+    assert captured[0].window_title == "[REDACTED]"
