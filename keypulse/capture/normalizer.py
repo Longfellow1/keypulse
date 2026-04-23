@@ -46,6 +46,22 @@ def is_window_persisted_session_event_type(event_type: str) -> bool:
     return event_type in WINDOW_PERSISTED_SESSION_EVENT_TYPES
 
 
+def _semantic_weight_for(source: str) -> float:
+    """Return semantic weight by source."""
+    weights = {
+        "keyboard_chunk": 1.0,
+        "clipboard": 0.9,
+        "manual": 1.0,
+        "browser": 0.85,
+        "ax_text": 0.8,
+        "ax_ime_commit": 0.9,
+        "ax_snapshot_fallback": 0.5,
+        "ocr_text": 0.4,
+        "window_focus_session": 0.2,
+    }
+    return weights.get(source, 0.5)
+
+
 def normalize_window_event(
     event_type: str,
     app_name: Optional[str],
@@ -64,6 +80,7 @@ def normalize_window_event(
         window_title=window_title,
         process_name=process_name,
         metadata_json=json.dumps(metadata) if metadata else None,
+        semantic_weight=_semantic_weight_for("window"),
     )
 
 
@@ -77,6 +94,7 @@ def normalize_idle_event(
         event_type=event_type,
         ts_start=ts_start or _now(),
         metadata_json=json.dumps({"idle_seconds": idle_seconds}),
+        semantic_weight=_semantic_weight_for("idle"),
     )
 
 
@@ -92,6 +110,7 @@ def normalize_clipboard_event(
         app_name=app_name,
         content_text=text,
         content_hash=_hash(text),
+        semantic_weight=_semantic_weight_for("clipboard"),
     )
 
 
@@ -111,6 +130,7 @@ def normalize_manual_event(
         content_text=text,
         content_hash=_hash(text),
         metadata_json=json.dumps({"tags": tags}) if tags else None,
+        semantic_weight=_semantic_weight_for("manual"),
     )
 
 
@@ -132,6 +152,7 @@ def normalize_ax_text_event(
         content_text=text,
         content_hash=_hash(text),
         metadata_json=json.dumps(metadata) if metadata else None,
+        semantic_weight=_semantic_weight_for("ax_text"),
     )
 
 
@@ -153,6 +174,7 @@ def normalize_ocr_text_event(
         content_text=text,
         content_hash=_hash(text),
         metadata_json=json.dumps(metadata) if metadata else None,
+        semantic_weight=_semantic_weight_for("ocr_text"),
     )
 
 
@@ -176,6 +198,7 @@ def normalize_keyboard_chunk_event(
         content_text=text,
         content_hash=_hash(text),
         metadata_json=json.dumps(metadata) if metadata else None,
+        semantic_weight=_semantic_weight_for("keyboard_chunk"),
     )
 
 
@@ -205,4 +228,5 @@ def normalize_browser_tab_event(
         content_text=redacted_url or None,
         content_hash=tab_hash,
         metadata_json=json.dumps(event_metadata) if event_metadata else None,
+        semantic_weight=_semantic_weight_for("browser"),
     )
