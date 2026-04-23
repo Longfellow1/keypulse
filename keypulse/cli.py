@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from keypulse.config import Config
-from keypulse.store.db import init_db
+from keypulse.store.db import init_db, get_conn
 from keypulse.store.repository import (
     get_sessions,
     get_session_by_id,
@@ -1559,6 +1559,109 @@ def rules_disable(rule_id):
     conn.commit()
 
     console.print(f"[green]Policy {rule_id} disabled.[/green]")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# MAINTENANCE
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def maintenance():
+    """Maintenance and cleanup commands."""
+    pass
+
+
+@maintenance.command(name="scrub-secrets")
+@click.option("--dry-run", is_flag=True, default=True, help="Preview changes without applying (default: true)")
+@click.option("--apply", is_flag=True, default=False, help="Apply redaction (must be explicit)")
+def maintenance_scrub_secrets(dry_run, apply):
+    """Redact secrets from database and vault."""
+    from pathlib import Path
+    from keypulse.privacy.desensitizer import desensitize
+    from keypulse.utils.paths import get_data_dir
+
+    cfg = get_config()
+    require_db(cfg)
+
+    if apply and dry_run:
+        err_console.print("[red]Cannot use both --dry-run and --apply together.[/red]")
+        sys.exit(1)
+
+    if not apply and not dry_run:
+        err_console.print("[yellow]Defaulting to dry-run. Use --dry-run explicitly or add --apply to redact.[/yellow]")
+        dry_run = True
+
+    conn = get_conn()
+
+    # Scan raw_events for secrets
+    console.print("[cyan]Scanning raw_events for secrets...[/cyan]")
+    rows = conn.execute(
+        "SELECT id, content_text FROM raw_events WHERE content_text IS NOT NULL ORDER BY id"
+    ).fetchall()
+
+    affected_events = []
+    for row in rows:
+        event_id = row["id"]
+        text = row["content_text"]
+        redacted = desensitize(text)
+        if redacted != text:
+            affected_events.append((event_id, text, redacted))
+
+    if affected_events:
+        console.print(f"[yellow]Found {len(affected_events)} events with secrets[/yellow]")
+        if dry_run:
+            console.print("[cyan]Preview (dry-run):[/cyan]")
+            for event_id, original, redacted in affected_events[:5]:
+                console.print(f"  ID {event_id}:")
+                console.print(f"    Before: {original[:80]}")
+                console.print(f"    After:  {redacted[:80]}")
+            if len(affected_events) > 5:
+                console.print(f"  ... and {len(affected_events) - 5} more")
+        else:
+            for event_id, _, redacted in affected_events:
+                conn.execute("UPDATE raw_events SET content_text=? WHERE id=?", (redacted, event_id))
+            conn.commit()
+            console.print(f"[green]Redacted {len(affected_events)} events in raw_events[/green]")
+    else:
+        console.print("[green]No secrets found in raw_events[/green]")
+
+    # Scan Obsidian vault for secrets
+    vault_dir = Path(cfg.obsidian_vault_path_expanded) if hasattr(cfg, 'obsidian_vault_path_expanded') else None
+    if vault_dir and vault_dir.exists():
+        console.print("[cyan]Scanning Obsidian vault for secrets...[/cyan]")
+        md_files = list(vault_dir.rglob("*.md"))
+        affected_files = []
+
+        for md_file in md_files:
+            try:
+                content = md_file.read_text(encoding="utf-8")
+                redacted = desensitize(content)
+                if redacted != content:
+                    affected_files.append((md_file, content, redacted))
+            except Exception as e:
+                err_console.print(f"[yellow]Could not read {md_file}: {e}[/yellow]")
+
+        if affected_files:
+            console.print(f"[yellow]Found {len(affected_files)} vault files with secrets[/yellow]")
+            if dry_run:
+                console.print("[cyan]Preview (dry-run):[/cyan]")
+                for md_file, _, redacted in affected_files[:3]:
+                    console.print(f"  {md_file.relative_to(vault_dir)}")
+            else:
+                for md_file, _, redacted in affected_files:
+                    try:
+                        md_file.write_text(redacted, encoding="utf-8")
+                    except Exception as e:
+                        err_console.print(f"[red]Failed to write {md_file}: {e}[/red]")
+                console.print(f"[green]Redacted {len(affected_files)} vault files[/green]")
+        else:
+            console.print("[green]No secrets found in Obsidian vault[/green]")
+    else:
+        console.print("[yellow]Obsidian vault not configured or not found[/yellow]")
+
+    if dry_run:
+        console.print("\n[cyan]This was a dry-run. To apply redaction, run:[/cyan]")
+        console.print("[bold]  keypulse maintenance scrub-secrets --apply[/bold]")
 
 
 if __name__ == "__main__":
