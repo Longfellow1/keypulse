@@ -53,10 +53,20 @@ def test_obsidian_sync_defaults_to_yesterday(monkeypatch):
         captured["db_path"] = db_path
         return ["/tmp/test-vault/Daily/x.md"]
 
+    def fake_should_trigger(kind, **kwargs):
+        # Always allow for testing (bypass T1 gate)
+        return True, ""
+
+    def fake_record_trigger(*args, **kwargs):
+        # No-op for testing
+        pass
+
     monkeypatch.setattr("keypulse.cli.get_config", fake_get_config)
     monkeypatch.setattr("keypulse.cli.require_db", fake_require_db)
     monkeypatch.setattr("keypulse.cli.resolve_active_sink", fake_resolve_active_sink)
     monkeypatch.setattr("keypulse.cli.export_obsidian", fake_export_obsidian)
+    monkeypatch.setattr("keypulse.cli.should_trigger", fake_should_trigger)
+    monkeypatch.setattr("keypulse.cli.record_trigger", fake_record_trigger)
 
     runner = CliRunner()
     result = runner.invoke(main, ["obsidian", "sync"])
@@ -106,10 +116,20 @@ def test_obsidian_sync_incremental_defaults_to_today(monkeypatch):
         captured["db_path"] = db_path
         return ["/tmp/test-vault/Daily/x.md"]
 
+    def fake_should_trigger(kind, **kwargs):
+        # Always allow for testing (bypass T1 gate)
+        return True, ""
+
+    def fake_record_trigger(*args, **kwargs):
+        # No-op for testing
+        pass
+
     monkeypatch.setattr("keypulse.cli.get_config", fake_get_config)
     monkeypatch.setattr("keypulse.cli.require_db", fake_require_db)
     monkeypatch.setattr("keypulse.cli.resolve_active_sink", fake_resolve_active_sink)
     monkeypatch.setattr("keypulse.cli.export_obsidian", fake_export_obsidian)
+    monkeypatch.setattr("keypulse.cli.should_trigger", fake_should_trigger)
+    monkeypatch.setattr("keypulse.cli.record_trigger", fake_record_trigger)
 
     runner = CliRunner()
     result = runner.invoke(main, ["obsidian", "sync", "--incremental"])

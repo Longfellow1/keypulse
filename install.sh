@@ -365,16 +365,35 @@ else
         <string>$BIN_DIR/keypulse</string>
         <string>obsidian</string>
         <string>sync</string>
-        <string>--yesterday</string>
     </array>
 
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>9</integer>
-        <key>Minute</key>
-        <integer>5</integer>
-    </dict>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>12</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>13</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>18</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>21</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
 
     <key>RunAtLoad</key>
     <false/>
@@ -443,7 +462,7 @@ PLIST
 
   reload_launchd_plist \
     "$OBSIDIAN_PLIST" \
-    "Obsidian daily sync job installed — will run at 09:05" \
+    "Obsidian daily sync job installed — will run at 12:00, 13:00, 18:00, 21:00" \
     "launchd bootstrap succeeded for Obsidian daily sync" \
     "Try manually: launchctl load '$OBSIDIAN_PLIST'"
 

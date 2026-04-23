@@ -39,6 +39,7 @@ from keypulse.integrations import resolve_active_sink
 from keypulse.services.timeline import get_timeline_rows
 from keypulse.services.stats import get_stats
 from keypulse.services.export import export_json, export_csv, export_markdown, export_obsidian
+from keypulse.pipeline.triggers import should_trigger, record_trigger
 from keypulse.services.sessionizer import sessions_for_today, recent_sessions
 from keypulse.search.engine import search, recent_clipboard, recent_manual, recent_sessions_docs
 from keypulse.capture.normalizer import normalize_manual_event
@@ -1096,6 +1097,16 @@ def obsidian_sync(date, yesterday, incremental, output, vault_name):
     if selected_flags > 1:
         raise click.UsageError("--incremental, --yesterday, and --date are mutually exclusive.")
 
+    # T1 trigger gating: only run if activity ≥50 chars in last 5h (unless --yesterday/--date specified)
+    if not yesterday and not date:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        allowed, reason = should_trigger("T1", now=now, db_path=cfg.db_path_expanded, cfg={})
+        if not allowed:
+            record_trigger("T1", now=now, db_path=cfg.db_path_expanded, outcome=f"skipped:{reason}")
+            click.echo(f"[T1] skipped: {reason}")
+            return
+        record_trigger("T1", now=now, db_path=cfg.db_path_expanded, outcome="allowed")
+
     if incremental:
         date_str = resolve_local_date("today", yesterday=False)
     elif yesterday:
@@ -1105,14 +1116,25 @@ def obsidian_sync(date, yesterday, incremental, output, vault_name):
     else:
         date_str = _resolve_obsidian_date(None, yesterday=False)
 
-    written, target_output, sink_kind = _sync_obsidian_bundle(
-        cfg,
-        date_str,
-        output=output,
-        vault_name=vault_name,
-        incremental=incremental,
-    )
-    console.print(f"[green]Exported {written} notes to {target_output}[/green]")
+    try:
+        written, target_output, sink_kind = _sync_obsidian_bundle(
+            cfg,
+            date_str,
+            output=output,
+            vault_name=vault_name,
+            incremental=incremental,
+        )
+        console.print(f"[green]Exported {written} notes to {target_output}[/green]")
+        # Record successful run if T1 gating was used
+        if not yesterday and not date:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            record_trigger("T1", now=now, db_path=cfg.db_path_expanded, outcome="ran:ok")
+    except Exception as e:
+        # Record failure if T1 gating was used
+        if not yesterday and not date:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            record_trigger("T1", now=now, db_path=cfg.db_path_expanded, outcome="ran:fail", note=str(e))
+        raise
 
 
 # ═════════════════════════════════════════════════════════════════════════════
