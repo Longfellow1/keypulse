@@ -29,6 +29,8 @@ class RawEvent:
     skipped_reason: Optional[str] = None
     session_id: Optional[str] = None
     speaker: Literal["user", "system"] = "system"
+    semantic_weight: float = 0.5
+    user_present: int = 1
     id: Optional[int] = None
     created_at: str = field(default_factory=_now)
 

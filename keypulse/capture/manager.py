@@ -21,6 +21,7 @@ from keypulse.capture.normalizer import (
     is_window_session_event_type,
     normalize_manual_event,
 )
+from keypulse.capture.user_presence import is_user_present
 from keypulse.config import Config
 from keypulse.privacy.desensitizer import desensitize, truncate
 from keypulse.store.db import init_db
@@ -360,7 +361,10 @@ class CaptureManager:
         if session and result.session_id is None:
             result.session_id = session.id
 
-        # 4. Persist raw event
+        # 4. User presence
+        result.user_present = 1 if is_user_present() else 0
+
+        # 5. Persist raw event
         row_id = insert_raw_event(result)
         result.id = row_id
         self._record_runtime_event(result)

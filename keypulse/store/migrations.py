@@ -111,6 +111,27 @@ MIGRATIONS = [
     ALTER TABLE raw_events ADD COLUMN speaker TEXT NOT NULL DEFAULT 'system';
     CREATE INDEX IF NOT EXISTS idx_raw_events_speaker ON raw_events(speaker);
     """,
+    """
+    ALTER TABLE raw_events ADD COLUMN semantic_weight REAL NOT NULL DEFAULT 0.5;
+    CREATE INDEX IF NOT EXISTS idx_raw_events_weight ON raw_events(semantic_weight);
+    UPDATE raw_events SET semantic_weight = CASE source
+        WHEN 'keyboard_chunk' THEN 1.0
+        WHEN 'clipboard' THEN 0.9
+        WHEN 'manual' THEN 1.0
+        WHEN 'browser' THEN 0.85
+        WHEN 'ax_text' THEN 0.8
+        WHEN 'ax_ime_commit' THEN 0.9
+        WHEN 'ax_snapshot_fallback' THEN 0.5
+        WHEN 'ocr_text' THEN 0.4
+        WHEN 'window_focus_session' THEN 0.2
+        ELSE 0.5
+    END;
+    """,
+    # v13
+    """
+    ALTER TABLE raw_events ADD COLUMN user_present INTEGER NOT NULL DEFAULT 1;
+    CREATE INDEX IF NOT EXISTS idx_raw_events_user_present ON raw_events(user_present);
+    """,
 ]
 
 

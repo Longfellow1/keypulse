@@ -18,12 +18,12 @@ def insert_raw_event(e: RawEvent) -> int:
         """INSERT INTO raw_events
            (source, event_type, ts_start, ts_end, app_name, window_title,
             process_name, content_text, content_hash, metadata_json,
-            sensitivity_level, skipped_reason, session_id, speaker, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            sensitivity_level, skipped_reason, session_id, speaker, semantic_weight, user_present, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (e.source, e.event_type, e.ts_start, e.ts_end, e.app_name,
          e.window_title, e.process_name, e.content_text, e.content_hash,
          e.metadata_json, e.sensitivity_level, e.skipped_reason,
-         e.session_id, e.speaker, e.created_at),
+         e.session_id, e.speaker, e.semantic_weight, e.user_present, e.created_at),
     )
     conn.commit()
     return cur.lastrowid
