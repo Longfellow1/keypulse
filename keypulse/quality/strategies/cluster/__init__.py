@@ -15,6 +15,9 @@ from keypulse.quality.strategies.cluster.s007_reject_terminal_resolution import 
 from keypulse.quality.strategies.cluster.s008_reject_insufficient_content import (
     S008RejectInsufficientContent,
 )
+from keypulse.quality.strategies.cluster.s009_reject_command_and_title_slug import (
+    S009RejectCommandAndTitleSlug,
+)
 
 
 def register_cluster_strategies(registry: StrategyRegistry) -> None:
@@ -26,6 +29,7 @@ def register_cluster_strategies(registry: StrategyRegistry) -> None:
     registry.register(S006RejectCommandFlag())
     registry.register(S007RejectTerminalResolution())
     registry.register(S008RejectInsufficientContent())
+    registry.register(S009RejectCommandAndTitleSlug())
 
 
 __all__ = ["register_cluster_strategies"]

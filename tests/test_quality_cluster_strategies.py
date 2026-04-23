@@ -228,4 +228,5 @@ def test_register_cluster_strategies_registers_in_order():
         "S006",
         "S007",
         "S008",
+        "S009",
     ]
