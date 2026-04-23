@@ -4,6 +4,7 @@ import json
 
 from keypulse.capture.manager import CaptureManager
 from keypulse.capture.normalizer import normalize_ax_text_event
+from keypulse.capture.normalizer import normalize_manual_event
 from keypulse.capture.normalizer import normalize_window_event
 from keypulse.config import Config
 
@@ -194,3 +195,35 @@ def test_manager_persist_runtime_state_writes_json_snapshot(monkeypatch):
     assert key == "capture_runtime"
     snapshot = json.loads(value)
     assert snapshot["multi_source_counts"]["keyboard_chunk"] == 0
+
+
+class _StubWindowSessionWatcher:
+    def __init__(self, session_id: str):
+        self._session_id = session_id
+
+    def current_session_id(self):
+        return self._session_id
+
+
+def test_manager_attaches_current_window_session_id_to_non_window_events(monkeypatch):
+    manager = CaptureManager(Config())
+    manager._watchers["window"] = _StubWindowSessionWatcher("session-123")
+    captured = []
+
+    monkeypatch.setattr(manager._policy, "apply", lambda event: event)
+    monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
+    monkeypatch.setattr("keypulse.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+
+    manager._process_event(
+        normalize_manual_event(
+            text="record the implementation notes",
+            app_name="Code",
+            window_title="window watcher",
+            ts_start="2026-04-22T09:10:00+00:00",
+        )
+    )
+
+    assert captured
+    assert captured[0].session_id == "session-123"

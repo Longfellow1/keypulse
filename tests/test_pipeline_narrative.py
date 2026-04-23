@@ -271,6 +271,40 @@ def test_aggregate_work_blocks_sessionless_no_ts_end_uses_ts_start_for_duration(
     assert blocks[0].fragment is False
 
 
+def test_aggregate_work_blocks_uses_window_focus_session_end_when_session_event_is_first():
+    blocks = aggregate_work_blocks(
+        [
+            {
+                "source": "window",
+                "event_type": "window_focus_session",
+                "ts_start": "2026-04-18T09:00:00+00:00",
+                "ts_end": "2026-04-18T09:10:00+00:00",
+                "session_id": "session-1",
+                "app_name": "Codex",
+                "window_title": "main.py",
+                "title": "main.py",
+                "speaker": "system",
+                "topic_key": "main",
+            },
+            {
+                "source": "manual",
+                "event_type": "manual_save",
+                "ts_start": "2026-04-18T09:05:00+00:00",
+                "session_id": "session-1",
+                "app_name": "Codex",
+                "window_title": "main.py",
+                "title": "refactor session tracking",
+                "content_text": "replace heartbeat with focus sessions",
+                "speaker": "user",
+                "topic_key": "session-tracking",
+            },
+        ]
+    )
+
+    assert len(blocks) == 1
+    assert blocks[0].duration_sec == 600
+
+
 def test_aggregate_work_blocks_falls_back_to_window_title_when_topic_is_placeholder():
     blocks = aggregate_work_blocks(
         [

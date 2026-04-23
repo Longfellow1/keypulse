@@ -269,8 +269,16 @@ def _event_gap_seconds(previous: dict[str, Any], current: dict[str, Any]) -> int
 def _block_duration_seconds(events: list[dict[str, Any]]) -> int:
     if not events:
         return 0
-    start = _parse_ts(str(events[0].get("ts_start") or events[0].get("created_at") or ""))
-    end = _parse_ts(str(events[-1].get("ts_end") or events[-1].get("ts_start") or events[-1].get("created_at") or ""))
+    starts = [
+        _parse_ts(str(event.get("ts_start") or event.get("created_at") or ""))
+        for event in events
+    ]
+    ends = [
+        _parse_ts(str(event.get("ts_end") or event.get("ts_start") or event.get("created_at") or ""))
+        for event in events
+    ]
+    start = min(starts, default=datetime.max.replace(tzinfo=timezone.utc))
+    end = max(ends, default=datetime.max.replace(tzinfo=timezone.utc))
     if start == datetime.max.replace(tzinfo=timezone.utc) or end <= start:
         return 0
     return int((end - start).total_seconds())
