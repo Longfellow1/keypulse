@@ -3,7 +3,7 @@ from keypulse.privacy.detectors import detect, has_sensitive_content
 
 
 def desensitize(text: str, redact_emails: bool = True, redact_phones: bool = True, redact_tokens: bool = True) -> str:
-    """Replace sensitive patterns with *** placeholders."""
+    """Replace sensitive patterns with [PATTERN_NAME] placeholders."""
     if not text:
         return text
     enabled = {
@@ -17,6 +17,10 @@ def desensitize(text: str, redact_emails: bool = True, redact_phones: bool = Tru
         "aws_key": redact_tokens,
         "url_token": redact_tokens,
         "private_key": redact_tokens,
+        "uuid_v4": redact_tokens,
+        "openai_key": redact_tokens,
+        "github_pat": redact_tokens,
+        "slack_token": redact_tokens,
     }
     detections = detect(text, enabled)
     if not detections:
@@ -25,7 +29,7 @@ def desensitize(text: str, redact_emails: bool = True, redact_phones: bool = Tru
     prev = 0
     for d in detections:
         result.append(text[prev:d.start])
-        result.append(f"[{d.pattern_name.upper()}]")
+        result.append("[REDACTED]")
         prev = d.end
     result.append(text[prev:])
     return "".join(result)
