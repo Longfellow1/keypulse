@@ -48,3 +48,8 @@ env/
 # Local tool caches and runtime state
 .codex-home/
 .tmp_*
+
+# Internal design docs (not for public repo)
+keypulse-*-design.md
+keypulse-*-strategy.md
+keypulse-*-pipeline.md
