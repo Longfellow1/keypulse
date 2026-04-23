@@ -32,7 +32,7 @@ def seed_raw_events(db_path: Path, speaker: str, content_text: str, ts_offset_ho
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             speaker TEXT NOT NULL,
             content_text TEXT,
-            ts_utc TEXT NOT NULL
+            ts_start TEXT NOT NULL
         )
         """
     )
@@ -40,7 +40,7 @@ def seed_raw_events(db_path: Path, speaker: str, content_text: str, ts_offset_ho
     now = datetime.utcnow()
     ts = (now - timedelta(hours=ts_offset_hours)).isoformat()
     cursor.execute(
-        "INSERT INTO raw_events (speaker, content_text, ts_utc) VALUES (?, ?, ?)",
+        "INSERT INTO raw_events (speaker, content_text, ts_start) VALUES (?, ?, ?)",
         (speaker, content_text, ts),
     )
     conn.commit()

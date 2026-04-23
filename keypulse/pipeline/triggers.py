@@ -22,7 +22,7 @@ def should_trigger(kind: str, *, now: datetime, db_path: Path, cfg: dict) -> Tup
             return True, "T2:always_allowed"
 
         if kind == "T1":
-            if not _has_activity_last(db_path, timedelta(hours=5)):
+            if not _has_activity_last(db_path, timedelta(hours=5), now):
                 return False, "T1:no_activity_5h"
             return True, "T1:activity_ok"
 
@@ -83,23 +83,26 @@ def record_trigger(
         pass
 
 
-def _has_activity_last(db_path: Path, window: timedelta, min_chars: int = 50) -> bool:
+def _has_activity_last(
+    db_path: Path, window: timedelta, now: datetime, min_chars: int = 50
+) -> bool:
     """
     Count chars in raw_events.content_text where speaker='user' within the window.
-    Return True if total >= min_chars.
+    Return True if total >= min_chars. Fail-closed: False on any error.
     """
     try:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
 
+        cutoff = (now - window).isoformat()
         cursor.execute(
             """
             SELECT SUM(LENGTH(content_text)) as total_chars
             FROM raw_events
             WHERE speaker = 'user'
-              AND datetime(ts_utc) > datetime('now', ?)
+              AND ts_start > ?
             """,
-            (f"-{window.total_seconds()} seconds",),
+            (cutoff,),
         )
         result = cursor.fetchone()
         conn.close()
