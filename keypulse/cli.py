@@ -1025,6 +1025,7 @@ def _sync_obsidian_bundle(
         model_gateway=gateway,
         incremental=incremental,
         db_path=str(cfg.db_path_expanded),
+        use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
     )
     return len(written), target_output, sink.kind
 
@@ -1188,6 +1189,9 @@ def pipeline_draft(date, yesterday, output):
         model_gateway=load_model_gateway(cfg) if hasattr(cfg, "model") else None,
         plan=build_pipeline_plan(LLMMode.OFF if llm_mode == "off" else LLMMode(llm_mode), inputs),
         feedback_events=feedback_events,
+        use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
+        db_path=cfg.db_path_expanded,
+        date_str=date_str,
     )
 
     if output:

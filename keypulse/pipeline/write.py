@@ -4,12 +4,18 @@ import logging
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from keypulse.pipeline.decisions import build_daily_decisions, render_daily_decisions
+from keypulse.pipeline.evidence import enrich_with_evidence, load_profile_dict
 from keypulse.pipeline.feedback import FeedbackEvent, summarize_feedback_events
+from keypulse.pipeline.gates import should_generate_narrative, summarize_quality
 from keypulse.pipeline.narrative import aggregate_work_blocks, render_daily_narrative
+from keypulse.pipeline.narrative_v2 import render_v2_narrative
 from keypulse.pipeline.record import normalize_record_events
+from keypulse.pipeline.signals import collect_browser_signals, collect_filesystem_signals, enrich_unit_with_signals
 from keypulse.pipeline.model import ModelGateway
 
 logger = logging.getLogger(__name__)
@@ -47,6 +53,9 @@ def build_daily_draft(
     model_gateway: ModelGateway | None = None,
     plan: Any | None = None,
     feedback_events: list[FeedbackEvent] | None = None,
+    use_narrative_v2: bool = False,
+    db_path: Path | None = None,
+    date_str: str = "",
 ) -> DailyDraft:
     normalized = normalize_record_events(events)
     work_blocks = aggregate_work_blocks(events)
@@ -72,7 +81,23 @@ def build_daily_draft(
     llm_used = False
     model_name = ""
 
-    if model_gateway is not None:
+    if use_narrative_v2 and model_gateway is not None and db_path is not None:
+        backend = model_gateway.select_backend("write") if hasattr(model_gateway, "select_backend") else None
+        backend_kind = getattr(backend, "kind", "") if backend is not None else ""
+        backend_model = getattr(backend, "model", "") if backend is not None else ""
+        model_name = backend_model or backend_kind or getattr(model_gateway, "active_profile", "")
+
+        v2_body = render_v2_narrative(
+            work_blocks,
+            model_gateway=model_gateway,
+            db_path=db_path,
+            date_str=date_str,
+        )
+        if v2_body:
+            narrative_body = v2_body
+            llm_used = not v2_body.startswith("今日证据不足")
+
+    elif model_gateway is not None:
         backend = model_gateway.select_backend("write") if hasattr(model_gateway, "select_backend") else None
         backend_kind = getattr(backend, "kind", "") if backend is not None else ""
         backend_model = getattr(backend, "model", "") if backend is not None else ""

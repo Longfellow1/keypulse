@@ -19,6 +19,7 @@ from keypulse.pipeline.decisions import build_daily_decisions, render_daily_deci
 from keypulse.pipeline.narrative import aggregate_work_blocks, render_daily_narrative
 from keypulse.pipeline.surface import build_surface_snapshot
 from keypulse.store.repository import query_raw_events
+from keypulse.utils.atomic_io import atomic_write_text
 from keypulse.utils.dates import local_day_bounds
 
 if TYPE_CHECKING:
@@ -199,7 +200,7 @@ def _read_text(path: Path) -> str:
 
 def _write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    atomic_write_text(path, text)
 
 
 def _is_section_heading(line: str) -> bool:
@@ -442,6 +443,36 @@ def _render_dashboard_narrative(
                     kind, url, model, type(exc).__name__, exc,
                 )
     return _render_dashboard_blocks(blocks)
+
+
+def _render_daily_narrative_v2_or_legacy(
+    work_blocks: list[Any],
+    *,
+    model_gateway: "ModelGateway | None",
+    evidence_formatter: Callable[[dict[str, Any]], str] | None,
+    user_intent: str = "",
+    use_narrative_v2: bool = False,
+    db_path: str | Path | None = None,
+    date_str: str = "",
+) -> str:
+    logger.info("v2_or_legacy gate: flag=%s gateway=%s db=%s", use_narrative_v2, model_gateway is not None, db_path is not None)
+    if use_narrative_v2 and model_gateway is not None and db_path is not None:
+        from keypulse.pipeline.narrative_v2 import render_v2_narrative
+        v2_body = render_v2_narrative(
+            work_blocks,
+            model_gateway=model_gateway,
+            db_path=db_path,
+            date_str=date_str,
+        )
+        if v2_body:
+            return v2_body
+        logger.warning("v2 narrative returned empty; falling back to legacy path")
+    return _render_daily_narrative_with_llm(
+        work_blocks,
+        model_gateway=model_gateway,
+        evidence_formatter=evidence_formatter,
+        user_intent=user_intent,
+    )
 
 
 def _render_daily_narrative_with_llm(
@@ -895,6 +926,8 @@ def build_obsidian_bundle(
     model_gateway: "ModelGateway | None" = None,
     previous_plan: str = "",
     current_plan_existing: str = "",
+    use_narrative_v2: bool = False,
+    db_path: str | Path | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     normalized = [item for item in (_to_item(event) for event in items) if item is not None]
     surface_snapshot = build_surface_snapshot(items)
@@ -952,11 +985,14 @@ def build_obsidian_bundle(
             f"- 事件卡：{work_item_count}",
             f"- 主题卡：{work_topic_count}",
             "",
-            _render_daily_narrative_with_llm(
+            _render_daily_narrative_v2_or_legacy(
                 work_blocks,
                 model_gateway=model_gateway,
                 evidence_formatter=lambda item: _obsidian_link(evidence_paths.get(_event_identity(item), ""), item["title"]) if evidence_paths else item["title"],
                 user_intent=previous_plan,
+                use_narrative_v2=use_narrative_v2,
+                db_path=db_path,
+                date_str=date_str,
             ),
             "",
             "## 需要你决定",
@@ -1063,8 +1099,7 @@ def write_obsidian_bundle(bundle: dict[str, list[dict[str, Any]]], output_dir: s
         for note in bundle.get(section, []):
             relative = Path(note["path"])
             target = output_path / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(render_note(note["properties"], note["body"]))
+            atomic_write_text(target, render_note(note["properties"], note["body"]))
             written.append(target)
     return written
 
@@ -1073,8 +1108,7 @@ def _write_note_if_missing(output_path: Path, note: dict[str, Any]) -> Path | No
     target = output_path / Path(note["path"])
     if target.exists():
         return None
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(render_note(note["properties"], note["body"]), encoding="utf-8")
+    atomic_write_text(target, render_note(note["properties"], note["body"]))
     return target
 
 
@@ -1313,6 +1347,7 @@ def export_obsidian(
     incremental: bool = False,
     db_path: str | Path | None = None,
     cursor_path: str | Path | None = None,
+    use_narrative_v2: bool = False,
 ) -> list[Path]:
     if date_str:
         since, until = local_day_bounds(date_str)
@@ -1369,6 +1404,8 @@ def export_obsidian(
         model_gateway=model_gateway,
         previous_plan=previous_plan,
         current_plan_existing=current_plan_existing,
+        use_narrative_v2=use_narrative_v2,
+        db_path=db_path,
     )
     written = write_obsidian_bundle(bundle, output_dir)
     return written

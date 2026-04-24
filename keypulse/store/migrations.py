@@ -132,6 +132,19 @@ MIGRATIONS = [
     ALTER TABLE raw_events ADD COLUMN user_present INTEGER NOT NULL DEFAULT 1;
     CREATE INDEX IF NOT EXISTS idx_raw_events_user_present ON raw_events(user_present);
     """,
+    # v14
+    """
+    CREATE TABLE IF NOT EXISTS profile_identity (
+        key TEXT PRIMARY KEY, value TEXT, confidence REAL, source TEXT, updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS profile_entities (
+        alias TEXT PRIMARY KEY, canonical_name TEXT NOT NULL, kind TEXT, weight REAL DEFAULT 1.0
+    );
+    CREATE TABLE IF NOT EXISTS profile_projects (
+        name TEXT PRIMARY KEY, path TEXT, summary TEXT, tech_stack TEXT, status TEXT, last_active TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_profile_entities_canonical ON profile_entities(canonical_name);
+    """,
 ]
 
 
