@@ -178,8 +178,9 @@ def _spawn_t2_trigger(cfg: Config, shutdown_event: threading.Event, delay: float
     def _t2_run():
         try:
             now = datetime.now(timezone.utc).replace(tzinfo=None)
-            from keypulse.pipeline.triggers import should_trigger, record_trigger
+            from keypulse.pipeline.triggers import should_trigger, record_trigger, finalize_stale_pending
 
+            finalize_stale_pending(cfg.db_path_expanded, now=now)
             allowed, reason = should_trigger("T2", now=now, db_path=cfg.db_path_expanded, cfg={})
             record_trigger("T2", now=now, db_path=cfg.db_path_expanded, outcome="allowed")
             logger.info(f"T2 trigger fired: {reason}")

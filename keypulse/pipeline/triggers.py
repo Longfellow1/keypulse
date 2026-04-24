@@ -43,44 +43,118 @@ def should_trigger(kind: str, *, now: datetime, db_path: Path, cfg: dict) -> Tup
     return False, "error:unreachable"
 
 
+def _ensure_trigger_table(cursor: "sqlite3.Cursor") -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS llm_trigger_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            ts_utc TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            note TEXT DEFAULT ''
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_llm_trigger_log_kind_ts
+        ON llm_trigger_log(kind, ts_utc)
+        """
+    )
+
+
 def record_trigger(
-    kind: str, *, now: datetime, db_path: Path, outcome: str, note: str = ""
+    kind: str,
+    *,
+    now: datetime,
+    db_path: Path,
+    outcome: str,
+    note: str = "",
+    pending_id: "int | None" = None,
 ) -> None:
     """
     Log a trigger decision/outcome.
     outcome is 'allowed' | 'skipped:<reason>' | 'ran:ok' | 'ran:fail'.
+    If pending_id is given, UPDATE the existing row instead of inserting.
     Creates table on first call; idempotent.
     """
     try:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
+        _ensure_trigger_table(cursor)
 
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS llm_trigger_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                kind TEXT NOT NULL,
-                ts_utc TEXT NOT NULL,
-                outcome TEXT NOT NULL,
-                note TEXT DEFAULT ''
+        if pending_id is not None:
+            cursor.execute(
+                "UPDATE llm_trigger_log SET outcome=?, note=? WHERE id=?",
+                (outcome, note, pending_id),
             )
-            """
-        )
-        cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_llm_trigger_log_kind_ts
-            ON llm_trigger_log(kind, ts_utc)
-            """
-        )
-
-        cursor.execute(
-            "INSERT INTO llm_trigger_log (kind, ts_utc, outcome, note) VALUES (?, ?, ?, ?)",
-            (kind, now.isoformat(), outcome, note),
-        )
+        else:
+            cursor.execute(
+                "INSERT INTO llm_trigger_log (kind, ts_utc, outcome, note) VALUES (?, ?, ?, ?)",
+                (kind, now.isoformat(), outcome, note),
+            )
         conn.commit()
         conn.close()
     except Exception:
         pass
+
+
+def record_trigger_pending(
+    kind: str,
+    *,
+    now: datetime,
+    db_path: Path,
+    note: str = "",
+) -> int:
+    """
+    INSERT a row with outcome='pending' and return its row id.
+    Returns -1 on failure.
+    """
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        _ensure_trigger_table(cursor)
+        cursor.execute(
+            "INSERT INTO llm_trigger_log (kind, ts_utc, outcome, note) VALUES (?, ?, 'pending', ?)",
+            (kind, now.isoformat(), note),
+        )
+        row_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return row_id if row_id is not None else -1
+    except Exception:
+        return -1
+
+
+def finalize_stale_pending(
+    db_path: Path,
+    *,
+    now: datetime,
+    timeout_min: int = 10,
+) -> int:
+    """
+    Find rows with outcome='pending' older than timeout_min minutes and mark
+    them as 'ran:crashed'. Returns the number of rows updated.
+    """
+    try:
+        cutoff = (now - timedelta(minutes=timeout_min)).isoformat()
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        _ensure_trigger_table(cursor)
+        cursor.execute(
+            """
+            UPDATE llm_trigger_log
+            SET outcome='ran:crashed'
+            WHERE outcome='pending' AND ts_utc < ?
+            """,
+            (cutoff,),
+        )
+        updated = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return updated
+    except Exception:
+        return 0
 
 
 def _has_activity_last(

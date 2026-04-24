@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.pipeline.triggers import should_trigger, record_trigger
+from keypulse.pipeline.triggers import (
+    should_trigger,
+    record_trigger,
+    record_trigger_pending,
+    finalize_stale_pending,
+)
 
 
 @pytest.fixture
@@ -166,6 +171,74 @@ class TestRecordTrigger:
         conn.close()
 
         assert count == 3
+
+
+class TestPendingDoubleWrite:
+    """Tests for record_trigger_pending and finalize_stale_pending."""
+
+    def test_record_pending_returns_id(self, tmp_db):
+        now = datetime.utcnow()
+        row_id = record_trigger_pending("T2", now=now, db_path=tmp_db)
+        assert isinstance(row_id, int)
+        assert row_id > 0
+
+        conn = sqlite3.connect(str(tmp_db))
+        cursor = conn.cursor()
+        cursor.execute("SELECT outcome FROM llm_trigger_log WHERE id=?", (row_id,))
+        row = cursor.fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "pending"
+
+    def test_finalize_pending_updates_outcome(self, tmp_db):
+        now = datetime.utcnow()
+        row_id = record_trigger_pending("T2", now=now, db_path=tmp_db)
+        assert row_id > 0
+
+        record_trigger("T2", now=now, db_path=tmp_db, outcome="ran:ok", pending_id=row_id)
+
+        conn = sqlite3.connect(str(tmp_db))
+        cursor = conn.cursor()
+        cursor.execute("SELECT outcome FROM llm_trigger_log WHERE id=?", (row_id,))
+        row = cursor.fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "ran:ok"
+
+    def test_finalize_stale_pending_cleans_old_rows(self, tmp_db):
+        now = datetime.utcnow()
+        old_ts = (now - timedelta(minutes=15)).isoformat()
+
+        conn = sqlite3.connect(str(tmp_db))
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS llm_trigger_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                ts_utc TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                note TEXT DEFAULT ''
+            )
+            """
+        )
+        cursor.execute(
+            "INSERT INTO llm_trigger_log (kind, ts_utc, outcome, note) VALUES (?, ?, 'pending', '')",
+            ("T1", old_ts),
+        )
+        conn.commit()
+        conn.close()
+
+        cleaned = finalize_stale_pending(tmp_db, now=now, timeout_min=10)
+        assert cleaned == 1
+
+        conn = sqlite3.connect(str(tmp_db))
+        cursor = conn.cursor()
+        cursor.execute("SELECT outcome FROM llm_trigger_log WHERE kind='T1'")
+        row = cursor.fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "ran:crashed"
 
 
 class TestIntegration:

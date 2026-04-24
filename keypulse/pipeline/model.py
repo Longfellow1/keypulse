@@ -306,6 +306,19 @@ class ModelGateway:
             result = ""
         return result.strip() or _fallback_daily_narrative(blocks)
 
+    def render(self, prompt: str) -> str:
+        """Bare LLM call: send prompt directly to the underlying client, no template, no system instructions.
+        For narrative_v2 Pass 1/2 where the caller owns the complete prompt.
+        Raises on failure — the caller handles fallback.
+        """
+        backend = self.select_backend("write")
+        if backend.is_disabled():
+            raise RuntimeError("no backend available")
+        return self._chat(
+            backend,
+            [{"role": "user", "content": prompt}],
+        )
+
     def test_backend(self) -> dict[str, Any]:
         backend = self.select_backend("write")
         if backend.is_disabled():

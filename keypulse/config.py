@@ -111,11 +111,24 @@ class PrivacyConfig(BaseModel):
     blacklist_patterns: list[str] = Field(default_factory=lambda: ["com.tencent.*"])
 
 
+class PipelineSignalsConfig(BaseModel):
+    fs_enabled: bool = False
+    fs_watch_paths: list[str] = Field(
+        default_factory=lambda: ["~/Documents", "~/Desktop", "~/Downloads", "~/Go"]
+    )
+    fs_exclude: list[str] = Field(
+        default_factory=lambda: ["node_modules", ".git", "__pycache__", ".venv", "dist", "build"]
+    )
+    browser_enabled: bool = True
+
+
 class PipelineConfig(BaseModel):
     llm_mode: str = "local-first"
     max_llm_calls_per_run: int = 0
     max_llm_input_chars_per_run: int = 0
     feedback_path: str = "~/.keypulse/feedback.jsonl"
+    signals: PipelineSignalsConfig = Field(default_factory=PipelineSignalsConfig)
+    use_narrative_v2: bool = False
 
 
 class ModelBackendConfig(BaseModel):

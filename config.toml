@@ -50,6 +50,13 @@ llm_mode = "local-first"
 max_llm_calls_per_run = 0
 max_llm_input_chars_per_run = 0
 feedback_path = "~/.keypulse/feedback.jsonl"
+use_narrative_v2 = true
+
+[pipeline.signals]
+fs_enabled = false
+fs_watch_paths = ["~/Documents", "~/Desktop", "~/Downloads", "~/Go"]
+fs_exclude = ["node_modules", ".git", "__pycache__", ".venv", "dist", "build"]
+browser_enabled = true
 
 [obsidian]
 vault_path = "~/Go/Knowledge"
