@@ -99,8 +99,8 @@ def test_pass1_called_per_unit_except_offline() -> None:
     result = run_two_pass(units, db_path=db, gateway=gw, profile_dict={}, date_str="2026-04-23", now=_NOW)
 
     assert len(result.pass1_sentences) == 4
-    # pass1 calls for 3 online units + 1 pass2 call = 4 total
-    pass1_calls = [c for c in gw.calls if "这是一段工作证据" in c]
+    # pass1 prompt 标志词：/no_think + "写一句中文"；每个 online unit 调一次
+    pass1_calls = [c for c in gw.calls if "写一句中文" in c]
     assert len(pass1_calls) == 3
 
 
@@ -132,17 +132,16 @@ def test_offline_placeholder_uses_fixed_text() -> None:
 
 
 def test_empty_profile_dict_injects_no_persona_hint() -> None:
-    """pass2 prompt must contain no-persona marker when profile_dict is empty."""
+    """pass2 prompts must not leak 用户画像 when profile_dict is empty."""
     db = _make_db()
     gw = FakeGateway()
     units = [_online_unit()]
 
     run_two_pass(units, db_path=db, gateway=gw, profile_dict={}, date_str="2026-04-23", now=_NOW)
 
-    pass2_prompt = gw.calls[-1]
-    assert "不要虚构身份" in pass2_prompt
-    # The no-persona marker appears inside a parenthetical; "用户画像：" (with colon) should NOT appear
-    assert "用户画像：" not in pass2_prompt
+    # Pass2A / Pass2B prompts 均不得含用户画像 section（改版后 persona 已移除）
+    for prompt in gw.calls[-2:]:
+        assert "用户画像：" not in prompt
 
 
 def test_should_not_generate_when_red_no_strong() -> None:
