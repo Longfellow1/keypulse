@@ -15,6 +15,7 @@ from keypulse.pipeline.evidence import (
     extract_evidence_units,
     generate_offline_placeholder,
     load_profile_dict,
+    sanitize_unit,
 )
 
 
@@ -230,3 +231,42 @@ def test_profile_alias_merging(tmp_path):
 
     units = extract_evidence_units(block, profile, lambda _s, _e: [])
     assert units[0].what == "review Alice Chen spec for Project Foo"
+
+
+# ---------------------------------------------------------------------------
+# sanitize_unit: privacy filter
+# ---------------------------------------------------------------------------
+
+def _unit(*, where: str = "Notion", what: str = "review spec") -> EvidenceUnit:
+    return EvidenceUnit(
+        ts_start=datetime(2026, 4, 25, 14, 0, tzinfo=timezone.utc),
+        ts_end=datetime(2026, 4, 25, 14, 30, tzinfo=timezone.utc),
+        where=where,
+        who="user",
+        what=what,
+        evidence_refs=[1],
+        semantic_weight=0.6,
+        machine_online=True,
+        confidence=0.7,
+    )
+
+
+def test_sanitize_keeps_normal_unit():
+    assert sanitize_unit(_unit()) is not None
+
+
+def test_sanitize_drops_keychain_and_1password():
+    assert sanitize_unit(_unit(where="Keychain Access")) is None
+    assert sanitize_unit(_unit(where="1Password 7")) is None
+
+
+def test_sanitize_drops_when_what_contains_credential_keywords():
+    for what in ("my password is hunter2", "验证码 8421", "OTP 932118", "2FA backup"):
+        assert sanitize_unit(_unit(what=what)) is None, what
+
+
+def test_sanitize_keeps_loginwindow_misclassified_real_work():
+    """macOS bug: active_app gets stuck on 'loginwindow' during lock/unlock,
+    but the captured `what` is real work content. Don't drop on app name alone."""
+    unit = _unit(where="loginwindow", what="先解决输入卫生（高优）—— S3 接线时在 fragments → slices")
+    assert sanitize_unit(unit) is not None
