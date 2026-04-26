@@ -7,6 +7,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+_OVERLAY_APP_NAMES = frozenset({
+    "loginwindow", "ScreenSaverEngine", "Dock",
+    "Notification Center", "Control Center",
+})
+_OVERLAY_CONTENT_OVERRIDE_LEN = 20
+
+
 @dataclass
 class EvidenceUnit:
     ts_start: datetime
@@ -81,6 +88,12 @@ def extract_evidence_units(
     avg_weight = sum(weights) / len(weights) if weights else float(getattr(block, "semantic_weight", 0.5))
 
     where = block.primary_app or "offline"
+    # macOS active_app 在锁屏/解锁瞬间会把 frontmost 错报成 loginwindow（或 Dock /
+    # Notification Center 等系统 overlay），但 capture 拿到的内容其实是用户在真实
+    # 应用里的输入。这里如果 theme 长度足够，就把 where 替换成 (unknown)，避免 LLM
+    # 把 "loginwindow" 字面化进叙事。短/空内容的 overlay 噪声由 fragments L3 兜底。
+    if where in _OVERLAY_APP_NAMES and len((block.theme or "").strip()) >= _OVERLAY_CONTENT_OVERRIDE_LEN:
+        where = "(unknown)"
 
     # Derive who from user_candidates or fallback to "user"
     user_candidates = getattr(block, "user_candidates", [])

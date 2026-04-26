@@ -95,3 +95,44 @@ def test_read_frontmost_ax_text_returns_empty_text_safely_when_unavailable():
         "window_title": "window title",
         "process_name": "com.apple.Notes",
     }
+
+
+class _FakeLoginWindow:
+    def localizedName(self) -> str:
+        return "loginwindow"
+
+    def bundleIdentifier(self) -> str:
+        return "com.apple.loginwindow"
+
+    def processIdentifier(self) -> int:
+        return 999
+
+
+class _FakeWorkspaceLoginWindow:
+    @staticmethod
+    def sharedWorkspace():
+        return _FakeWorkspaceLoginWindow()
+
+    def frontmostApplication(self):
+        return _FakeLoginWindow()
+
+
+class _FakeAppKitLoginWindow:
+    NSWorkspace = _FakeWorkspaceLoginWindow
+
+
+def test_read_frontmost_ax_text_skips_loginwindow():
+    payload = read_frontmost_ax_text(
+        appkit_module=_FakeAppKitLoginWindow(),
+        application_services_module=_FakeApplicationServices(),
+    )
+
+    assert payload == {
+        "text": "",
+        "selected_text": None,
+        "value_text": None,
+        "title_text": None,
+        "app_name": None,
+        "window_title": None,
+        "process_name": None,
+    }
