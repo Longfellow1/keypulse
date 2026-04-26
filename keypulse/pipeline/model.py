@@ -4,6 +4,7 @@ import logging
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -137,7 +138,7 @@ class ModelGateway:
 
     def _request_json(self, backend: ModelBackend, path: str, payload: dict[str, Any], method: str = "POST") -> dict[str, Any]:
         normalized_path = path
-        if backend.base_url.endswith("/v1") and path.startswith("/v1/"):
+        if re.search(r"/v\d+$", backend.base_url) and path.startswith("/v1/"):
             normalized_path = path.removeprefix("/v1")
         url = f"{backend.base_url}{normalized_path}"
         headers = {"Content-Type": "application/json"}
