@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
+from keypulse.capture.active_app import get_active_app
 from keypulse.capture.base import BaseWatcher
 from keypulse.capture.normalizer import normalize_clipboard_event
 from keypulse.utils.logging import get_logger
@@ -12,15 +13,6 @@ from keypulse.utils.logging import get_logger
 logger = get_logger("watcher.clipboard")
 
 POLL_INTERVAL = 1.0  # seconds
-
-
-def _get_current_app_name() -> Optional[str]:
-    try:
-        from AppKit import NSWorkspace
-        app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        return app.localizedName() if app else None
-    except Exception:
-        return None
 
 
 class ClipboardWatcher(BaseWatcher):
@@ -75,7 +67,7 @@ class ClipboardWatcher(BaseWatcher):
         if len(text) > self._max_len:
             text = text[:self._max_len] + "...[truncated]"
 
-        app_name = _get_current_app_name()
+        app_name, _ = get_active_app()
         ts = datetime.now(timezone.utc).isoformat()
         event = normalize_clipboard_event(text=text, app_name=app_name, ts_start=ts)
         self.emit(event)

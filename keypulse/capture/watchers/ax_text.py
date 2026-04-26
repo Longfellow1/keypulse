@@ -4,6 +4,7 @@ import queue
 import time
 from typing import Callable
 
+from keypulse.capture.active_app import SYSTEM_OVERLAY_APPS
 from keypulse.capture.base import BaseWatcher
 from keypulse.capture.normalizer import normalize_ax_text_event
 
@@ -91,6 +92,9 @@ def read_frontmost_ax_text(
             return _empty_payload()
 
         app_name = app.localizedName()
+        if app_name in SYSTEM_OVERLAY_APPS:
+            return _empty_payload()
+
         process_name = app.bundleIdentifier() or app_name
         pid = app.processIdentifier()
         app_element = application_services.AXUIElementCreateApplication(pid)

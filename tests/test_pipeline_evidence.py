@@ -270,3 +270,63 @@ def test_sanitize_keeps_loginwindow_misclassified_real_work():
     but the captured `what` is real work content. Don't drop on app name alone."""
     unit = _unit(where="loginwindow", what="先解决输入卫生（高优）—— S3 接线时在 fragments → slices")
     assert sanitize_unit(unit) is not None
+
+
+# ---------------------------------------------------------------------------
+# extract_evidence_units: loginwindow misclassification override
+# ---------------------------------------------------------------------------
+
+def test_extract_overrides_loginwindow_when_theme_is_real_work(tmp_path):
+    """macOS bug: primary_app gets reported as 'loginwindow' during lock/unlock,
+    but the captured theme is actual work content. We replace where with
+    '(unknown)' so the LLM does not literalize 'loginwindow' into the narrative."""
+    db_path = _make_db(tmp_path)
+    block = _FakeBlock(
+        theme="先解决输入卫生（高优）—— S3 接线时在 fragments → slices",
+        ts_start="2026-04-25T09:29:00+00:00",
+        ts_end="2026-04-25T09:35:00+00:00",
+        primary_app="loginwindow",
+    )
+    units = extract_evidence_units(block, {}, lambda _s, _e: [])
+    assert units[0].where == "(unknown)"
+
+
+def test_extract_keeps_loginwindow_when_theme_is_short(tmp_path):
+    """Short/empty content with primary_app=loginwindow stays as loginwindow.
+    Capture-layer L3 filter (fragments.py) should already drop these upstream;
+    we don't second-guess it here."""
+    db_path = _make_db(tmp_path)
+    block = _FakeBlock(
+        theme="login",
+        ts_start="2026-04-25T09:29:00+00:00",
+        ts_end="2026-04-25T09:35:00+00:00",
+        primary_app="loginwindow",
+    )
+    units = extract_evidence_units(block, {}, lambda _s, _e: [])
+    assert units[0].where == "loginwindow"
+
+
+def test_extract_overrides_other_overlays_too(tmp_path):
+    """Same override applies to Dock / Notification Center / ScreenSaverEngine."""
+    db_path = _make_db(tmp_path)
+    for overlay in ("Dock", "Notification Center", "ScreenSaverEngine"):
+        block = _FakeBlock(
+            theme="long enough work content describing what the user actually did",
+            ts_start="2026-04-25T09:29:00+00:00",
+            ts_end="2026-04-25T09:35:00+00:00",
+            primary_app=overlay,
+        )
+        units = extract_evidence_units(block, {}, lambda _s, _e: [])
+        assert units[0].where == "(unknown)", f"{overlay} should be overridden"
+
+
+def test_extract_does_not_override_normal_app(tmp_path):
+    db_path = _make_db(tmp_path)
+    block = _FakeBlock(
+        theme="long enough work content describing real activity here",
+        ts_start="2026-04-25T09:29:00+00:00",
+        ts_end="2026-04-25T09:35:00+00:00",
+        primary_app="VSCode",
+    )
+    units = extract_evidence_units(block, {}, lambda _s, _e: [])
+    assert units[0].where == "VSCode"
