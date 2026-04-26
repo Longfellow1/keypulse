@@ -112,7 +112,11 @@ def extract_evidence_units(
     ]
 
 
-_LOGIN_APP_KEYWORDS = ("loginwindow", "login window", "keychain access", "1password")
+# 真正会显示密码输入框的应用：Keychain Access / 1Password。
+# loginwindow 不在这里 —— macOS 锁屏/解锁时 active_app 会被误标为 loginwindow，
+# 但窗口本身不显示用户密码，把它当 deny 关键词会把真实工作内容一起丢掉。
+# 短文本/空文本的 loginwindow 噪声由 capture 层的 L3 过滤兜底。
+_LOGIN_APP_KEYWORDS = ("keychain access", "1password")
 _PRIVACY_KEYWORDS = ("password", "passwd", "密码", "验证码", "verification code", "otp", "2fa")
 
 
