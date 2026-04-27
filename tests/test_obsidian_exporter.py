@@ -322,15 +322,11 @@ def test_build_obsidian_bundle_creates_daily_and_event_cards_for_single_item():
     bundle = build_obsidian_bundle([_sample_item()], vault_name="Harland Knowledge", date_str="2026-04-18")
 
     assert bundle["daily"][0]["path"] == "Daily/2026-04-18.md"
-    assert bundle["dashboard"][0]["path"] == "Dashboard/Today.md"
+    assert set(bundle) == {"daily", "events", "topics"}
     assert bundle["daily"][0]["properties"]["type"] == "daily"
     assert bundle["events"][0]["properties"]["type"] == "event"
-    assert bundle["dashboard"][0]["properties"]["type"] == "dashboard"
     assert "修复 keypulse 安装问题" in bundle["events"][0]["body"]
-    assert "## 🎯 今日主线" in bundle["dashboard"][0]["body"]
-    assert "## 已自动过滤的内容" in bundle["dashboard"][0]["body"]
-    assert "## 正在形成的主题" in bundle["dashboard"][0]["body"]
-    assert "[[Dashboard/Today]]" in bundle["daily"][0]["body"]
+    assert "## 今天的事件卡" in bundle["daily"][0]["body"]
     assert "[[Events/" in bundle["daily"][0]["body"]
     assert bundle["topics"] == []
 
@@ -363,14 +359,11 @@ def test_write_obsidian_bundle_writes_markdown_notes(tmp_path: Path):
 
     assert written
     daily = tmp_path / "Daily" / "2026-04-18.md"
-    dashboard = tmp_path / "Dashboard" / "Today.md"
     assert daily.exists()
-    assert dashboard.exists()
     content = daily.read_text()
     assert content.startswith("---")
     assert "type: daily" in content
     assert "source: keypulse" in content
-    assert "[[Dashboard/Today]]" in content
 
 
 def test_write_obsidian_bundle_replaces_stale_event_files_for_same_day(tmp_path: Path):

@@ -117,7 +117,7 @@ def _build_top_signals(events: list[dict[str, Any]], *, today_focus: str, attent
                 "source_key": str(item.get("source") or ""),
                 "reason": "、".join(why[:3]) or "被系统识别为高价值候选",
                 "score": adjusted_score,
-                "path": path_by_title.get(item["title"], "Dashboard/Today.md"),
+                "path": path_by_title.get(item["title"], f"Daily/{date_str}.md"),
             }
         )
     candidates.sort(key=lambda item: (-float(item["score"]), item["title"]))

@@ -70,7 +70,7 @@ def test_render_previous_plan_acknowledgment_returns_callout():
     ]
 
 
-def test_build_obsidian_bundle_includes_previous_plan_acknowledgment_in_dashboard_and_daily():
+def test_build_obsidian_bundle_includes_previous_plan_acknowledgment_in_daily():
     bundle = build_obsidian_bundle(
         [],
         vault_name="Harland Knowledge",
@@ -78,14 +78,12 @@ def test_build_obsidian_bundle_includes_previous_plan_acknowledgment_in_dashboar
         previous_plan="把 KeyPulse M_Q 收尾",
     )
 
-    assert "> 💭 昨天你说想：把 KeyPulse M_Q 收尾" in bundle["dashboard"][0]["body"]
     assert "> 💭 昨天你说想：把 KeyPulse M_Q 收尾" in bundle["daily"][0]["body"]
 
 
 def test_build_obsidian_bundle_omits_previous_plan_acknowledgment_when_empty():
     bundle = build_obsidian_bundle([], vault_name="Harland Knowledge", date_str="2026-04-21")
 
-    assert "> 💭 昨天你说想：" not in bundle["dashboard"][0]["body"]
     assert "> 💭 昨天你说想：" not in bundle["daily"][0]["body"]
 
 
