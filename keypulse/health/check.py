@@ -138,7 +138,8 @@ def _speaker_mislabel_ratio(checked_at: datetime) -> float:
 def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
     checked_at = _utc_now()
     cfg, config_loadable = _load_config(config_path)
-    init_db(cfg.db_path_expanded)
+    db_path = cfg.db_path_expanded if config_loadable else Path("/tmp/keypulse-healthcheck.db")
+    init_db(db_path)
     conn = get_conn()
 
     alerts: list[dict[str, str]] = []
@@ -168,10 +169,22 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
     ).fetchone()
     idle_recent = int(idle_recent_row["count"] or 0)
 
+    last_idle_row = conn.execute(
+        "SELECT event_type FROM raw_events WHERE event_type IN ('idle_start','idle_end') ORDER BY ts_start DESC LIMIT 1"
+    ).fetchone()
+    currently_idle = bool(last_idle_row and last_idle_row["event_type"] == "idle_start")
+
     age_sec_since_last_event = None
     if last_event_at is not None:
         age_sec_since_last_event = int((checked_at - last_event_at).total_seconds())
-        if alive and age_sec_since_last_event > 600 and idle_recent == 0 and pid is not None:
+        stream_quiet = (
+            alive
+            and age_sec_since_last_event > 600
+            and idle_recent == 0
+            and not currently_idle
+            and pid is not None
+        )
+        if stream_quiet:
             alerts.append(
                 {
                     "severity": "warn",

@@ -142,6 +142,71 @@ def test_healthcheck_detects_stale_stream_and_kills_daemon(monkeypatch, tmp_path
     assert kills == [(11111, 0), (11111, 9)]
 
 
+def test_healthcheck_skips_kill_when_user_currently_idle(monkeypatch, tmp_path):
+    """Long idle period (e.g. user asleep): last idle event is idle_start
+    older than the 10-min window, no new events. Daemon must NOT be killed."""
+    db_path = tmp_path / "keypulse.db"
+    vault_path = tmp_path / "vault"
+    daily_dir = vault_path / "Daily"
+    daily_dir.mkdir(parents=True)
+    (daily_dir / "2026-04-22.md").write_text("daily note")
+    config = _make_config(db_path, vault_path, window=True, idle=True)
+    out_path = tmp_path / "health.json"
+
+    _seed_event(db_path, source="window", event_type="window_focus", ts_start=_utc_iso(timedelta(minutes=45)))
+    _seed_event(db_path, source="idle", event_type="idle_start", ts_start=_utc_iso(timedelta(minutes=40)))
+
+    class FakeRun:
+        returncode = 0
+        stdout = "PID = 22222\n"
+        stderr = ""
+
+    kills: list[tuple[int, int]] = []
+    monkeypatch.setattr("keypulse.health.check.Config.load", lambda: config)
+    monkeypatch.setattr("keypulse.health.check.HEALTH_JSON_PATH", out_path)
+    monkeypatch.setattr("keypulse.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
+    monkeypatch.setattr("keypulse.health.check.os.kill", lambda pid, sig: kills.append((pid, sig)))
+
+    result = __import__("keypulse.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
+
+    assert result["daemon"]["alive"] is True
+    assert result["daemon"]["events_last_10min"] == 0
+    assert not any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
+    assert (22222, 9) not in kills
+
+
+def test_healthcheck_kills_when_idle_ended_but_stream_silent(monkeypatch, tmp_path):
+    """User came back from idle (idle_end is the last idle event) but no events
+    have flowed for 11 min: daemon really is hung -> kill."""
+    db_path = tmp_path / "keypulse.db"
+    vault_path = tmp_path / "vault"
+    daily_dir = vault_path / "Daily"
+    daily_dir.mkdir(parents=True)
+    (daily_dir / "2026-04-22.md").write_text("daily note")
+    config = _make_config(db_path, vault_path, window=True, idle=True)
+    out_path = tmp_path / "health.json"
+
+    _seed_event(db_path, source="idle", event_type="idle_start", ts_start=_utc_iso(timedelta(minutes=30)))
+    _seed_event(db_path, source="idle", event_type="idle_end", ts_start=_utc_iso(timedelta(minutes=15)))
+    _seed_event(db_path, source="window", event_type="window_focus", ts_start=_utc_iso(timedelta(minutes=12)))
+
+    class FakeRun:
+        returncode = 0
+        stdout = "PID = 33333\n"
+        stderr = ""
+
+    kills: list[tuple[int, int]] = []
+    monkeypatch.setattr("keypulse.health.check.Config.load", lambda: config)
+    monkeypatch.setattr("keypulse.health.check.HEALTH_JSON_PATH", out_path)
+    monkeypatch.setattr("keypulse.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
+    monkeypatch.setattr("keypulse.health.check.os.kill", lambda pid, sig: kills.append((pid, sig)))
+
+    result = __import__("keypulse.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
+
+    assert any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
+    assert (33333, 9) in kills
+
+
 def test_healthcheck_ignores_stale_stream_when_idle_recent(monkeypatch, tmp_path):
     db_path = tmp_path / "keypulse.db"
     vault_path = tmp_path / "vault"
