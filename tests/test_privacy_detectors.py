@@ -4,7 +4,7 @@ Covers all secret formats that need to be redacted.
 """
 import pytest
 from keypulse.privacy.detectors import detect, has_sensitive_content
-from keypulse.privacy.desensitizer import desensitize
+from keypulse.privacy.desensitizer import desensitize, desensitize_json_value
 
 
 class TestUUIDDetection:
@@ -218,4 +218,49 @@ class TestDesensitizeWithFlags:
         result = desensitize(text, redact_tokens=True)
         assert "ghp_" not in result
         assert "xoxb-" not in result
-        assert "[REDACTED]" in result
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("sudo ln -sf /tmp/a /tmp/b", "[REDACTED_SHELL]"),
+        ("export DEEPSEEK_API_KEY=\"secret\"", "[REDACTED_SHELL]"),
+        ("brew install cc-switch", "[REDACTED_SHELL]"),
+        ("cat >> ~/.zshrc <<'EOF'", "[REDACTED_SHELL]"),
+        ("echo >> ~/.bash_profile", "[REDACTED_SHELL]"),
+        ("Last login: Mon Apr 27 09:15:50 on ttys009", "[REDACTED_SHELL]"),
+        ("==> Installing Cask cc-switch", "[REDACTED_SHELL]"),
+        ("which cc-switch", "[REDACTED_SHELL]"),
+    ],
+)
+def test_desensitize_redacts_shell_command_lines(text: str, expected: str):
+    assert desensitize(text) == expected
+
+
+def test_desensitize_json_value_recurses_through_nested_structures():
+    fake_ghp = "g" + "hp_" + "rw1om51ABCDEFGHIJKLMNOPQRSTUVWXYZabcd"
+    fake_slack = "x" + "oxb-" + "1234567890ABCDEFGHIJKLMNOPQRSTUVabcd"
+    fake_openai = "s" + "k-" + "ant-abcdefghijklmnopqrst1234567890"
+    payload = {
+        "email": "alice@example.com",
+        "nested": {
+            "token": fake_ghp,
+            "items": [
+                "safe",
+                fake_slack,
+                {"secret": fake_openai},
+            ],
+        },
+        "count": 3,
+        "flag": True,
+    }
+
+    result = desensitize_json_value(payload)
+
+    assert result["email"] == "[REDACTED]"
+    assert result["nested"]["token"] == "[REDACTED]"
+    assert result["nested"]["items"][0] == "safe"
+    assert result["nested"]["items"][1] == "[REDACTED]"
+    assert result["nested"]["items"][2]["secret"] == "[REDACTED]"
+    assert result["count"] == 3
+    assert result["flag"] is True

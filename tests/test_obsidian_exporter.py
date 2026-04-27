@@ -336,6 +336,27 @@ def test_build_obsidian_bundle_creates_daily_and_event_cards_for_single_item():
     assert bundle["topics"] == []
 
 
+def test_build_obsidian_bundle_skips_loginwindow_event_cards_and_counts():
+    bundle = build_obsidian_bundle(
+        [
+            _make_item(
+                app_name="loginwindow",
+                window_title="loginwindow",
+                title="loginwindow",
+                body="loginwindow",
+                session_id="session-loginwindow",
+            )
+        ],
+        vault_name="Harland Knowledge",
+        date_str="2026-04-18",
+    )
+
+    assert bundle["events"] == []
+    assert bundle["daily"][0]["properties"]["item_count"] == 0
+    assert "事件卡：0" in bundle["daily"][0]["body"]
+    assert bundle["topics"] == []
+
+
 def test_write_obsidian_bundle_writes_markdown_notes(tmp_path: Path):
     bundle = build_obsidian_bundle([_sample_item()], vault_name="Harland Knowledge", date_str="2026-04-18")
 
