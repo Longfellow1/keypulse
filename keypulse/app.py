@@ -80,6 +80,7 @@ def _run_obsidian_sync_core(cfg: Config, date: Optional[str] = None) -> None:
     target_vault = cfg.obsidian.vault_name
     gateway = load_model_gateway(cfg) if hasattr(cfg, "model") else None
 
+    pipeline_cfg = getattr(cfg, "pipeline", None)
     written = export_obsidian(
         target_output,
         date_str=date_str,
@@ -87,6 +88,8 @@ def _run_obsidian_sync_core(cfg: Config, date: Optional[str] = None) -> None:
         model_gateway=gateway,
         incremental=False,
         db_path=str(cfg.db_path_expanded),
+        use_narrative_v2=getattr(pipeline_cfg, "use_narrative_v2", False),
+        use_narrative_skeleton=getattr(pipeline_cfg, "use_narrative_skeleton", False),
     )
     logger.info(f"Obsidian sync completed: {len(written)} notes to {target_output}")
 
