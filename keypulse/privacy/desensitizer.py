@@ -1,11 +1,35 @@
+from __future__ import annotations
+
 import re
+from typing import Any
+
 from keypulse.privacy.detectors import detect, has_sensitive_content
+
+
+_SHELL_LINE_PATTERNS = (
+    re.compile(r"(?m)^\s*sudo\s+\S.*$"),
+    re.compile(r"(?m)^\s*export\s+[A-Z_][A-Z0-9_]*=.*$"),
+    re.compile(r"(?m)^\s*(brew|npm|pip|pipx|uv|cargo|gem|apt|yum|dnf|port)\s+(install|tap|update|upgrade|remove|uninstall)\b.*$"),
+    re.compile(r"(?m)^\s*cat\s*>>?\s*~?/[\w./-]+\s*<<['\"]?\w+['\"]?$"),
+    re.compile(r"(?m)^\s*\S+\s*>>?\s*~?/[\w./-]+$"),
+    re.compile(r"(?m)^Last login:\s+\w+\s+\w+\s+\d+.*$"),
+    re.compile(r"(?m)^==>\s+(Installing|Pouring|Caveats|Downloading)\b.*$"),
+    re.compile(r"(?m)^\s*(which|type)\s+\S+$"),
+)
+
+
+def _redact_shell_lines(text: str) -> str:
+    redacted = text
+    for pattern in _SHELL_LINE_PATTERNS:
+        redacted = pattern.sub("[REDACTED_SHELL]", redacted)
+    return redacted
 
 
 def desensitize(text: str, redact_emails: bool = True, redact_phones: bool = True, redact_tokens: bool = True) -> str:
     """Replace sensitive patterns with [PATTERN_NAME] placeholders."""
     if not text:
         return text
+    text = _redact_shell_lines(text)
     enabled = {
         "email": redact_emails,
         "phone_cn": redact_phones,
@@ -33,6 +57,43 @@ def desensitize(text: str, redact_emails: bool = True, redact_phones: bool = Tru
         prev = d.end
     result.append(text[prev:])
     return "".join(result)
+
+
+def desensitize_json_value(
+    value: Any,
+    *,
+    redact_emails: bool = True,
+    redact_phones: bool = True,
+    redact_tokens: bool = True,
+) -> Any:
+    if isinstance(value, str):
+        return desensitize(
+            value,
+            redact_emails=redact_emails,
+            redact_phones=redact_phones,
+            redact_tokens=redact_tokens,
+        )
+    if isinstance(value, dict):
+        return {
+            key: desensitize_json_value(
+                item,
+                redact_emails=redact_emails,
+                redact_phones=redact_phones,
+                redact_tokens=redact_tokens,
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            desensitize_json_value(
+                item,
+                redact_emails=redact_emails,
+                redact_phones=redact_phones,
+                redact_tokens=redact_tokens,
+            )
+            for item in value
+        ]
+    return value
 
 
 def truncate(text: str, max_length: int) -> str:

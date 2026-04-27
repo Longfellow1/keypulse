@@ -68,6 +68,19 @@ class PrivacyConfig(BaseModel):
     redact_emails: bool = True
     redact_phones: bool = True
     redact_tokens: bool = True
+    drop_terminal_text: bool = True
+    url_deny_hosts: list[str] = Field(
+        default_factory=lambda: [
+            "apple.com",
+            "appleid.apple.com",
+            "xiaohongshu.com",
+            "weibo.com",
+            "bilibili.com",
+            "zhihu.com",
+            "douyin.com",
+            "xhs.com",
+        ]
+    )
     camera_scene_pause: bool = True
     blacklist_bundle_ids: list[str] = Field(
         default_factory=lambda: [

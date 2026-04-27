@@ -677,6 +677,14 @@ def _meaningful_item(event: dict[str, Any]) -> bool:
     return False
 
 
+def _is_loginwindow_render_item(item: dict[str, Any]) -> bool:
+    app_name = str(item.get("app_name") or "").strip().lower()
+    if app_name == "loginwindow":
+        return True
+    title = str(item.get("title") or item.get("window_title") or "").strip().lower()
+    return title == "loginwindow"
+
+
 def _to_item(event: dict[str, Any]) -> dict[str, Any] | None:
     if not _meaningful_item(event):
         return None
@@ -980,6 +988,7 @@ def build_obsidian_bundle(
 ) -> dict[str, list[dict[str, Any]]]:
     raw_count = len(items)
     items = filter_noisy_raw_events(items)
+    items = [item for item in items if not _is_loginwindow_render_item(item)]
     logger.info("hygiene_filter raw=%d kept=%d dropped=%d", raw_count, len(items), raw_count - len(items))
     normalized = [item for item in (_to_item(event) for event in items) if item is not None]
     surface_snapshot = build_surface_snapshot(items)

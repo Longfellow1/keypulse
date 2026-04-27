@@ -8,6 +8,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from typing import Literal, Optional
+from urllib.parse import urlsplit
 
 from keypulse.capture.aggregator import Aggregator
 from keypulse.capture.base import BaseWatcher
@@ -23,7 +24,7 @@ from keypulse.capture.normalizer import (
 )
 from keypulse.capture.user_presence import is_user_present
 from keypulse.config import Config
-from keypulse.privacy.desensitizer import desensitize, truncate
+from keypulse.privacy.desensitizer import desensitize, desensitize_json_value, truncate
 from keypulse.store.db import init_db
 from keypulse.store.models import RawEvent, SearchDoc
 from keypulse.store.repository import (
@@ -38,10 +39,97 @@ from keypulse.utils.logging import get_logger
 
 logger = get_logger("manager")
 _USER_SOURCES = frozenset({"keyboard_chunk", "clipboard", "manual", "browser", "ax_text", "ax_ime_commit", "ax_snapshot_fallback"})
+_TERMINAL_APPS = frozenset({"terminal", "iterm2", "warp", "alacritty", "kitty", "ghostty"})
 
 
 def _derive_speaker(event: RawEvent) -> Literal["user", "system"]:
     return "user" if event.source in _USER_SOURCES else "system"
+
+
+def _is_terminal_app(app_name: str | None) -> bool:
+    return str(app_name or "").strip().lower() in _TERMINAL_APPS
+
+
+def _metadata_payload(metadata_json: str | None) -> object | None:
+    if not metadata_json:
+        return None
+    try:
+        return json.loads(metadata_json)
+    except Exception:
+        return None
+
+
+def _sanitize_metadata_json(
+    metadata_json: str | None,
+    *,
+    extra_fields: dict[str, object] | None = None,
+    redact_emails: bool,
+    redact_phones: bool,
+    redact_tokens: bool,
+) -> str | None:
+    if not metadata_json and not extra_fields:
+        return metadata_json
+
+    parsed = _metadata_payload(metadata_json)
+    if parsed is None:
+        if not extra_fields:
+            return metadata_json
+        parsed = {}
+
+    sanitized = desensitize_json_value(
+        parsed,
+        redact_emails=redact_emails,
+        redact_phones=redact_phones,
+        redact_tokens=redact_tokens,
+    )
+    if extra_fields:
+        if isinstance(sanitized, dict):
+            sanitized = {**sanitized, **extra_fields}
+        else:
+            sanitized = dict(extra_fields)
+
+    try:
+        return json.dumps(sanitized, ensure_ascii=False)
+    except Exception:
+        return metadata_json if not extra_fields else json.dumps(extra_fields, ensure_ascii=False)
+
+
+def _browser_host_from_metadata(metadata_json: str | None) -> str | None:
+    payload = _metadata_payload(metadata_json)
+    if not isinstance(payload, dict):
+        return None
+    url = payload.get("url")
+    if not url:
+        return None
+    try:
+        host = urlsplit(str(url)).hostname
+    except Exception:
+        return None
+    if not host:
+        return None
+    return host.lower()
+
+
+def _host_matches_denylist(host: str, deny_hosts: list[str]) -> bool:
+    normalized_host = host.lower().strip()
+    if not normalized_host:
+        return False
+    for deny_host in deny_hosts:
+        candidate = str(deny_host or "").strip().lower()
+        if not candidate:
+            continue
+        if normalized_host == candidate or normalized_host.endswith(f".{candidate}"):
+            return True
+    return False
+
+
+def _should_drop_browser_event(event: RawEvent, deny_hosts: list[str]) -> bool:
+    if event.source != "browser":
+        return False
+    host = _browser_host_from_metadata(event.metadata_json)
+    if not host:
+        return False
+    return _host_matches_denylist(host, deny_hosts)
 
 
 class CaptureManager:
@@ -315,6 +403,15 @@ class CaptureManager:
             )
             return
 
+        if _should_drop_browser_event(event, self.config.privacy.url_deny_hosts):
+            logger.debug(
+                "Event dropped by browser URL denylist: %s (%s/%s)",
+                event.process_name or event.app_name,
+                event.source,
+                event.event_type,
+            )
+            return
+
         self._sync_window_idle_state(event)
         self._feed_light_capture_watchers(event)
         if event.source == "window" and event.event_type in {WINDOW_FOCUS_EVENT, WINDOW_TITLE_CHANGED_EVENT}:
@@ -327,7 +424,27 @@ class CaptureManager:
             return
 
         # 2. Desensitize content
-        if result.content_text:
+        text_dropped_reason: str | None = None
+        if result.source == "ax_text" and _is_terminal_app(result.app_name):
+            if self.config.privacy.drop_terminal_text:
+                result.content_text = None
+                text_dropped_reason = "terminal_app"
+            elif result.content_text:
+                result.content_text = desensitize(
+                    result.content_text,
+                    redact_emails=self.config.privacy.redact_emails,
+                    redact_phones=self.config.privacy.redact_phones,
+                    redact_tokens=self.config.privacy.redact_tokens,
+                )
+                result.content_text = truncate(
+                    result.content_text, self.config.clipboard.max_text_length
+                )
+                fusion = self._fusion.fuse(result)
+                if not fusion.persist:
+                    return
+                if fusion.event is not None:
+                    result = fusion.event
+        elif result.content_text:
             result.content_text = desensitize(
                 result.content_text,
                 redact_emails=self.config.privacy.redact_emails,
@@ -350,6 +467,14 @@ class CaptureManager:
                 redact_phones=self.config.privacy.redact_phones,
                 redact_tokens=self.config.privacy.redact_tokens,
             )
+
+        result.metadata_json = _sanitize_metadata_json(
+            result.metadata_json,
+            extra_fields={"text_dropped": text_dropped_reason} if text_dropped_reason else None,
+            redact_emails=self.config.privacy.redact_emails,
+            redact_phones=self.config.privacy.redact_phones,
+            redact_tokens=self.config.privacy.redact_tokens,
+        )
 
         if result.session_id is None and result.event_type not in {"idle_start", "idle_end"}:
             session_id = self._current_window_session_id()
