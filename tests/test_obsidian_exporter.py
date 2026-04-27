@@ -328,7 +328,6 @@ def test_build_obsidian_bundle_creates_daily_and_event_cards_for_single_item():
     assert bundle["dashboard"][0]["properties"]["type"] == "dashboard"
     assert "修复 keypulse 安装问题" in bundle["events"][0]["body"]
     assert "## 🎯 今日主线" in bundle["dashboard"][0]["body"]
-    assert "## 💡 需要你决定" in bundle["dashboard"][0]["body"]
     assert "## 已自动过滤的内容" in bundle["dashboard"][0]["body"]
     assert "## 正在形成的主题" in bundle["dashboard"][0]["body"]
     assert "[[Dashboard/Today]]" in bundle["daily"][0]["body"]
@@ -478,5 +477,4 @@ def test_build_obsidian_bundle_prefers_skeleton_when_enabled(monkeypatch):
 
     daily_body = bundle["daily"][0]["body"]
     assert "骨架报告" in daily_body
-    assert "## 需要你决定" in daily_body
     assert "## 今天的事件卡" in daily_body

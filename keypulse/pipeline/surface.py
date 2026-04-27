@@ -5,6 +5,9 @@ from collections import Counter, defaultdict
 from dataclasses import asdict
 from typing import Any
 
+# Threshold: candidates with score < MIN_SCORE will be filtered and used for fallback only
+MIN_SCORE = 3.0
+
 
 def _as_text(event: dict[str, Any]) -> str:
     return str(
@@ -161,6 +164,35 @@ def build_surface_snapshot(
         deduped_survivors.append(event)
     survivors = deduped_survivors + list(deduped_by_hash.values())
 
+    # Group-level dedup: for events with window_title or topic_key, deduplicate by
+    # (normalized window_title || topic_key), keeping only the highest-scored candidate per group
+    dedup_key_map: dict[str, dict[str, Any]] = {}
+    non_dedup_events: list[dict[str, Any]] = []
+
+    for event in survivors:
+        window_title = str(event.get("window_title") or "").strip()
+        topic_key = str(event.get("topic_key") or "").strip()
+
+        # Only apply group dedup if window_title or topic_key is present
+        if not (window_title or topic_key):
+            non_dedup_events.append(event)
+            continue
+
+        # Use window_title if available, otherwise topic_key (normalized)
+        dedup_key = (window_title.lower() if window_title else topic_key)
+
+        if dedup_key not in dedup_key_map:
+            dedup_key_map[dedup_key] = event
+        else:
+            # Keep the one with better timestamp (earlier is better)
+            existing = dedup_key_map[dedup_key]
+            existing_ts = str(existing.get("ts_start") or "")
+            new_ts = str(event.get("ts_start") or "")
+            if new_ts < existing_ts:
+                dedup_key_map[dedup_key] = event
+
+    survivors = non_dedup_events + list(dedup_key_map.values())
+
     recurrence_counts = Counter(_normalize_key(event) for event in survivors)
     candidates: list[dict[str, Any]] = []
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -208,7 +240,16 @@ def build_surface_snapshot(
                 grouped[f"tag:{tag}"].append(candidate)
 
     candidates.sort(key=lambda item: (-float(item["score"]), item["title"].lower()))
-    top_candidates = candidates[:top_k]
+
+    # Threshold filtering: separate high-score and low-score candidates
+    high_score_candidates = [c for c in candidates if float(c["score"]) >= MIN_SCORE]
+    low_score_candidates = [c for c in candidates if float(c["score"]) < MIN_SCORE]
+
+    # If high-score candidates are fewer than top_k, supplement with low-score ones
+    top_candidates = high_score_candidates[:top_k]
+    if len(top_candidates) < top_k and low_score_candidates:
+        needed = top_k - len(top_candidates)
+        top_candidates.extend(low_score_candidates[:needed])
 
     theme_candidates: list[dict[str, Any]] = []
     for key, items in grouped.items():

@@ -447,6 +447,39 @@ def _render_dashboard_narrative(
     return _render_dashboard_blocks(blocks)
 
 
+def _render_db_only_narrative(db_path: Path, date_str: str) -> str:
+    """Fallback: render pure data narrative from raw events without LLM.
+
+    When both skeleton and v2 fail (or v2 is disabled), extract raw events for the day
+    and display them as a simple timeline.
+    """
+    try:
+        start, end = local_day_bounds(date_str)
+        items = query_raw_events(str(db_path), start, end, limit=None)
+    except Exception as exc:
+        logger.warning("db_only narrative: query failed exc_type=%s exc=%s", type(exc).__name__, exc)
+        return ""
+
+    if not items:
+        return "> ⚠️ 今日叙事 LLM 不可用，且没有原始事件可显示"
+
+    lines = ["> ⚠️ 今日叙事 LLM 不可用，以下为按时间线列出的原始事件（无智能总结）", ""]
+    for item in sorted(items, key=lambda x: x.get("ts_start") or ""):
+        ts_start = item.get("ts_start", "")
+        if ts_start:
+            time_str = ts_start[:5] if len(ts_start) >= 5 else ts_start
+        else:
+            time_str = "??:??"
+        source = item.get("source", "?")
+        app_name = item.get("app_name", "")
+        content = item.get("content_text", "") or item.get("body", "") or ""
+        content_preview = (content[:80] + "...") if len(content) > 80 else content
+        title = item.get("title") or app_name or content_preview or "(无标题)"
+        lines.append(f"- {time_str} | {source} | {title}")
+
+    return "\n".join(lines)
+
+
 def _render_daily_narrative_v2_or_legacy(
     work_blocks: list[Any],
     *,
@@ -484,26 +517,33 @@ def _render_daily_narrative_v2_or_legacy(
                     exc,
                 )
         if model_gateway is not None and db_path is not None:
-            logger.warning("skeleton narrative unavailable; falling back to v2")
-            from keypulse.pipeline.narrative_v2 import render_v2_narrative
-            try:
-                v2_body = render_v2_narrative(
-                    work_blocks,
-                    model_gateway=model_gateway,
-                    db_path=db_path,
-                    date_str=date_str,
-                )
-                if v2_body:
-                    return v2_body
-            except Exception as exc:
-                logger.warning(
-                    "skeleton v2 fallback failed backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
-                    kind,
-                    url,
-                    model,
-                    type(exc).__name__,
-                    exc,
-                )
+            # Skeleton fallback: try v2 if enabled, otherwise db-only
+            if use_narrative_v2:
+                logger.warning("skeleton narrative unavailable; falling back to v2")
+                from keypulse.pipeline.narrative_v2 import render_v2_narrative
+                try:
+                    v2_body = render_v2_narrative(
+                        work_blocks,
+                        model_gateway=model_gateway,
+                        db_path=db_path,
+                        date_str=date_str,
+                    )
+                    if v2_body:
+                        return v2_body
+                except Exception as exc:
+                    logger.warning(
+                        "skeleton v2 fallback failed backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
+                        kind,
+                        url,
+                        model,
+                        type(exc).__name__,
+                        exc,
+                    )
+            else:
+                logger.warning("skeleton narrative unavailable, v2 disabled; falling back to db-only")
+                db_only_body = _render_db_only_narrative(Path(db_path), date_str)
+                if db_only_body:
+                    return db_only_body
     if use_narrative_v2 and model_gateway is not None and db_path is not None:
         from keypulse.pipeline.narrative_v2 import render_v2_narrative
         v2_body = render_v2_narrative(
@@ -830,7 +870,6 @@ def _render_dashboard_body(
     date_str: str,
     *,
     work_blocks: list[Any] | None = None,
-    decisions: list[Any] | None = None,
     evidence_paths: dict[tuple[str, str, str], str] | None = None,
     model_gateway: "ModelGateway | None" = None,
     previous_plan: str = "",
@@ -840,11 +879,8 @@ def _render_dashboard_body(
     theme_candidates = snapshot.get("theme_candidates", [])
     top_block = max((block for block in work_blocks or [] if not getattr(block, "fragment", False)), default=None, key=lambda block: getattr(block, "duration_sec", 0))
     top_theme = getattr(top_block, "theme", "") or _topic_title(str(theme_candidates[0]["topic_key"])) if theme_candidates else "今天"
-    decision_items = decisions or []
-    decision_brief = " / ".join(getattr(item, "title", "") for item in decision_items[:2] if getattr(item, "title", ""))
     lead_lines = [
         f"> 主战场是 {top_theme}。",
-        f"> 今天有 {len(decision_items)} 件事等你拍板：{decision_brief}" if decision_items else "> 今天没有必须拍板的事。",
     ]
     top_signals = [
         "\n".join(
@@ -872,10 +908,7 @@ def _render_dashboard_body(
         )
         for item in theme_candidates
     ] or ["- 还没有形成稳定的主题候选"]
-    review_queue = [
-        f"- {item.title}：{item.reason}\n  - 命令：{item.command}"
-        for item in decision_items[:3]
-    ] or ["- 当前没有需要你手动确认的内容"]
+    review_queue = ["- 当前没有需要你手动确认的内容"]
 
     return "\n".join(
         [
@@ -886,9 +919,6 @@ def _render_dashboard_body(
             "",
             "## 🎯 今日主线",
             _render_dashboard_narrative(work_blocks, model_gateway=model_gateway),
-            "",
-            "## 💡 需要你决定",
-            render_daily_decisions(decision_items, include_heading=False),
             "",
             "## 今天最值得看的内容",
             *top_signals,
@@ -998,11 +1028,6 @@ def build_obsidian_bundle(
         recent_topic_keys=recent_topic_keys,
         previous_day_topic_keys=previous_day_topic_keys,
     )
-    decisions = build_daily_decisions(
-        work_blocks,
-        theme_keys=(recent_topic_keys or set()) | (previous_day_topic_keys or set()),
-        recent_topic_counts=recent_topic_counts or {},
-    )
     work_item_count = len(work_blocks)
     work_topic_count = len({block.theme for block in work_blocks if not block.fragment})
     top_block = max((block for block in work_blocks if not block.fragment), default=None, key=lambda block: block.duration_sec)
@@ -1057,9 +1082,6 @@ def build_obsidian_bundle(
                 date_str=date_str,
             ),
             "",
-            "## 需要你决定",
-            render_daily_decisions(decisions, include_heading=False),
-            "",
             "## 今天的事件卡",
             *_preview_links(daily_links, "事件卡"),
             "",
@@ -1091,7 +1113,6 @@ def build_obsidian_bundle(
             surface_snapshot,
             date_str,
             work_blocks=work_blocks,
-            decisions=decisions,
             evidence_paths=evidence_paths,
             model_gateway=model_gateway,
             previous_plan=previous_plan,
@@ -1105,7 +1126,6 @@ def build_obsidian_bundle(
             "focus_hours": _format_duration(sum(block.duration_sec for block in work_blocks if not block.fragment)),
             "context_blocks": sum(1 for block in work_blocks if not block.fragment),
             "top_theme": top_theme,
-            "needs_decision": len(decisions),
         },
         path="Dashboard/Today.md",
     )
