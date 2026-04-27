@@ -250,21 +250,26 @@ def _hourly_summary_index(hourly_summaries: list[dict[str, Any]]) -> dict[int, l
 
 
 def render_daily_skeleton_report(
-    date_str: str,
+    report_date_str: str,
     payload: dict[str, Any],
     *,
     hourly_summaries: list[dict[str, Any]] | None = None,
+    db_path: Path | None = None,
+    date_str: str = "",
 ) -> str:
     hourly_summaries = hourly_summaries or []
     motive_name = {m["id"]: m["name"] for m in MOTIVES}
     hourly_index = _hourly_summary_index(hourly_summaries)
+    timeline_date_str = date_str or report_date_str
+    from keypulse.obsidian.exporter import _render_timeline_narrative
+
     sorted_motives = sorted(
         [item for item in (payload.get("motives") or []) if isinstance(item, dict)],
         key=lambda item: float(item.get("confidence", 0.0) or 0.0),
         reverse=True,
     )
 
-    lines = [f"# {date_str} 骨架报告", ""]
+    lines = [f"# {report_date_str} 骨架报告", ""]
     lines.append("## 今日主线")
     main_lines = [str(line).strip() for line in (payload.get("main_lines") or []) if str(line).strip()]
     if main_lines:
@@ -272,6 +277,14 @@ def render_daily_skeleton_report(
             lines.append(f"- {line}")
     else:
         lines.append("- 今日没有足够证据生成稳定主线")
+    lines.append("")
+
+    lines.append("## 时间线回放")
+    timeline_body = _render_timeline_narrative(hourly_summaries, db_path, timeline_date_str)
+    if timeline_body.strip():
+        lines.extend(timeline_body.splitlines())
+    else:
+        lines.append("今日没有可回放的原始事件")
     lines.append("")
 
     lines.append("## 动机骨架")
@@ -291,18 +304,30 @@ def render_daily_skeleton_report(
 
         evidence_refs = motive.get("evidence_refs") or []
         if evidence_refs:
-            lines.append("证据：")
+            seen_refs: set[int] = set()
+            used_summaries: set[str] = set()
+            evidence_lines: list[str] = []
             for ref in evidence_refs[:5]:
                 try:
                     ref_id = int(ref)
                 except (TypeError, ValueError):
                     continue
+                if ref_id in seen_refs:
+                    continue
+                seen_refs.add(ref_id)
                 linked = hourly_index.get(ref_id, [])
                 if linked:
-                    linked_summary = linked[0]["payload"].get("summary_zh") or "hourly 摘要"
-                    lines.append(f"- raw_event #{ref_id}: {linked_summary}")
+                    linked_summary = str(linked[0]["payload"].get("summary_zh") or "hourly 摘要").strip()
+                    if linked_summary in used_summaries:
+                        continue
+                    used_summaries.add(linked_summary)
+                    evidence_lines.append(f"- raw_event #{ref_id}: {linked_summary}")
                 else:
-                    lines.append(f"- raw_event #{ref_id}")
+                    evidence_lines.append(f"- raw_event #{ref_id}")
+
+            if evidence_lines:
+                lines.append("证据：")
+                lines.extend(evidence_lines)
 
         gap = str(motive.get("gap") or "").strip()
         if gap:
@@ -332,4 +357,10 @@ def build_daily_skeleton_report(
 ) -> str:
     payload = refresh_daily_skeleton(db_path, date_str, gateway, now=now, until_hour=until_hour)
     hourly_summaries = load_hourly_summaries(db_path, date_str)
-    return render_daily_skeleton_report(date_str, payload, hourly_summaries=hourly_summaries)
+    return render_daily_skeleton_report(
+        date_str,
+        payload,
+        hourly_summaries=hourly_summaries,
+        db_path=db_path,
+        date_str=date_str,
+    )

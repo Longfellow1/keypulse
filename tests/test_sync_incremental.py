@@ -114,7 +114,7 @@ def test_full_sync_creates_complete_files(monkeypatch, tmp_path: Path):
 
     assert written
     assert _daily_note(vault).exists()
-    assert _dashboard_note(vault).exists()
+    assert not _dashboard_note(vault).exists()
     assert any((vault / "Events" / DATE).glob("*.md"))
     daily = _read(_daily_note(vault))
     assert "## 今天的事件卡" in daily

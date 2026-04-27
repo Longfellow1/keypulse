@@ -19,7 +19,6 @@ from keypulse.pipeline.decisions import build_daily_decisions, render_daily_deci
 from keypulse.pipeline.fragments import filter_noisy_raw_events
 from keypulse.pipeline.narrative import aggregate_work_blocks, render_daily_narrative
 from keypulse.pipeline.skeleton import build_daily_skeleton_report
-from keypulse.pipeline.surface import build_surface_snapshot
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.atomic_io import atomic_write_text
 from keypulse.utils.dates import local_day_bounds
@@ -447,37 +446,180 @@ def _render_dashboard_narrative(
     return _render_dashboard_blocks(blocks)
 
 
+def _render_timeline_narrative(hourly_summaries: list[dict[str, Any]], db_path: Path | None, date_str: str) -> str:
+    invalid_ts = datetime.max.replace(tzinfo=timezone.utc)
+
+    def _parse_ts(value: str | None) -> datetime:
+        if not value:
+            return invalid_ts
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except Exception:
+            return invalid_ts
+
+    def _event_app(item: dict[str, Any]) -> str:
+        for key in ("app_name", "window_title", "process_name"):
+            value = str(item.get(key) or "").strip()
+            if value:
+                return value
+        return "未知应用"
+
+    def _event_title(item: dict[str, Any]) -> str:
+        title = str(item.get("title") or item.get("window_title") or "").strip()
+        if title:
+            return " ".join(title.split())
+        body = str(item.get("content_text") or item.get("body") or "").strip()
+        if body:
+            return " ".join(body.split())[:40]
+        fallback = str(item.get("event_type") or "").strip()
+        return fallback or "一些操作"
+
+    def _unique_texts(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        unique: list[str] = []
+        for value in values:
+            text = " ".join(str(value).split()).strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            unique.append(text)
+        return unique
+
+    records: list[dict[str, Any]] = []
+    db_path_obj = Path(db_path).expanduser() if db_path is not None else None
+    if db_path_obj is not None and db_path_obj.exists():
+        try:
+            records = _query_events_by_date(db_path_obj, date_str)
+        except Exception as exc:
+            logger.warning("timeline narrative: db query failed exc_type=%s exc=%s", type(exc).__name__, exc)
+            records = []
+    elif db_path_obj is None:
+        try:
+            since, until = local_day_bounds(date_str)
+            records = query_raw_events(since=since, until=until, limit=5000)
+        except Exception as exc:
+            logger.warning("timeline narrative: query_raw_events failed exc_type=%s exc=%s", type(exc).__name__, exc)
+            records = []
+
+    minute_groups: list[dict[str, Any]] = []
+    for item in sorted(
+        records,
+        key=lambda row: (
+            _parse_ts(str(row.get("ts_start") or row.get("created_at") or "")),
+            int(row.get("id") or 0) if str(row.get("id") or "").isdigit() else 0,
+        ),
+    ):
+        ts = _parse_ts(str(item.get("ts_start") or item.get("created_at") or ""))
+        if ts == invalid_ts:
+            continue
+        minute_dt = ts.replace(second=0, microsecond=0)
+        app = _event_app(item)
+        title = _event_title(item)
+        if minute_groups and minute_groups[-1]["minute_dt"] == minute_dt:
+            minute_groups[-1]["app_map"][app].append(title)
+            if app not in minute_groups[-1]["app_order"]:
+                minute_groups[-1]["app_order"].append(app)
+            continue
+        minute_groups.append(
+            {
+                "minute_dt": minute_dt,
+                "app_order": [app],
+                "app_map": defaultdict(list, {app: [title]}),
+            }
+        )
+
+    beats: list[dict[str, Any]] = []
+    for group in minute_groups:
+        minute_dt = group["minute_dt"]
+        minute_label = minute_dt.strftime("%H:%M")
+        app_phrases: list[str] = []
+        primary_app = ""
+        primary_count = -1
+
+        for app in group["app_order"]:
+            titles = _unique_texts(list(group["app_map"].get(app) or []))
+            if not titles:
+                titles = ["一些操作"]
+            if len(titles) > primary_count:
+                primary_count = len(titles)
+                primary_app = app
+            app_phrases.append(f"在 {app} 做 {'、'.join(titles)}")
+
+        if not app_phrases:
+            continue
+
+        sentence = f"{minute_label} {app_phrases[0]}"
+        if len(app_phrases) > 1:
+            sentence = f"{sentence}；" + "；".join(app_phrases[1:])
+        beats.append(
+            {
+                "minute_dt": minute_dt,
+                "primary_app": primary_app or group["app_order"][0],
+                "sentence": sentence,
+            }
+        )
+
+    if not beats:
+        fallback_lines: list[str] = []
+        for summary in sorted(hourly_summaries, key=lambda item: int(item.get("hour") or 0) if str(item.get("hour") or "").isdigit() else 0):
+            payload = summary.get("payload") or {}
+            text = str(payload.get("summary_zh") or payload.get("summary") or "").strip()
+            if not text:
+                continue
+            try:
+                hour = int(summary.get("hour") or 0)
+            except (TypeError, ValueError):
+                hour = 0
+            fallback_lines.append(f"{hour:02d}:00 {text}")
+        if fallback_lines:
+            return "。".join(fallback_lines) + "。"
+        return "今日没有可回放的原始事件。"
+
+    paragraphs: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for beat in beats:
+        if not current:
+            current.append(beat)
+            continue
+        previous = current[-1]
+        gap_minutes = max(int((beat["minute_dt"] - previous["minute_dt"]).total_seconds() // 60), 0)
+        if beat["primary_app"] == previous["primary_app"] and gap_minutes <= 20:
+            current.append(beat)
+            continue
+        paragraphs.append(current)
+        current = [beat]
+
+    if current:
+        paragraphs.append(current)
+
+    rendered_paragraphs: list[str] = []
+    for paragraph in paragraphs:
+        sentence_parts: list[str] = []
+        for index, beat in enumerate(paragraph):
+            if index == 0:
+                sentence_parts.append(beat["sentence"])
+                continue
+            previous = paragraph[index - 1]
+            gap_minutes = max(int((beat["minute_dt"] - previous["minute_dt"]).total_seconds() // 60), 0)
+            connector = "接着" if gap_minutes <= 10 else "随后" if gap_minutes <= 20 else "后来"
+            sentence_parts.append(f"{connector} {beat['sentence']}")
+        rendered_paragraphs.append("。".join(sentence_parts) + "。")
+
+    return "\n\n".join(rendered_paragraphs)
+
+
 def _render_db_only_narrative(db_path: Path, date_str: str) -> str:
-    """Fallback: render pure data narrative from raw events without LLM.
-
-    When both skeleton and v2 fail (or v2 is disabled), extract raw events for the day
-    and display them as a simple timeline.
-    """
-    try:
-        start, end = local_day_bounds(date_str)
-        items = query_raw_events(str(db_path), start, end, limit=None)
-    except Exception as exc:
-        logger.warning("db_only narrative: query failed exc_type=%s exc=%s", type(exc).__name__, exc)
+    """Fallback: render pure data narrative from raw events without LLM."""
+    timeline = _render_timeline_narrative([], db_path, date_str)
+    if not timeline:
         return ""
-
-    if not items:
-        return "> ⚠️ 今日叙事 LLM 不可用，且没有原始事件可显示"
-
-    lines = ["> ⚠️ 今日叙事 LLM 不可用，以下为按时间线列出的原始事件（无智能总结）", ""]
-    for item in sorted(items, key=lambda x: x.get("ts_start") or ""):
-        ts_start = item.get("ts_start", "")
-        if ts_start:
-            time_str = ts_start[:5] if len(ts_start) >= 5 else ts_start
-        else:
-            time_str = "??:??"
-        source = item.get("source", "?")
-        app_name = item.get("app_name", "")
-        content = item.get("content_text", "") or item.get("body", "") or ""
-        content_preview = (content[:80] + "...") if len(content) > 80 else content
-        title = item.get("title") or app_name or content_preview or "(无标题)"
-        lines.append(f"- {time_str} | {source} | {title}")
-
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            "> ⚠️ 今日叙事 LLM 不可用，以下为按时间线列出的原始事件（无智能总结）",
+            "",
+            timeline,
+        ]
+    ).strip()
 
 
 def _render_daily_narrative_v2_or_legacy(
@@ -1021,7 +1163,6 @@ def build_obsidian_bundle(
     items = [item for item in items if not _is_loginwindow_render_item(item)]
     logger.info("hygiene_filter raw=%d kept=%d dropped=%d", raw_count, len(items), raw_count - len(items))
     normalized = [item for item in (_to_item(event) for event in items) if item is not None]
-    surface_snapshot = build_surface_snapshot(items)
     work_blocks = aggregate_work_blocks(
         normalized,
         sessions=sessions,
@@ -1030,8 +1171,6 @@ def build_obsidian_bundle(
     )
     work_item_count = len(work_blocks)
     work_topic_count = len({block.theme for block in work_blocks if not block.fragment})
-    top_block = max((block for block in work_blocks if not block.fragment), default=None, key=lambda block: block.duration_sec)
-    top_theme = getattr(top_block, "theme", "") or (work_blocks[0].theme if work_blocks else "今天")
     topic_block_counts = Counter(block.theme for block in work_blocks if not block.fragment)
 
     topics: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1066,7 +1205,6 @@ def build_obsidian_bundle(
             f"# {date_str}",
             "",
             *_render_previous_plan_acknowledgment(previous_plan),
-            "- 今日工作台：[[Dashboard/Today]]",
             f"- 知识库：{vault_name}",
             f"- 事件卡：{work_item_count}",
             f"- 主题卡：{work_topic_count}",
@@ -1104,34 +1242,7 @@ def build_obsidian_bundle(
         },
     )
 
-    dashboard_card = _build_note_card(
-        "dashboard",
-        date_str,
-        "dashboard",
-        {"created_at": f"{date_str}T00:00:00+00:00"},
-        _render_dashboard_body(
-            surface_snapshot,
-            date_str,
-            work_blocks=work_blocks,
-            evidence_paths=evidence_paths,
-            model_gateway=model_gateway,
-            previous_plan=previous_plan,
-        ),
-        extra_props={
-            "vault": vault_name,
-            "candidate_count": len(surface_snapshot.get("candidates", [])),
-            "filtered_total": surface_snapshot.get("filtered_total", 0),
-            "date": date_str,
-            "weekday": _weekday_label(date_str),
-            "focus_hours": _format_duration(sum(block.duration_sec for block in work_blocks if not block.fragment)),
-            "context_blocks": sum(1 for block in work_blocks if not block.fragment),
-            "top_theme": top_theme,
-        },
-        path="Dashboard/Today.md",
-    )
-
     return {
-        "dashboard": [dashboard_card.as_dict()],
         "daily": [daily_card.as_dict()],
         "events": [card.as_dict() for card in event_cards],
         "topics": [card.as_dict() for card in topic_cards],
@@ -1177,7 +1288,7 @@ def write_obsidian_bundle(bundle: dict[str, list[dict[str, Any]]], output_dir: s
         if event_dir.exists():
             for stale in event_dir.glob("*.md"):
                 stale.unlink()
-    for section in ("dashboard", "daily", "events", "topics"):
+    for section in ("daily", "events", "topics"):
         for note in bundle.get(section, []):
             relative = Path(note["path"])
             target = output_path / relative
@@ -1192,46 +1303,6 @@ def _write_note_if_missing(output_path: Path, note: dict[str, Any]) -> Path | No
         return None
     atomic_write_text(target, render_note(note["properties"], note["body"]))
     return target
-
-
-def _incremental_dashboard_note(
-    date_str: str,
-    vault_name: str,
-    full_day_raw_events: list[dict[str, Any]],
-    *,
-    sessions: list[dict[str, Any]],
-    previous_plan: str,
-    current_plan_existing: str,
-    existing_dashboard_text: str,
-) -> dict[str, Any] | None:
-    full_bundle = build_obsidian_bundle(
-        full_day_raw_events,
-        vault_name=vault_name,
-        date_str=date_str,
-        sessions=sessions,
-        model_gateway=None,
-        previous_plan=previous_plan,
-        current_plan_existing=current_plan_existing,
-    )
-    dashboard_note = dict(full_bundle["dashboard"][0])
-    fresh_body = dashboard_note["body"]
-
-    if not existing_dashboard_text:
-        return dashboard_note
-
-    if _frontmatter_value(existing_dashboard_text, "date") != date_str:
-        return None
-
-    old_main = _extract_block(existing_dashboard_text, "## 🎯 今日主线", "## 💡 需要你决定")
-    if old_main:
-        fresh_body = _replace_block(fresh_body, "## 🎯 今日主线", "## 💡 需要你决定", old_main)
-
-    old_details = _extract_block(existing_dashboard_text, "<details>", "</details>")
-    if old_details:
-        fresh_body = _replace_block(fresh_body, "<details>", "</details>", old_details)
-
-    dashboard_note["body"] = fresh_body
-    return dashboard_note
 
 
 def export_obsidian_incremental(
@@ -1250,12 +1321,10 @@ def export_obsidian_incremental(
     last_event_id = int(cursor_state.get("last_event_id") or 0)
 
     daily_path = output_path / "Daily" / f"{date_str}.md"
-    dashboard_path = output_path / "Dashboard" / "Today.md"
     previous_day = (datetime.fromisoformat(f"{date_str}T00:00:00+00:00") - timedelta(days=1)).date().isoformat()
     previous_plan = _read_tomorrow_plan(output_path / "Daily" / f"{previous_day}.md")
     current_plan_existing = _read_tomorrow_plan(daily_path)
     existing_daily_text = _read_text(daily_path)
-    existing_dashboard_text = _read_text(dashboard_path)
     if db_path_resolved.exists():
         window_raw_events = _query_events_by_date(db_path_resolved, date_str, min_id_exclusive=last_event_id)
         full_day_raw_events = _query_events_by_date(db_path_resolved, date_str)
@@ -1372,23 +1441,6 @@ def export_obsidian_incremental(
     if updated_daily != existing_daily_text:
         _write_text(daily_path, updated_daily)
         written.append(daily_path)
-
-    existing_dashboard_date = _frontmatter_value(existing_dashboard_text, "date")
-    if not existing_dashboard_text or existing_dashboard_date == date_str:
-        dashboard_note = _incremental_dashboard_note(
-            date_str,
-            vault_name,
-            full_day_raw_events,
-            sessions=sessions,
-            previous_plan=previous_plan,
-            current_plan_existing=current_plan_existing,
-            existing_dashboard_text=existing_dashboard_text,
-        )
-        if dashboard_note is not None:
-            target_text = render_note(dashboard_note["properties"], dashboard_note["body"])
-            if target_text != existing_dashboard_text:
-                _write_text(dashboard_path, target_text)
-            written.append(dashboard_path)
 
     max_new_id = max((int(row.get("id") or 0) for row in window_raw_events), default=last_event_id)
     _write_cursor_state_atomic(
