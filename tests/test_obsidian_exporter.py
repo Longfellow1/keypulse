@@ -423,3 +423,39 @@ def test_render_dashboard_blocks_limits_to_top_five_non_fragments():
     assert body.count("### ") == 5
     assert "topic-0" in body
     assert "topic-5" not in body
+
+
+def test_build_obsidian_bundle_prefers_skeleton_when_enabled(monkeypatch):
+    class _Backend:
+        kind = "openai_compatible"
+        base_url = "https://example.com"
+        model = "gpt-test"
+
+    class _Gateway:
+        def select_backend(self, stage: str = "write"):
+            return _Backend()
+
+    monkeypatch.setattr(
+        "keypulse.obsidian.exporter.build_daily_skeleton_report",
+        lambda *args, **kwargs: "# 2026-04-20 骨架报告\n\n## 今日主线\n- skeleton",
+    )
+
+    bundle = build_obsidian_bundle(
+        [
+            _make_item(
+                title="分析 数据 导出",
+                body="分析 数据 导出",
+                tags="alpha,beta,gamma",
+            )
+        ],
+        vault_name="Harland Knowledge",
+        date_str="2026-04-20",
+        model_gateway=_Gateway(),
+        use_narrative_skeleton=True,
+        db_path="/tmp/keypulse-test.db",
+    )
+
+    daily_body = bundle["daily"][0]["body"]
+    assert "骨架报告" in daily_body
+    assert "## 需要你决定" in daily_body
+    assert "## 今天的事件卡" in daily_body

@@ -21,4 +21,6 @@ def test_init_db_applies_all_migrations(tmp_path):
     assert "search_docs" in tables
     assert "policies" in tables
     assert "app_state" in tables
+    assert "hourly_summaries" in tables
+    assert "daily_skeletons" in tables
     assert "_schema_version" in tables
