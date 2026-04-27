@@ -129,6 +129,7 @@ class PipelineConfig(BaseModel):
     feedback_path: str = "~/.keypulse/feedback.jsonl"
     signals: PipelineSignalsConfig = Field(default_factory=PipelineSignalsConfig)
     use_narrative_v2: bool = False
+    use_narrative_skeleton: bool = False
 
 
 class ModelBackendConfig(BaseModel):

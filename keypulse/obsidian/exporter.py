@@ -16,7 +16,9 @@ from keypulse.obsidian.model import NoteCard
 from keypulse.quality import StrategyRegistry, StrategyRunner
 from keypulse.quality.strategies import register_cluster_strategies
 from keypulse.pipeline.decisions import build_daily_decisions, render_daily_decisions
+from keypulse.pipeline.fragments import filter_noisy_raw_events
 from keypulse.pipeline.narrative import aggregate_work_blocks, render_daily_narrative
+from keypulse.pipeline.skeleton import build_daily_skeleton_report
 from keypulse.pipeline.surface import build_surface_snapshot
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.atomic_io import atomic_write_text
@@ -452,10 +454,56 @@ def _render_daily_narrative_v2_or_legacy(
     evidence_formatter: Callable[[dict[str, Any]], str] | None,
     user_intent: str = "",
     use_narrative_v2: bool = False,
+    use_narrative_skeleton: bool = False,
     db_path: str | Path | None = None,
     date_str: str = "",
 ) -> str:
-    logger.info("v2_or_legacy gate: flag=%s gateway=%s db=%s", use_narrative_v2, model_gateway is not None, db_path is not None)
+    logger.info(
+        "narrative gate: skeleton=%s v2=%s gateway=%s db=%s",
+        use_narrative_skeleton,
+        use_narrative_v2,
+        model_gateway is not None,
+        db_path is not None,
+    )
+    if use_narrative_skeleton and model_gateway is not None and db_path is not None:
+        backend = model_gateway.select_backend("write") if hasattr(model_gateway, "select_backend") else None
+        kind = getattr(backend, "kind", "") if backend is not None else ""
+        url = getattr(backend, "base_url", "") if backend is not None else ""
+        model = getattr(backend, "model", "") if backend is not None else ""
+        available = backend is not None and kind and kind != "disabled" and model and url
+        if available:
+            try:
+                return build_daily_skeleton_report(Path(db_path), date_str, model_gateway)
+            except Exception as exc:
+                logger.warning(
+                    "skeleton narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
+                    kind,
+                    url,
+                    model,
+                    type(exc).__name__,
+                    exc,
+                )
+        if model_gateway is not None and db_path is not None:
+            logger.warning("skeleton narrative unavailable; falling back to v2")
+            from keypulse.pipeline.narrative_v2 import render_v2_narrative
+            try:
+                v2_body = render_v2_narrative(
+                    work_blocks,
+                    model_gateway=model_gateway,
+                    db_path=db_path,
+                    date_str=date_str,
+                )
+                if v2_body:
+                    return v2_body
+            except Exception as exc:
+                logger.warning(
+                    "skeleton v2 fallback failed backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
+                    kind,
+                    url,
+                    model,
+                    type(exc).__name__,
+                    exc,
+                )
     if use_narrative_v2 and model_gateway is not None and db_path is not None:
         from keypulse.pipeline.narrative_v2 import render_v2_narrative
         v2_body = render_v2_narrative(
@@ -927,8 +975,12 @@ def build_obsidian_bundle(
     previous_plan: str = "",
     current_plan_existing: str = "",
     use_narrative_v2: bool = False,
+    use_narrative_skeleton: bool = False,
     db_path: str | Path | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
+    raw_count = len(items)
+    items = filter_noisy_raw_events(items)
+    logger.info("hygiene_filter raw=%d kept=%d dropped=%d", raw_count, len(items), raw_count - len(items))
     normalized = [item for item in (_to_item(event) for event in items) if item is not None]
     surface_snapshot = build_surface_snapshot(items)
     work_blocks = aggregate_work_blocks(
@@ -991,6 +1043,7 @@ def build_obsidian_bundle(
                 evidence_formatter=lambda item: _obsidian_link(evidence_paths.get(_event_identity(item), ""), item["title"]) if evidence_paths else item["title"],
                 user_intent=previous_plan,
                 use_narrative_v2=use_narrative_v2,
+                use_narrative_skeleton=use_narrative_skeleton,
                 db_path=db_path,
                 date_str=date_str,
             ),
@@ -1348,6 +1401,7 @@ def export_obsidian(
     db_path: str | Path | None = None,
     cursor_path: str | Path | None = None,
     use_narrative_v2: bool = False,
+    use_narrative_skeleton: bool = False,
 ) -> list[Path]:
     if date_str:
         since, until = local_day_bounds(date_str)
@@ -1405,6 +1459,7 @@ def export_obsidian(
         previous_plan=previous_plan,
         current_plan_existing=current_plan_existing,
         use_narrative_v2=use_narrative_v2,
+        use_narrative_skeleton=use_narrative_skeleton,
         db_path=db_path,
     )
     written = write_obsidian_bundle(bundle, output_dir)

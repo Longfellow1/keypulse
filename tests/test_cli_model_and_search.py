@@ -48,6 +48,8 @@ def test_pipeline_sync_uses_unified_export_path(monkeypatch):
         incremental=False,
         db_path=None,
         cursor_path=None,
+        use_narrative_v2=False,
+        use_narrative_skeleton=False,
         **kwargs,
     ):
         captured["output_dir"] = output_dir

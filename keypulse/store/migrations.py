@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 16
 
 MIGRATIONS = [
     # v1
@@ -144,6 +144,23 @@ MIGRATIONS = [
         name TEXT PRIMARY KEY, path TEXT, summary TEXT, tech_stack TEXT, status TEXT, last_active TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_profile_entities_canonical ON profile_entities(canonical_name);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS hourly_summaries (
+        date TEXT NOT NULL,
+        hour INTEGER NOT NULL,
+        payload_json TEXT NOT NULL,
+        generated_at TEXT NOT NULL,
+        PRIMARY KEY (date, hour)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hourly_summaries_date ON hourly_summaries(date);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS daily_skeletons (
+        date TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        generated_at TEXT NOT NULL
+    );
     """,
 ]
 

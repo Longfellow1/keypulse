@@ -53,3 +53,6 @@ env/
 keypulse-*-design.md
 keypulse-*-strategy.md
 keypulse-*-pipeline.md
+
+# Local config backups
+config.toml.bak*

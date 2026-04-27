@@ -1026,6 +1026,7 @@ def _sync_obsidian_bundle(
         incremental=incremental,
         db_path=str(cfg.db_path_expanded),
         use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
+        use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
     )
     return len(written), target_output, sink.kind
 
@@ -1190,6 +1191,7 @@ def pipeline_draft(date, yesterday, output):
         plan=build_pipeline_plan(LLMMode.OFF if llm_mode == "off" else LLMMode(llm_mode), inputs),
         feedback_events=feedback_events,
         use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
+        use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
         db_path=cfg.db_path_expanded,
         date_str=date_str,
     )
@@ -1299,7 +1301,14 @@ def export(format, days, date, output):
             sink = resolve_active_sink(cfg, persist=True)
             target_output = str(sink.output_dir)
         gateway = load_model_gateway(cfg) if hasattr(cfg, "model") else None
-        written = export_obsidian(output_dir=target_output, days=days, date_str=date, vault_name=cfg.obsidian.vault_name, model_gateway=gateway)
+        written = export_obsidian(
+            output_dir=target_output,
+            days=days,
+            date_str=date,
+            vault_name=cfg.obsidian.vault_name,
+            model_gateway=gateway,
+            use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
+        )
         console.print(f"[green]Exported {len(written)} notes to {target_output}[/green]")
         return
     else:
