@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from keypulse.pipeline.normalize import canonicalize_app, strip_slug_tail, title_to_object_hint
+from keypulse.utils.text_filters import looks_like_ime_composition
 
 
 @dataclass
@@ -241,7 +242,7 @@ def extract_fragments(rows: list[dict]) -> list[SemanticFragment]:
                 if not _passes_l2(sample, verb):
                     continue
                 # L5: pinyin stream filter (only for type/paste)
-                if verb in ("type", "paste") and _looks_like_unbroken_run(sample):
+                if verb in ("type", "paste") and looks_like_ime_composition(sample):
                     continue
 
         object_hint = title_to_object_hint(window_title) if window_title else ""

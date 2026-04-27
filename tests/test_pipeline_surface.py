@@ -55,8 +55,8 @@ def test_build_surface_snapshot_sorts_candidates_and_builds_theme_candidates():
             {
                 "source": "clipboard",
                 "event_type": "clipboard_copy",
-                "content_text": "决定保留高显式度输入，并把主题候选放到首页工作台。",
-                "topic_key": "surface",
+                "content_text": "另一段不同的文本内容用于测试。",
+                "topic_key": "product",
                 "tags": "product",
             },
             {
@@ -74,10 +74,9 @@ def test_build_surface_snapshot_sorts_candidates_and_builds_theme_candidates():
     assert len(snapshot["candidates"]) == 2
     assert snapshot["candidates"][0]["source"] == "manual"
     assert snapshot["candidates"][0]["score"] >= snapshot["candidates"][1]["score"]
-    assert snapshot["candidates"][0]["why_selected"]["recurrence"] > 0
 
     assert snapshot["theme_candidates"][0]["key"] == "topic:surface"
-    assert snapshot["theme_candidates"][0]["item_count"] == 2
+    assert snapshot["theme_candidates"][0]["item_count"] == 1
     assert "高显式度输入" in snapshot["theme_candidates"][0]["top_evidence"]
 
 

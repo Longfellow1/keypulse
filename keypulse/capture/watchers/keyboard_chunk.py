@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from keypulse.utils.text_filters import looks_like_ime_composition
+
 import queue
 import time
 import unicodedata
@@ -131,6 +133,9 @@ class KeyboardChunkWatcher(BaseWatcher):
         denied: bool = False,
     ) -> None:
         if secure_input or denied:
+            return
+        # Early filter: drop IME composition blobs at capture source
+        if looks_like_ime_composition(text):
             return
         self._buffer.add_text(
             text=text,
