@@ -261,7 +261,6 @@ def render_daily_skeleton_report(
     motive_name = {m["id"]: m["name"] for m in MOTIVES}
     hourly_index = _hourly_summary_index(hourly_summaries)
     timeline_date_str = date_str or report_date_str
-    from keypulse.obsidian.exporter import _render_timeline_narrative
 
     sorted_motives = sorted(
         [item for item in (payload.get("motives") or []) if isinstance(item, dict)],
@@ -279,13 +278,17 @@ def render_daily_skeleton_report(
         lines.append("- 今日没有足够证据生成稳定主线")
     lines.append("")
 
-    lines.append("## 时间线回放")
-    timeline_body = _render_timeline_narrative(hourly_summaries, db_path, timeline_date_str)
-    if timeline_body.strip():
-        lines.extend(timeline_body.splitlines())
-    else:
-        lines.append("今日没有可回放的原始事件")
-    lines.append("")
+    # 时间线段暂时关闭：直接从 raw_events 生成，绕过 IME/shell/loginwindow 过滤导致隐私回归。
+    # 待 Codex MCP 重做后恢复（复用 Today 那套人话叙事 + L5 fragment 过滤）。
+    if False:
+        from keypulse.obsidian.exporter import _render_timeline_narrative
+        lines.append("## 时间线回放")
+        timeline_body = _render_timeline_narrative(hourly_summaries, db_path, timeline_date_str)
+        if timeline_body.strip():
+            lines.extend(timeline_body.splitlines())
+        else:
+            lines.append("今日没有可回放的原始事件")
+        lines.append("")
 
     lines.append("## 动机骨架")
     for motive in sorted_motives:
