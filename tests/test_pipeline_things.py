@@ -102,7 +102,7 @@ def test_render_things_report_markdown_fallback() -> None:
     report = render_things_report([_thing()], model_gateway=None, title="今日做的事")
     assert report.startswith("# 今日做的事")
     assert "###" in report
-    assert "- 问题：" in report
+    assert "活动" in report
 
 
 def test_pipeline_things_cli_json(monkeypatch) -> None:
