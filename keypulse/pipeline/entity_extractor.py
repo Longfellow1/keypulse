@@ -13,6 +13,28 @@ _URL_RE = re.compile(r"https?://([\w\-.]+)(/[\w\-./]*)?(?:\?[^\s]*)?", re.IGNORE
 _ISSUE_RE = re.compile(r"#\d+|(?:GH|JIRA|LIN)[-_]\d+", re.IGNORECASE)
 _INTENT_ENTITY_RE = re.compile(r"(?:修复|实现)\s+([^\n,，。;；]+)")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_\-]{3,}")
+_KEYWORD_TOKEN_RE = re.compile(r"[A-Za-z0-9_./:-]{2,}|[\u4e00-\u9fff]{2,}")
+_KEYWORD_STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "this",
+    "that",
+    "from",
+    "have",
+    "done",
+    "doing",
+    "用户",
+    "事件",
+    "活动",
+    "相关",
+    "进行",
+    "处理",
+    "一个",
+    "一些",
+    "以及",
+}
 
 
 @dataclass(frozen=True)
@@ -85,3 +107,29 @@ def extract(event: SemanticEvent) -> list[Entity]:
             add("project", token, token, 0.5)
 
     return entities
+
+
+def extract_keywords(event: SemanticEvent) -> set[str]:
+    text = " ".join(
+        [
+            str(event.intent or ""),
+            str(event.artifact or ""),
+            str(event.raw_ref or ""),
+        ]
+    )
+    keywords = extract_text_keywords(text)
+    for entity in extract(event):
+        value = entity.value.strip().lower()
+        if len(value) >= 2:
+            keywords.add(value)
+        keywords |= extract_text_keywords(value)
+    return keywords
+
+
+def extract_text_keywords(text: str) -> set[str]:
+    keywords: set[str] = set()
+    for raw in _KEYWORD_TOKEN_RE.findall(text.lower()):
+        if len(raw) < 2 or raw in _KEYWORD_STOPWORDS:
+            continue
+        keywords.add(raw)
+    return keywords
