@@ -44,29 +44,30 @@ def _thing() -> Thing:
 
 
 def test_render_thing_uses_gateway_output() -> None:
-    gateway = _Gateway(response="### 标题\n- 问题：a\n- 做法：b\n- 结论：c\n- 产物：d")
+    gateway = _Gateway(response="### 标题\n你今天在 keypulse 修了 timeline 段，commit 11a3a9b 落地。")
     output = render_thing(_thing(), model_gateway=gateway)
     assert "### 标题" in output
     assert gateway.prompts
-    assert "事件流（按时间排序）" in gateway.prompts[0]
+    assert "事件流（按时间排序" in gateway.prompts[0]
 
 
 def test_render_thing_fallback_when_gateway_none() -> None:
     output = render_thing(_thing(), model_gateway=None)
     assert "### 修了 timeline 段" in output
-    assert "- 问题：-" in output
-    assert "- 做法：涉及 1 个事件" in output
+    assert "git_log" in output
+    assert "1 条活动" in output
 
 
 def test_render_thing_fallback_when_gateway_raises() -> None:
     gateway = _Gateway(should_raise=True)
     output = render_thing(_thing(), model_gateway=gateway)
-    assert "- 结论：-" in output
-    assert "- 产物：11a3a9b" in output
+    assert "11a3a9b" in output
+    assert "git_log" in output
 
 
 def test_render_thing_fallback_handles_empty_entities() -> None:
     t = _thing()
     t.entities = []
     output = render_thing(t, model_gateway=None)
-    assert "- 产物：-" in output
+    assert "未知来源" not in output  # sources 仍是 {"git_log"}
+    assert "1 条活动" in output
