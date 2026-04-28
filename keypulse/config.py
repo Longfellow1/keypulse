@@ -149,12 +149,20 @@ class ModelBackendConfig(BaseModel):
     kind: Literal["lm_studio", "openai_compatible", "ollama", "disabled"] = "disabled"
     base_url: str = ""
     model: str = ""
+    api_key_source: str = ""
     api_key_env: str = ""
     timeout_sec: int = 20
 
 
 class ModelConfig(BaseModel):
-    active_profile: Literal["local-first", "cloud-first", "auto", "privacy-locked"] = "local-first"
+    active_profile: Literal[
+        "local-first",
+        "cloud-first",
+        "cloud-only",
+        "local-only",
+        "auto",
+        "privacy-locked",
+    ] = "local-first"
     state_path: str = "~/.keypulse/model-state.json"
     local: ModelBackendConfig = Field(
         default_factory=lambda: ModelBackendConfig(

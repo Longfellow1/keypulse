@@ -1,27 +1,42 @@
 from __future__ import annotations
 
-import logging
+import contextlib
 import hashlib
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from keypulse.config import Config, ModelBackendConfig
+from keypulse.pipeline.model_keychain import KeychainCommandError, KeychainUnavailable, read_secret
 from keypulse.pipeline.narrative import (
     WorkBlock,
     format_work_block_for_prompt,
     render_daily_narrative as _fallback_daily_narrative,
 )
+from keypulse.utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
 
 
-PROFILE_NAMES = {"local-first", "cloud-first", "auto", "privacy-locked"}
+PROFILE_NAMES = {
+    "local-first",
+    "cloud-first",
+    "cloud-only",
+    "local-only",
+    "auto",
+    "privacy-locked",
+}
+
+
+class NoBackendAvailable(RuntimeError):
+    """Raised when no model backend can serve a request."""
 
 
 @dataclass(frozen=True)
@@ -29,11 +44,31 @@ class ModelBackend:
     kind: str
     base_url: str
     model: str
+    api_key_source: str = ""
     api_key_env: str = ""
     timeout_sec: int = 20
 
     def is_disabled(self) -> bool:
         return self.kind == "disabled"
+
+
+class FallbackPolicy:
+    """Resolve backend priority order by active profile."""
+
+    def get_backend_order(self, profile: str, stage: str) -> list[str]:
+        if profile == "cloud-first":
+            return ["cloud", "local"]
+        if profile == "local-first":
+            return ["local", "cloud"]
+        if profile == "cloud-only":
+            return ["cloud"]
+        if profile == "local-only":
+            return ["local"]
+        if profile == "auto":
+            return ["local", "cloud"] if stage == "write" else ["cloud", "local"]
+        if profile == "privacy-locked":
+            return []
+        return ["local", "cloud"]
 
 
 def _state_path(path: str | Path) -> Path:
@@ -44,14 +79,37 @@ def _read_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text())
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
     except Exception:
         return {}
 
 
 def _write_state(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+
+
+@contextlib.contextmanager
+def _state_file_lock(path: Path):
+    lock_path = path.with_suffix(f"{path.suffix}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        try:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        except Exception:
+            pass
+        try:
+            yield
+        finally:
+            try:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
 
 
 def _env_value(name: str) -> str:
@@ -63,6 +121,7 @@ def _model_backend_from_config(config: ModelBackendConfig) -> ModelBackend:
         kind=config.kind,
         base_url=config.base_url.strip().rstrip("/"),
         model=config.model.strip(),
+        api_key_source=getattr(config, "api_key_source", "").strip(),
         api_key_env=config.api_key_env.strip(),
         timeout_sec=config.timeout_sec,
     )
@@ -88,64 +147,160 @@ def _stable_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _short_circuit_payload(raw: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    payload: dict[str, Any] = {
+        "short_circuits": raw.get("short_circuits") if isinstance(raw.get("short_circuits"), dict) else {},
+        "last_call": raw.get("last_call") if isinstance(raw.get("last_call"), dict) else {},
+    }
+    if "active_profile" in raw:
+        payload["active_profile"] = raw["active_profile"]
+    return payload
+
+
 class ModelGateway:
     def __init__(self, config: Config, state_path: str | Path | None = None):
         self._config = config
         self._state_path = _state_path(state_path or config.model.state_path)
-        self._state = _read_state(self._state_path)
+        self._state = _short_circuit_payload(_read_state(self._state_path))
+        self._policy = FallbackPolicy()
 
     @property
     def active_profile(self) -> str:
-        profile = str(self._state.get("active_profile") or self._config.model.active_profile)
+        latest = self._sync_state()
+        profile = str(latest.get("active_profile") or self._config.model.active_profile)
         return profile if profile in PROFILE_NAMES else self._config.model.active_profile
 
     def use_profile(self, profile: str) -> str:
         if profile not in PROFILE_NAMES:
             raise ValueError(f"unknown profile: {profile}")
-        self._state = {**self._state, "active_profile": profile}
-        _write_state(self._state_path, self._state)
+
+        def mutator(state: dict[str, Any]) -> None:
+            state["active_profile"] = profile
+
+        self._update_state(mutator)
         return profile
 
+    def _sync_state(self) -> dict[str, Any]:
+        self._state = _short_circuit_payload(_read_state(self._state_path))
+        return self._state
+
+    def _update_state(self, mutator) -> dict[str, Any]:
+        with _state_file_lock(self._state_path):
+            state = _short_circuit_payload(_read_state(self._state_path))
+            mutator(state)
+            _write_state(self._state_path, state)
+            self._state = state
+            return state
+
+    def _backend_map(self) -> dict[str, ModelBackend]:
+        return {
+            "local": _model_backend_from_config(self._config.model.local),
+            "cloud": _model_backend_from_config(self._config.model.cloud),
+        }
+
+    def backend_order(self, stage: str = "write") -> list[str]:
+        return self._policy.get_backend_order(self.active_profile, stage)
+
     def _backend_candidates(self, stage: str) -> list[ModelBackend]:
-        local = _model_backend_from_config(self._config.model.local)
+        mapping = self._backend_map()
+        return [mapping[name] for name in self.backend_order(stage) if name in mapping]
+
+    def _fallback_order(self, stage: str = "write") -> list[ModelBackend]:
+        return self._backend_candidates(stage)
+
+    def _backend_name_from_obj(self, backend: ModelBackend) -> str:
         cloud = _model_backend_from_config(self._config.model.cloud)
-        profile = self.active_profile
+        local = _model_backend_from_config(self._config.model.local)
+        if backend.kind == cloud.kind and backend.base_url == cloud.base_url and backend.model == cloud.model:
+            return "cloud"
+        if backend.kind == local.kind and backend.base_url == local.base_url and backend.model == local.model:
+            return "local"
+        return "unknown"
 
-        if profile == "privacy-locked":
-            return [ModelBackend(kind="disabled", base_url="", model="")]
-        if profile == "local-first":
-            return [local, cloud]
-        if profile == "cloud-first":
-            return [cloud, local]
-        if stage == "write":
-            return [local, cloud]
-        return [cloud, local]
+    def _resolve_api_key(self, backend: ModelBackend) -> str | None:
+        source = (backend.api_key_source or "").strip()
+        if source.startswith("keychain:"):
+            service = source.split(":", 1)[1].strip()
+            if service:
+                try:
+                    secret = read_secret(service)
+                except (KeychainUnavailable, KeychainCommandError):
+                    secret = None
+                if secret:
+                    return secret
+        env_value = _env_value(backend.api_key_env)
+        return env_value or None
 
-    def _is_backend_usable(self, backend: ModelBackend) -> bool:
+    def _auth_mode(self, backend: ModelBackend) -> str:
+        if backend.kind != "openai_compatible":
+            return "none"
+        source = (backend.api_key_source or "").strip()
+        if source.startswith("keychain:"):
+            service = source.split(":", 1)[1].strip()
+            if service:
+                try:
+                    if read_secret(service):
+                        return "keychain"
+                except (KeychainUnavailable, KeychainCommandError):
+                    pass
+            if _env_value(backend.api_key_env):
+                return "env"
+            return "missing"
+        if _env_value(backend.api_key_env):
+            return "env"
+        return "missing"
+
+    def _is_backend_usable(self, backend: ModelBackend, *, require_auth: bool = False) -> bool:
         if backend.is_disabled() or not backend.model or not backend.base_url:
             return False
         if backend.kind in {"lm_studio", "ollama"}:
             return True
         if backend.kind == "openai_compatible":
-            return True
+            if not require_auth:
+                return True
+            return bool(self._resolve_api_key(backend))
         return False
 
     def select_backend(self, stage: str = "write") -> ModelBackend:
         for backend in self._backend_candidates(stage):
-            if self._is_backend_usable(backend):
+            if self._is_backend_usable(backend, require_auth=False):
                 return backend
         return ModelBackend(kind="disabled", base_url="", model="")
 
-    def _request_json(self, backend: ModelBackend, path: str, payload: dict[str, Any], method: str = "POST") -> dict[str, Any]:
+    def _request_json(
+        self,
+        backend: ModelBackend,
+        path: str,
+        payload: dict[str, Any],
+        method: str = "POST",
+    ) -> dict[str, Any]:
         normalized_path = path
         if re.search(r"/v\d+$", backend.base_url) and path.startswith("/v1/"):
             normalized_path = path.removeprefix("/v1")
         url = f"{backend.base_url}{normalized_path}"
         headers = {"Content-Type": "application/json"}
-        if backend.kind == "openai_compatible" and backend.api_key_env:
-            api_key = _env_value(backend.api_key_env)
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
+        if backend.kind == "openai_compatible":
+            resolved_key = self._resolve_api_key(backend)
+            if resolved_key:
+                headers["Authorization"] = f"Bearer {resolved_key}"
         request = Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
@@ -200,9 +355,11 @@ class ModelGateway:
             ],
         )
 
-    def _call_backend(self, backend: ModelBackend, prompt: str, prompt_patch: str = "") -> str:
+    def _call_backend(self, backend: ModelBackend, prompt: str, prompt_patch: str | None = "") -> str:
         if backend.is_disabled():
             return ""
+        if prompt_patch is None:
+            return self._chat(backend, [{"role": "user", "content": prompt}])
         if backend.kind == "ollama":
             return self._generate(backend, prompt)
         return self._chat(
@@ -213,6 +370,89 @@ class ModelGateway:
             ],
             prompt_patch=prompt_patch,
         )
+
+    def _short_circuit_entry(self, backend_name: str) -> dict[str, Any] | None:
+        state = self._sync_state()
+        raw = (state.get("short_circuits") or {}).get(backend_name)
+        return raw if isinstance(raw, dict) else None
+
+    def _clear_short_circuit(self, backend_name: str) -> None:
+        def mutator(state: dict[str, Any]) -> None:
+            short_circuits = state.setdefault("short_circuits", {})
+            short_circuits[backend_name] = None
+
+        self._update_state(mutator)
+
+    def _is_short_circuited(self, backend_name: str) -> bool:
+        entry = self._short_circuit_entry(backend_name)
+        if not entry:
+            return False
+        until = _parse_iso_datetime(str(entry.get("until") or ""))
+        if not until:
+            return False
+        if until <= _utc_now():
+            self._clear_short_circuit(backend_name)
+            return False
+        return True
+
+    def _short_circuit(self, backend_name: str, *, minutes: int, reason: str) -> None:
+        now = _utc_now()
+
+        def mutator(state: dict[str, Any]) -> None:
+            short_circuits = state.setdefault("short_circuits", {})
+            current = short_circuits.get(backend_name) if isinstance(short_circuits.get(backend_name), dict) else {}
+            fail_count = int((current or {}).get("fail_count") or 0) + 1
+            short_circuits[backend_name] = {
+                "until": (now + timedelta(minutes=minutes)).isoformat(),
+                "reason": reason,
+                "fail_count": fail_count,
+            }
+
+        self._update_state(mutator)
+
+    def _record_last_call(self, backend_name: str, *, duration_ms: int, ok: bool) -> None:
+        now = _utc_now()
+
+        def mutator(state: dict[str, Any]) -> None:
+            last_call = state.setdefault("last_call", {})
+            last_call[backend_name] = {
+                "at": now.isoformat(),
+                "duration_ms": int(duration_ms),
+                "ok": bool(ok),
+            }
+            if ok:
+                short_circuits = state.setdefault("short_circuits", {})
+                short_circuits[backend_name] = None
+
+        self._update_state(mutator)
+
+    def get_state(self) -> dict[str, Any]:
+        return _short_circuit_payload(self._sync_state())
+
+    def backend_status(self, stage: str = "write") -> dict[str, Any]:
+        mapping = self._backend_map()
+        state = self.get_state()
+        short_circuits = state.get("short_circuits") or {}
+        last_call = state.get("last_call") or {}
+        info: dict[str, Any] = {}
+
+        for name in ("cloud", "local"):
+            backend = mapping[name]
+            info[name] = {
+                "kind": backend.kind,
+                "model": backend.model,
+                "base_url": backend.base_url,
+                "auth_mode": self._auth_mode(backend),
+                "usable": self._is_backend_usable(backend, require_auth=True),
+                "short_circuit": short_circuits.get(name),
+                "last_call": last_call.get(name),
+            }
+
+        return {
+            "profile": self.active_profile,
+            "order": self.backend_order(stage),
+            "backends": info,
+        }
 
     def normalize_markdown(self, text: str, prompt_patch: str = "") -> str:
         backend = self.select_backend("write")
@@ -225,7 +465,7 @@ class ModelGateway:
             return _fallback_markdown(text)
         try:
             result = self._call_backend(backend, prompt, prompt_patch=prompt_patch)
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError, NoBackendAvailable):
             result = ""
         return result.strip() or _fallback_markdown(text)
 
@@ -248,7 +488,7 @@ class ModelGateway:
             return f"{theme_name}: " + "; ".join(head) + tail if head else f"{theme_name}: no evidence"
         try:
             result = self._call_backend(backend, prompt, prompt_patch=prompt_patch)
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError, NoBackendAvailable):
             result = ""
         if result.strip():
             return result.strip()
@@ -302,54 +542,63 @@ class ModelGateway:
             return _fallback_daily_narrative(blocks)
         try:
             result = self._call_backend(backend, prompt, prompt_patch=prompt_patch)
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError) as exc:
-            logger.error("daily_narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s", backend.kind, backend.base_url, backend.model, type(exc).__name__, exc)
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError, NoBackendAvailable) as exc:
+            logger.error(
+                "daily_narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
+                backend.kind,
+                backend.base_url,
+                backend.model,
+                type(exc).__name__,
+                exc,
+            )
             result = ""
         return result.strip() or _fallback_daily_narrative(blocks)
 
-    def render(self, prompt: str) -> str:
-        """Bare LLM call: send prompt directly to the underlying client, no template, no system instructions.
-        For narrative_v2 Pass 1/2 where the caller owns the complete prompt.
-        Raises on failure — the caller handles fallback.
-        """
-        backend = self.select_backend("write")
-        if backend.is_disabled():
-            raise RuntimeError("no backend available")
-        return self._chat(
-            backend,
-            [{"role": "user", "content": prompt}],
-        )
+    def render(self, prompt: str, *, stage: str = "write") -> str:
+        """Bare LLM call with automatic backend fallback for the chosen stage."""
+        last_error: Exception | None = None
+        for backend in self._fallback_order(stage):
+            if not self._is_backend_usable(backend, require_auth=False):
+                continue
+            try:
+                return self._call_backend(backend, prompt, prompt_patch=None)
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "backend %s failed (%s), trying next",
+                    backend.kind,
+                    type(exc).__name__,
+                )
+                continue
+
+        if last_error is not None:
+            raise last_error
+        raise NoBackendAvailable("no backend available")
 
     def test_backend(self) -> dict[str, Any]:
-        backend = self.select_backend("write")
-        if backend.is_disabled():
-            return {
-                "ok": False,
-                "active_profile": self.active_profile,
-                "backend": backend.kind,
-                "message": "no backend available",
-            }
         prompt = "Reply with the single word ok."
         try:
-            response = self._call_backend(backend, prompt)
-            ok = bool(response.strip())
+            response = self.render(prompt, stage="write")
+            status = self.backend_status("write")
+            order = status.get("order") or []
+            last_call = status.get("backends", {}).get(order[0], {}).get("last_call") if order else None
             return {
-                "ok": ok,
+                "ok": bool(response.strip()),
                 "active_profile": self.active_profile,
-                "backend": backend.kind,
-                "model": backend.model,
+                "backend": order[0] if order else "disabled",
+                "model": (status.get("backends", {}).get(order[0], {}).get("model") if order else ""),
                 "response": response.strip(),
                 "prompt_hash": _stable_hash(prompt),
+                "last_call": last_call,
             }
         except Exception as exc:  # pragma: no cover - defensive network boundary
             return {
                 "ok": False,
                 "active_profile": self.active_profile,
-                "backend": backend.kind,
-                "model": backend.model,
+                "backend": "disabled",
+                "model": "",
                 "error": str(exc),
             }
-
 
 def load_model_gateway(config: Config, state_path: str | Path | None = None) -> ModelGateway:
     return ModelGateway(config, state_path=state_path)
