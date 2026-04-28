@@ -7,6 +7,7 @@ from keypulse.sources.plugins.git_log import GitLogSource
 from keypulse.sources.plugins.knowledgec import KnowledgeCSource
 from keypulse.sources.plugins.markdown_vault import MarkdownVaultSource
 from keypulse.sources.plugins.safari_history import SafariHistorySource
+from keypulse.sources.plugins.wechat import WechatSource
 from keypulse.sources.plugins.zsh_history import ZshHistorySource
 
 
@@ -19,4 +20,5 @@ __all__ = [
     "SafariHistorySource",
     "ZshHistorySource",
     "MarkdownVaultSource",
+    "WechatSource",
 ]
