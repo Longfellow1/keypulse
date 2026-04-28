@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Iterator
 
 from keypulse.sources.discoverers import CandidateSource
+from keypulse.sources.cleaning.path_filter import is_excluded_path
+from keypulse.sources.types import classify_fields, confidence_from_categories
 
 
-_HINT_FIELDS = {"role", "user", "assistant", "message", "content", "session_id", "prompt"}
 _EXCLUDED_DIRS = {".Trash", "node_modules", ".git", "__pycache__"}
 _MAX_FILE_SIZE = 50 * 1024 * 1024
 
@@ -75,6 +76,9 @@ def _iter_jsonl_paths(root: Path, *, max_depth: int) -> Iterator[Path]:
 
 def _candidate_for(path: Path, exclude_paths: set[str]) -> CandidateSource | None:
     resolved = path.expanduser().resolve(strict=False)
+    excluded, _ = is_excluded_path(resolved)
+    if excluded:
+        return None
     if _is_excluded(resolved, exclude_paths):
         return None
 
@@ -90,21 +94,24 @@ def _candidate_for(path: Path, exclude_paths: set[str]) -> CandidateSource | Non
             app_hint=_infer_app_hint(resolved),
             schema_signature="",
             hint_tables=[],
+            hint_fields=[],
             confidence="low",
         )
 
     fields = _sample_fields(resolved)
-    hint_fields = sorted({field for field in fields if _normalize_field(field) in _HINT_FIELDS})
+    categories = classify_fields(fields)
+    hint_fields = sorted({field for matched in categories.values() for field in matched})
     if not hint_fields:
         return None
 
-    confidence = "high" if len(hint_fields) >= 3 else "medium"
+    confidence = confidence_from_categories(len(categories))
     return CandidateSource(
         discoverer="jsonl",
         path=str(resolved),
         app_hint=_infer_app_hint(resolved),
         schema_signature=",".join(sorted(fields)),
         hint_tables=hint_fields,
+        hint_fields=hint_fields,
         confidence=confidence,
     )
 
@@ -145,10 +152,6 @@ def _is_excluded(path: Path, exclude_paths: set[str]) -> bool:
         if path == excluded_path or excluded_path in path.parents:
             return True
     return False
-
-
-def _normalize_field(field: str) -> str:
-    return field.strip().lower().replace("-", "_")
 
 
 def _infer_app_hint(path: Path) -> str:

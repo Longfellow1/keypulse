@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterator
 
+from keypulse.sources.cleaning.config import load_cleaning_config
+from keypulse.sources.cleaning.content_quality import is_low_signal_event
+from keypulse.sources.cleaning.dedup import dedup_events
 from keypulse.sources.plugins.chrome_history import ChromeHistorySource
 from keypulse.sources.plugins.claude_code import ClaudeCodeSource
 from keypulse.sources.plugins.codex_cli import CodexCliSource
 from keypulse.sources.plugins.git_log import GitLogSource
+from keypulse.sources.plugins.markdown_vault import MarkdownVaultSource
 from keypulse.sources.plugins.safari_history import SafariHistorySource
 from keypulse.sources.plugins.zsh_history import ZshHistorySource
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
@@ -54,6 +58,7 @@ def read_all(
     events: list[SemanticEvent] = []
     discovered = discover_all(source)
     selected = _select_sources(source)
+    cleaning_config = load_cleaning_config()
 
     for plugin in selected:
         instances = discovered.get(plugin.name, [])
@@ -65,12 +70,24 @@ def read_all(
                 continue
             try:
                 for event in stream:
+                    try:
+                        is_noise, _ = is_low_signal_event(event)
+                    except Exception as exc:  # pragma: no cover - defensive
+                        LOGGER.warning("L3 filter failed for %s: %s", plugin.name, exc)
+                        is_noise = False
+                    if is_noise:
+                        continue
                     events.append(event)
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.warning("read stream failed for %s (%s): %s", plugin.name, instance.locator, exc)
 
-    events.sort(key=lambda event: event.time)
-    yield from events
+    try:
+        deduped = dedup_events(events, time_window_minutes=cleaning_config.dedup_time_window_minutes)
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.warning("L4 dedup failed: %s", exc)
+        deduped = events
+    deduped.sort(key=lambda event: event.time)
+    yield from deduped
 
 
 def _select_sources(source: str | None) -> list[DataSource]:
@@ -92,3 +109,4 @@ register(CodexCliSource())
 register(ChromeHistorySource())
 register(SafariHistorySource())
 register(ZshHistorySource())
+register(MarkdownVaultSource())

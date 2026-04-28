@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 
 import pytest
 
-from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
+from keypulse.sources.types import (
+    DataSource,
+    DataSourceInstance,
+    SemanticEvent,
+    classify_fields,
+    confidence_from_categories,
+)
 
 
 class _DummySource(DataSource):
@@ -79,3 +85,15 @@ def test_data_source_contract_shape() -> None:
     events = list(source.read(instances[0], datetime.now(timezone.utc), datetime.now(timezone.utc)))
     assert len(events) == 1
     assert events[0].source == "dummy"
+
+
+def test_classify_fields_groups_keywords() -> None:
+    classified = classify_fields(["role", "message", "session_id", "foo", "path"])
+    assert set(classified.keys()) >= {"ai_dialog", "intent_text", "session", "artifact"}
+    assert classified["ai_dialog"] == ["role"]
+
+
+def test_confidence_from_categories_mapping() -> None:
+    assert confidence_from_categories(0) == "low"
+    assert confidence_from_categories(1) == "medium"
+    assert confidence_from_categories(3) == "high"

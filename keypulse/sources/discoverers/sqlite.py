@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Iterator
 
 from keypulse.sources.discoverers import CandidateSource
+from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
+from keypulse.sources.cleaning.path_filter import is_excluded_path
+from keypulse.sources.types import classify_fields, confidence_from_categories
 
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -23,6 +26,7 @@ _HINT_KEYWORDS = (
     "queries",
     "commands",
 )
+_STRONG_FIELD_CATEGORIES = {"intent_text", "ai_dialog", "session", "nav", "comm", "artifact"}
 
 
 def discover_sqlite_candidates(*, exclude_paths: set[str]) -> list[CandidateSource]:
@@ -82,7 +86,13 @@ def _iter_sqlite_paths(root: Path, *, max_depth: int, deadline: float) -> Iterat
 
 def _candidate_for(path: Path, exclude_paths: set[str]) -> CandidateSource | None:
     resolved = path.expanduser().resolve(strict=False)
+    excluded, _ = is_excluded_path(resolved)
+    if excluded:
+        return None
     if _is_excluded(resolved, exclude_paths):
+        return None
+    blocked, _ = is_blocked_sqlite(resolved)
+    if blocked:
         return None
     if not _is_sqlite_file(resolved):
         return None
@@ -92,16 +102,29 @@ def _candidate_for(path: Path, exclude_paths: set[str]) -> CandidateSource | Non
         return None
 
     hint_tables = sorted({name for name in tables if _is_hint_table(name)})
-    if not hint_tables:
+    table_columns = _read_table_columns(resolved, tables)
+    field_categories = classify_fields(table_columns)
+    hint_fields = sorted(
+        {
+            field
+            for category, matches in field_categories.items()
+            if category in _STRONG_FIELD_CATEGORIES
+            for field in matches
+        }
+    )
+    if not hint_tables and not hint_fields:
         return None
 
-    confidence = "high" if len(hint_tables) >= 3 else "medium"
+    table_confidence = "high" if len(hint_tables) >= 3 else ("medium" if hint_tables else "low")
+    field_confidence = confidence_from_categories(len(field_categories))
+    confidence = _max_confidence(table_confidence, field_confidence)
     return CandidateSource(
         discoverer="sqlite",
         path=str(resolved),
         app_hint=_infer_app_hint(resolved),
         schema_signature=",".join(sorted(tables)),
         hint_tables=hint_tables,
+        hint_fields=hint_fields,
         confidence=confidence,
     )
 
@@ -145,6 +168,31 @@ def _read_table_names(path: Path) -> list[str]:
     return sorted(set(names))
 
 
+def _read_table_columns(path: Path, tables: list[str]) -> set[str]:
+    conn: sqlite3.Connection | None = None
+    columns: set[str] = set()
+    try:
+        conn = sqlite3.connect(str(path), uri=False)
+        conn.execute("PRAGMA query_only=ON")
+        for table in tables:
+            try:
+                rows = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+            except Exception:
+                continue
+            for row in rows:
+                if len(row) < 2:
+                    continue
+                name = row[1]
+                if isinstance(name, str) and name:
+                    columns.add(name)
+    except Exception:
+        return set()
+    finally:
+        if conn is not None:
+            conn.close()
+    return columns
+
+
 def _is_hint_table(table_name: str) -> bool:
     lowered = table_name.lower()
     return any(keyword in lowered for keyword in _HINT_KEYWORDS)
@@ -170,3 +218,8 @@ def _normalize_app_name(raw: str) -> str:
     if "." in value:
         value = value.split(".")[-1]
     return value or "unknown"
+
+
+def _max_confidence(a: str, b: str) -> str:
+    ranking = {"low": 0, "medium": 1, "high": 2}
+    return a if ranking.get(a, 0) >= ranking.get(b, 0) else b

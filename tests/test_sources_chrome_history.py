@@ -21,7 +21,7 @@ def _make_history_db(path: Path) -> None:
     try:
         conn.execute("CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT)")
         conn.execute("CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER, visit_time INTEGER)")
-        conn.execute("INSERT INTO urls(id, url, title) VALUES (1, 'https://example.com/a', 'Example A')")
+        conn.execute("INSERT INTO urls(id, url, title) VALUES (1, 'https://example.com/a?token=abc#frag', 'Example A')")
         conn.execute("INSERT INTO urls(id, url, title) VALUES (2, 'https://example.com/b', 'Example B')")
         conn.execute(
             "INSERT INTO visits(id, url, visit_time) VALUES (10, 1, ?)",
@@ -93,7 +93,8 @@ def test_chrome_read_uses_temp_copy_and_maps_event(monkeypatch, tmp_path: Path) 
     assert event.artifact == "https://example.com/a"
     assert event.raw_ref == "chrome:visit:10"
     assert event.metadata["profile"] == "Default"
-    assert event.metadata["full_url"] == "https://example.com/a"
+    assert event.metadata["full_url"].startswith("https://example.com/a")
+    assert "[REDACTED]" in event.metadata["full_url"]
 
 
 def test_chrome_discover_returns_empty_when_missing(monkeypatch, tmp_path: Path) -> None:

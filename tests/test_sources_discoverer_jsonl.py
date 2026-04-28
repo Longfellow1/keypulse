@@ -48,10 +48,12 @@ def test_discover_jsonl_candidates_scores_small_files(monkeypatch, tmp_path: Pat
     high = by_path[str(high_file.resolve())]
     assert high.confidence == "high"
     assert set(high.hint_tables) >= {"role", "message", "content", "session_id", "prompt"}
+    assert set(high.hint_fields) >= {"role", "message", "content", "session_id", "prompt"}
 
     medium = by_path[str(medium_file.resolve())]
     assert medium.confidence == "medium"
     assert set(medium.hint_tables) == {"user", "content"}
+    assert set(medium.hint_fields) == {"user", "content"}
 
 
 def test_discover_jsonl_candidates_marks_large_file_low_confidence(monkeypatch, tmp_path: Path) -> None:
@@ -70,6 +72,7 @@ def test_discover_jsonl_candidates_marks_large_file_low_confidence(monkeypatch, 
     assert candidate.path == str(large_file.resolve())
     assert candidate.confidence == "low"
     assert candidate.hint_tables == []
+    assert candidate.hint_fields == []
 
 
 def test_discover_jsonl_candidates_respects_excluded_paths(monkeypatch, tmp_path: Path) -> None:
