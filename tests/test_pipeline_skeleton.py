@@ -4,6 +4,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from keypulse.pipeline.skeleton import build_daily_skeleton_report, build_skeleton_prompt, refresh_daily_skeleton, render_daily_skeleton_report
 from keypulse.store.db import init_db
 
@@ -227,6 +229,7 @@ def test_build_daily_skeleton_report_forwards_timeline_context(monkeypatch, tmp_
     assert captured["hourly_summaries"] == []
 
 
+@pytest.mark.skip(reason="时间线段已临时关闭（隐私回归），待 Codex MCP 重做后恢复")
 def test_render_daily_skeleton_report_inserts_timeline_before_motives(tmp_path):
     db_path = tmp_path / "keypulse.db"
     init_db(db_path)
