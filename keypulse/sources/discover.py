@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from keypulse.sources.approval import ApprovalRecord, ApprovalStore
 from keypulse.sources.discoverers import CandidateSource, discover_all_candidates
 from keypulse.sources.registry import discover_all, get_source, list_sources, read_all
 from keypulse.sources.types import DataSourceInstance, SemanticEvent
@@ -32,6 +33,7 @@ def discover_command() -> None:
     missing = [plugin.name for plugin in plugins if not discovered.get(plugin.name, [])]
     excluded = {instance.locator for _, instances in recognized for instance in instances}
     candidates = _flatten_candidates(discover_all_candidates(exclude_paths=excluded))
+    store = ApprovalStore()
 
     click.echo("✅ 已识别（精读 plugins）：")
     if not recognized:
@@ -41,7 +43,7 @@ def discover_command() -> None:
 
     click.echo("")
     click.echo("🟡 候选金矿（通用扫描，需用户确认）：")
-    _print_candidates(candidates)
+    _print_candidates(candidates, store=store)
 
     click.echo("")
     click.echo("❌ 未发现：")
@@ -53,21 +55,71 @@ def discover_command() -> None:
 
 @sources_group.command("candidates")
 def candidates_command() -> None:
-    discovered = discover_all()
-    excluded = {
-        instance.locator
-        for instances in discovered.values()
-        for instance in instances
-    }
-    candidates = _flatten_candidates(discover_all_candidates(exclude_paths=excluded))
-    _print_candidates(candidates)
+    candidates = _load_candidates()
+    _print_candidates(candidates, store=ApprovalStore())
 
 
 @sources_group.command("approve")
 @click.argument("candidate_id")
-def approve_command(candidate_id: str) -> None:
-    _ = candidate_id
-    click.echo("feature scheduled for S4")
+@click.option("--note", default="", help="Optional approval note")
+def approve_command(candidate_id: str, note: str) -> None:
+    store = ApprovalStore()
+    candidates = _load_candidates()
+    candidate = _find_candidate_by_id(candidate_id, candidates, store=store)
+    if candidate is None:
+        raise click.ClickException(f"candidate id not found: {candidate_id}")
+
+    normalized_id = store.candidate_id(candidate)
+    if store.status(normalized_id) == "rejected":
+        click.echo(f"warning: candidate {normalized_id} was rejected, resetting to approved")
+
+    record = store.approve(candidate, note=note)
+    click.echo(
+        f"[✅] id={record.candidate_id} [{candidate.discoverer}/{candidate.confidence}] "
+        f"{_display_path(candidate.path)} ({candidate.app_hint or '?'})"
+    )
+
+
+@sources_group.command("reject")
+@click.argument("candidate_id")
+@click.option("--reason", default="user_choice", help="Reject reason")
+def reject_command(candidate_id: str, reason: str) -> None:
+    store = ApprovalStore()
+    candidates = _load_candidates()
+    candidate = _find_candidate_by_id(candidate_id, candidates, store=store)
+    if candidate is None:
+        raise click.ClickException(f"candidate id not found: {candidate_id}")
+
+    normalized_id = store.candidate_id(candidate)
+    if store.status(normalized_id) == "approved":
+        click.echo(f"warning: candidate {normalized_id} was approved, resetting to rejected")
+
+    record = store.reject(candidate, reason=reason)
+    click.echo(
+        f"[❌] id={record.candidate_id} [{candidate.discoverer}/{candidate.confidence}] "
+        f"{_display_path(candidate.path)} ({candidate.app_hint or '?'}) reason={reason}"
+    )
+
+
+@sources_group.command("unset")
+@click.argument("candidate_id")
+def unset_command(candidate_id: str) -> None:
+    store = ApprovalStore()
+    normalized_id = candidate_id.strip().lower()
+    store.unset(normalized_id)
+    click.echo(f"[新] id={normalized_id} status cleared")
+
+
+@sources_group.command("list-approved")
+def list_approved_command() -> None:
+    records = ApprovalStore().list_approved()
+    _print_approval_records(records, status_symbol="✅", note_label="note")
+
+
+@sources_group.command("list-rejected")
+def list_rejected_command() -> None:
+    records = ApprovalStore().list_rejected()
+    _print_approval_records(records, status_symbol="❌", note_label="reason")
 
 
 @sources_group.command("read")
@@ -144,16 +196,18 @@ def _flatten_candidates(candidates: dict[str, list[CandidateSource]]) -> list[Ca
     return sorted(flat, key=lambda candidate: (discoverer_order.get(candidate.discoverer, 99), candidate.path))
 
 
-def _print_candidates(candidates: list[CandidateSource]) -> None:
+def _print_candidates(candidates: list[CandidateSource], *, store: ApprovalStore) -> None:
     if not candidates:
         click.echo("  (无)")
         click.echo("  共 0 个候选")
         return
 
-    for idx, candidate in enumerate(candidates, start=1):
+    for candidate in candidates:
+        candidate_id = store.candidate_id(candidate)
+        status = _status_symbol(store.status(candidate_id))
         app_hint = candidate.app_hint or "?"
         click.echo(
-            f"  [{idx}] [{candidate.discoverer}/{candidate.confidence}] "
+            f"  [{status}] id={candidate_id} [{candidate.discoverer}/{candidate.confidence}] "
             f"{_display_path(candidate.path)} ({app_hint})"
         )
         if candidate.hint_tables:
@@ -161,6 +215,55 @@ def _print_candidates(candidates: list[CandidateSource]) -> None:
         if candidate.hint_fields:
             click.echo(f"    hint_fields: {', '.join(candidate.hint_fields)}")
     click.echo(f"  共 {len(candidates)} 个候选")
+
+
+def _load_candidates() -> list[CandidateSource]:
+    discovered = discover_all()
+    excluded = {
+        instance.locator
+        for instances in discovered.values()
+        for instance in instances
+    }
+    return _flatten_candidates(discover_all_candidates(exclude_paths=excluded))
+
+
+def _find_candidate_by_id(
+    candidate_id: str,
+    candidates: list[CandidateSource],
+    *,
+    store: ApprovalStore,
+) -> CandidateSource | None:
+    normalized_id = candidate_id.strip().lower()
+    for candidate in candidates:
+        if store.candidate_id(candidate) == normalized_id:
+            return candidate
+    return None
+
+
+def _status_symbol(status: str) -> str:
+    if status == "approved":
+        return "✅"
+    if status == "rejected":
+        return "❌"
+    return "新"
+
+
+def _print_approval_records(records: list[ApprovalRecord], *, status_symbol: str, note_label: str) -> None:
+    if not records:
+        click.echo("  (无)")
+        return
+    for record in records:
+        path = record.metadata.get("path", "")
+        app_hint = record.metadata.get("app_hint") or "?"
+        discoverer = record.metadata.get("discoverer", "?")
+        ts = record.timestamp.isoformat() if record.timestamp else "-"
+        line = (
+            f"  [{status_symbol}] id={record.candidate_id} "
+            f"[{discoverer}] {_display_path(path)} ({app_hint}) at={ts}"
+        )
+        if record.note:
+            line += f" {note_label}={record.note}"
+        click.echo(line)
 
 
 def _display_path(path: str) -> str:
