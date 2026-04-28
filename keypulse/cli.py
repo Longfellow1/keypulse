@@ -1699,5 +1699,10 @@ def maintenance_scrub_secrets(dry_run, apply):
         console.print("[bold]  keypulse maintenance scrub-secrets --apply[/bold]")
 
 
+from keypulse.sources.discover import sources_group
+
+main.add_command(sources_group)
+
+
 if __name__ == "__main__":
     main()
