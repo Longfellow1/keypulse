@@ -1232,8 +1232,9 @@ def _parse_pipeline_bound(raw: str | None, *, is_since: bool) -> datetime:
 @click.option("--until", default=None)
 @click.option("--source", "sources", multiple=True, help="可多次指定限制源")
 @click.option("--no-llm", is_flag=True, default=False, help="不调 LLM，走 fallback")
+@click.option("--idle-threshold", default=30, type=int, show_default=True, help="session 空闲切分阈值（分钟）")
 @click.option("--json", "as_json", is_flag=True, default=False)
-def pipeline_things(since, until, sources, no_llm, as_json):
+def pipeline_things(since, until, sources, no_llm, idle_threshold, as_json):
     """聚类 SemanticEvent 为'事情'并描述"""
     cfg = get_config()
     require_db(cfg)
@@ -1252,6 +1253,7 @@ def pipeline_things(since, until, sources, no_llm, as_json):
         until_dt,
         model_gateway=gateway,
         sources=list(sources) if sources else None,
+        idle_threshold_minutes=idle_threshold,
     )
 
     if as_json:

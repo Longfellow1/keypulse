@@ -1,3 +1,5 @@
+# DEPRECATED: replaced by session_splitter + LLM outline in S2.9.
+
 from __future__ import annotations
 
 import hashlib
