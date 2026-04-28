@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+from keypulse.sources.cleaning.content_quality import is_low_signal_event
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
@@ -60,7 +61,7 @@ class ZshHistorySource(DataSource):
                     if event_time < since or event_time > until:
                         continue
 
-                    yield SemanticEvent(
+                    event = SemanticEvent(
                         time=event_time,
                         source=self.name,
                         actor="user",
@@ -70,5 +71,9 @@ class ZshHistorySource(DataSource):
                         privacy_tier=self.privacy_tier,
                         metadata={"elapsed_seconds": elapsed},
                     )
+                    is_noise, _ = is_low_signal_event(event)
+                    if is_noise:
+                        continue
+                    yield event
 
         return _iter_events()

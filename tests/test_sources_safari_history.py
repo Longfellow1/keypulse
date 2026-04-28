@@ -23,7 +23,7 @@ def _make_safari_db(path: Path) -> None:
         conn.execute(
             "CREATE TABLE history_visits (id INTEGER PRIMARY KEY, history_item INTEGER, title TEXT, visit_time REAL)"
         )
-        conn.execute("INSERT INTO history_items(id, url) VALUES (1, 'https://apple.com')")
+        conn.execute("INSERT INTO history_items(id, url) VALUES (1, 'https://apple.com/path?q=1#x')")
         conn.execute("INSERT INTO history_items(id, url) VALUES (2, 'https://example.org')")
         conn.execute(
             "INSERT INTO history_visits(id, history_item, title, visit_time) VALUES (20, 1, 'Apple', ?)",
@@ -85,9 +85,9 @@ def test_safari_read_uses_temp_copy_and_maps_event(monkeypatch, tmp_path: Path) 
     event = events[0]
     assert event.source == "safari_history"
     assert event.intent == "Apple"
-    assert event.artifact == "https://apple.com"
+    assert event.artifact == "https://apple.com/path"
     assert event.raw_ref == "safari:visit:20"
-    assert event.metadata["full_url"] == "https://apple.com"
+    assert event.metadata["full_url"] == "https://apple.com/path?q=1#x"
 
 
 def test_safari_discover_returns_empty_when_missing(monkeypatch, tmp_path: Path) -> None:

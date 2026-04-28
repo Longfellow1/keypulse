@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+from keypulse.privacy.desensitizer import desensitize
+from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
@@ -42,6 +44,9 @@ class SafariHistorySource(DataSource):
     ) -> Iterator[SemanticEvent]:
         history_path = Path(instance.locator).expanduser()
         if not history_path.exists() or not history_path.is_file():
+            return iter(())
+        blocked, _ = is_blocked_sqlite(history_path)
+        if blocked:
             return iter(())
 
         since_cf = since.astimezone(timezone.utc).timestamp() - _CF_EPOCH_OFFSET_S
@@ -79,16 +84,22 @@ class SafariHistorySource(DataSource):
                     unix_s = float(visit_time) + _CF_EPOCH_OFFSET_S
                     event_time = datetime.fromtimestamp(unix_s, tz=timezone.utc)
                     full_url = str(url or "")
-                    intent = str(title or full_url)[:200]
+                    clean_url = _normalize_url(full_url)
+                    redacted_url = desensitize(clean_url)
+                    intent = str(title or redacted_url)[:200]
                     yield SemanticEvent(
                         time=event_time,
                         source=self.name,
                         actor="user",
                         intent=intent,
-                        artifact=full_url,
-                        raw_ref=f"safari:visit:{visit_id}",
+                        artifact=redacted_url,
+                        raw_ref=desensitize(f"safari:visit:{visit_id}"),
                         privacy_tier=self.privacy_tier,
-                        metadata={"profile": "Default", "full_url": full_url},
+                        metadata={"profile": "Default", "full_url": desensitize(full_url)},
                     )
 
         return _iter_events()
+
+
+def _normalize_url(url: str) -> str:
+    return url.split("?", 1)[0].split("#", 1)[0]

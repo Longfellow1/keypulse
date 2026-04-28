@@ -128,6 +128,9 @@ def _recognized_summary(plugin_name: str, instances: list[DataSourceInstance]) -
     if plugin_name == "claude_code":
         root = Path(instances[0].locator).parent if instances else Path.home() / ".claude" / "projects"
         return f"{_display_path(str(root))} ({len(instances)} 个项目)"
+    if plugin_name == "markdown_vault" and instances:
+        label = instances[0].label
+        return f"{_display_path(instances[0].locator)} ({label})"
     if len(instances) == 1:
         return _display_path(instances[0].locator)
     return f"{_display_path(instances[0].locator)} ... ({len(instances)} 个实例)"
@@ -137,7 +140,8 @@ def _flatten_candidates(candidates: dict[str, list[CandidateSource]]) -> list[Ca
     flat: list[CandidateSource] = []
     for values in candidates.values():
         flat.extend(values)
-    return sorted(flat, key=lambda candidate: (candidate.discoverer, candidate.path))
+    discoverer_order = {"leveldb": 0, "sqlite": 1, "json_files": 2, "jsonl": 3, "plist": 4}
+    return sorted(flat, key=lambda candidate: (discoverer_order.get(candidate.discoverer, 99), candidate.path))
 
 
 def _print_candidates(candidates: list[CandidateSource]) -> None:
@@ -153,8 +157,9 @@ def _print_candidates(candidates: list[CandidateSource]) -> None:
             f"{_display_path(candidate.path)} ({app_hint})"
         )
         if candidate.hint_tables:
-            hint_label = "hint_fields" if candidate.discoverer == "jsonl" else "hint_tables"
-            click.echo(f"    {hint_label}: {', '.join(candidate.hint_tables)}")
+            click.echo(f"    hint_tables: {', '.join(candidate.hint_tables)}")
+        if candidate.hint_fields:
+            click.echo(f"    hint_fields: {', '.join(candidate.hint_fields)}")
     click.echo(f"  共 {len(candidates)} 个候选")
 
 

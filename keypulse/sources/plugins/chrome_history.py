@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+from keypulse.privacy.desensitizer import desensitize
+from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
@@ -55,6 +57,9 @@ class ChromeHistorySource(DataSource):
         history_path = Path(instance.locator).expanduser()
         if not history_path.exists() or not history_path.is_file():
             return iter(())
+        blocked, _ = is_blocked_sqlite(history_path)
+        if blocked:
+            return iter(())
 
         since_us = int(since.astimezone(timezone.utc).timestamp() * 1_000_000) + _WEBKIT_EPOCH_OFFSET_US
         until_us = int(until.astimezone(timezone.utc).timestamp() * 1_000_000) + _WEBKIT_EPOCH_OFFSET_US
@@ -92,16 +97,22 @@ class ChromeHistorySource(DataSource):
                     unix_us = int(visit_time) - _WEBKIT_EPOCH_OFFSET_US
                     event_time = datetime.fromtimestamp(unix_us / 1_000_000, tz=timezone.utc)
                     full_url = str(url or "")
-                    intent = str(title or full_url)[:200]
+                    clean_url = _normalize_url(full_url)
+                    redacted_url = desensitize(clean_url)
+                    intent = str(title or redacted_url)[:200]
                     yield SemanticEvent(
                         time=event_time,
                         source=self.name,
                         actor="user",
                         intent=intent,
-                        artifact=full_url,
-                        raw_ref=f"chrome:visit:{visit_id}",
+                        artifact=redacted_url,
+                        raw_ref=desensitize(f"chrome:visit:{visit_id}"),
                         privacy_tier=self.privacy_tier,
-                        metadata={"profile": profile, "full_url": full_url},
+                        metadata={"profile": profile, "full_url": desensitize(full_url)},
                     )
 
         return _iter_events()
+
+
+def _normalize_url(url: str) -> str:
+    return url.split("?", 1)[0].split("#", 1)[0]

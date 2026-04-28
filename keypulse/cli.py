@@ -58,6 +58,7 @@ from keypulse.pipeline import (
     current_theme_profile,
 )
 from keypulse.pipeline.model import ModelGateway
+from keypulse.pipeline.things import build_things, render_things_report, things_as_json
 from keypulse.search.backends import resolve_search_backend
 
 
@@ -1201,6 +1202,62 @@ def pipeline_draft(date, yesterday, output):
         console.print(f"[green]Draft written to {output}[/green]")
     else:
         console.print(draft.body)
+
+
+def _parse_pipeline_bound(raw: str | None, *, is_since: bool) -> datetime:
+    local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+    now_local = datetime.now(local_tz)
+
+    if raw is None:
+        if is_since:
+            return datetime.combine(now_local.date(), datetime.min.time(), tzinfo=local_tz).astimezone(timezone.utc)
+        return now_local.astimezone(timezone.utc)
+
+    if len(raw) == 10:
+        day = datetime.fromisoformat(raw)
+        if is_since:
+            local_value = datetime.combine(day.date(), datetime.min.time(), tzinfo=local_tz)
+        else:
+            local_value = datetime.combine(day.date(), datetime.max.time(), tzinfo=local_tz)
+        return local_value.astimezone(timezone.utc)
+
+    parsed = datetime.fromisoformat(raw)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=local_tz)
+    return parsed.astimezone(timezone.utc)
+
+
+@pipeline.command("things")
+@click.option("--since", default=None)
+@click.option("--until", default=None)
+@click.option("--source", "sources", multiple=True, help="可多次指定限制源")
+@click.option("--no-llm", is_flag=True, default=False, help="不调 LLM，走 fallback")
+@click.option("--json", "as_json", is_flag=True, default=False)
+def pipeline_things(since, until, sources, no_llm, as_json):
+    """聚类 SemanticEvent 为'事情'并描述"""
+    cfg = get_config()
+    require_db(cfg)
+
+    since_dt = _parse_pipeline_bound(since, is_since=True)
+    until_dt = _parse_pipeline_bound(until, is_since=False)
+    if until_dt < since_dt:
+        raise click.UsageError("until must be >= since")
+
+    gateway = None
+    if not no_llm and hasattr(cfg, "model"):
+        gateway = load_model_gateway(cfg)
+
+    thing_list = build_things(
+        since_dt,
+        until_dt,
+        model_gateway=gateway,
+        sources=list(sources) if sources else None,
+    )
+
+    if as_json:
+        print(things_as_json(thing_list))
+        return
+    print(render_things_report(thing_list, model_gateway=gateway))
 
 
 @pipeline.group()

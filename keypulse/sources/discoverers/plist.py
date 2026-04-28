@@ -4,6 +4,7 @@ import plistlib
 from pathlib import Path
 
 from keypulse.sources.discoverers import CandidateSource
+from keypulse.sources.cleaning.path_filter import is_excluded_path
 
 
 _RECENT_KEYWORDS = ("recent", "history", "recentfiles")
@@ -17,6 +18,9 @@ def discover_plist_candidates(*, exclude_paths: set[str]) -> list[CandidateSourc
     candidates: list[CandidateSource] = []
     for path in sorted(pref_dir.glob("*.plist")):
         resolved = path.expanduser().resolve(strict=False)
+        excluded, _ = is_excluded_path(resolved)
+        if excluded:
+            continue
         if _is_excluded(resolved, exclude_paths):
             continue
         candidate = _candidate_for(resolved)
