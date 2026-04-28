@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import re
 import sys
 import time
 import signal
@@ -8,6 +9,8 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import click
 from rich.console import Console
@@ -32,6 +35,7 @@ from keypulse.store.models import Policy, RawEvent, SearchDoc
 from keypulse.privacy.desensitizer import desensitize
 from keypulse.utils.paths import get_data_dir, get_db_path, get_pid_path, get_log_path, get_config_path
 from keypulse.utils.paths import get_hud_pid_path
+from keypulse.utils.atomic_io import atomic_write_text
 from keypulse.utils.lock import SingleInstanceLock
 from keypulse.utils.logging import setup_logging
 from keypulse.app import start_daemon, daemonize, run
@@ -58,6 +62,13 @@ from keypulse.pipeline import (
     current_theme_profile,
 )
 from keypulse.pipeline.model import ModelGateway
+from keypulse.pipeline.model_keychain import (
+    KeychainCommandError,
+    KeychainUnavailable,
+    check_daemon_keychain_access,
+    render_plist_advice,
+    store_secret,
+)
 from keypulse.pipeline.things import build_things, render_things_report, things_as_json
 from keypulse.search.backends import resolve_search_backend
 
@@ -1494,6 +1505,7 @@ def config_show(plain):
         print(f"model_cloud_kind={cfg.model.cloud.kind}")
         print(f"model_cloud_base_url={cfg.model.cloud.base_url}")
         print(f"model_cloud_model={cfg.model.cloud.model}")
+        print(f"model_cloud_api_key_source={getattr(cfg.model.cloud, 'api_key_source', '')}")
         print(f"model_cloud_api_key_env={cfg.model.cloud.api_key_env}")
         print(f"watchers_window={cfg.watchers.window}")
         print(f"watchers_idle={cfg.watchers.idle}")
@@ -1517,6 +1529,7 @@ def config_path():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
 # 17. MODEL (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -1526,25 +1539,400 @@ def model():
     pass
 
 
+def _toml_quote(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
+    return f"\"{escaped}\""
+
+
+def _render_model_section(model_payload: dict[str, object]) -> str:
+    local = model_payload["local"]
+    cloud = model_payload["cloud"]
+    return "\n".join(
+        [
+            "[model]",
+            f"active_profile = {_toml_quote(str(model_payload['active_profile']))}",
+            f"state_path = {_toml_quote(str(model_payload['state_path']))}",
+            "",
+            "[model.local]",
+            f"kind = {_toml_quote(str(local['kind']))}",
+            f"base_url = {_toml_quote(str(local['base_url']))}",
+            f"model = {_toml_quote(str(local['model']))}",
+            f"timeout_sec = {int(local['timeout_sec'])}",
+            "",
+            "[model.cloud]",
+            f"kind = {_toml_quote(str(cloud['kind']))}",
+            f"base_url = {_toml_quote(str(cloud['base_url']))}",
+            f"model = {_toml_quote(str(cloud['model']))}",
+            f"api_key_source = {_toml_quote(str(cloud['api_key_source']))}",
+            f"api_key_env = {_toml_quote(str(cloud['api_key_env']))}",
+            f"timeout_sec = {int(cloud['timeout_sec'])}",
+        ]
+    )
+
+
+def _replace_model_tables(existing_text: str, model_section: str) -> str:
+    if not existing_text.strip():
+        return model_section.strip() + "\n"
+
+    kept_lines: list[str] = []
+    skipping = False
+    table_re = re.compile(r"^\s*\[([^\]]+)\]\s*$")
+
+    for line in existing_text.splitlines(keepends=True):
+        match = table_re.match(line)
+        if match:
+            name = match.group(1).strip()
+            is_model_table = name == "model" or name.startswith("model.")
+            if is_model_table:
+                skipping = True
+                continue
+            if skipping:
+                skipping = False
+        if not skipping:
+            kept_lines.append(line)
+
+    kept = "".join(kept_lines).rstrip()
+    if kept:
+        return f"{kept}\n\n{model_section.strip()}\n"
+    return model_section.strip() + "\n"
+
+
+def _write_model_config_atomic(path: Path, model_payload: dict[str, object]) -> None:
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    new_text = _replace_model_tables(existing, _render_model_section(model_payload))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, new_text)
+
+
+def _probe_backend(
+    *,
+    kind: str,
+    base_url: str,
+    model: str,
+    api_key: str = "",
+    timeout_sec: int = 20,
+) -> tuple[bool, str, float]:
+    started = time.perf_counter()
+    normalized_base = base_url.strip().rstrip("/")
+    headers = {"Content-Type": "application/json"}
+    if kind == "openai_compatible" and api_key.strip():
+        headers["Authorization"] = f"Bearer {api_key.strip()}"
+
+    if kind == "ollama":
+        path = "/api/chat"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "Reply with ok."}],
+            "stream": False,
+        }
+    else:
+        path = "/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "Reply with ok."}],
+            "temperature": 0,
+        }
+
+    if re.search(r"/v\d+$", normalized_base) and path.startswith("/v1/"):
+        path = path.removeprefix("/v1")
+
+    url = f"{normalized_base}{path}"
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout_sec) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        if kind == "ollama":
+            content = str((body.get("message") or {}).get("content") or "").strip()
+        else:
+            choices = body.get("choices") or []
+            content = str(((choices[0].get("message") or {}).get("content")) if choices else "").strip()
+        elapsed = time.perf_counter() - started
+        if content:
+            return True, "OK", elapsed
+        return False, "empty response", elapsed
+    except HTTPError as exc:
+        elapsed = time.perf_counter() - started
+        return False, f"HTTP {exc.code}", elapsed
+    except Exception as exc:  # pragma: no cover - network boundary
+        elapsed = time.perf_counter() - started
+        return False, str(exc), elapsed
+
+
+def _relative_time_text(ts_value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(ts_value)
+    except ValueError:
+        return "unknown"
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)
+    seconds = int(max(delta.total_seconds(), 0))
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60} min ago"
+    return f"{seconds // 3600} h ago"
+
+
+def _short_circuit_text(entry: object) -> str:
+    if not isinstance(entry, dict):
+        return "0 / 0 min cooldown"
+    reason = str(entry.get("reason") or "")
+    cooldown = 30 if reason == "auth" else 5
+    until_text = str(entry.get("until") or "")
+    try:
+        until = datetime.fromisoformat(until_text)
+    except ValueError:
+        return f"0 / {cooldown} min cooldown"
+    if until.tzinfo is None or until.utcoffset() is None:
+        until = until.replace(tzinfo=timezone.utc)
+    remaining = max((until.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds(), 0)
+    remaining_min = int(remaining // 60) if remaining > 0 else 0
+    return f"{remaining_min} / {cooldown} min cooldown"
+
+
 @model.command("status")
 @click.option("--plain", is_flag=True, default=False, help="Plain text output")
 def model_status(plain):
-    """Show the active model profile and selected backend."""
+    """Show model profile, backend health, and fallback state."""
     cfg = get_config()
     gateway = load_model_gateway(cfg)
-    backend = gateway.select_backend("write")
+    snapshot = gateway.backend_status("write")
+    profile = snapshot.get("profile", gateway.active_profile)
+    backends = snapshot.get("backends") or {}
+    order = snapshot.get("order") or []
+
     if plain:
-        print(f"profile={gateway.active_profile}")
-        print(f"backend_kind={backend.kind}")
-        print(f"backend_model={backend.model}")
-        print(f"backend_base_url={backend.base_url}")
+        print(f"profile={profile}")
+        for name in ("cloud", "local"):
+            info = backends.get(name) or {}
+            print(f"{name}_kind={info.get('kind', '')}")
+            print(f"{name}_model={info.get('model', '')}")
+            print(f"{name}_base_url={info.get('base_url', '')}")
+            print(f"{name}_auth={info.get('auth_mode', 'none')}")
+            print(f"{name}_short_circuit={_short_circuit_text(info.get('short_circuit'))}")
+        print(f"order={','.join(order)}")
+        return
+
+    click.echo(f"Profile: {profile}")
+    click.echo("")
+    click.echo("Backends:")
+    for name in ("cloud", "local"):
+        info = backends.get(name) or {}
+        model_name = info.get("model") or "—"
+        endpoint = info.get("base_url") or "—"
+        auth_mode = str(info.get("auth_mode") or "none")
+        if auth_mode == "keychain":
+            auth_text = "keychain ✅"
+        elif auth_mode == "env":
+            auth_text = "env ✅"
+        elif auth_mode == "missing":
+            auth_text = "missing ❌"
+        else:
+            auth_text = "none"
+        last_call = info.get("last_call")
+        if isinstance(last_call, dict):
+            when = _relative_time_text(str(last_call.get("at") or ""))
+            duration_ms = int(last_call.get("duration_ms") or 0)
+            duration_text = f"{duration_ms / 1000:.1f}s"
+            status_text = "OK" if bool(last_call.get("ok")) else "FAIL"
+            last_call_text = f"{when}, {duration_text}, {status_text}"
+        else:
+            last_call_text = "never"
+        short_circuit = _short_circuit_text(info.get("short_circuit"))
+
+        click.echo(f"  [{name}] {model_name}")
+        click.echo(f"    Endpoint: {endpoint}")
+        click.echo(f"    Auth: {auth_text}")
+        click.echo(f"    Last call: {last_call_text}")
+        click.echo(f"    Short-circuit: {short_circuit}")
+        click.echo("")
+
+    if order == ["cloud", "local"]:
+        click.echo("Fallback: cloud → local on 401/403/timeout")
+    elif order == ["local", "cloud"]:
+        click.echo("Fallback: local → cloud on timeout/connection failure")
+    elif order == ["cloud"]:
+        click.echo("Fallback: cloud-only")
+    elif order == ["local"]:
+        click.echo("Fallback: local-only")
     else:
-        table = Table(show_header=False, box=None)
-        table.add_row("Profile", gateway.active_profile)
-        table.add_row("Backend", backend.kind)
-        table.add_row("Model", backend.model or "—")
-        table.add_row("Base URL", backend.base_url or "—")
-        console.print(table)
+        click.echo("Fallback: disabled")
+
+
+@model.command("setup")
+def model_setup():
+    """Interactive setup for cloud/local model backends with keychain storage."""
+    cfg = get_config()
+    config_path = get_config_path()
+
+    cloud_presets = {
+        "1": {
+            "name": "豆包",
+            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+            "model": "doubao-seed-1-6-250615",
+            "api_key_env": "ARK_API_KEY",
+        },
+        "2": {
+            "name": "DeepSeek",
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-chat",
+            "api_key_env": "DEEPSEEK_API_KEY",
+        },
+        "3": {
+            "name": "OpenAI",
+            "base_url": "https://api.openai.com/v1",
+            "model": "gpt-4.1-mini",
+            "api_key_env": "OPENAI_API_KEY",
+        },
+    }
+    local_presets = {
+        "1": {
+            "name": "LM Studio",
+            "kind": "lm_studio",
+            "base_url": "http://127.0.0.1:1234",
+            "model": "qwen3-8b-mlx",
+        },
+        "2": {
+            "name": "Ollama",
+            "kind": "ollama",
+            "base_url": "http://127.0.0.1:11434",
+            "model": "qwen3:8b",
+        },
+    }
+    profile_choices = {
+        "1": "cloud-first",
+        "2": "local-first",
+        "3": "cloud-only",
+        "4": "local-only",
+    }
+
+    click.echo("")
+    click.echo("[1/2] 云端 backend")
+    click.echo("  预设：")
+    click.echo("    1) 豆包 (https://ark.cn-beijing.volces.com/api/v3)")
+    click.echo("    2) DeepSeek (https://api.deepseek.com)")
+    click.echo("    3) OpenAI (https://api.openai.com/v1)")
+    click.echo("    4) 自定义")
+    cloud_choice = str(click.prompt("  选择 [1]", default="1")).strip() or "1"
+
+    if cloud_choice == "4":
+        cloud_base_url = str(click.prompt("  Base URL", default="https://api.openai.com/v1")).strip()
+        cloud_model_default = "custom-model"
+        cloud_api_key_env = "OPENAI_API_KEY"
+    else:
+        preset = cloud_presets.get(cloud_choice, cloud_presets["1"])
+        cloud_base_url = preset["base_url"]
+        cloud_model_default = preset["model"]
+        cloud_api_key_env = preset["api_key_env"]
+
+    cloud_model = str(click.prompt(f"  Model ID [{cloud_model_default}]", default=cloud_model_default)).strip()
+    cloud_api_key = str(click.prompt("  API Key (隐藏输入)", hide_input=True)).strip()
+
+    click.echo("  → 测试连通...")
+    cloud_ok, cloud_message, cloud_elapsed = _probe_backend(
+        kind="openai_compatible",
+        base_url=cloud_base_url,
+        model=cloud_model,
+        api_key=cloud_api_key,
+        timeout_sec=300,
+    )
+    if cloud_ok:
+        click.echo(f"  → 测试连通... ✅ OK ({cloud_elapsed:.1f}s)")
+    else:
+        click.echo(f"  → 测试连通... ⚠️ {cloud_message}")
+        click.echo("  → 仍保存配置（之后修复连通后可直接生效）")
+
+    service_name = "com.keypulse.model.cloud"
+    keychain_stored = False
+    try:
+        store_secret(service_name, cloud_api_key)
+        keychain_stored = True
+        click.echo(f"  → API Key 已存入 Keychain (service: {service_name})")
+    except (KeychainUnavailable, KeychainCommandError) as exc:
+        click.echo(f"  → Keychain 写入失败：{exc}")
+        click.echo("  → 仍保存配置，你可先用 api_key_env 兜底。")
+
+    click.echo("")
+    click.echo("[2/2] 本地 backend (可跳过)")
+    click.echo("  预设：")
+    click.echo("    1) LM Studio (http://127.0.0.1:1234)")
+    click.echo("    2) Ollama (http://127.0.0.1:11434)")
+    click.echo("    3) 跳过")
+    local_choice = str(click.prompt("  选择 [1]", default="1")).strip() or "1"
+
+    if local_choice == "3":
+        local_payload = {
+            "kind": "disabled",
+            "base_url": "",
+            "model": "",
+            "timeout_sec": 20,
+        }
+    else:
+        local_preset = local_presets.get(local_choice, local_presets["1"])
+        local_model = str(click.prompt(f"  Model ID [{local_preset['model']}]", default=local_preset["model"])).strip()
+        click.echo("  → 测试连通...")
+        local_ok, local_message, local_elapsed = _probe_backend(
+            kind=local_preset["kind"],
+            base_url=local_preset["base_url"],
+            model=local_model,
+            timeout_sec=20,
+        )
+        if local_ok:
+            click.echo(f"  → 测试连通... ✅ OK ({local_elapsed:.1f}s)")
+        else:
+            click.echo(f"  → 测试连通... ⚠️ {local_message}")
+            click.echo("  → 仍保存配置（之后装 chat 模型即可生效）")
+        local_payload = {
+            "kind": local_preset["kind"],
+            "base_url": local_preset["base_url"],
+            "model": local_model,
+            "timeout_sec": 20,
+        }
+
+    click.echo("")
+    click.echo("策略：")
+    click.echo("  1) cloud-first（推荐）：云端为主，401/超时 fallback 本地")
+    click.echo("  2) local-first（隐私优先）")
+    click.echo("  3) cloud-only")
+    click.echo("  4) local-only")
+    policy_choice = str(click.prompt("  选择 [1]", default="1")).strip() or "1"
+    active_profile = profile_choices.get(policy_choice, "cloud-first")
+
+    model_payload: dict[str, object] = {
+        "active_profile": active_profile,
+        "state_path": cfg.model.state_path,
+        "local": local_payload,
+        "cloud": {
+            "kind": "openai_compatible",
+            "base_url": cloud_base_url,
+            "model": cloud_model,
+            "api_key_source": f"keychain:{service_name}",
+            "api_key_env": cloud_api_key_env,
+            "timeout_sec": 300,
+        },
+    }
+
+    _write_model_config_atomic(config_path, model_payload)
+
+    click.echo("")
+    click.echo(f"✅ 配置已写入 {config_path}")
+    if keychain_stored:
+        click.echo("   API Key 在 Keychain（不在 config 文件、不需要 shell export）")
+
+    if check_daemon_keychain_access():
+        advice = render_plist_advice()
+        if advice:
+            click.echo("")
+            click.echo(f"ℹ️  {advice}")
+    else:
+        click.echo("")
+        click.echo("ℹ️  未能确认 daemon 的 Keychain 访问能力，请稍后用 keypulse model status 检查。")
 
 
 @model.command("use")
@@ -1574,7 +1962,6 @@ def model_test():
         sys.exit(1)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # 17. RULES (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
 
