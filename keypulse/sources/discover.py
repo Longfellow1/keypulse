@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import asdict
 from datetime import datetime, time, timezone
 from pathlib import Path
@@ -11,6 +12,12 @@ from keypulse.sources.approval import ApprovalRecord, ApprovalStore
 from keypulse.sources.discoverers import CandidateSource, discover_all_candidates
 from keypulse.sources.registry import discover_all, get_source, list_sources, read_all
 from keypulse.sources.types import DataSourceInstance, SemanticEvent
+from keypulse.sources.wechat_probe import (
+    is_authorized,
+    mark_authorized,
+    probe,
+    revoke_authorization,
+)
 
 
 @click.group(name="sources")
@@ -120,6 +127,93 @@ def list_approved_command() -> None:
 def list_rejected_command() -> None:
     records = ApprovalStore().list_rejected()
     _print_approval_records(records, status_symbol="❌", note_label="reason")
+
+
+_WECHAT_AUTH_RELATIVE_PATH = Path(".keypulse") / "wechat-authorized"
+_WECHAT_AUTHORIZE_WARNING = """
+⚠️  你即将授权 KeyPulse 接入你的微信本地消息（红区数据）。
+
+红区数据特征：
+  - 含他人发言、私人对话、群消息
+  - 一旦接入，KeyPulse 会把这些消息纳入 Daily 报告聚合
+  - 数据全部在本机处理（不上云），但 LLM 渲染时会发送摘要给配置的模型
+    （当前：cloud-first profile，会调用豆包/OpenAI 等云端 API）
+
+请确认：
+  [a] 你接受 LLM 服务商可能看到你的微信消息摘要
+  [b] 你愿意为数据完整性负责（不能"只读自己单侧"，红区是 all-or-nothing）
+
+输入 "yes" 继续，其它取消：
+""".strip("\n")
+
+
+@sources_group.group("wechat")
+def wechat_group() -> None:
+    """WeChat red-zone probe controls."""
+
+
+@wechat_group.command("status")
+def wechat_status_command() -> None:
+    result = probe()
+    pid = _detect_wechat_pid() if result.wechat_running else None
+    authorized_at = _read_wechat_authorized_at() if result.user_authorized else None
+    missing: list[str] = []
+
+    if result.chatlog_installed:
+        version = _format_chatlog_version(result.chatlog_version)
+        version_text = f" ({version})" if version else ""
+        click.echo(f"chatlog 二进制：✅ {result.chatlog_path or 'unknown'}{version_text}")
+    else:
+        click.echo("chatlog 二进制：❌ 未找到（建议：brew install chatlog）")
+        missing.append("[chatlog]")
+
+    if result.wechat_running:
+        if pid:
+            click.echo(f"微信进程：     ✅ 运行中（PID {pid}）")
+        else:
+            click.echo("微信进程：     ✅ 运行中")
+    else:
+        click.echo("微信进程：     ❌ 未运行")
+        missing.append("[微信]")
+
+    if result.user_authorized:
+        if authorized_at:
+            click.echo(f"用户授权：     ✅ 已授权 {authorized_at}")
+        else:
+            click.echo("用户授权：     ✅ 已授权")
+    else:
+        click.echo("用户授权：     ❌ 未授权")
+        missing.append("[授权]")
+
+    if missing:
+        click.echo(f"总体状态：     ⚠️  需补：{' '.join(missing)}")
+        return
+    click.echo("总体状态：     ✅ 就绪（前置条件全满足）")
+
+
+@wechat_group.command("authorize")
+def wechat_authorize_command() -> None:
+    click.echo(_WECHAT_AUTHORIZE_WARNING)
+    answer = click.prompt("", prompt_suffix="", default="", show_default=False)
+    if answer.strip().lower() != "yes":
+        click.echo("已取消，未写入授权标记。")
+        return
+    mark_authorized()
+    timestamp = _read_wechat_authorized_at()
+    if timestamp:
+        click.echo(f"✅ 微信红区已授权：{timestamp}")
+    else:
+        click.echo("✅ 微信红区已授权。")
+
+
+@wechat_group.command("revoke")
+def wechat_revoke_command() -> None:
+    existed = is_authorized()
+    revoke_authorization()
+    if existed:
+        click.echo("✅ 已撤销微信红区授权。")
+        return
+    click.echo("ℹ️ 当前没有微信授权标记。")
 
 
 @sources_group.command("read")
@@ -278,3 +372,47 @@ def _display_path(path: str) -> str:
     except ValueError:
         return str(expanded)
     return "~/" + str(rel)
+
+
+def _wechat_authorization_path() -> Path:
+    return Path.home() / _WECHAT_AUTH_RELATIVE_PATH
+
+
+def _read_wechat_authorized_at() -> str | None:
+    auth_path = _wechat_authorization_path()
+    try:
+        content = auth_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return None
+    if not content:
+        return None
+    if content.startswith("authorized_at="):
+        value = content.split("=", 1)[1].strip()
+        return value or None
+    return content
+
+
+def _detect_wechat_pid() -> str | None:
+    for command in (["pgrep", "-i", "wechat"], ["pgrep", "-f", "WeChat"]):
+        try:
+            result = subprocess.run(command, check=False, capture_output=True, text=True)
+        except Exception:
+            continue
+        if result.returncode != 0:
+            continue
+        first_line = ((result.stdout or "").strip().splitlines() or [""])[0].strip()
+        if first_line:
+            return first_line
+    return None
+
+
+def _format_chatlog_version(version: str | None) -> str | None:
+    if not version:
+        return None
+    value = version.strip()
+    if not value:
+        return None
+    lowered = value.lower()
+    if lowered.startswith("chatlog "):
+        value = value.split(" ", 1)[1].strip() or value
+    return value
