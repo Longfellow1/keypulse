@@ -9,13 +9,16 @@ from typing import Any
 _slug_re = re.compile(r"[^a-z0-9\u4e00-\u9fff]+")
 
 
-def slugify(value: str, fallback: str = "item") -> str:
+def slugify(value: str, fallback: str = "item", max_length: int | None = None) -> str:
     cleaned = value.strip().lower()
     cleaned = cleaned.replace("/", "-")
     cleaned = re.sub(r"[\s_]+", "-", cleaned)
     cleaned = _slug_re.sub("-", cleaned)
     cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
-    return cleaned or fallback
+    result = cleaned or fallback
+    if max_length is not None and len(result) > max_length:
+        result = result[:max_length].rstrip("-") or fallback
+    return result
 
 
 def iso_date(value: str | None) -> str:

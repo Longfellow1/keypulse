@@ -39,6 +39,10 @@ class NoBackendAvailable(RuntimeError):
     """Raised when no model backend can serve a request."""
 
 
+class PipelineQualityError(RuntimeError):
+    """Raised when LLM-backed pipeline cannot produce quality output (no backend, response empty, parse failed)."""
+
+
 @dataclass(frozen=True)
 class ModelBackend:
     kind: str

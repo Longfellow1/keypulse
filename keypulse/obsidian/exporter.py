@@ -860,14 +860,14 @@ def _topic_from_item(item: dict[str, Any]) -> str | None:
 
     for candidate in candidates:
         if _is_meaningful_topic(candidate):
-            return slugify(candidate, fallback="topic")
+            return slugify(candidate, fallback="topic", max_length=64)
 
     return None
 
 
 def _event_slug(item: dict[str, Any], topic_key: str) -> str:
     title = item.get("title") or item.get("window_title") or item.get("app_name") or topic_key
-    return slugify(str(title), fallback=topic_key)
+    return slugify(str(title), fallback=topic_key, max_length=64)
 
 
 def _hash_suffix(*parts: str) -> str:
@@ -1333,7 +1333,15 @@ def write_obsidian_bundle(bundle: dict[str, list[dict[str, Any]]], output_dir: s
         for note in bundle.get(section, []):
             relative = Path(note["path"])
             target = output_path / relative
-            atomic_write_text(target, render_note(note["properties"], note["body"]))
+            new_text = render_note(note["properties"], note["body"])
+            if section == "daily":
+                from keypulse.obsidian.quality_gate import should_write_daily
+
+                ok, reason, _new_score, _old_score = should_write_daily(new_text, target)
+                if not ok:
+                    logger.warning("daily write skipped (%s): %s", target.name, reason)
+                    continue
+            atomic_write_text(target, new_text)
             written.append(target)
     return written
 
