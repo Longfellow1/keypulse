@@ -222,6 +222,8 @@ class Config(BaseModel):
     @classmethod
     def load(cls) -> "Config":
         """Load config from ~/.keypulse/config.toml or ./config.toml, falling back to defaults."""
+        from keypulse.utils.env import load_dotenv_quiet
+        load_dotenv_quiet()
         paths = [
             Path.home() / ".keypulse" / "config.toml",
             Path("config.toml"),
