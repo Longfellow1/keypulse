@@ -413,7 +413,7 @@ def _strip_narrative_heading(text: str) -> str:
     cleaned: list[str] = []
     for idx, line in enumerate(lines):
         stripped = line.strip()
-        if idx == 0 and stripped.startswith("##") and "今日主线" in stripped:
+        if idx == 0 and stripped.startswith("#") and ("今日主线" in stripped or "今日做的事" in stripped):
             continue
         if not cleaned and not stripped:
             continue
@@ -630,16 +630,53 @@ def _render_daily_narrative_v2_or_legacy(
     user_intent: str = "",
     use_narrative_v2: bool = False,
     use_narrative_skeleton: bool = False,
+    use_things_narrative: bool = False,
+    things_idle_threshold_minutes: int = 30,
     db_path: str | Path | None = None,
     date_str: str = "",
 ) -> str:
     logger.info(
-        "narrative gate: skeleton=%s v2=%s gateway=%s db=%s",
+        "narrative gate: things=%s skeleton=%s v2=%s gateway=%s db=%s",
+        use_things_narrative,
         use_narrative_skeleton,
         use_narrative_v2,
         model_gateway is not None,
         db_path is not None,
     )
+    if use_things_narrative and model_gateway is not None and date_str:
+        backend = model_gateway.select_backend("write") if hasattr(model_gateway, "select_backend") else None
+        kind = getattr(backend, "kind", "") if backend is not None else ""
+        url = getattr(backend, "base_url", "") if backend is not None else ""
+        model = getattr(backend, "model", "") if backend is not None else ""
+        available = backend is not None and kind and kind != "disabled" and model and url
+        if available:
+            try:
+                from keypulse.pipeline.things import build_things, render_things_report
+
+                day_since, day_until = local_day_bounds(date_str)
+                since_dt = datetime.fromisoformat(day_since)
+                until_dt = datetime.fromisoformat(day_until)
+                idle_threshold = max(int(things_idle_threshold_minutes), 1)
+                things = build_things(
+                    since=since_dt,
+                    until=until_dt,
+                    model_gateway=model_gateway,
+                    sources=None,
+                    idle_threshold_minutes=idle_threshold,
+                )
+                if things:
+                    body = render_things_report(things, model_gateway=model_gateway, title="今日做的事")
+                    return _strip_narrative_heading(body) or body
+                logger.warning("things narrative empty; falling back to skeleton/v2/legacy")
+            except Exception as exc:
+                logger.warning(
+                    "things narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
+                    kind,
+                    url,
+                    model,
+                    type(exc).__name__,
+                    exc,
+                )
     if use_narrative_skeleton and model_gateway is not None and db_path is not None:
         backend = model_gateway.select_backend("write") if hasattr(model_gateway, "select_backend") else None
         kind = getattr(backend, "kind", "") if backend is not None else ""
@@ -1156,6 +1193,8 @@ def build_obsidian_bundle(
     current_plan_existing: str = "",
     use_narrative_v2: bool = False,
     use_narrative_skeleton: bool = False,
+    use_things_narrative: bool = False,
+    things_idle_threshold_minutes: int = 30,
     db_path: str | Path | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     raw_count = len(items)
@@ -1216,6 +1255,8 @@ def build_obsidian_bundle(
                 user_intent=previous_plan,
                 use_narrative_v2=use_narrative_v2,
                 use_narrative_skeleton=use_narrative_skeleton,
+                use_things_narrative=use_things_narrative,
+                things_idle_threshold_minutes=things_idle_threshold_minutes,
                 db_path=db_path,
                 date_str=date_str,
             ),
@@ -1483,6 +1524,8 @@ def export_obsidian(
     cursor_path: str | Path | None = None,
     use_narrative_v2: bool = False,
     use_narrative_skeleton: bool = False,
+    use_things_narrative: bool = False,
+    things_idle_threshold_minutes: int = 30,
 ) -> list[Path]:
     if date_str:
         since, until = local_day_bounds(date_str)
@@ -1541,6 +1584,8 @@ def export_obsidian(
         current_plan_existing=current_plan_existing,
         use_narrative_v2=use_narrative_v2,
         use_narrative_skeleton=use_narrative_skeleton,
+        use_things_narrative=use_things_narrative,
+        things_idle_threshold_minutes=things_idle_threshold_minutes,
         db_path=db_path,
     )
     written = write_obsidian_bundle(bundle, output_dir)

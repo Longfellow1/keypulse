@@ -143,6 +143,8 @@ class PipelineConfig(BaseModel):
     signals: PipelineSignalsConfig = Field(default_factory=PipelineSignalsConfig)
     use_narrative_v2: bool = False
     use_narrative_skeleton: bool = False
+    use_things_narrative: bool = True
+    things_idle_threshold_minutes: int = 30
 
 
 class ModelBackendConfig(BaseModel):

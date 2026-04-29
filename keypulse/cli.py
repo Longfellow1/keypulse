@@ -1039,6 +1039,12 @@ def _sync_obsidian_bundle(
         db_path=str(cfg.db_path_expanded),
         use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
         use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
+        use_things_narrative=getattr(getattr(cfg, "pipeline", None), "use_things_narrative", True),
+        things_idle_threshold_minutes=getattr(
+            getattr(cfg, "pipeline", None),
+            "things_idle_threshold_minutes",
+            30,
+        ),
     )
     return len(written), target_output, sink.kind
 
@@ -1378,6 +1384,12 @@ def export(format, days, date, output):
             vault_name=cfg.obsidian.vault_name,
             model_gateway=gateway,
             use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
+            use_things_narrative=getattr(getattr(cfg, "pipeline", None), "use_things_narrative", True),
+            things_idle_threshold_minutes=getattr(
+                getattr(cfg, "pipeline", None),
+                "things_idle_threshold_minutes",
+                30,
+            ),
         )
         console.print(f"[green]Exported {len(written)} notes to {target_output}[/green]")
         return

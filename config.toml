@@ -51,6 +51,8 @@ max_llm_calls_per_run = 0
 max_llm_input_chars_per_run = 0
 feedback_path = "~/.keypulse/feedback.jsonl"
 use_narrative_v2 = true
+use_things_narrative = true
+things_idle_threshold_minutes = 30
 
 [pipeline.signals]
 fs_enabled = false
