@@ -6,6 +6,7 @@ from typing import Iterator
 from keypulse.sources.cleaning.config import load_cleaning_config
 from keypulse.sources.cleaning.content_quality import is_low_signal_event
 from keypulse.sources.cleaning.dedup import dedup_events
+from keypulse.sources.plugins.approved_sqlite import ApprovedSqliteSource
 from keypulse.sources.plugins.chrome_history import ChromeHistorySource
 from keypulse.sources.plugins.claude_code import ClaudeCodeSource
 from keypulse.sources.plugins.codex_cli import CodexCliSource
@@ -108,6 +109,7 @@ def _as_utc(value: datetime) -> datetime:
 register(GitLogSource())
 register(ClaudeCodeSource())
 register(CodexCliSource())
+register(ApprovedSqliteSource())
 register(ChromeHistorySource())
 register(KnowledgeCSource())
 register(SafariHistorySource())
