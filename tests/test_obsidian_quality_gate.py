@@ -66,20 +66,35 @@ def test_score_daily_template_heavy() -> None:
     assert score.template_density > 0.15
 
 
+_HEALTHY_BASELINE = QualityScore(thing_count=12, total_chars=10000, template_density=0.0, unique_word_ratio=0.7)
+
+
+def test_evaluate_bootstrap_passes_without_baseline() -> None:
+    ok, reason = evaluate(QualityScore(thing_count=1, total_chars=300, template_density=0.0, unique_word_ratio=0.5), None)
+    assert ok is True
+    assert reason == "bootstrap"
+
+
+def test_evaluate_bootstrap_rejects_empty_content() -> None:
+    ok, reason = evaluate(QualityScore(thing_count=0, total_chars=0, template_density=0.0, unique_word_ratio=0.0), None)
+    assert ok is False
+    assert reason == "empty new content"
+
+
 def test_evaluate_thing_count_too_few() -> None:
-    ok, reason = evaluate(QualityScore(thing_count=2, total_chars=5000, template_density=0.0, unique_word_ratio=0.8), None)
+    ok, reason = evaluate(QualityScore(thing_count=2, total_chars=5000, template_density=0.0, unique_word_ratio=0.8), _HEALTHY_BASELINE)
     assert ok is False
     assert reason == "thing_count=2<3"
 
 
 def test_evaluate_template_density_too_high() -> None:
-    ok, reason = evaluate(QualityScore(thing_count=6, total_chars=5000, template_density=0.2, unique_word_ratio=0.8), None)
+    ok, reason = evaluate(QualityScore(thing_count=6, total_chars=5000, template_density=0.2, unique_word_ratio=0.8), _HEALTHY_BASELINE)
     assert ok is False
     assert reason == "template_density=0.20>0.15"
 
 
 def test_evaluate_unique_ratio_too_low() -> None:
-    ok, reason = evaluate(QualityScore(thing_count=6, total_chars=5000, template_density=0.0, unique_word_ratio=0.2), None)
+    ok, reason = evaluate(QualityScore(thing_count=6, total_chars=5000, template_density=0.0, unique_word_ratio=0.2), _HEALTHY_BASELINE)
     assert ok is False
     assert reason == "unique_word_ratio=0.20<0.4"
 
@@ -104,8 +119,18 @@ def test_should_write_daily_no_existing(tmp_path: Path) -> None:
     target = tmp_path / "Daily" / "2026-04-28.md"
     ok, reason, new_score, old_score = should_write_daily(_healthy_daily(thing_count=4, words_per_thing=80), target)
     assert ok is True
-    assert reason == "ok"
+    assert reason == "bootstrap"
     assert new_score.thing_count == 4
+    assert old_score is None
+
+
+def test_should_write_daily_bootstrap_skeleton_passes(tmp_path: Path) -> None:
+    target = tmp_path / "Daily" / "2026-04-28.md"
+    skeleton = "---\ntype: daily\n---\n\n# 2026-04-28\n\n- 事件卡：1\n"
+    ok, reason, new_score, old_score = should_write_daily(skeleton, target)
+    assert ok is True
+    assert reason == "bootstrap"
+    assert new_score.thing_count == 0
     assert old_score is None
 
 

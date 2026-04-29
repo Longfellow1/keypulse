@@ -44,16 +44,24 @@ def score_daily(text: str) -> QualityScore:
 
 
 def evaluate(new_score: QualityScore, baseline: QualityScore | None) -> tuple[bool, str]:
-    """新分数是否达标。返回 (是否写入, 原因短语)。"""
+    """新分数是否达标。返回 (是否写入, 原因短语)。
+
+    护栏只防退化覆盖，不防首次写入：baseline 为 None（bootstrap）时无脑通过，
+    只要新版有内容就写。退化门槛（thing_count / template_density / unique_word_ratio /
+    total_chars 60% 下限）只在已有 baseline 时启用。
+    """
+    if baseline is None:
+        if new_score.total_chars <= 0:
+            return False, "empty new content"
+        return True, "bootstrap"
     if new_score.thing_count < 3:
         return False, f"thing_count={new_score.thing_count}<3"
     if new_score.template_density > 0.15:
         return False, f"template_density={new_score.template_density:.2f}>0.15"
     if new_score.unique_word_ratio < 0.4:
         return False, f"unique_word_ratio={new_score.unique_word_ratio:.2f}<0.4"
-    if baseline is not None and baseline.total_chars > 0:
-        if new_score.total_chars < baseline.total_chars * 0.6:
-            return False, f"total_chars={new_score.total_chars} < baseline {baseline.total_chars}*0.6"
+    if baseline.total_chars > 0 and new_score.total_chars < baseline.total_chars * 0.6:
+        return False, f"total_chars={new_score.total_chars} < baseline {baseline.total_chars}*0.6"
     return True, "ok"
 
 
