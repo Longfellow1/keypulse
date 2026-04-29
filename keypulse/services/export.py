@@ -102,6 +102,8 @@ def export_obsidian(
     cursor_path: str | None = None,
     use_narrative_v2: bool = False,
     use_narrative_skeleton: bool = False,
+    use_things_narrative: bool = False,
+    things_idle_threshold_minutes: int = 30,
 ) -> list[str]:
     written = export_obsidian_notes(
         output_dir=output_dir,
@@ -114,5 +116,7 @@ def export_obsidian(
         cursor_path=cursor_path,
         use_narrative_v2=use_narrative_v2,
         use_narrative_skeleton=use_narrative_skeleton,
+        use_things_narrative=use_things_narrative,
+        things_idle_threshold_minutes=things_idle_threshold_minutes,
     )
     return [str(path) for path in written]

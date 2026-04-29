@@ -46,6 +46,8 @@ def test_obsidian_sync_defaults_to_yesterday(monkeypatch):
         cursor_path=None,
         use_narrative_v2=False,
         use_narrative_skeleton=False,
+        use_things_narrative=False,
+        things_idle_threshold_minutes=30,
     ):
         captured["output_dir"] = output_dir
         captured["days"] = days
@@ -111,6 +113,8 @@ def test_obsidian_sync_incremental_defaults_to_today(monkeypatch):
         cursor_path=None,
         use_narrative_v2=False,
         use_narrative_skeleton=False,
+        use_things_narrative=False,
+        things_idle_threshold_minutes=30,
     ):
         captured["output_dir"] = output_dir
         captured["days"] = days
