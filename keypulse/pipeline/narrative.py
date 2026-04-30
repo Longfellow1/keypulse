@@ -7,10 +7,18 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Mapping
 
 from keypulse.obsidian.layout import slugify
+from keypulse.privacy.desensitizer import desensitize, desensitize_json_value
 from keypulse.utils.dates import local_timezone
 
 
 HIGH_SENSITIVITY_PLACEHOLDER = "<高敏内容 · 已记录未展示>"
+_DESENSITIZE_STRING_FIELDS: tuple[str, ...] = (
+    "content_text",
+    "title",
+    "window_title",
+    "body",
+    "evidence",
+)
 _INVALID_TS = datetime.max.replace(tzinfo=timezone.utc)
 
 
@@ -142,15 +150,44 @@ def _event_speaker(event: dict[str, Any]) -> str:
 
 
 def _sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Defense-in-depth desensitization at the LLM boundary.
+
+    v0 capture (manager.py) already desensitizes content + metadata_json on
+    write, but events arriving here may also come from v1 sources/plugins
+    that do not share that pipeline. Re-running the desensitizer here is the
+    chokepoint just before payloads bubble up to the LLM.
+    """
     sanitized = dict(event)
     try:
         sensitivity_level = int(sanitized.get("sensitivity_level") or 0)
     except Exception:
         sensitivity_level = 0
+
     if sensitivity_level >= 2:
-        for field in ("content_text", "evidence", "title", "window_title", "body"):
+        for field in _DESENSITIZE_STRING_FIELDS:
             if field in sanitized:
                 sanitized[field] = HIGH_SENSITIVITY_PLACEHOLDER
+        sanitized["metadata_json"] = None
+        return sanitized
+
+    for field in _DESENSITIZE_STRING_FIELDS:
+        value = sanitized.get(field)
+        if isinstance(value, str) and value:
+            sanitized[field] = desensitize(value)
+
+    metadata_json = sanitized.get("metadata_json")
+    if metadata_json:
+        try:
+            parsed = json.loads(str(metadata_json))
+        except Exception:
+            parsed = None
+        if parsed is not None:
+            cleaned = desensitize_json_value(parsed)
+            try:
+                sanitized["metadata_json"] = json.dumps(cleaned, ensure_ascii=False)
+            except Exception:
+                pass
+
     return sanitized
 
 
