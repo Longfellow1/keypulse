@@ -24,7 +24,6 @@ def _make_config(db_path: Path, vault_path: Path, **watcher_flags):
         "manual": False,
         "browser": False,
         "ax_text": False,
-        "keyboard_chunk": False,
         "ocr": False,
     }
     watchers.update(watcher_flags)

@@ -69,7 +69,6 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
         "manual": False,
         "browser": False,
         "ax_text": True,
-        "keyboard_chunk": True,
         "ocr": True,
     })()})()
 
@@ -88,12 +87,10 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
         "watchers": {
             "ax_text": {"running": True},
             "ocr": {"running": True},
-            "keyboard_chunk": {"source": {"status": "running"}},
         },
         "multi_source_counts": {
             "ax_text": 3,
             "ocr_text": 1,
-            "keyboard_chunk": 2,
         },
     })
 
@@ -103,7 +100,6 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
     assert "runtime_ax_running=True" in result.output
     assert "runtime_host=/usr/local/bin/python3" in result.output
     assert "runtime_ocr_count=1" in result.output
-    assert "runtime_keyboard_count=2" in result.output
 
 
 def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
@@ -116,7 +112,6 @@ def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
         "watchers": {
             "ax_text": {"running": True},
             "ocr": {"running": True},
-            "keyboard_chunk": {"source": {"status": "running"}},
         }
     })
 
@@ -124,4 +119,3 @@ def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
 
     assert "后台正文采集线程: OK" in result.output
     assert "后台屏幕识别线程: OK" in result.output
-    assert "后台键盘监听线程: OK" in result.output

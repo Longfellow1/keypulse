@@ -14,7 +14,7 @@ from keypulse.store.models import RawEvent
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("keyboard_chunk", "user"),
+        ("ax_text", "user"),
         ("clipboard", "user"),
         ("manual", "user"),
         ("browser", "user"),

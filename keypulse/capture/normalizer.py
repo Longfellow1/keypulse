@@ -49,7 +49,6 @@ def is_window_persisted_session_event_type(event_type: str) -> bool:
 def _semantic_weight_for(source: str) -> float:
     """Return semantic weight by source."""
     weights = {
-        "keyboard_chunk": 1.0,
         "clipboard": 0.9,
         "manual": 1.0,
         "browser": 0.85,
@@ -175,30 +174,6 @@ def normalize_ocr_text_event(
         content_hash=_hash(text),
         metadata_json=json.dumps(metadata) if metadata else None,
         semantic_weight=_semantic_weight_for("ocr_text"),
-    )
-
-
-def normalize_keyboard_chunk_event(
-    text: str,
-    app_name: Optional[str] = None,
-    window_title: Optional[str] = None,
-    process_name: Optional[str] = None,
-    ts_start: Optional[str] = None,
-    ts_end: Optional[str] = None,
-    metadata: Optional[dict] = None,
-) -> RawEvent:
-    return RawEvent(
-        source="keyboard_chunk",
-        event_type="keyboard_chunk_capture",
-        ts_start=ts_start or _now(),
-        ts_end=ts_end,
-        app_name=app_name,
-        window_title=window_title,
-        process_name=process_name,
-        content_text=text,
-        content_hash=_hash(text),
-        metadata_json=json.dumps(metadata) if metadata else None,
-        semantic_weight=_semantic_weight_for("keyboard_chunk"),
     )
 
 

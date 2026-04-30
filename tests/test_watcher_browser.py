@@ -136,4 +136,4 @@ def test_repo_config_parses_browser_defaults():
     assert config.watchers.browser is False
     assert config.browser.poll_interval_sec == 1.0
     assert config.browser.supported_browsers == SUPPORTED_BROWSERS
-    assert config.keyboard_chunk.force_flush_sec == 2.0
+    assert config.ax_text.poll_interval_sec == 1.0

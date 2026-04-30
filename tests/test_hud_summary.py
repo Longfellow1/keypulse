@@ -44,7 +44,7 @@ def test_build_hud_snapshot_reports_active_sources(tmp_path):
     cfg = Config.model_validate(
         {
             "app": {"db_path": str(db_path), "log_path": str(tmp_path / "hud.log")},
-            "watchers": {"ax_text": True, "keyboard_chunk": True, "ocr": False},
+            "watchers": {"ax_text": True, "ocr": False},
         }
     )
     init_db(cfg.db_path_expanded)
@@ -52,7 +52,6 @@ def test_build_hud_snapshot_reports_active_sources(tmp_path):
     snapshot = build_hud_snapshot(cfg, date_str="2026-04-19", hud_state_path=tmp_path / "hud-state.json")
 
     assert snapshot.active_sources["当前看到的正文"] is True
-    assert snapshot.active_sources["键入整理片段"] is True
     assert snapshot.active_sources["屏幕识别补充"] is False
 
 

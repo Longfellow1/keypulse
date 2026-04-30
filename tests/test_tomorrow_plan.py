@@ -143,7 +143,7 @@ def test_render_daily_narrative_includes_user_intent_in_prompt(monkeypatch):
             event_count=1,
             key_candidates=[],
             user_candidates=[
-                {"title": "note", "source": "keyboard_chunk", "created_at": "2026-04-20T09:00:00+00:00"}
+                {"title": "note", "source": "ax_text", "created_at": "2026-04-20T09:00:00+00:00"}
             ],
             system_candidates=[
                 {"title": "tab", "source": "window", "created_at": "2026-04-20T09:05:00+00:00"}

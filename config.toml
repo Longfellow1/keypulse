@@ -11,7 +11,6 @@ clipboard = true
 manual = true
 browser = false
 ax_text = false
-keyboard_chunk = false
 ocr = false
 
 [idle]
@@ -27,11 +26,6 @@ poll_interval_sec = 1.0
 [browser]
 poll_interval_sec = 1.0
 supported_browsers = ["Safari", "Google Chrome", "Arc", "Brave Browser", "Microsoft Edge"]
-
-[keyboard_chunk]
-silence_sec = 2.0
-force_flush_sec = 2.0
-store_text = true
 
 [ocr]
 provider = "vision_native"

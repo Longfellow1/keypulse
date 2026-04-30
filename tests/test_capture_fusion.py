@@ -5,14 +5,14 @@ import json
 from keypulse.capture.fusion import CaptureFusionEngine
 from keypulse.capture.normalizer import (
     normalize_ax_text_event,
-    normalize_keyboard_chunk_event,
+    normalize_ocr_text_event,
 )
 
 
 def test_fusion_promotes_high_priority_source_and_carries_aux_sources():
     engine = CaptureFusionEngine(similarity_threshold=0.9)
 
-    lower = normalize_keyboard_chunk_event(
+    lower = normalize_ocr_text_event(
         text="hello fused world",
         app_name="Notes",
         window_title="Draft",
@@ -35,7 +35,7 @@ def test_fusion_promotes_high_priority_source_and_carries_aux_sources():
     assert higher_result.event is not None
     metadata = json.loads(higher_result.event.metadata_json or "{}")
     assert metadata["merge_reason"] == "replaced_lower_priority_duplicate"
-    assert metadata["sources"] == ["keyboard_chunk", "ax_text"]
+    assert metadata["sources"] == ["ocr_text", "ax_text"]
 
 
 def test_fusion_drops_lower_priority_duplicate_after_canonical_exists():
@@ -49,7 +49,7 @@ def test_fusion_drops_lower_priority_duplicate_after_canonical_exists():
     )
     assert engine.fuse(canonical).persist is True
 
-    duplicate = normalize_keyboard_chunk_event(
+    duplicate = normalize_ax_text_event(
         text="same body",
         app_name="Notes",
         window_title="Draft",
@@ -65,7 +65,7 @@ def test_fusion_drops_lower_priority_duplicate_after_canonical_exists():
 def test_fusion_does_not_merge_events_16_seconds_apart():
     engine = CaptureFusionEngine(similarity_threshold=0.9)
 
-    canonical = normalize_keyboard_chunk_event(
+    canonical = normalize_ax_text_event(
         text="same body",
         app_name="Notes",
         window_title="Draft",

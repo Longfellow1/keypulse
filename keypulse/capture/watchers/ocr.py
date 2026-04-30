@@ -105,6 +105,11 @@ class OCRTriggerGate:
 class OCRWatcher(BaseWatcher):
     name = "ocr"
 
+    # OCR is gate-driven (window switch + idle + keyboard quiet), so
+    # legitimately silent for long stretches. 1 hour heartbeat is the
+    # threshold for "Screen Recording permission probably dropped".
+    HEARTBEAT_TIMEOUT_SEC = 3600.0
+
     def __init__(
         self,
         event_queue: queue.Queue | None,

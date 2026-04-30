@@ -129,7 +129,6 @@ def test_manager_camera_monitor_wiring_pauses_and_resumes_watchers(monkeypatch):
                     "manual": False,
                     "browser": False,
                     "ax_text": True,
-                    "keyboard_chunk": False,
                     "ocr": True,
                 }
             }
