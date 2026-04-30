@@ -476,7 +476,7 @@ def render_daily_narrative(
 ) -> str:
     blocks = [block for block in work_blocks]
     if not blocks:
-        return "## 今日主线\n\n今天没有形成足够清晰的工作块。" if include_heading else "今天没有形成足够清晰的工作块。"
+        return "## 今日主线\n\n正在持续记录中ing..." if include_heading else "正在持续记录中ing..."
 
     lead_block = max((block for block in blocks if not block.fragment), default=blocks[0], key=lambda block: block.duration_sec)
     lines = ["## 今日主线", "", f"> 主战场是 {lead_block.theme}。", ""] if include_heading else [f"> 主战场是 {lead_block.theme}。", ""]
