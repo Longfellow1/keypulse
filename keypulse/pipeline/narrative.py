@@ -139,7 +139,7 @@ def _event_source(event: dict[str, Any]) -> str:
     return str(event.get("origin_source") or event.get("source") or "")
 
 
-_USER_SOURCES_FOR_BLOCK = frozenset({"keyboard_chunk", "clipboard", "manual", "browser"})
+_USER_SOURCES_FOR_BLOCK = frozenset({"clipboard", "manual", "browser"})
 
 
 def _event_speaker(event: dict[str, Any]) -> str:

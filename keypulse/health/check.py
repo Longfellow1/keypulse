@@ -91,7 +91,7 @@ def _json_iso(value: datetime | None) -> str | None:
 
 def _watcher_names(cfg: Config) -> list[str]:
     names: list[str] = []
-    for field_name in ("window", "clipboard", "keyboard_chunk", "idle", "manual", "browser", "ax_text", "ocr"):
+    for field_name in ("window", "clipboard", "idle", "manual", "browser", "ax_text", "ocr"):
         if bool(getattr(cfg.watchers, field_name, False)):
             names.append(field_name)
     return names
@@ -123,7 +123,7 @@ def _speaker_mislabel_ratio(checked_at: datetime) -> float:
             COUNT(*) AS total,
             SUM(CASE WHEN speaker='system' THEN 1 ELSE 0 END) AS system_count
         FROM raw_events
-        WHERE source IN ('keyboard_chunk', 'clipboard', 'manual', 'browser')
+        WHERE source IN ('clipboard', 'manual', 'browser')
           AND ts_start > ?
         """,
         (cutoff,),

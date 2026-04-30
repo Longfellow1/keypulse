@@ -26,7 +26,6 @@ def _signal_icon(source_key: str) -> str:
         "manual": "✍️",
         "clipboard": "📋",
         "ax_text": "👁",
-        "keyboard_chunk": "⌨️",
         "ocr_text": "🔍",
         "window": "🪟",
         "browser_tab": "🌐",

@@ -129,6 +129,12 @@ def read_frontmost_ax_text(
 class AXTextWatcher(BaseWatcher):
     name = "ax_text"
 
+    # Polls the foreground app every 1s. If macOS revokes Accessibility
+    # permission silently, no exception is raised — the watcher keeps
+    # looping but never emits. 30 minutes is generous enough to avoid
+    # false-positive revivals while a user reads a static page.
+    HEARTBEAT_TIMEOUT_SEC = 1800.0
+
     def __init__(
         self,
         event_queue: queue.Queue,

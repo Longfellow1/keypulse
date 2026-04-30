@@ -316,12 +316,10 @@ def status(plain):
     runtime_watchers = runtime.get("watchers") or {}
     runtime_pid = runtime.get("pid") or "unknown"
     runtime_host = runtime.get("host_executable") or "unknown"
-    keyboard_source = ((runtime_watchers.get("keyboard_chunk") or {}).get("source") or {}).get("status") or "unknown"
     ax_running = bool((runtime_watchers.get("ax_text") or {}).get("running"))
     ocr_running = bool((runtime_watchers.get("ocr") or {}).get("running"))
     ax_count = int(runtime_counts.get("ax_text") or 0)
     ocr_count = int(runtime_counts.get("ocr_text") or 0)
-    keyboard_count = int(runtime_counts.get("keyboard_chunk") or 0)
 
     # DB size
     db_path = cfg.db_path_expanded
@@ -342,8 +340,6 @@ def status(plain):
         enabled.append("浏览器")
     if getattr(cfg.watchers, "ax_text", False):
         enabled.append("当前看到的正文")
-    if getattr(cfg.watchers, "keyboard_chunk", False):
-        enabled.append("键入整理片段")
     if getattr(cfg.watchers, "ocr", False):
         enabled.append("屏幕识别补充")
 
@@ -359,12 +355,10 @@ def status(plain):
         print(f"enabled_watchers={','.join(enabled)}")
         print(f"runtime_ax_running={ax_running}")
         print(f"runtime_ocr_running={ocr_running}")
-        print(f"runtime_keyboard_source={keyboard_source}")
         print(f"runtime_pid={runtime_pid}")
         print(f"runtime_host={runtime_host}")
         print(f"runtime_ax_count={ax_count}")
         print(f"runtime_ocr_count={ocr_count}")
-        print(f"runtime_keyboard_count={keyboard_count}")
     else:
         status_label = {
             "running": "运行中",
@@ -385,12 +379,10 @@ def status(plain):
         table.add_row("已启用采集源", "、".join(enabled) if enabled else "无")
         table.add_row("正文采集状态", "已运行" if ax_running else "未见运行")
         table.add_row("屏幕识别状态", "已运行" if ocr_running else "未见运行")
-        table.add_row("键入整理状态", keyboard_source)
         table.add_row("后台宿主 PID", str(runtime_pid))
         table.add_row("后台宿主路径", str(runtime_host))
         table.add_row("正文采集条数", str(ax_count))
         table.add_row("屏幕识别条数", str(ocr_count))
-        table.add_row("键入整理条数", str(keyboard_count))
         console.print(table)
 
 
@@ -467,11 +459,9 @@ def doctor(plain):
     checks["配置文件存在"] = config_path.exists()
     runtime = _load_capture_runtime_state() or {}
     runtime_watchers = runtime.get("watchers") or {}
-    keyboard_source = ((runtime_watchers.get("keyboard_chunk") or {}).get("source") or {}).get("status")
     if runtime_watchers:
         checks["后台正文采集线程"] = bool((runtime_watchers.get("ax_text") or {}).get("running"))
         checks["后台屏幕识别线程"] = bool((runtime_watchers.get("ocr") or {}).get("running"))
-        checks["后台键盘监听线程"] = keyboard_source == "running"
 
     if plain:
         for check_name, passed in checks.items():
@@ -485,17 +475,6 @@ def doctor(plain):
             status = "[green]正常[/green]" if passed else "[red]未通过[/red]"
             table.add_row(check_name, status)
         console.print(table)
-        if runtime_watchers and keyboard_source not in (None, "running"):
-            console.print(
-                Panel(
-                    f"后台键盘监听当前状态：{keyboard_source}\n"
-                    "如果你已经给终端授权，但后台 launchd 仍然拿不到正文/键入事件，"
-                    "需要把 KeyPulse 实际宿主也加入辅助功能、键盘监听、屏幕录制。",
-                    title="运行时提示",
-                    border_style="yellow",
-                )
-            )
-
     # Exit with error if any check failed
     if not all(checks.values()):
         sys.exit(1)

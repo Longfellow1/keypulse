@@ -28,14 +28,12 @@ SOURCE_LABELS = {
     "window": "窗口活动",
     "ax_text": "当前看到的正文",
     "ocr_text": "屏幕识别补充",
-    "keyboard_chunk": "键入整理片段",
     "browser_tab": "浏览器标签页",
 }
 
 HEALTH_LABELS = {
     "ax_text": "当前看到的正文",
     "ocr": "屏幕识别补充",
-    "keyboard_chunk": "键入整理片段",
 }
 
 REASON_LABELS = {
@@ -187,7 +185,6 @@ def build_hud_snapshot(cfg: Config, *, date_str: str | None = None, hud_state_pa
     active_sources = {
         HEALTH_LABELS["ax_text"]: bool(getattr(cfg.watchers, "ax_text", False)),
         HEALTH_LABELS["ocr"]: bool(getattr(cfg.watchers, "ocr", False)),
-        HEALTH_LABELS["keyboard_chunk"]: bool(getattr(cfg.watchers, "keyboard_chunk", False)),
     }
     return HUDSnapshot(
         date=effective_date,

@@ -55,6 +55,11 @@ def _get_window_title(pid: int) -> Optional[str]:
 class WindowWatcher(BaseWatcher):
     name = "window"
 
+    # Focus changes happen frequently in normal use. 30 min silence means
+    # NSWorkspace is no longer reporting frontmost changes — usually
+    # permission rotation or AppKit not in this process's GUI session.
+    HEARTBEAT_TIMEOUT_SEC = 1800.0
+
     def __init__(
         self,
         event_queue: queue.Queue,
