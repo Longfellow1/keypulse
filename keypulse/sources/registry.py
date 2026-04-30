@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterator
 
-from keypulse.sources.cleaning.config import load_cleaning_config
+from keypulse.sources.cleaning.config import PRIVACY_TIERS, load_cleaning_config
 from keypulse.sources.cleaning.content_quality import is_low_signal_event
 from keypulse.sources.cleaning.dedup import dedup_events
 from keypulse.sources.plugins.approved_sqlite import ApprovedSqliteSource
@@ -22,7 +22,22 @@ from keypulse.utils.logging import get_logger
 
 LOGGER = get_logger("sources.registry")
 
+_TIER_RANK: dict[str, int] = {tier: rank for rank, tier in enumerate(PRIVACY_TIERS)}
+_UNKNOWN_TIER_RANK: int = len(PRIVACY_TIERS)  # strictly higher than any known tier
+_DEFAULT_MAX_TIER_RANK: int = _TIER_RANK["yellow"]
+
 _PLUGINS: dict[str, DataSource] = {}
+
+
+def _is_tier_allowed(event_tier: str | None, max_tier: str) -> bool:
+    """Return True iff event tier rank <= max_tier rank.
+
+    Unknown event tiers fail closed (always dropped) by mapping to a rank
+    strictly above all known tiers. Unknown max_tier falls back to yellow.
+    """
+    event_rank = _TIER_RANK.get(str(event_tier or "").strip().lower(), _UNKNOWN_TIER_RANK)
+    max_rank = _TIER_RANK.get(str(max_tier or "").strip().lower(), _DEFAULT_MAX_TIER_RANK)
+    return event_rank <= max_rank
 
 
 def register(source: DataSource) -> None:
@@ -73,6 +88,12 @@ def read_all(
                 continue
             try:
                 for event in stream:
+                    if not _is_tier_allowed(event.privacy_tier, cleaning_config.privacy_max_tier):
+                        LOGGER.info(
+                            "privacy_tier dropped: %s actor=%s tier=%s max=%s",
+                            plugin.name, event.actor, event.privacy_tier, cleaning_config.privacy_max_tier,
+                        )
+                        continue
                     try:
                         is_noise, _ = is_low_signal_event(event)
                     except Exception as exc:  # pragma: no cover - defensive
