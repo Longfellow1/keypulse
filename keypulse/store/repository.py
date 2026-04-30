@@ -13,20 +13,36 @@ def _now() -> str:
 # ── RawEvent ─────────────────────────────────────────────────────────────────
 
 def insert_raw_event(e: RawEvent) -> int:
+    """Idempotent insert.
+
+    A unique index on (source, ts_start, IFNULL(content_hash,'')) blocks
+    duplicate emissions from the same watcher. On conflict the existing
+    row's id is returned so callers keep working with a stable id even
+    after a retry. NULL content_hash is normalised to '' so two
+    NULL-hash events with identical (source, ts_start) collide.
+    """
     conn = get_conn()
     cur = conn.execute(
         """INSERT INTO raw_events
            (source, event_type, ts_start, ts_end, app_name, window_title,
             process_name, content_text, content_hash, metadata_json,
             sensitivity_level, skipped_reason, session_id, speaker, semantic_weight, user_present, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT DO NOTHING""",
         (e.source, e.event_type, e.ts_start, e.ts_end, e.app_name,
          e.window_title, e.process_name, e.content_text, e.content_hash,
          e.metadata_json, e.sensitivity_level, e.skipped_reason,
          e.session_id, e.speaker, e.semantic_weight, e.user_present, e.created_at),
     )
     conn.commit()
-    return cur.lastrowid
+    if cur.rowcount > 0:
+        return cur.lastrowid
+    row = conn.execute(
+        """SELECT id FROM raw_events
+           WHERE source=? AND ts_start=? AND IFNULL(content_hash,'')=IFNULL(?,'')""",
+        (e.source, e.ts_start, e.content_hash),
+    ).fetchone()
+    return row[0] if row else 0
 
 
 def query_raw_events(
