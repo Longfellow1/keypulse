@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 MIGRATIONS = [
     # v1
@@ -161,6 +161,22 @@ MIGRATIONS = [
         payload_json TEXT NOT NULL,
         generated_at TEXT NOT NULL
     );
+    """,
+    # v17 — raw_events idempotent insert
+    # Dedupe pre-existing rows that share (source, ts_start, content_hash),
+    # keeping the earliest id; then enforce a unique index so future INSERT
+    # ON CONFLICT DO NOTHING blocks duplicate watcher emissions.
+    # NULL content_hash is normalised to '' so two NULL-hash events with
+    # identical (source, ts_start) collide as expected (SQLite treats NULL
+    # as distinct in UNIQUE indexes by default).
+    """
+    DELETE FROM raw_events
+    WHERE id NOT IN (
+        SELECT MIN(id) FROM raw_events
+        GROUP BY source, ts_start, IFNULL(content_hash, '')
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_events_dedup
+    ON raw_events(source, ts_start, IFNULL(content_hash, ''));
     """,
 ]
 
