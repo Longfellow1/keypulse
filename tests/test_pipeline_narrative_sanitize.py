@@ -124,3 +124,83 @@ def test_mixed_events_do_not_leak_sensitive_text_into_narrative_prompt(monkeypat
     assert "private roadmap" not in seen["prompt"]
     assert "Secret draft" not in seen["prompt"]
     assert "public roadmap" in seen["prompt"]
+
+
+def test_low_sensitivity_strings_are_redacted_at_narrative_boundary():
+    """Defense-in-depth: even if v1 sources bypass capture's desensitize,
+    the narrative layer redacts emails/tokens before they reach the LLM."""
+    blocks = aggregate_work_blocks(
+        [
+            {
+                "source": "manual",
+                "event_type": "manual_save",
+                "ts_start": "2026-04-30T10:00:00+00:00",
+                "app_name": "Notes",
+                "content_text": "ping me at alice@example.com about the rollout",
+                "sensitivity_level": 0,
+            }
+        ]
+    )
+
+    serialized = json.dumps([block.__dict__ for block in blocks], ensure_ascii=False)
+
+    assert len(blocks) == 1
+    assert "alice@example.com" not in serialized
+    assert "[REDACTED]" in blocks[0].key_candidates[0]["body"]
+
+
+def test_metadata_json_values_are_desensitized_at_narrative_boundary():
+    """metadata_json may carry sensitive values from v1 plugins that didn't
+    pass through capture's _sanitize_metadata_json. Re-clean on the LLM
+    boundary as a safety net."""
+    fake_token = "s" + "k-" + ("a" * 48)  # built at runtime to dodge static secret scanners
+    metadata = {
+        "tags": ["contact:bob@example.org", "topic:rollout"],
+        "owner_email": "carol@corp.io",
+        "nested": {"token": fake_token},
+    }
+
+    blocks = aggregate_work_blocks(
+        [
+            {
+                "source": "manual",
+                "event_type": "manual_save",
+                "ts_start": "2026-04-30T11:00:00+00:00",
+                "app_name": "Notes",
+                "content_text": "follow up",
+                "metadata_json": json.dumps(metadata, ensure_ascii=False),
+                "sensitivity_level": 0,
+            }
+        ]
+    )
+
+    serialized = json.dumps([block.__dict__ for block in blocks], ensure_ascii=False)
+
+    assert "bob@example.org" not in serialized
+    assert "carol@corp.io" not in serialized
+    assert fake_token not in serialized
+    # Topic / structural strings without sensitive content should survive.
+    assert "rollout" in serialized
+
+
+def test_high_sensitivity_event_drops_metadata_json_entirely():
+    """Sensitivity 2 wipes textual fields and clears metadata_json so even
+    structural keys (which might be sensitive themselves) cannot leak."""
+    blocks = aggregate_work_blocks(
+        [
+            {
+                "source": "manual",
+                "event_type": "manual_save",
+                "ts_start": "2026-04-30T12:00:00+00:00",
+                "app_name": "Notes",
+                "content_text": "secret",
+                "metadata_json": json.dumps({"customer_id": "C-12345"}, ensure_ascii=False),
+                "sensitivity_level": 2,
+            }
+        ]
+    )
+
+    serialized = json.dumps([block.__dict__ for block in blocks], ensure_ascii=False)
+
+    assert "C-12345" not in serialized
+    assert "customer_id" not in serialized
