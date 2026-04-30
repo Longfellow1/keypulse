@@ -40,7 +40,7 @@ def _event(
 def test_event_speaker_prefers_explicit_speaker_and_falls_back_to_source():
     assert _event_speaker({"speaker": "user", "source": "window"}) == "user"
     assert _event_speaker({"speaker": "system", "source": "clipboard"}) == "system"
-    assert _event_speaker({"source": "keyboard_chunk"}) == "user"
+    assert _event_speaker({"source": "clipboard"}) == "user"
     assert _event_speaker({"source": "window"}) == "system"
 
 
@@ -49,7 +49,7 @@ def test_build_work_block_splits_user_and_system_candidates_and_prefers_user_the
         _event(
             ts_start="2026-04-20T09:00:00+00:00",
             ts_end="2026-04-20T09:03:00+00:00",
-            source="keyboard_chunk",
+            source="ax_text",
             app_name="Codex",
             title="user alpha",
             body="用户 alpha",
@@ -105,7 +105,7 @@ def test_build_work_block_splits_user_and_system_candidates_and_prefers_user_the
     assert block.theme == "user-topic"
     assert len(block.user_candidates) > 0
     assert len(block.system_candidates) > 0
-    assert any(candidate["source"] in {"keyboard_chunk", "clipboard"} for candidate in block.user_candidates)
+    assert any(candidate["source"] in {"ax_text", "clipboard"} for candidate in block.user_candidates)
     assert any(candidate["source"] == "window" for candidate in block.system_candidates)
 
 
@@ -148,7 +148,7 @@ def test_build_work_block_keeps_user_only_block_non_fragment_and_empty_system_ca
             _event(
                 ts_start="2026-04-20T10:00:00+00:00",
                 ts_end="2026-04-20T10:03:00+00:00",
-                source="keyboard_chunk",
+                source="ax_text",
                 app_name="Codex",
                 title="draft 1",
                 body="draft 1",
@@ -196,10 +196,10 @@ def test_render_block_lines_uses_dual_column_structure_and_omits_empty_system_de
         primary_app="Codex",
         event_count=4,
         key_candidates=[
-            {"title": "user alpha", "source": "keyboard_chunk"},
+            {"title": "user alpha", "source": "ax_text"},
         ],
         user_candidates=[
-            {"title": "user alpha", "source": "keyboard_chunk"},
+            {"title": "user alpha", "source": "ax_text"},
             {"title": "user beta", "source": "clipboard"},
         ],
         system_candidates=[],
@@ -226,7 +226,7 @@ def test_render_block_lines_renders_system_details_with_custom_formatter():
             {"title": "system alpha", "source": "window"},
         ],
         user_candidates=[
-            {"title": "user alpha", "source": "keyboard_chunk"},
+            {"title": "user alpha", "source": "ax_text"},
         ],
         system_candidates=[
             {"title": "system alpha", "source": "window"},
@@ -242,4 +242,3 @@ def test_render_block_lines_renders_system_details_with_custom_formatter():
     assert "系统显示了什么（2 条）" in body
     assert "- [[system alpha]]" in body
     assert "- [[system beta]]" in body
-

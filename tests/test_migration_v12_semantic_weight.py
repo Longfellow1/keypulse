@@ -69,7 +69,7 @@ def test_backfill_weights_per_source():
 
         # Insert test events with various sources (before v12 migration)
         test_data = [
-            ("keyboard_chunk", 1.0),
+            ("ax_text", 0.8),
             ("clipboard", 0.9),
             ("manual", 1.0),
             ("browser", 0.85),
@@ -120,7 +120,7 @@ def test_backfill_weights_per_source():
 def test_semantic_weight_helper():
     """Test the _semantic_weight_for() helper function."""
     test_cases = [
-        ("keyboard_chunk", 1.0),
+        ("ax_text", 0.8),
         ("clipboard", 0.9),
         ("manual", 1.0),
         ("browser", 0.85),
@@ -152,11 +152,11 @@ def test_new_raw_event_writes_include_semantic_weight():
 
         # Insert a raw event via insert_raw_event
         event = RawEvent(
-            source="keyboard_chunk",
-            event_type="keyboard_chunk_capture",
+            source="ax_text",
+            event_type="ax_text_capture",
             ts_start="2026-01-01T00:00:00Z",
             content_text="hello",
-            semantic_weight=_semantic_weight_for("keyboard_chunk"),
+            semantic_weight=_semantic_weight_for("ax_text"),
         )
         event_id = insert_raw_event(event)
 
@@ -165,6 +165,6 @@ def test_new_raw_event_writes_include_semantic_weight():
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT semantic_weight FROM raw_events WHERE id = ?", (event_id,)).fetchone()
         assert row is not None
-        assert abs(row["semantic_weight"] - 1.0) < 0.001
+        assert abs(row["semantic_weight"] - 0.8) < 0.001
 
         conn.close()

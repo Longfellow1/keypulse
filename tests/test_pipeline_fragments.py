@@ -21,11 +21,11 @@ def base_ts():
 
 
 class TestExtractFragments:
-    def test_keyboard_chunk_event(self, base_ts):
+    def test_ax_text_event(self, base_ts):
         rows = [
             {
                 "id": 1,
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
                 "ts_utc": base_ts.isoformat(),
                 "app_name": "VS Code",
                 "window_title": "main.py - keypulse",
@@ -110,7 +110,7 @@ class TestExtractFragments:
         rows = [
             {
                 "id": 6,
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
                 "ts_utc": base_ts.isoformat(),
                 "app_name": "Editor",
                 "window_title": "document.md",
@@ -125,7 +125,7 @@ class TestExtractFragments:
         rows = [
             {
                 "id": 7,
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
                 "ts_utc": base_ts.isoformat(),
                 "app_name": "Chrome",
                 "window_title": "Login Page",
@@ -167,7 +167,7 @@ class TestExtractFragments:
         rows = [
             {
                 "id": 10,
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
                 "ts_utc": "invalid-timestamp",
                 "app_name": "App",
                 "window_title": "Window",
@@ -182,7 +182,7 @@ class TestExtractFragments:
         rows = [
             {
                 "id": 11,
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
                 "ts_utc": base_ts.isoformat(),
                 "app_name": "Editor",
                 "window_title": "file.py",
@@ -509,7 +509,7 @@ class TestEndToEndWithRealData:
         rows = [
             {
                 "id": 101,
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
                 "ts_utc": base_ts.isoformat(),
                 "app_name": "Code",
                 "window_title": "fragments.py - keypulse",
@@ -517,7 +517,7 @@ class TestEndToEndWithRealData:
             },
             {
                 "id": 102,
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
                 "ts_utc": (base_ts + timedelta(seconds=10)).isoformat(),
                 "app_name": "Code",
                 "window_title": "fragments.py - keypulse",
@@ -562,7 +562,7 @@ class TestEndToEndWithRealData:
         rows = [
             {
                 "id": 301,
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
                 "ts_utc": base_ts.isoformat(),
                 "app_name": "Chrome",
                 "window_title": "Claude - claude.ai",
@@ -601,7 +601,7 @@ class TestHygieneFilters:
     def ts(self):
         return datetime(2026, 4, 25, 10, 0, 0, tzinfo=timezone.utc)
 
-    def _row(self, ts, content, event_type="keyboard_chunk_capture",
+    def _row(self, ts, content, event_type="ax_text_capture",
              app_name="Finder", window_title="some window", row_id=1):
         return {
             "id": row_id,
@@ -722,7 +722,7 @@ class TestFilterNoisyRawEvents:
         self,
         ts: datetime,
         content_text: str = "",
-        event_type: str = "keyboard_chunk_capture",
+        event_type: str = "ax_text_capture",
         window_title: str = "Test Window",
         app_name: str = "Test App",
         row_id: int = 1,
@@ -770,14 +770,14 @@ class TestFilterNoisyRawEvents:
 
     def test_l1_short_keyboard_dropped(self, base_ts):
         rows = [
-            self._row(base_ts, "jx", event_type="keyboard_chunk_capture"),
+            self._row(base_ts, "jx", event_type="ax_text_capture"),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 0
 
     def test_l1_short_whitelist_kept(self, base_ts):
         rows = [
-            self._row(base_ts, "ok", event_type="keyboard_chunk_capture"),
+            self._row(base_ts, "ok", event_type="ax_text_capture"),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 1
@@ -787,14 +787,14 @@ class TestFilterNoisyRawEvents:
 
     def test_l2_qwerty_dropped(self, base_ts):
         rows = [
-            self._row(base_ts, "qwerty", event_type="keyboard_chunk_capture"),
+            self._row(base_ts, "qwerty", event_type="ax_text_capture"),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 0
 
     def test_l2_normal_text_kept(self, base_ts):
         rows = [
-            self._row(base_ts, "design product spec", event_type="keyboard_chunk_capture"),
+            self._row(base_ts, "design product spec", event_type="ax_text_capture"),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 1
@@ -803,25 +803,25 @@ class TestFilterNoisyRawEvents:
 
     def test_l4_edit_distance_window_dropped(self, base_ts):
         rows = [
-            self._row(base_ts, "jx", event_type="keyboard_chunk_capture", row_id=1),
-            self._row(base_ts + timedelta(seconds=5), "jix", event_type="keyboard_chunk_capture", row_id=2),
-            self._row(base_ts + timedelta(seconds=10), "jixu", event_type="keyboard_chunk_capture", row_id=3),
+            self._row(base_ts, "jx", event_type="ax_text_capture", row_id=1),
+            self._row(base_ts + timedelta(seconds=5), "jix", event_type="ax_text_capture", row_id=2),
+            self._row(base_ts + timedelta(seconds=10), "jixu", event_type="ax_text_capture", row_id=3),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 0, "Bucket (app, window, ts//300) with 3 similar short edits should drop all"
 
     def test_l4_long_total_len_kept(self, base_ts):
         rows = [
-            self._row(base_ts, "这是一段较长的输入A", event_type="keyboard_chunk_capture", row_id=1),
-            self._row(base_ts + timedelta(seconds=5), "这是一段较长的输入B", event_type="keyboard_chunk_capture", row_id=2),
+            self._row(base_ts, "这是一段较长的输入A", event_type="ax_text_capture", row_id=1),
+            self._row(base_ts + timedelta(seconds=5), "这是一段较长的输入B", event_type="ax_text_capture", row_id=2),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 2, "Total length >= 15, should keep even if distance < 2"
 
     def test_l4_distinct_samples_kept(self, base_ts):
         rows = [
-            self._row(base_ts, "hello world today", event_type="keyboard_chunk_capture", row_id=1),
-            self._row(base_ts + timedelta(seconds=5), "goodbye moon night", event_type="keyboard_chunk_capture", row_id=2),
+            self._row(base_ts, "hello world today", event_type="ax_text_capture", row_id=1),
+            self._row(base_ts + timedelta(seconds=5), "goodbye moon night", event_type="ax_text_capture", row_id=2),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 2, "Large edit distance should keep both"
@@ -857,11 +857,11 @@ class TestFilterNoisyRawEvents:
             self._row(base_ts + timedelta(seconds=3), "token", window_title="loginwindow", row_id=13),
             self._row(base_ts + timedelta(seconds=4), "2fa", window_title="loginwindow", row_id=14),
             # 3 short/similar keyboard rows in same bucket (L1+L4 blocked)
-            self._row(base_ts + timedelta(seconds=5), "jx", event_type="keyboard_chunk_capture", row_id=20),
-            self._row(base_ts + timedelta(seconds=10), "jixjixu", event_type="keyboard_chunk_capture", row_id=21),
-            self._row(base_ts + timedelta(seconds=15), "xxx", event_type="keyboard_chunk_capture", row_id=22),
+            self._row(base_ts + timedelta(seconds=5), "jx", event_type="ax_text_capture", row_id=20),
+            self._row(base_ts + timedelta(seconds=10), "jixjixu", event_type="ax_text_capture", row_id=21),
+            self._row(base_ts + timedelta(seconds=15), "xxx", event_type="ax_text_capture", row_id=22),
             # 1 normal row (kept)
-            self._row(base_ts + timedelta(seconds=20), "design product spec document", event_type="keyboard_chunk_capture", row_id=30),
+            self._row(base_ts + timedelta(seconds=20), "design product spec document", event_type="ax_text_capture", row_id=30),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 1, "Should keep only the normal text row"
@@ -871,9 +871,9 @@ class TestFilterNoisyRawEvents:
 
     def test_order_preserved(self, base_ts):
         rows = [
-            self._row(base_ts, "ok", event_type="keyboard_chunk_capture", row_id=1),
-            self._row(base_ts + timedelta(seconds=5), "design doc", event_type="keyboard_chunk_capture", row_id=2),
-            self._row(base_ts + timedelta(seconds=10), "yes", event_type="keyboard_chunk_capture", row_id=3),
+            self._row(base_ts, "ok", event_type="ax_text_capture", row_id=1),
+            self._row(base_ts + timedelta(seconds=5), "design doc", event_type="ax_text_capture", row_id=2),
+            self._row(base_ts + timedelta(seconds=10), "yes", event_type="ax_text_capture", row_id=3),
         ]
         result = filter_noisy_raw_events(rows)
         assert len(result) == 3
@@ -896,9 +896,9 @@ class TestFilterNoisyRawEvents:
 
     def test_mixed_event_types_preserve_non_keyboard(self, base_ts):
         rows = [
-            self._row(base_ts, "jx", event_type="keyboard_chunk_capture", row_id=1),
+            self._row(base_ts, "jx", event_type="ax_text_capture", row_id=1),
             self._row(base_ts + timedelta(seconds=1), "ab", event_type="window_focus", row_id=2),
-            self._row(base_ts + timedelta(seconds=2), "good text here", event_type="keyboard_chunk_capture", row_id=3),
+            self._row(base_ts + timedelta(seconds=2), "good text here", event_type="ax_text_capture", row_id=3),
         ]
         result = filter_noisy_raw_events(rows)
         # jx dropped by L1, window_focus kept (non-keyboard), good text kept
@@ -917,8 +917,8 @@ class TestFilterNoisyRawEvents:
 
     def test_empty_content_text_not_filtered(self, base_ts):
         rows = [
-            self._row(base_ts, "", event_type="keyboard_chunk_capture", row_id=1),
-            self._row(base_ts + timedelta(seconds=1), "good", event_type="keyboard_chunk_capture", row_id=2),
+            self._row(base_ts, "", event_type="ax_text_capture", row_id=1),
+            self._row(base_ts + timedelta(seconds=1), "good", event_type="ax_text_capture", row_id=2),
         ]
         result = filter_noisy_raw_events(rows)
         # Empty content_text: passes extraction but is empty, so handled gracefully
@@ -971,7 +971,7 @@ class TestFilterNoisyRawEvents:
         """IME pinyin intermediate state like 'AIchuangyegongsidouyounaxie' should be dropped."""
         rows = [{
             "id": 1,
-            "event_type": "keyboard_chunk",
+            "event_type": "ax_text",
             "ts_start": base_ts.isoformat(),
             "app_name": "Chrome",
             "window_title": "Google",
@@ -997,7 +997,7 @@ class TestFilterNoisyRawEvents:
         """Pinyin stream under 12 chars (L5 threshold) should be kept."""
         rows = [{
             "id": 3,
-            "event_type": "keyboard_chunk",
+            "event_type": "ax_text",
             "ts_start": base_ts.isoformat(),
             "app_name": "Notes",
             "window_title": None,
@@ -1010,7 +1010,7 @@ class TestFilterNoisyRawEvents:
         """Normal English code/text should not match pinyin heuristic."""
         rows = [{
             "id": 4,
-            "event_type": "keyboard_chunk",
+            "event_type": "ax_text",
             "ts_start": base_ts.isoformat(),
             "app_name": "Code",
             "window_title": "fragments.py",
@@ -1023,7 +1023,7 @@ class TestFilterNoisyRawEvents:
         """Text with spaces is not a pinyin stream (IME would produce continuous stream)."""
         rows = [{
             "id": 5,
-            "event_type": "keyboard_chunk",
+            "event_type": "ax_text",
             "ts_start": base_ts.isoformat(),
             "app_name": "Notes",
             "window_title": None,
@@ -1037,7 +1037,7 @@ class TestFilterNoisyRawEvents:
         rows = [
             {
                 "id": 1,
-                "event_type": "keyboard_chunk",
+                "event_type": "ax_text",
                 "ts_start": base_ts.isoformat(),
                 "app_name": "Chrome",
                 "window_title": None,
@@ -1045,7 +1045,7 @@ class TestFilterNoisyRawEvents:
             },
             {
                 "id": 2,
-                "event_type": "keyboard_chunk",
+                "event_type": "ax_text",
                 "ts_start": (base_ts + timedelta(seconds=5)).isoformat(),
                 "app_name": "Chrome",
                 "window_title": None,
@@ -1061,7 +1061,7 @@ class TestFilterNoisyRawEvents:
             },
             {
                 "id": 4,
-                "event_type": "keyboard_chunk",
+                "event_type": "ax_text",
                 "ts_start": (base_ts + timedelta(seconds=15)).isoformat(),
                 "app_name": "Notes",
                 "window_title": None,
@@ -1076,10 +1076,10 @@ class TestFilterNoisyRawEvents:
         """Short pinyin like 'shibeshi2bendicommit' (20 chars) was missed by old
         pattern-based L5; new boundary-based rule catches it."""
         rows = [
-            {"id": 1, "event_type": "keyboard_chunk", "ts_start": base_ts.isoformat(),
+            {"id": 1, "event_type": "ax_text", "ts_start": base_ts.isoformat(),
              "app_name": "Chrome", "window_title": None,
              "content_text": "shibeshi2bendicommit"},
-            {"id": 2, "event_type": "keyboard_chunk", "ts_start": base_ts.isoformat(),
+            {"id": 2, "event_type": "ax_text", "ts_start": base_ts.isoformat(),
              "app_name": "Chrome", "window_title": None,
              "content_text": "yixiarnahouwocompactba"},
         ]
@@ -1087,35 +1087,35 @@ class TestFilterNoisyRawEvents:
 
     def test_l5_cjk_text_kept(self, base_ts):
         """Real Chinese prose (CJK chars present) must survive — even without spaces."""
-        rows = [{"id": 1, "event_type": "keyboard_chunk", "ts_start": base_ts.isoformat(),
+        rows = [{"id": 1, "event_type": "ax_text", "ts_start": base_ts.isoformat(),
                  "app_name": "Notes", "window_title": None,
                  "content_text": "今天和Haiku讨论了输入卫生过滤器的设计取舍"}]
         assert len(filter_noisy_raw_events(rows)) == 1
 
     def test_l5_long_english_with_spaces_kept(self, base_ts):
         """Normal English sentence (has spaces) must survive."""
-        rows = [{"id": 1, "event_type": "keyboard_chunk", "ts_start": base_ts.isoformat(),
+        rows = [{"id": 1, "event_type": "ax_text", "ts_start": base_ts.isoformat(),
                  "app_name": "Notes", "window_title": None,
                  "content_text": "this is a perfectly reasonable english sentence"}]
         assert len(filter_noisy_raw_events(rows)) == 1
 
     def test_l5_camelcase_code_kept(self, base_ts):
         """camelCase identifiers (≥3 mixed cases) are real code → keep."""
-        rows = [{"id": 1, "event_type": "keyboard_chunk", "ts_start": base_ts.isoformat(),
+        rows = [{"id": 1, "event_type": "ax_text", "ts_start": base_ts.isoformat(),
                  "app_name": "VS Code", "window_title": None,
                  "content_text": "extractFragmentsFromDatabase"}]
         assert len(filter_noisy_raw_events(rows)) == 1
 
     def test_l5_underscore_code_kept(self, base_ts):
         """snake_case identifiers (have underscore) are real code → keep."""
-        rows = [{"id": 1, "event_type": "keyboard_chunk", "ts_start": base_ts.isoformat(),
+        rows = [{"id": 1, "event_type": "ax_text", "ts_start": base_ts.isoformat(),
                  "app_name": "VS Code", "window_title": None,
                  "content_text": "filter_noisy_raw_events"}]
         assert len(filter_noisy_raw_events(rows)) == 1
 
     def test_l5_token_dropped(self, base_ts):
         """Long tokens / hashes (no boundary) are noise → drop."""
-        rows = [{"id": 1, "event_type": "keyboard_chunk", "ts_start": base_ts.isoformat(),
+        rows = [{"id": 1, "event_type": "ax_text", "ts_start": base_ts.isoformat(),
                  "app_name": "Terminal", "window_title": None,
                  "content_text": "cf3a52ee37ad4f8fb0a5707008dfb90c"}]
         assert filter_noisy_raw_events(rows) == []

@@ -65,8 +65,6 @@ _L5_MIN_LEN = 12
 _L5_BOUNDARY_CHARS = frozenset(" \t\n\r_.()[]{};:'\"!?，。；：「」『』、")
 
 _EVENT_TYPE_MAPPING = {
-    "keyboard_chunk_capture": ("type", 1.0),
-    "keyboard_chunk": ("type", 1.0),
     "ax_text_capture": ("type", 0.8),
     "ax_text": ("type", 0.8),
     "clipboard_copy": ("paste", 0.9),
@@ -391,7 +389,6 @@ def render_slices_for_pass1(slices: list[EvidenceSlice]) -> list[str]:
 
 
 _KEYBOARD_INPUT_TYPES = frozenset({
-    "keyboard_chunk_capture", "keyboard_chunk",
     "ax_text_capture", "ax_text",
     "clipboard_copy", "clipboard",
 })

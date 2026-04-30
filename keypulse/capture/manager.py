@@ -38,7 +38,7 @@ from keypulse.store.repository import (
 from keypulse.utils.logging import get_logger
 
 logger = get_logger("manager")
-_USER_SOURCES = frozenset({"keyboard_chunk", "clipboard", "manual", "browser", "ax_text", "ax_ime_commit", "ax_snapshot_fallback"})
+_USER_SOURCES = frozenset({"clipboard", "manual", "browser", "ax_text", "ax_ime_commit", "ax_snapshot_fallback"})
 _TERMINAL_APPS = frozenset({"terminal", "iterm2", "warp", "alacritty", "kitty", "ghostty"})
 
 
@@ -224,27 +224,6 @@ class CaptureManager:
         event = normalize_manual_event(text=text, tags=tags)
         self._queue.put(event)
 
-    def record_keyboard_input(
-        self,
-        text: str,
-        app_name: str | None = None,
-        window_title: str | None = None,
-        process_name: str | None = None,
-        now: float | None = None,
-    ) -> None:
-        watcher = self._watchers.get("keyboard_chunk")
-        if watcher is not None and hasattr(watcher, "record_input"):
-            watcher.record_input(
-                text=text,
-                app_name=app_name,
-                window_title=window_title,
-                process_name=process_name,
-                now=now,
-            )
-        ocr_watcher = self._watchers.get("ocr")
-        if ocr_watcher is not None and hasattr(ocr_watcher, "note_keyboard_activity"):
-            ocr_watcher.note_keyboard_activity(now=now)
-
     def capture_ocr_image(
         self,
         image_ref,
@@ -309,14 +288,6 @@ class CaptureManager:
                 self._queue,
                 poll_interval_sec=self.config.browser.poll_interval_sec,
                 supported_browsers=self.config.browser.supported_browsers,
-            )
-        if cfg.keyboard_chunk:
-            from keypulse.capture.watchers.keyboard_chunk import KeyboardChunkWatcher
-
-            self._watchers["keyboard_chunk"] = KeyboardChunkWatcher(
-                self._queue,
-                silence_sec=self.config.keyboard_chunk.silence_sec,
-                force_flush_sec=self.config.keyboard_chunk.force_flush_sec,
             )
         if cfg.ocr:
             from keypulse.capture.watchers.ocr import OCRTriggerGate, OCRWatcher
@@ -567,11 +538,11 @@ class CaptureManager:
     def _runtime_snapshot(self) -> dict:
         multi_source_counts = {
             source: self._source_counts.get(source, 0)
-            for source in ("ax_text", "ocr_text", "keyboard_chunk", "clipboard", "manual")
+            for source in ("ax_text", "ocr_text", "clipboard", "manual")
         }
         last_seen = {
             source: self._source_last_event_at.get(source)
-            for source in ("ax_text", "ocr_text", "keyboard_chunk", "clipboard", "manual")
+            for source in ("ax_text", "ocr_text", "clipboard", "manual")
             if self._source_last_event_at.get(source)
         }
         return {

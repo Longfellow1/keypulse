@@ -36,7 +36,7 @@ _TOMORROW_PLAN_HEADER = "## 明天的锚点"
 _TOMORROW_PLAN_PLACEHOLDER = "______"
 _TOMORROW_PLAN_LINE_PREFIX = "> 明天我想："
 _TOMORROW_PLAN_HINT = "> _写一句话留给明天的自己_"
-_USER_SOURCES_FOR_ITEM = frozenset({"keyboard_chunk", "clipboard", "manual", "browser"})
+_USER_SOURCES_FOR_ITEM = frozenset({"clipboard", "manual", "browser"})
 _SYNC_CURSOR_FILENAME = "sync-cursor.json"
 _WIKI_LINK_RE = re.compile(r"\[\[(?P<target>[^\]|]+)(?:\|[^\]]+)?\]\]")
 _EVENT_HASH_SUFFIX_RE = re.compile(r"-[0-9a-f]{8}$")
@@ -789,7 +789,6 @@ def _source_label(source: str | None) -> str:
         "window": "窗口活动",
         "ax_text": "当前看到的正文",
         "ocr_text": "屏幕识别补充",
-        "keyboard_chunk": "键入整理片段",
         "keypulse": "KeyPulse",
     }.get(source or "", source or "未知来源")
 
