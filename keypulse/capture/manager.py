@@ -143,6 +143,7 @@ class CaptureManager:
         self._running = threading.Event()
         self._paused = threading.Event()
         self._flush_thread: Optional[threading.Thread] = None
+        self._heartbeat_thread: Optional[threading.Thread] = None
         self._camera_monitor: Optional[CameraMonitor] = None
         self._runtime_state_last_persist = 0.0
         self._source_counts: dict[str, int] = {}
@@ -164,6 +165,10 @@ class CaptureManager:
             target=self._flush_loop, daemon=True, name="flush-loop"
         )
         self._flush_thread.start()
+        self._heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop, daemon=True, name="heartbeat-loop"
+        )
+        self._heartbeat_thread.start()
         set_state("status", "running")
         set_state("started_at", datetime.now(timezone.utc).isoformat())
         self._persist_runtime_state(force=True)
@@ -183,6 +188,8 @@ class CaptureManager:
         self._aggregator.flush()
         if self._flush_thread:
             self._flush_thread.join(timeout=10)
+        if self._heartbeat_thread:
+            self._heartbeat_thread.join(timeout=5)
         set_state("status", "stopped")
         self._persist_runtime_state(force=True)
         logger.info("CaptureManager stopped")
@@ -319,6 +326,38 @@ class CaptureManager:
 
         self._camera_monitor = CameraMonitor(on_change=on_change)
         self._camera_monitor.start()
+
+    HEARTBEAT_CHECK_INTERVAL_SEC: float = 60.0
+
+    def _heartbeat_loop(self) -> None:
+        """Detect and revive watchers that have gone silently mute.
+
+        BaseWatcher.is_heartbeat_dead returns True when a watcher with a
+        configured HEARTBEAT_TIMEOUT_SEC hasn't emitted within the timeout
+        — typically because macOS revoked permission without raising. We
+        stop+start the watcher (counts toward MAX_HEARTBEAT_REVIVALS) and
+        log an ERROR so the user can see permission rotation events.
+        """
+        # Sleep first so quick pytest scenarios don't race startup.
+        slept = 0.0
+        while self._running.is_set() and slept < self.HEARTBEAT_CHECK_INTERVAL_SEC:
+            time.sleep(0.5)
+            slept += 0.5
+        while self._running.is_set():
+            try:
+                if not self._paused.is_set():
+                    for name, watcher in list(self._watchers.items()):
+                        try:
+                            if watcher.is_heartbeat_dead():
+                                watcher.heartbeat_revive()
+                        except Exception as exc:  # pragma: no cover - defensive
+                            logger.error("heartbeat check for %s failed: %s", name, exc)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error("heartbeat loop error: %s", exc)
+            slept = 0.0
+            while self._running.is_set() and slept < self.HEARTBEAT_CHECK_INTERVAL_SEC:
+                time.sleep(0.5)
+                slept += 0.5
 
     def _flush_loop(self):
         while self._running.is_set():
