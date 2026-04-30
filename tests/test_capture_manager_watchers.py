@@ -19,7 +19,6 @@ def test_manager_wires_light_capture_watchers_only_when_enabled():
                 "manual": False,
                 "browser": False,
                 "ax_text": True,
-                "keyboard_chunk": True,
                 "ocr": True,
             }
         }
@@ -29,7 +28,7 @@ def test_manager_wires_light_capture_watchers_only_when_enabled():
 
     manager._init_watchers()
 
-    assert set(manager._watchers) == {"ax_text", "keyboard_chunk", "ocr"}
+    assert set(manager._watchers) == {"ax_text", "ocr"}
 
 
 def test_manager_wires_browser_watcher_when_enabled():
@@ -42,7 +41,6 @@ def test_manager_wires_browser_watcher_when_enabled():
                 "manual": False,
                 "browser": True,
                 "ax_text": False,
-                "keyboard_chunk": False,
                 "ocr": False,
             }
         }
@@ -55,21 +53,9 @@ def test_manager_wires_browser_watcher_when_enabled():
     assert set(manager._watchers) == {"browser"}
 
 
-class _StubKeyboardWatcher:
-    def __init__(self):
-        self.calls = []
-
-    def record_input(self, **kwargs):
-        self.calls.append(kwargs)
-
-
 class _StubOCRWatcher:
     def __init__(self):
-        self.keyboard_calls = []
         self.capture_calls = []
-
-    def note_keyboard_activity(self, now=None):
-        self.keyboard_calls.append(now)
 
     def capture_once(self, **kwargs):
         self.capture_calls.append(kwargs)
@@ -87,33 +73,6 @@ class _StubWindowAwareOCRWatcher:
 
     def note_window_change(self, now=None):
         self.window_calls.append(now)
-
-
-def test_manager_can_feed_keyboard_input_to_watchers():
-    manager = CaptureManager(Config())
-    keyboard = _StubKeyboardWatcher()
-    ocr = _StubOCRWatcher()
-    manager._watchers["keyboard_chunk"] = keyboard
-    manager._watchers["ocr"] = ocr
-
-    manager.record_keyboard_input(
-        text="abc",
-        app_name="Notes",
-        window_title="Draft",
-        process_name="com.apple.Notes",
-        now=1.5,
-    )
-
-    assert keyboard.calls == [
-        {
-            "text": "abc",
-            "app_name": "Notes",
-            "window_title": "Draft",
-            "process_name": "com.apple.Notes",
-            "now": 1.5,
-        }
-    ]
-    assert ocr.keyboard_calls == [1.5]
 
 
 def test_manager_notifies_ocr_on_window_title_change():
@@ -194,7 +153,7 @@ def test_manager_persist_runtime_state_writes_json_snapshot(monkeypatch):
     key, value = writes[-1]
     assert key == "capture_runtime"
     snapshot = json.loads(value)
-    assert snapshot["multi_source_counts"]["keyboard_chunk"] == 0
+    assert snapshot["multi_source_counts"]["ax_text"] == 0
 
 
 class _StubWindowSessionWatcher:

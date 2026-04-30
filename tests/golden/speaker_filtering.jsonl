@@ -1,4 +1,4 @@
-{"event":{"source":"keyboard_chunk","content_text":"docker compose config","body":"docker compose config","app_name":"Terminal"},"expected_meaningful":true,"note":"keyboard chunk with content"}
+{"event":{"source":"clipboard","content_text":"docker compose config","body":"docker compose config","app_name":"Terminal"},"expected_meaningful":true,"note":"clipboard content"}
 {"event":{"source":"clipboard","content_text":"docker compose config","body":"docker compose config","app_name":"Terminal"},"expected_meaningful":true,"note":"clipboard with content"}
 {"event":{"source":"manual","body":"save the patch","app_name":"Terminal"},"expected_meaningful":true,"note":"manual save"}
 {"event":{"source":"browser","content_text":"docker compose config","body":"docker compose config","app_name":"Chrome"},"expected_meaningful":true,"note":"browser with content"}

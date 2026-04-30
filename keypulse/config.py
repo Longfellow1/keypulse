@@ -21,7 +21,6 @@ class WatchersConfig(BaseModel):
     manual: bool = True
     browser: bool = False
     ax_text: bool = False
-    keyboard_chunk: bool = False
     ocr: bool = False
 
 
@@ -49,12 +48,6 @@ class BrowserConfig(BaseModel):
             "Microsoft Edge",
         ]
     )
-
-
-class KeyboardChunkConfig(BaseModel):
-    silence_sec: float = 2.0
-    force_flush_sec: float = 2.0
-    store_text: bool = True
 
 
 class OCRConfig(BaseModel):
@@ -210,7 +203,6 @@ class Config(BaseModel):
     clipboard: ClipboardConfig = Field(default_factory=ClipboardConfig)
     ax_text: AXTextConfig = Field(default_factory=AXTextConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
-    keyboard_chunk: KeyboardChunkConfig = Field(default_factory=KeyboardChunkConfig)
     ocr: OCRConfig = Field(default_factory=OCRConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)

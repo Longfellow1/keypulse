@@ -10,7 +10,6 @@ SOURCE_PRIORITY = {
     "clipboard": 4,
     "ax_text": 3,
     "ocr_text": 2,
-    "keyboard_chunk": 1,
 }
 
 

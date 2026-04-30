@@ -20,7 +20,7 @@ def _insert_raw_event(
     ts_start: str,
     app_name: str,
     content_text: str,
-    event_type: str = "keyboard_chunk_capture",
+    event_type: str = "ax_text_capture",
 ) -> None:
     conn = sqlite3.connect(str(db_path))
     conn.execute(
@@ -74,7 +74,7 @@ def test_aggregate_hourly_events_compacts_5min_buckets():
                 "app_name": "Chrome",
                 "window_title": "A",
                 "content_text": "first note",
-                "event_type": "keyboard_chunk_capture",
+                "event_type": "ax_text_capture",
             },
             {
                 "ts_start": "2026-04-25T09:03:00+00:00",
