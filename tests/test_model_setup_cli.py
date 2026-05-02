@@ -2,9 +2,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import click
 from click.testing import CliRunner
 
+from keypulse import cli
 from keypulse.cli import main
+
+
+def test_top_level_setup_forwards_to_model_setup_callback(monkeypatch):
+    def fake_model_setup() -> None:
+        click.echo("forwarded-to-model-setup")
+
+    monkeypatch.setattr(cli.model_setup, "callback", fake_model_setup)
+
+    result = CliRunner().invoke(main, ["setup"])
+
+    assert result.exit_code == 0
+    assert "forwarded-to-model-setup" in result.output
 
 
 def test_model_setup_writes_config_and_stores_keychain(monkeypatch, tmp_path):

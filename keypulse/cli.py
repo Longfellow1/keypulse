@@ -66,6 +66,7 @@ from keypulse.pipeline.model_keychain import (
     KeychainCommandError,
     KeychainUnavailable,
     check_daemon_keychain_access,
+    read_secret,
     render_plist_advice,
     store_secret,
 )
@@ -142,6 +143,49 @@ def _load_capture_runtime_state() -> dict | None:
     return value if isinstance(value, dict) else None
 
 
+def _keychain_secret_exists(source: str) -> bool:
+    if not source.startswith("keychain:"):
+        return False
+    service = source.split(":", 1)[1].strip()
+    if not service:
+        return False
+    try:
+        return bool(read_secret(service))
+    except (KeychainUnavailable, KeychainCommandError):
+        return False
+
+
+def _cloud_api_key_available(api_key_source: str, api_key_env: str) -> bool:
+    env_name = api_key_env.strip()
+    if env_name and os.environ.get(env_name):
+        return True
+    return _keychain_secret_exists(api_key_source.strip())
+
+
+def _model_backends_need_setup(cfg: Config) -> bool:
+    local = cfg.model.local
+    cloud = cfg.model.cloud
+
+    local_available = local.kind != "disabled" and bool(local.base_url.strip()) and bool(local.model.strip())
+    if local_available:
+        return False
+
+    cloud_available = cloud.kind != "disabled" and _cloud_api_key_available(
+        cloud.api_key_source,
+        cloud.api_key_env,
+    )
+
+    return not cloud_available
+
+
+def _warn_if_model_backends_need_setup(cfg: Config) -> None:
+    if not _model_backends_need_setup(cfg):
+        return
+    click.secho("⚠️  KeyPulse 还没配置可用的模型后端", fg="red", err=True)
+    click.secho("   跑 `keypulse setup` 完成首次配置（约 2 分钟）", fg="red", err=True)
+    click.secho("   daemon 仍会照常启动，但叙事 / 报告功能会失败", fg="red", err=True)
+
+
 @click.group()
 def main():
     """KeyPulse — macOS personal activity monitoring CLI."""
@@ -157,6 +201,7 @@ def main():
 def start(config_path):
     """Start the KeyPulse daemon."""
     cfg = Config.load() if not config_path else _load_config_from(config_path)
+    _warn_if_model_backends_need_setup(cfg)
     lock = SingleInstanceLock()
     launchd_plist = _launchd_daemon_plist_path()
 
@@ -208,6 +253,7 @@ def start(config_path):
 def serve(config_path):
     """Run KeyPulse in the foreground under a supervisor such as launchd."""
     cfg = Config.load() if not config_path else _load_config_from(config_path)
+    _warn_if_model_backends_need_setup(cfg)
     run(cfg)
 
 
@@ -1924,6 +1970,9 @@ def model_setup():
     else:
         click.echo("")
         click.echo("ℹ️  未能确认 daemon 的 Keychain 访问能力，请稍后用 keypulse model status 检查。")
+
+
+main.add_command(model_setup, "setup")
 
 
 @model.command("use")
