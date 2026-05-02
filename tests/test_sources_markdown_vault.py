@@ -23,7 +23,7 @@ def test_markdown_vault_discover_and_read(monkeypatch, tmp_path: Path) -> None:
     hidden_note = vault / ".obsidian" / "internal.md"
     hidden_note.write_text("# ignore", encoding="utf-8")
 
-    source = MarkdownVaultSource()
+    source = MarkdownVaultSource(roots=[vault])
     instances = source.discover()
 
     assert len(instances) == 1
@@ -67,7 +67,7 @@ def test_markdown_vault_read_filters_by_time(monkeypatch, tmp_path: Path) -> Non
     note = vault / "task.md"
     note.write_text("# recent note\n", encoding="utf-8")
 
-    source = MarkdownVaultSource()
+    source = MarkdownVaultSource(roots=[vault])
     instance = source.discover()[0]
     past = datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
     before = datetime(2020, 1, 2, 0, 0, tzinfo=timezone.utc)
