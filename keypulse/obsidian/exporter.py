@@ -21,7 +21,7 @@ from keypulse.pipeline.narrative import aggregate_work_blocks, render_daily_narr
 from keypulse.pipeline.skeleton import build_daily_skeleton_report
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.atomic_io import atomic_write_text
-from keypulse.utils.dates import local_day_bounds
+from keypulse.utils.dates import local_city_label, local_day_bounds
 
 if TYPE_CHECKING:
     from keypulse.pipeline.model import ModelGateway
@@ -156,15 +156,16 @@ def _query_events_by_date(db_path: Path, date_str: str, *, min_id_exclusive: int
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
+        start_utc, end_utc = local_day_bounds(date_str)
         if min_id_exclusive is None:
             rows = conn.execute(
-                "SELECT * FROM raw_events WHERE date(created_at) = ? ORDER BY id ASC",
-                (date_str,),
+                "SELECT * FROM raw_events WHERE created_at >= ? AND created_at <= ? ORDER BY id ASC",
+                (start_utc, end_utc),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM raw_events WHERE id > ? AND date(created_at) = ? ORDER BY id ASC",
-                (min_id_exclusive, date_str),
+                "SELECT * FROM raw_events WHERE id > ? AND created_at >= ? AND created_at <= ? ORDER BY id ASC",
+                (min_id_exclusive, start_utc, end_utc),
             ).fetchall()
     finally:
         conn.close()
@@ -1240,6 +1241,8 @@ def build_obsidian_bundle(
 
     daily_body = "\n".join(
         [
+            f"📍 {local_city_label()}",
+            "",
             f"# {date_str}",
             "",
             *_render_previous_plan_acknowledgment(previous_plan),

@@ -87,14 +87,19 @@ def test_insert_raw_event_different_ts_start_inserted(tmp_path) -> None:
         close()
 
 
-def test_migration_dedupes_existing_rows(tmp_path) -> None:
+def test_migration_dedupes_existing_rows(tmp_path, monkeypatch) -> None:
     """Pre-v17 DBs may already contain duplicates; the migration must
     drop them before adding the unique index, otherwise the CREATE
     UNIQUE INDEX statement fails.
 
-    Strategy: bring the DB up to v16 via the normal migration path,
-    seed duplicates, then re-init to apply v17.
+    Strategy: pretend v17 is the latest version (so MAX(version) check
+    in run_migrations honors a deletion of v17), bring the DB up via
+    normal migration path, seed duplicates, then re-init to apply v17.
     """
+    import keypulse.store.migrations as _m
+    monkeypatch.setattr(_m, "MIGRATIONS", _m.MIGRATIONS[:17])
+    monkeypatch.setattr(_m, "SCHEMA_VERSION", 17)
+
     db_path = tmp_path / "legacy.db"
 
     close()

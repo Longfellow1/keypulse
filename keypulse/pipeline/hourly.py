@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from keypulse.utils.dates import local_day_bounds, local_timezone
+
 logger = logging.getLogger(__name__)
 
 MOTIVES = [
@@ -100,16 +102,17 @@ def _parse_ts(value: str) -> datetime:
 def _load_day_rows(db_path: Path, date_str: str) -> list[dict[str, Any]]:
     conn = _open_conn(db_path)
     try:
+        start_utc, end_utc = local_day_bounds(date_str)
         rows = conn.execute(
             """
             SELECT *
             FROM raw_events
-            WHERE ts_start LIKE ?
+            WHERE ts_start >= ? AND ts_start <= ?
               AND content_text IS NOT NULL
               AND length(content_text) >= 5
             ORDER BY ts_start ASC
             """,
-            (f"{date_str}%",),
+            (start_utc, end_utc),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -380,7 +383,12 @@ def refresh_hourly_summaries(
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         ts_text = str(row.get("ts_start") or "")
-        if not ts_text.startswith(date_str):
+        try:
+            ts = datetime.fromisoformat(ts_text)
+            local_date = ts.astimezone(local_timezone()).date().isoformat()
+            if local_date != date_str:
+                continue
+        except Exception:
             continue
         ts = _parse_ts(ts_text)
         if until_hour is not None and ts.hour > until_hour:

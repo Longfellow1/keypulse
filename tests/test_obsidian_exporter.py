@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -271,7 +272,8 @@ def test_build_obsidian_bundle_keeps_chinese_topic_slugs():
     assert bundle["topics"][0]["path"] == "Topics/分析-数据-导出.md"
 
 
-def test_build_event_card_uses_fragment_filename_for_dirty_title():
+def test_build_event_card_uses_fragment_filename_for_dirty_title(monkeypatch):
+    monkeypatch.setattr("keypulse.obsidian.layout.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
     card = _build_event_card(
         _to_item(
             _make_item(
@@ -287,12 +289,13 @@ def test_build_event_card_uses_fragment_filename_for_dirty_title():
         "uncategorized",
     )
 
-    assert Path(card.path).name.startswith("片段-0910-")
+    assert Path(card.path).name.startswith("片段-1710-")
     assert Path(card.path).suffix == ".md"
     assert "A-B" not in card.path
 
 
-def test_build_event_card_uses_slug_for_meaningful_title():
+def test_build_event_card_uses_slug_for_meaningful_title(monkeypatch):
+    monkeypatch.setattr("keypulse.obsidian.layout.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
     card = _build_event_card(
         _to_item(
             _make_item(
@@ -308,7 +311,7 @@ def test_build_event_card_uses_slug_for_meaningful_title():
         "修复-keypulse-安装问题",
     )
 
-    assert Path(card.path).name.startswith("0910-修复-keypulse-安装问题-")
+    assert Path(card.path).name.startswith("1710-修复-keypulse-安装问题-")
     assert "片段-" not in Path(card.path).name
 
 

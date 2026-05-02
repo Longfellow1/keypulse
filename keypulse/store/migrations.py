@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 MIGRATIONS = [
     # v1
@@ -177,6 +177,10 @@ MIGRATIONS = [
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_events_dedup
     ON raw_events(source, ts_start, IFNULL(content_hash, ''));
+    """,
+    # v18 — daily_skeletons add timezone column
+    """
+    ALTER TABLE daily_skeletons ADD COLUMN timezone TEXT;
     """,
 ]
 

@@ -47,7 +47,7 @@ from keypulse.pipeline.triggers import should_trigger, record_trigger
 from keypulse.services.sessionizer import sessions_for_today, recent_sessions
 from keypulse.search.engine import search, recent_clipboard, recent_manual, recent_sessions_docs
 from keypulse.capture.normalizer import normalize_manual_event
-from keypulse.utils.dates import local_day_bounds, resolve_local_date
+from keypulse.utils.dates import local_day_bounds, resolve_local_date, local_timezone
 from keypulse.hud import run_hud
 from keypulse.pipeline import (
     PipelineInputs,
@@ -774,7 +774,7 @@ def recent(item_type, limit, plain):
             # Format timestamp nicely
             try:
                 dt = datetime.fromisoformat(ts)
-                ts_fmt = dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+                ts_fmt = dt.astimezone(local_timezone()).strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
                 ts_fmt = ts
 
@@ -879,7 +879,7 @@ def search_cmd(query, app, since, source, limit, plain):
             # Format timestamp
             try:
                 dt = datetime.fromisoformat(ts)
-                ts_fmt = dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+                ts_fmt = dt.astimezone(local_timezone()).strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
                 ts_fmt = ts
 
@@ -945,13 +945,13 @@ def session_list(date, limit, plain):
             # Format timestamps
             try:
                 start_dt = datetime.fromisoformat(start)
-                start = start_dt.astimezone().strftime("%H:%M:%S")
+                start = start_dt.astimezone(local_timezone()).strftime("%H:%M:%S")
             except Exception:
                 pass
 
             try:
                 end_dt = datetime.fromisoformat(end)
-                end = end_dt.astimezone().strftime("%H:%M:%S")
+                end = end_dt.astimezone(local_timezone()).strftime("%H:%M:%S")
             except Exception:
                 pass
 
@@ -1201,7 +1201,7 @@ def pipeline_draft(date, yesterday, output):
 
 
 def _parse_pipeline_bound(raw: str | None, *, is_since: bool) -> datetime:
-    local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+    local_tz = local_timezone()
     now_local = datetime.now(local_tz)
 
     if raw is None:

@@ -14,6 +14,7 @@ from keypulse.pipeline.session_splitter import ActivitySession, split_into_sessi
 from keypulse.pipeline.thing import Thing
 from keypulse.sources.registry import read_all
 from keypulse.sources.types import SemanticEvent
+from keypulse.utils.dates import local_city_label
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,11 @@ def render_things_report(
     if not things:
         return f"# {title}\n\n（无事件）"
 
-    body = [f"# {title}"]
+    # Add city marker at the top of narrative
+    city = local_city_label()
+    city_marker = f"📍 {city}\n\n"
+
+    body = [city_marker + f"# {title}"]
     overview = render_overview(things, model_gateway)
     body.append("")
     body.append("## 今日概览")

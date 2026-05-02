@@ -12,6 +12,7 @@ class AppConfig(BaseModel):
     log_path: str = "~/.keypulse/keypulse.log"
     flush_interval_sec: int = 5
     retention_days: int = 30
+    timezone: str | None = None  # IANA name (e.g. "Asia/Shanghai"); None = follow system tz
 
 
 class WatchersConfig(BaseModel):
