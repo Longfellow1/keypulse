@@ -1,0 +1,372 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', var(--font-sans); }
+
+  .page { display: flex; gap: 32px; padding: 24px 0; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+
+  /* ── BEFORE ── */
+  .before-wrap { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .label { font-size: 12px; color: var(--color-text-tertiary); letter-spacing: 0.05em; text-transform: uppercase; font-weight: 500; }
+
+  .hud-before {
+    width: 280px;
+    background: var(--color-background-secondary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 13px;
+    color: var(--color-text-primary);
+  }
+  .hud-before .health-bar {
+    background: #f5c518;
+    color: #5a4200;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 5px 12px;
+    text-align: center;
+  }
+  .hud-before .body { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .hud-before .title { font-size: 14px; font-weight: 600; text-align: center; }
+  .hud-before .stat-row { display: flex; gap: 4px; flex-wrap: wrap; font-size: 11px; color: var(--color-text-secondary); }
+  .hud-before .section-title { font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; }
+  .hud-before .suggestion-item {
+    background: var(--color-background-primary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: 6px;
+    padding: 7px 8px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .hud-before .tabs { display: flex; gap: 4px; justify-content: center; margin-top: 4px; }
+  .hud-before .tab { font-size: 11px; padding: 4px 10px; border: 0.5px solid var(--color-border-tertiary); border-radius: 4px; color: var(--color-text-secondary); }
+  .hud-before .tab.active { background: var(--color-background-primary); color: var(--color-text-primary); font-weight: 500; }
+  .hud-before .actions { display: flex; gap: 6px; }
+  .hud-before .btn { flex: 1; font-size: 11px; padding: 6px; border: 0.5px solid var(--color-border-tertiary); border-radius: 5px; text-align: center; color: var(--color-text-secondary); background: var(--color-background-primary); }
+  .hud-before .footer { display: flex; justify-content: space-between; font-size: 11px; color: var(--color-text-tertiary); padding-top: 6px; border-top: 0.5px solid var(--color-border-tertiary); margin-top: 4px; }
+
+  /* annotation callouts */
+  .annots { display: flex; flex-direction: column; gap: 6px; max-width: 160px; }
+  .annot { font-size: 11px; color: var(--color-text-secondary); background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); border-radius: 6px; padding: 6px 8px; line-height: 1.4; }
+  .annot strong { color: var(--color-text-danger); font-weight: 500; }
+
+  /* ── AFTER ── */
+  .after-wrap { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+
+  .hud-after {
+    width: 280px;
+    background: var(--color-background-primary);
+    border: 0.5px solid var(--color-border-secondary);
+    border-radius: 14px;
+    overflow: hidden;
+    font-size: 13px;
+    color: var(--color-text-primary);
+  }
+
+  /* Header */
+  .hud-after .hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px 10px;
+    border-bottom: 0.5px solid var(--color-border-tertiary);
+  }
+  .hdr-left { display: flex; align-items: center; gap: 7px; }
+  .hdr-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #f5a623;
+  }
+  .hdr-dot.ok { background: #34c759; }
+  .hdr-name { font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
+  .hdr-mode {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 20px;
+    background: var(--color-background-secondary);
+    color: var(--color-text-secondary);
+    border: 0.5px solid var(--color-border-tertiary);
+  }
+  .hdr-pause {
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    padding: 3px 7px;
+    border-radius: 5px;
+    border: 0.5px solid var(--color-border-tertiary);
+  }
+
+  /* Stats grid */
+  .hud-after .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 0;
+    border-bottom: 0.5px solid var(--color-border-tertiary);
+  }
+  .stat-cell {
+    padding: 10px 0 9px;
+    text-align: center;
+    border-right: 0.5px solid var(--color-border-tertiary);
+  }
+  .stat-cell:last-child { border-right: none; }
+  .stat-num { font-size: 17px; font-weight: 500; color: var(--color-text-primary); line-height: 1; }
+  .stat-num .delta { font-size: 10px; font-weight: 400; color: #34c759; }
+  .stat-num .delta.down { color: #ff3b30; }
+  .stat-lbl { font-size: 10px; color: var(--color-text-tertiary); margin-top: 3px; }
+
+  /* Suggestions */
+  .hud-after .suggestions { padding: 10px 14px; display: flex; flex-direction: column; gap: 1px; border-bottom: 0.5px solid var(--color-border-tertiary); }
+  .sugg-header { font-size: 10px; font-weight: 500; color: var(--color-text-tertiary); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 6px; }
+  .sugg-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .sugg-item:hover { background: var(--color-background-secondary); }
+  .sugg-icon {
+    width: 20px; height: 20px;
+    border-radius: 5px;
+    background: var(--color-background-secondary);
+    border: 0.5px solid var(--color-border-tertiary);
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+  }
+  .sugg-text { flex: 1; }
+  .sugg-title { font-size: 12px; font-weight: 500; color: var(--color-text-primary); line-height: 1.3; }
+  .sugg-tags { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
+  .tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 20px;
+    background: var(--color-background-secondary);
+    color: var(--color-text-tertiary);
+    border: 0.5px solid var(--color-border-tertiary);
+  }
+  .tag.green { background: #eaf9f0; color: #1a7a3d; border-color: #b2dfc5; }
+  .tag.blue { background: #eaf3fb; color: #1a5fa5; border-color: #afd0ef; }
+
+  /* Mode switcher */
+  .hud-after .mode-row {
+    padding: 9px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 0.5px solid var(--color-border-tertiary);
+  }
+  .mode-lbl { font-size: 11px; color: var(--color-text-tertiary); }
+  .seg-ctrl { display: flex; background: var(--color-background-secondary); border-radius: 7px; padding: 2px; gap: 2px; border: 0.5px solid var(--color-border-tertiary); }
+  .seg-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 5px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-weight: 400;
+  }
+  .seg-btn.active {
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    font-weight: 500;
+    border: 0.5px solid var(--color-border-tertiary);
+  }
+
+  /* Actions */
+  .hud-after .actions {
+    padding: 10px 14px;
+    display: flex;
+    gap: 7px;
+    border-bottom: 0.5px solid var(--color-border-tertiary);
+  }
+  .act-primary {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px;
+    border-radius: 7px;
+    background: var(--color-text-primary);
+    color: var(--color-background-primary);
+    border: none;
+    cursor: pointer;
+    text-align: center;
+  }
+  .act-secondary {
+    flex: 1;
+    font-size: 12px;
+    padding: 8px;
+    border-radius: 7px;
+    background: var(--color-background-secondary);
+    color: var(--color-text-primary);
+    border: 0.5px solid var(--color-border-tertiary);
+    cursor: pointer;
+    text-align: center;
+  }
+
+  /* Footer */
+  .hud-after .ftr {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 14px;
+  }
+  .ftr-day { font-size: 11px; color: var(--color-text-tertiary); }
+  .ftr-quit { font-size: 11px; color: var(--color-text-tertiary); cursor: pointer; }
+  .ftr-quit:hover { color: #ff3b30; }
+
+  /* Delta arrows inline */
+  .arr-up::before { content: '↑'; font-size: 9px; }
+  .arr-down::before { content: '↓'; font-size: 9px; }
+</style>
+
+<div class="page">
+
+  <!-- BEFORE -->
+  <div class="before-wrap">
+    <div class="label">现在</div>
+    <div class="hud-before">
+      <div class="health-bar">Health: Alert (0)</div>
+      <div class="body">
+        <div class="title">● KeyPulse 标准模式</div>
+        <div class="stat-row">有效: 48 ↓410 vs 昨日 &nbsp; 过滤: 13 ↓27 vs 昨日</div>
+        <div class="stat-row">主题: 0 = vs 昨日 &nbsp; 标记: 1 ↑1 vs 昨日</div>
+        <div class="section-title">最新智能提示</div>
+        <div class="suggestion-item">● C_Agents 当前状态＋下一步 Brief<br><span style="color:var(--color-text-tertiary)">明确表达、新信息、可复用</span></div>
+        <div class="suggestion-item">● file:///Users/Harland/Go/C_Agents/app/templ...<br><span style="color:var(--color-text-tertiary)">明确表达、新信息、可复用</span></div>
+        <div class="tabs">
+          <div class="tab active">标准</div>
+          <div class="tab">专注</div>
+          <div class="tab">高敏</div>
+        </div>
+        <div class="actions">
+          <div class="btn">💡 保存想法</div>
+          <div class="btn">🎯 设意图</div>
+        </div>
+        <div class="footer">
+          <span>暂停 30m</span>
+          <span>退出</span>
+        </div>
+      </div>
+    </div>
+    <!-- Annotations -->
+    <div class="annots">
+      <div class="annot"><strong>问题1</strong> 黄色 banner 占据黄金位置，但信息量为零</div>
+      <div class="annot"><strong>问题2</strong> 数字淹没在文本里，无法快速扫读</div>
+      <div class="annot"><strong>问题3</strong> 建议列表三条等权重，优先级不清</div>
+      <div class="annot"><strong>问题4</strong> 按钮层级模糊，主次动作无区分</div>
+      <div class="annot"><strong>问题5</strong> mode tabs 与 action 区域视觉割裂</div>
+    </div>
+  </div>
+
+  <!-- AFTER -->
+  <div class="after-wrap">
+    <div class="label">重设计</div>
+    <div class="hud-after">
+
+      <!-- Header -->
+      <div class="hdr">
+        <div class="hdr-left">
+          <div class="hdr-dot"></div>
+          <span class="hdr-name">KeyPulse</span>
+          <span class="hdr-mode">标准</span>
+        </div>
+        <div class="hdr-pause">⏸ 暂停</div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats">
+        <div class="stat-cell">
+          <div class="stat-num">48 <span class="delta down arr-down">410</span></div>
+          <div class="stat-lbl">有效</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num">13 <span class="delta down arr-down">27</span></div>
+          <div class="stat-lbl">过滤</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num">0</div>
+          <div class="stat-lbl">主题</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num">1 <span class="delta arr-up">1</span></div>
+          <div class="stat-lbl">标记</div>
+        </div>
+      </div>
+
+      <!-- Suggestions -->
+      <div class="suggestions">
+        <div class="sugg-header">今日提示</div>
+
+        <div class="sugg-item">
+          <div class="sugg-icon" style="color:var(--color-text-secondary);">C</div>
+          <div class="sugg-text">
+            <div class="sugg-title">C_Agents 当前状态 + 下一步 Brief</div>
+            <div class="sugg-tags">
+              <span class="tag green">可复用</span>
+              <span class="tag blue">新信息</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sugg-item">
+          <div class="sugg-icon" style="color:var(--color-text-secondary);">f</div>
+          <div class="sugg-text">
+            <div class="sugg-title">templ 模板文件状态梳理</div>
+            <div class="sugg-tags">
+              <span class="tag green">可复用</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sugg-item">
+          <div class="sugg-icon" style="color:var(--color-text-secondary);">#</div>
+          <div class="sugg-text">
+            <div class="sugg-title">菜单栏 HUD 要不要独立成软件？</div>
+            <div class="sugg-tags">
+              <span class="tag">高密度</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode -->
+      <div class="mode-row">
+        <span class="mode-lbl">采集模式</span>
+        <div class="seg-ctrl">
+          <button class="seg-btn active">标准</button>
+          <button class="seg-btn">专注</button>
+          <button class="seg-btn">高敏</button>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <div class="act-primary">保存想法</div>
+        <div class="act-secondary">设意图</div>
+      </div>
+
+      <!-- Footer -->
+      <div class="ftr">
+        <span class="ftr-day">今天第 5 天 · 系统正常</span>
+        <span class="ftr-quit">退出</span>
+      </div>
+
+    </div>
+
+    <!-- What changed -->
+    <div class="annots">
+      <div class="annot" style="border-color:var(--color-border-success);"><strong style="color:#1a7a3d">✓</strong> 状态点集成进标题，节省空间</div>
+      <div class="annot" style="border-color:var(--color-border-success);"><strong style="color:#1a7a3d">✓</strong> 4格数字网格，数字大、标签小</div>
+      <div class="annot" style="border-color:var(--color-border-success);"><strong style="color:#1a7a3d">✓</strong> 建议用色标签区分优先级</div>
+      <div class="annot" style="border-color:var(--color-border-success);"><strong style="color:#1a7a3d">✓</strong> 主次按钮反差清晰</div>
+      <div class="annot" style="border-color:var(--color-border-success);"><strong style="color:#1a7a3d">✓</strong> 底栏显示关系进展，体现笔友感</div>
+    </div>
+  </div>
+
+</div>

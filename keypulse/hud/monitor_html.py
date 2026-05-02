@@ -1,366 +1,335 @@
 from __future__ import annotations
 
+from datetime import date
 from html import escape
 from urllib.parse import quote
 
 from keypulse.hud.summary import HUDSnapshot
 
 
-def _action_link(label: str, action: str, *, variant: str = "secondary") -> str:
-    return f'<a class="btn btn-{variant}" href="keypulse://action/{quote(action)}">{escape(label)}</a>'
+def _action_link(label: str, action: str, class_name: str, *, title: str | None = None) -> str:
+    title_attr = f' title="{escape(title)}"' if title else ""
+    return f'<a class="{class_name}" href="keypulse://action/{quote(action)}"{title_attr}>{escape(label)}</a>'
 
 
-def _signal_link(path: str) -> str:
-    return f'keypulse://signal/{quote(path, safe="")}'
+def _mode_badge(mode_label: str) -> str:
+    value = (mode_label or "标准").strip()
+    return value.removesuffix("模式") or value
 
 
-def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
-    status_label = "正在采集" if capture_status != "paused" else "已暂停"
-    source_rows = "".join(
-        f"<div class='source-row'><span>{escape(label)}</span><strong>{count}</strong></div>"
-        for label, count in sorted(snapshot.source_counts.items(), key=lambda item: (-item[1], item[0]))[:6]
-    ) or "<div class='empty'>今天还没有采集来源数据</div>"
+def _delta_html(delta: int | None) -> str:
+    if delta is None:
+        return ""
+    if delta > 0:
+        return f' <span class="delta arr-up">{delta}</span>'
+    if delta < 0:
+        return f' <span class="delta down arr-down">{abs(delta)}</span>'
+    return ' <span class="delta flat">0</span>'
 
-    signal_cards = "".join(
-        f"""
-        <article class="signal-card">
-          <div class="signal-source">{escape(signal['source'])}</div>
-          <h3>{escape(signal['title'])}</h3>
-          <p>{escape(signal['reason'])}</p>
-          <a class="btn btn-primary" href="{_signal_link(signal['path'])}">打开详情</a>
-        </article>
-        """
-        for signal in snapshot.top_signals[:4]
-    ) or """
-        <article class="signal-card empty-card">
-          <h3>今天还没有重点内容</h3>
-          <p>当前没有高价值候选，可继续采集或手动保存想法。</p>
-          <a class="btn btn-primary" href="keypulse://action/open-dashboard">打开工作台</a>
-        </article>
+
+def _stat_cell(label: str, value: int, delta: int | None) -> str:
+    return f"""
+        <div class="stat-cell">
+          <div class="stat-num">{value}{_delta_html(delta)}</div>
+          <div class="stat-lbl">{escape(label)}</div>
+        </div>
     """
 
-    attention_items = "".join(
-        f"<a class='tag removable' href='keypulse://action/remove-attention?label={quote(item)}'>{escape(item)}</a>"
-        for item in snapshot.attention_items[:6]
-    ) or "<div class='empty'>还没有长期关注事项</div>"
 
-    focus_text = escape(snapshot.today_focus or "今天还没有设置今日意图")
+def _signal_icon(title: str) -> str:
+    for char in title.strip():
+        if char.isascii() and char.isalnum():
+            return char.upper()
+    return "#"
+
+
+def _tag_class(label: str) -> str:
+    if label == "可复用":
+        return "tag green"
+    if label == "新信息":
+        return "tag blue"
+    return "tag"
+
+
+def _signal_tags(reason: str) -> list[str]:
+    tags = [item.strip() for item in reason.replace(",", "、").split("、") if item.strip()]
+    return tags[:3] or ["高价值"]
+
+
+def _signal_item(signal: dict[str, object]) -> str:
+    title = str(signal.get("title") or "未命名提示")
+    reason = str(signal.get("reason") or "")
+    tags = "".join(f'<span class="{_tag_class(tag)}">{escape(tag)}</span>' for tag in _signal_tags(reason))
+    return f"""
+        <div class="sugg-item">
+          <div class="sugg-icon">{escape(_signal_icon(title))}</div>
+          <div class="sugg-text">
+            <div class="sugg-title">{escape(title)}</div>
+            <div class="sugg-tags">{tags}</div>
+          </div>
+        </div>
+    """
+
+
+def _empty_signal_item() -> str:
+    return """
+        <div class="sugg-item">
+          <div class="sugg-icon">#</div>
+          <div class="sugg-text">
+            <div class="sugg-title">今天还没有重点提示</div>
+            <div class="sugg-tags"><span class="tag">继续采集</span></div>
+          </div>
+        </div>
+    """
+
+
+def _day_number(date_str: str) -> str:
+    try:
+        return str(date.fromisoformat(date_str).day)
+    except ValueError:
+        return "1"
+
+
+def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok: bool = True) -> str:
+    is_running = capture_status != "paused"
+    dot_class = "hdr-dot ok" if is_running and health_ok else "hdr-dot"
+    pause_label = "⏸ 暂停" if is_running else "▶ 恢复"
+    health_label = "系统正常" if health_ok else "系统需检查"
+    suggestions = "".join(_signal_item(signal) for signal in snapshot.top_signals[:3]) or _empty_signal_item()
 
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>KeyPulse 监视器</title>
+  <title>KeyPulse HUD</title>
   <style>
     :root {{
-      --bg: #f4f7fb;
-      --card: rgba(255,255,255,0.92);
-      --card-strong: #ffffff;
-      --border: #d8e1ee;
-      --text: #17324d;
-      --muted: #698099;
-      --primary: #2a67d0;
-      --primary-soft: #eaf2ff;
-      --success: #1f8f63;
-      --success-soft: #e8f7ef;
-      --warning: #d57d00;
-      --warning-soft: #fff4e5;
-      --shadow: 0 18px 40px rgba(18, 42, 66, 0.08);
+      --color-background-primary: #ffffff;
+      --color-background-secondary: #f6f6f7;
+      --color-border-secondary: rgba(60, 60, 67, 0.18);
+      --color-border-tertiary: rgba(60, 60, 67, 0.12);
+      --color-text-primary: #1d1d1f;
+      --color-text-secondary: rgba(60, 60, 67, 0.68);
+      --color-text-tertiary: rgba(60, 60, 67, 0.46);
     }}
-    * {{ box-sizing: border-box; }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    html, body {{ width: 280px; height: 320px; overflow: hidden; background: transparent; }}
     body {{
-      margin: 0;
-      padding: 24px;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at top right, #e8f1ff 0, transparent 32%),
-        linear-gradient(180deg, #f7f9fc 0%, var(--bg) 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', sans-serif;
+      -webkit-font-smoothing: antialiased;
     }}
-    .shell {{
-      max-width: 1180px;
-      margin: 0 auto;
-      display: grid;
-      gap: 18px;
-    }}
-    .hero {{
-      display: grid;
-      grid-template-columns: 1.6fr 1fr;
-      gap: 16px;
-      background: linear-gradient(135deg, #ffffff 0%, #f7fbff 100%);
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      padding: 24px;
-      box-shadow: var(--shadow);
-    }}
-    .hero h1 {{
-      margin: 0 0 10px;
-      font-size: 28px;
-      line-height: 1.15;
-    }}
-    .hero p {{
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.55;
-    }}
-    .hero-side {{
-      display: grid;
-      gap: 12px;
-      align-content: start;
-    }}
-    .pill-row, .tag-row, .mode-row, .action-row {{
+    a {{ text-decoration: none; -webkit-user-drag: none; }}
+    .hud-after {{
+      width: 280px;
+      background: var(--color-background-primary);
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: 14px;
+      overflow: hidden;
+      height: 320px;
+      font-size: 13px;
+      color: var(--color-text-primary);
       display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
+      flex-direction: column;
     }}
-    .pill, .tag {{
-      display: inline-flex;
+
+    .hud-after .hdr {{
+      display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 600;
-      border: 1px solid var(--border);
-      background: #fff;
-      color: var(--text);
-      text-decoration: none;
+      justify-content: space-between;
+      padding: 12px 14px 10px;
+      border-bottom: 0.5px solid var(--color-border-tertiary);
     }}
-    .pill-status {{
-      background: var(--primary-soft);
-      border-color: #bfd4ff;
-      color: var(--primary);
+    .hdr-left {{ display: flex; align-items: center; gap: 7px; min-width: 0; }}
+    .hdr-dot {{
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #f5a623;
+      flex-shrink: 0;
     }}
-    .pill-source {{
-      background: var(--success-soft);
-      border-color: #ccead8;
-      color: var(--success);
+    .hdr-dot.ok {{ background: #34c759; }}
+    .hdr-name {{ font-size: 13px; font-weight: 500; color: var(--color-text-primary); }}
+    .hdr-mode {{
+      font-size: 10px;
+      font-weight: 500;
+      padding: 2px 7px;
+      border-radius: 20px;
+      background: var(--color-background-secondary);
+      color: var(--color-text-secondary);
+      border: 0.5px solid var(--color-border-tertiary);
+      white-space: nowrap;
     }}
-    .layout {{
+    .hdr-pause {{
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      cursor: pointer;
+      padding: 3px 7px;
+      border-radius: 5px;
+      border: 0.5px solid var(--color-border-tertiary);
+      white-space: nowrap;
+    }}
+
+    .hud-after .stats {{
       display: grid;
-      grid-template-columns: 260px minmax(420px, 1fr) 320px;
-      gap: 18px;
-      align-items: start;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 0;
+      border-bottom: 0.5px solid var(--color-border-tertiary);
     }}
-    .card {{
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 18px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
+    .stat-cell {{
+      padding: 10px 0 9px;
+      text-align: center;
+      border-right: 0.5px solid var(--color-border-tertiary);
+      min-width: 0;
     }}
-    .card h2 {{
-      margin: 0 0 14px;
-      font-size: 16px;
-      line-height: 1.25;
-    }}
-    .metric-grid {{
-      display: grid;
-      gap: 12px;
-    }}
-    .metric {{
-      background: var(--card-strong);
-      border-radius: 18px;
-      border: 1px solid var(--border);
-      padding: 14px 16px;
-    }}
-    .metric label {{
-      display: block;
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 8px;
-    }}
-    .metric strong {{
-      font-size: 28px;
+    .stat-cell:last-child {{ border-right: none; }}
+    .stat-num {{
+      font-size: 17px;
+      font-weight: 500;
+      color: var(--color-text-primary);
       line-height: 1;
+      white-space: nowrap;
     }}
-    .source-list {{
-      display: grid;
-      gap: 10px;
-      margin-top: 14px;
+    .stat-num .delta {{ font-size: 10px; font-weight: 400; color: #34c759; }}
+    .stat-num .delta.down {{ color: #ff3b30; }}
+    .stat-num .delta.flat {{ color: var(--color-text-tertiary); }}
+    .stat-lbl {{ font-size: 10px; color: var(--color-text-tertiary); margin-top: 3px; }}
+
+    .hud-after .suggestions {{
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      border-bottom: 0.5px solid var(--color-border-tertiary);
+      flex: 1;
     }}
-    .source-row {{
+    .sugg-header {{
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--color-text-tertiary);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }}
+    .sugg-item {{
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 9px;
+      border-radius: 7px;
+      cursor: default;
+      transition: background 0.1s;
+    }}
+    .sugg-item:hover {{ background: var(--color-background-secondary); }}
+    .sugg-icon {{
+      width: 20px; height: 20px;
+      border-radius: 5px;
+      background: var(--color-background-secondary);
+      border: 0.5px solid var(--color-border-tertiary);
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px;
+      color: var(--color-text-secondary);
+    }}
+    .sugg-text {{ flex: 1; min-width: 0; }}
+    .sugg-title {{
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-text-primary);
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .sugg-tags {{ display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }}
+    .tag {{
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 20px;
+      background: var(--color-background-secondary);
+      color: var(--color-text-tertiary);
+      border: 0.5px solid var(--color-border-tertiary);
+    }}
+    .tag.green {{ background: #eaf9f0; color: #1a7a3d; border-color: #b2dfc5; }}
+    .tag.blue {{ background: #eaf3fb; color: #1a5fa5; border-color: #afd0ef; }}
+
+    .hud-after .actions {{
+      padding: 10px 14px;
+      display: flex;
+      gap: 7px;
+      border-bottom: 0.5px solid var(--color-border-tertiary);
+    }}
+    .act-primary {{
+      flex: 1;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 8px;
+      border-radius: 7px;
+      background: var(--color-text-primary);
+      color: var(--color-background-primary);
+      border: none;
+      cursor: pointer;
+      text-align: center;
+    }}
+    .act-secondary {{
+      flex: 1;
+      font-size: 12px;
+      padding: 8px;
+      border-radius: 7px;
+      background: var(--color-background-secondary);
+      color: var(--color-text-primary);
+      border: 0.5px solid var(--color-border-tertiary);
+      cursor: pointer;
+      text-align: center;
+    }}
+
+    .hud-after .ftr {{
       display: flex;
       justify-content: space-between;
-      gap: 10px;
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    .source-row strong {{
-      color: var(--text);
-      font-size: 14px;
-    }}
-    .signal-stack {{
-      display: grid;
-      gap: 14px;
-    }}
-    .signal-card {{
-      position: relative;
-      background: var(--card-strong);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 18px 18px 16px 22px;
-      overflow: hidden;
-    }}
-    .signal-card::before {{
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 4px;
-      height: 100%;
-      background: linear-gradient(180deg, #2a67d0 0%, #5aa1ff 100%);
-    }}
-    .signal-source {{
-      display: inline-flex;
-      margin-bottom: 10px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: var(--primary-soft);
-      color: var(--primary);
-      font-size: 12px;
-      font-weight: 600;
-    }}
-    .signal-card h3 {{
-      margin: 0 0 10px;
-      font-size: 16px;
-      line-height: 1.35;
-    }}
-    .signal-card p {{
-      margin: 0 0 14px;
-      color: var(--muted);
-      line-height: 1.55;
-      min-height: 44px;
-    }}
-    .side-stack {{
-      display: grid;
-      gap: 14px;
-    }}
-    .focus {{
-      color: var(--muted);
-      line-height: 1.6;
-      min-height: 48px;
-    }}
-    .btn {{
-      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
-      min-height: 38px;
-      padding: 0 14px;
-      border-radius: 12px;
-      font-size: 13px;
-      font-weight: 600;
-      text-decoration: none;
-      border: 1px solid transparent;
-      transition: opacity 0.15s ease;
+      padding: 7px 14px;
     }}
-    .btn:hover {{ opacity: 0.88; }}
-    .btn-primary {{
-      background: var(--primary);
-      color: white;
-    }}
-    .btn-secondary {{
-      background: #fff;
-      color: var(--text);
-      border-color: var(--border);
-    }}
-    .btn-warning {{
-      background: var(--warning-soft);
-      color: var(--warning);
-      border-color: #f3d4a2;
-    }}
-    .empty {{
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.6;
-    }}
-    .removable {{
-      background: #fff;
-    }}
+    .ftr-day {{ font-size: 11px; color: var(--color-text-tertiary); }}
+    .ftr-quit {{ font-size: 11px; color: var(--color-text-tertiary); cursor: pointer; }}
+    .ftr-quit:hover {{ color: #ff3b30; }}
+    .ftr-health {{ color: inherit; }}
+
+    .arr-up::before {{ content: '↑'; font-size: 9px; }}
+    .arr-down::before {{ content: '↓'; font-size: 9px; }}
   </style>
 </head>
 <body>
-  <main class="shell">
-    <section class="hero">
-      <div>
-        <div class="pill-row">
-          <span class="pill pill-status">{escape(snapshot.mode_label)} · {escape(status_label)}</span>
-          <span class="pill">最近同步：{escape(str(snapshot.last_sync_at or "—"))}</span>
-        </div>
-        <h1>今天的 KeyPulse</h1>
-        <p>{escape(snapshot.summary_line)}</p>
+  <div class="hud-after">
+    <div class="hdr">
+      <div class="hdr-left">
+        <div class="{dot_class}"></div>
+        <span class="hdr-name">KeyPulse</span>
+        <span class="hdr-mode">{escape(_mode_badge(snapshot.mode_label))}</span>
       </div>
-      <div class="hero-side">
-        <strong>正文来源</strong>
-        <div class="pill-row">
-          {"".join(
-            f"<span class='pill pill-source'>{escape(name)}</span>"
-            for name, enabled in snapshot.active_sources.items()
-            if enabled
-          ) or "<span class='pill'>尚未启用正文来源</span>"}
-        </div>
-      </div>
-    </section>
+      {_action_link(pause_label, "toggle-pause", "hdr-pause")}
+    </div>
 
-    <section class="layout">
-      <aside class="card">
-        <h2>今日概览</h2>
-        <div class="metric-grid">
-          <div class="metric"><label>有效内容</label><strong>{snapshot.effective_count}</strong></div>
-          <div class="metric"><label>已过滤噪音</label><strong>{snapshot.filtered_count}</strong></div>
-          <div class="metric"><label>候选主题</label><strong>{snapshot.theme_count}</strong></div>
-          <div class="metric"><label>手动标记</label><strong>{snapshot.manual_marked_count}</strong></div>
-        </div>
-        <div class="source-list">{source_rows}</div>
-      </aside>
+    <div class="stats">
+      {_stat_cell("有效", snapshot.effective_count, snapshot.effective_count_delta_vs_yesterday)}
+      {_stat_cell("过滤", snapshot.filtered_count, snapshot.filtered_count_delta_vs_yesterday)}
+      {_stat_cell("主题", snapshot.theme_count, snapshot.theme_count_delta_vs_yesterday)}
+      {_stat_cell("标记", snapshot.manual_marked_count, snapshot.manual_marked_count_delta_vs_yesterday)}
+    </div>
 
-      <section class="card">
-        <h2>今日重点流</h2>
-        <div class="signal-stack">{signal_cards}</div>
-      </section>
+    <div class="suggestions">
+      <div class="sugg-header">今日提示</div>
+      {suggestions}
+    </div>
 
-      <aside class="side-stack">
-        <section class="card">
-          <h2>今日意图</h2>
-          <div class="focus">{focus_text}</div>
-          <div class="action-row">
-            {_action_link("编辑今日意图", "set-focus", variant="primary")}
-            {_action_link("清空", "clear-focus")}
-          </div>
-        </section>
+    <div class="actions">
+      {_action_link("保存想法", "save-thought", "act-primary")}
+      {_action_link("设意图", "set-intent", "act-secondary")}
+    </div>
 
-        <section class="card">
-          <h2>额外关注事项</h2>
-          <div class="tag-row">{attention_items}</div>
-          <div class="action-row" style="margin-top:14px;">
-            {_action_link("新增关注事项", "add-attention", variant="primary")}
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>模式与动作</h2>
-          <div class="mode-row">
-            {_action_link("标准", "mode-standard")}
-            {_action_link("专注", "mode-focus")}
-            {_action_link("高敏", "mode-sensitive")}
-            {_action_link("回顾", "mode-review")}
-          </div>
-          <div class="action-row" style="margin-top:14px;">
-            {_action_link("打开工作台", "open-dashboard", variant="primary")}
-            {_action_link("健康状态", "open-health")}
-          </div>
-          <div class="action-row" style="margin-top:10px;">
-            {_action_link("保存想法", "save-thought")}
-            {_action_link("标记当前窗口", "mark-window")}
-            {_action_link("暂停或恢复", "toggle-pause", variant="warning")}
-          </div>
-        </section>
-      </aside>
-    </section>
-  </main>
+    <div class="ftr">
+      <span class="ftr-day">今天第 {_day_number(snapshot.date)} 天 · {_action_link(health_label, "show-health", "ftr-health")}</span>
+      {_action_link("退出", "quit", "ftr-quit")}
+    </div>
+  </div>
 </body>
 </html>
 """

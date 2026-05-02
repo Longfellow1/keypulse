@@ -5,48 +5,21 @@ import signal
 import AppKit
 import objc
 from Foundation import NSTimer
+from WebKit import WKNavigationActionPolicyAllow, WKNavigationActionPolicyCancel, WKWebView, WKWebViewConfiguration
 
 # 内部模块依赖 (保持原样)
 from keypulse.capture.normalizer import normalize_manual_event
 from keypulse.config import Config
 from keypulse.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
-from keypulse.hud.state import set_hud_mode, set_today_focus
+from keypulse.hud.monitor_html import build_monitor_html
+from keypulse.hud.state import set_today_focus
 from keypulse.hud.summary import _status_symbol, build_hud_snapshot
 from keypulse.store.db import init_db
 from keypulse.store.repository import get_state, insert_raw_event, set_state
 
-def _truncate(text: str, limit: int) -> str:
-    value = " ".join((text or "").split())
-    if len(value) <= limit: return value
-    return value[: limit - 1].rstrip() + "…"
 
-
-def _signal_icon(source_key: str) -> str:
-    return {
-        "manual": "✍️",
-        "clipboard": "📋",
-        "ax_text": "👁",
-        "ocr_text": "🔍",
-        "window": "🪟",
-        "browser_tab": "🌐",
-    }.get(source_key, "•")
-
-
-def _delta_prefix(delta: int | None) -> str:
-    if delta is None:
-        return "—"
-    if delta == 0:
-        return "="
-    if delta > 0:
-        return f"↑{delta}"
-    return f"↓{abs(delta)}"
-
-
-def _format_metric(label: str, value: int, delta: int | None) -> str:
-    prefix = _delta_prefix(delta)
-    if prefix == "—":
-        return f"{label}: {value} —"
-    return f"{label}: {value} {prefix} vs 昨日"
+HUD_CONTENT_WIDTH = 280.0
+HUD_CONTENT_HEIGHT = 320.0
 
 class KeyPulseHUDApp(AppKit.NSObject):
     def initWithConfig_(self, cfg: Config):
@@ -99,6 +72,9 @@ class KeyPulseHUDApp(AppKit.NSObject):
     def _update_status_title(self):
         self.status_item.button().setTitle_(self._status_title())
 
+    def _health_ok(self) -> bool:
+        return isinstance(self.health, dict) and health_status_emoji(self.health) == "🟢"
+
     def refresh_status(self):
         self.health = read_health()
         self.capture_status = str(get_state("status") or "running")
@@ -109,105 +85,53 @@ class KeyPulseHUDApp(AppKit.NSObject):
         if self.popover.isShown():
             view = self._build_full_home_view()
             self.popover_vc.setView_(view)
-            self.popover.setContentSize_(view.fittingSize())
-
-    # --- 基础 UI 工厂 (强制禁用 AutoresizingMask，彻底防重叠) ---
-
-    def _make_label(self, text, size=13, bold=False, color=None, align=0):
-        label = AppKit.NSTextField.labelWithString_(text)
-        label.setFont_(AppKit.NSFont.systemFontOfSize_weight_(size, AppKit.NSFontWeightBold if bold else AppKit.NSFontWeightRegular))
-        label.setTextColor_(color or AppKit.NSColor.labelColor())
-        label.setAlignment_(align)
-        label.setLineBreakMode_(AppKit.NSLineBreakByWordWrapping)
-        label.setTranslatesAutoresizingMaskIntoConstraints_(False)
-        return label
-
-    def _make_stack(self, vertical=True, spacing=10):
-        stack = AppKit.NSStackView.alloc().init()
-        stack.setOrientation_(1 if vertical else 0)
-        stack.setSpacing_(spacing)
-        stack.setTranslatesAutoresizingMaskIntoConstraints_(False)
-        return stack
+            self.popover.setContentSize_(self._content_size())
 
     # --- 核心 UI 模块 ---
 
+    def _content_size(self):
+        return AppKit.NSMakeSize(HUD_CONTENT_WIDTH, HUD_CONTENT_HEIGHT)
+
     def _build_full_home_view(self):
-        # 根视图：强制宽度，高度自适应
-        root_stack = self._make_stack(vertical=True, spacing=18)
-        root_stack.setEdgeInsets_((20, 20, 20, 20))
-        root_stack.widthAnchor().constraintEqualToConstant_(320.0).setActive_(True)
-
-        # 0. 健康状态入口
-        health_row = self._make_stack(vertical=False, spacing=8)
-        health_row.addArrangedSubview_(
-            AppKit.NSButton.buttonWithTitle_target_action_(self._health_label(), self, "showHealth:")
+        frame = AppKit.NSMakeRect(0.0, 0.0, HUD_CONTENT_WIDTH, HUD_CONTENT_HEIGHT)
+        config = WKWebViewConfiguration.alloc().init()
+        webview = WKWebView.alloc().initWithFrame_configuration_(frame, config)
+        webview.setNavigationDelegate_(self)
+        webview.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
+        if hasattr(webview, "setDrawsBackground_"):
+            webview.setDrawsBackground_(False)
+        html = build_monitor_html(
+            self.snapshot,
+            capture_status=self.capture_status,
+            health_ok=self._health_ok(),
         )
-        health_row.addArrangedSubview_(AppKit.NSView.alloc().init())
-        root_stack.addArrangedSubview_(health_row)
+        webview.loadHTMLString_baseURL_(html, None)
+        self.webview = webview
+        return webview
 
-        # 1. 状态头部 (Header)
-        header = self._make_stack(vertical=False, spacing=8)
-        is_running = self.capture_status != "paused"
-        dot = self._make_label("●", size=14, color=AppKit.NSColor.systemGreenColor() if is_running else AppKit.NSColor.systemOrangeColor())
-        header.addArrangedSubview_(dot)
-        header.addArrangedSubview_(self._make_label(f"KeyPulse {self.snapshot.mode_label}", size=14, bold=True))
-        root_stack.addArrangedSubview_(header)
+    def _handle_keypulse_action(self, action: str):
+        if action == "save-thought":
+            self.saveThought_(None)
+        elif action == "set-intent":
+            self.setFocus_(None)
+        elif action == "toggle-pause":
+            self.togglePause_(None)
+        elif action == "show-health":
+            self.showHealth_(None)
+        elif action == "quit":
+            self.terminate_(None)
 
-        # 2. 今日看板 (Metrics) - 采用 2x2 网格
-        metrics_stack = self._make_stack(vertical=True, spacing=8)
-        for row_data in [
-            (
-                _format_metric("有效", self.snapshot.effective_count, self.snapshot.effective_count_delta_vs_yesterday),
-                _format_metric("过滤", self.snapshot.filtered_count, self.snapshot.filtered_count_delta_vs_yesterday),
-            ),
-            (
-                _format_metric("主题", self.snapshot.theme_count, self.snapshot.theme_count_delta_vs_yesterday),
-                _format_metric("标记", self.snapshot.manual_marked_count, self.snapshot.manual_marked_count_delta_vs_yesterday),
-            )
-        ]:
-            row = self._make_stack(vertical=False, spacing=10)
-            row.setDistribution_(AppKit.NSStackViewDistributionFillEqually)
-            for item in row_data:
-                label = self._make_label(item, size=11, align=2)
-                row.addArrangedSubview_(label)
-            metrics_stack.addArrangedSubview_(row)
-        root_stack.addArrangedSubview_(metrics_stack)
-
-        # 3. 重点流摘要 (Signals)
-        if self.snapshot.top_signals:
-            root_stack.addArrangedSubview_(self._make_label("最新智能捕捉", size=11, bold=True, color=AppKit.NSColor.secondaryLabelColor()))
-            for sig in self.snapshot.top_signals[:3]:
-                title = _truncate(f"{_signal_icon(str(sig.get('source_key') or ''))} {sig['title']}", 46)
-                sig_label = self._make_label(f"{title}\n{sig['reason']}", size=12)
-                root_stack.addArrangedSubview_(sig_label)
-
-        # 4. 模式切换按钮
-        mode_row = self._make_stack(vertical=False, spacing=5)
-        mode_row.setDistribution_(AppKit.NSStackViewDistributionFillEqually)
-        for m_id, m_name in {"standard": "标准", "focus": "专注", "sensitive": "高敏"}.items():
-            btn = AppKit.NSButton.buttonWithTitle_target_action_(m_name, self, "changeMode:")
-            btn.setRepresentedObject_(m_id)
-            btn.setBezelStyle_(AppKit.NSBezelStyleTexturedRounded)
-            mode_row.addArrangedSubview_(btn)
-        root_stack.addArrangedSubview_(mode_row)
-
-        # 5. 底部动作区
-        action_row = self._make_stack(vertical=False, spacing=10)
-        action_row.addArrangedSubview_(AppKit.NSButton.buttonWithTitle_target_action_("💡 保存想法", self, "saveThought:"))
-        action_row.addArrangedSubview_(AppKit.NSButton.buttonWithTitle_target_action_("🎯 设意图", self, "setFocus:"))
-        root_stack.addArrangedSubview_(action_row)
-
-        # 6. 系统控制
-        footer = self._make_stack(vertical=False, spacing=0)
-        pause_title = "恢复" if not is_running else "暂停 30m"
-        footer.addArrangedSubview_(AppKit.NSButton.buttonWithTitle_target_action_(pause_title, self, "togglePause:"))
-        footer.addArrangedSubview_(AppKit.NSView.alloc().init())
-        footer.addArrangedSubview_(AppKit.NSButton.buttonWithTitle_target_action_( "退出", self, "terminate:"))
-        root_stack.addArrangedSubview_(footer)
-
-        # 强制同步布局尺寸给容器
-        root_stack.layoutSubtreeIfNeeded()
-        return root_stack
+    def webView_decidePolicyForNavigationAction_decisionHandler_(self, _webview, navigation_action, decision_handler):
+        url = navigation_action.request().URL()
+        if url is not None and str(url.scheme()).lower() == "keypulse":
+            host = str(url.host() or "")
+            path = str(url.path() or "")
+            if host == "action":
+                action = path.lstrip("/")
+                self._handle_keypulse_action(action)
+            decision_handler(WKNavigationActionPolicyCancel)
+            return
+        decision_handler(WKNavigationActionPolicyAllow)
 
     # --- Actions (保持逻辑，优化交互) ---
 
@@ -219,8 +143,7 @@ class KeyPulseHUDApp(AppKit.NSObject):
             self.refresh()
             view = self._build_full_home_view()
             self.popover_vc.setView_(view)
-            # 关键：手动同步内容尺寸
-            self.popover.setContentSize_(view.fittingSize())
+            self.popover.setContentSize_(self._content_size())
             self.popover.showRelativeToRect_ofView_preferredEdge_(sender.bounds(), sender, 1)
 
     def refresh(self):
@@ -237,12 +160,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
         alert.setInformativeText_(informative_text)
         alert.addButtonWithTitle_("OK")
         alert.runModal()
-
-    @objc.IBAction
-    def changeMode_(self, sender):
-        set_hud_mode(sender.representedObject())
-        self.refresh()
-        self.popover.performClose_(None)
 
     @objc.IBAction
     def saveThought_(self, _sender):
