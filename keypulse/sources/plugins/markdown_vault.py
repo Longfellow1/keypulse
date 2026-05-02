@@ -14,12 +14,36 @@ class MarkdownVaultSource(DataSource):
     description = "Obsidian/Logseq markdown vault metadata reader"
 
     def __init__(self, *, roots: list[Path] | None = None) -> None:
-        home = Path.home()
-        self._roots = roots or [home, home / "Documents", home / "Go", home / "Code", home / "Notes"]
+        # roots=None means "resolve at discover() time from config".
+        # Why: avoids reading config at import-time (tests, before config.load()).
+        self._explicit_roots = roots
+
+    def _resolved_roots(self) -> list[Path]:
+        if self._explicit_roots is not None:
+            return self._explicit_roots
+        roots: list[Path] = []
+        seen: set[str] = set()
+        try:
+            from keypulse.config import Config
+            cfg = Config.load()
+        except Exception:
+            return roots
+        candidates: list[str] = []
+        if cfg.obsidian.vault_path:
+            candidates.append(cfg.obsidian.vault_path)
+        candidates.extend(cfg.sources.markdown_vault.extra_roots)
+        for raw in candidates:
+            path = Path(raw).expanduser()
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            roots.append(path)
+        return roots
 
     def discover(self) -> list[DataSourceInstance]:
         instances: dict[str, DataSourceInstance] = {}
-        for root in self._roots:
+        for root in self._resolved_roots():
             if not root.exists() or not root.is_dir():
                 continue
             for obsidian_dir in root.rglob(".obsidian"):
