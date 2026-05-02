@@ -22,6 +22,9 @@ macos = [
     "pyobjc-framework-Quartz",
     "pyobjc-framework-Vision",
 ]
+build = [
+    "py2app>=0.28",
+]
 
 [project.scripts]
 keypulse = "keypulse.cli:main"
