@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from keypulse.pipeline.hourly import FEW_SHOT, MOTIVES, load_hourly_summaries, parse_json_payload, refresh_hourly_summaries
+from keypulse.utils.dates import current_tz_name
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +48,18 @@ def _load_existing_skeleton(db_path: Path, date_str: str) -> dict[str, Any] | No
     conn = _open_conn(db_path)
     try:
         row = conn.execute(
-            "SELECT payload_json FROM daily_skeletons WHERE date = ?",
+            "SELECT payload_json, timezone FROM daily_skeletons WHERE date = ?",
             (date_str,),
         ).fetchone()
         if not row:
             return None
         payload = json.loads(row["payload_json"])
-        return payload if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        # Preserve timezone from DB into payload for upstream callers
+        if row["timezone"]:
+            payload["_timezone"] = row["timezone"]
+        return payload
     finally:
         conn.close()
 
@@ -69,16 +75,18 @@ def save_daily_skeleton(
     try:
         conn.execute(
             """
-            INSERT INTO daily_skeletons(date, payload_json, generated_at)
-            VALUES (?, ?, ?)
+            INSERT INTO daily_skeletons(date, payload_json, generated_at, timezone)
+            VALUES (?, ?, ?, ?)
             ON CONFLICT(date) DO UPDATE SET
                 payload_json = excluded.payload_json,
-                generated_at = excluded.generated_at
+                generated_at = excluded.generated_at,
+                timezone = excluded.timezone
             """,
             (
                 date_str,
                 json.dumps(payload, ensure_ascii=False, sort_keys=True),
                 generated_at or _utc_now(),
+                current_tz_name(),
             ),
         )
         conn.commit()

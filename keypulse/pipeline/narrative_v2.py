@@ -10,6 +10,8 @@ from keypulse.pipeline.evidence import EvidenceUnit, enrich_with_evidence, load_
 from keypulse.pipeline.gates import QualityReport, should_generate_narrative, summarize_quality
 from keypulse.pipeline.signals import collect_browser_signals, collect_filesystem_signals, enrich_unit_with_signals
 from keypulse.pipeline.triggers import record_trigger, record_trigger_pending
+from keypulse.pipeline.skeleton import _load_existing_skeleton
+from keypulse.utils.dates import local_timezone, local_city_label
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +112,7 @@ class TwoPassResult:
 
 
 def _fmt_hm(dt: datetime) -> str:
-    local = dt.astimezone() if dt.tzinfo else dt
+    local = dt.astimezone(local_timezone()) if dt.tzinfo else dt
     return local.strftime("%H:%M")
 
 
@@ -346,7 +348,16 @@ def render_v2_narrative(
             date_str=date_str or now.strftime("%Y-%m-%d"),
             now=now,
         )
-        return result.pass2_narrative
+        narrative = result.pass2_narrative
+
+        # Add city marker at the top of narrative
+        tz_name = None
+        skeleton = _load_existing_skeleton(resolved_db, date_str or now.strftime("%Y-%m-%d"))
+        if skeleton and "_timezone" in skeleton:
+            tz_name = skeleton["_timezone"]
+        city = local_city_label(tz_name)
+        narrative = f"📍 {city}\n\n{narrative}"
+        return narrative
     except Exception as exc:
         logger.error("v2 narrative fallback exc_type=%s exc=%s", type(exc).__name__, exc)
         return ""

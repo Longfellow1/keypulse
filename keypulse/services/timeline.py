@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 from keypulse.services.sessionizer import sessions_for_date, sessions_for_today
+from keypulse.utils.dates import local_timezone
 
 
 def _fmt_duration(secs: int) -> str:
@@ -16,7 +17,7 @@ def _fmt_duration(secs: int) -> str:
 def _fmt_ts(ts: str) -> str:
     try:
         dt = datetime.fromisoformat(ts)
-        return dt.astimezone().strftime("%H:%M:%S")
+        return dt.astimezone(local_timezone()).strftime("%H:%M:%S")
     except Exception:
         return ts
 

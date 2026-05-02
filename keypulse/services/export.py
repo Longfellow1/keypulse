@@ -7,7 +7,7 @@ from typing import Any, Optional
 from keypulse.store.repository import get_sessions, query_raw_events
 from keypulse.store.db import get_conn
 from keypulse.obsidian.exporter import export_obsidian as export_obsidian_notes
-from keypulse.utils.dates import local_day_bounds
+from keypulse.utils.dates import local_day_bounds, local_timezone
 
 
 def _get_date_range(days: Optional[int] = None, date_str: Optional[str] = None):
@@ -77,7 +77,7 @@ def export_markdown(days: Optional[int] = None, date_str: Optional[str] = None) 
     for s in sessions:
         def fmt(ts):
             try:
-                return datetime.fromisoformat(ts).astimezone().strftime("%H:%M")
+                return datetime.fromisoformat(ts).astimezone(local_timezone()).strftime("%H:%M")
             except Exception:
                 return ts or ""
         dur = s.get("duration_sec") or 0

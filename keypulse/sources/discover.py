@@ -18,6 +18,7 @@ from keypulse.sources.wechat_probe import (
     probe,
     revoke_authorization,
 )
+from keypulse.utils.dates import local_timezone
 
 
 @click.group(name="sources")
@@ -240,7 +241,7 @@ def read_command(source_name: str | None, since: str | None, until: str | None, 
 
 
 def _parse_bound(raw: str | None, *, is_since: bool) -> datetime:
-    local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+    local_tz = local_timezone()
     now_local = datetime.now(local_tz)
 
     if raw is None:

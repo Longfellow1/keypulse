@@ -5,6 +5,8 @@ import json
 from datetime import datetime
 from typing import Any
 
+from keypulse.utils.dates import local_timezone
+
 
 _slug_re = re.compile(r"[^a-z0-9\u4e00-\u9fff]+")
 
@@ -25,8 +27,10 @@ def iso_date(value: str | None) -> str:
     if not value:
         return datetime.now().date().isoformat()
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).date().isoformat()
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.astimezone(local_timezone()).date().isoformat()
     except Exception:
+        # Fallback: assume value is already YYYY-MM-DD or extract first 10 chars
         return value[:10]
 
 
@@ -34,7 +38,8 @@ def time_token(value: str | None) -> str:
     if not value:
         return "0000"
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime("%H%M")
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.astimezone(local_timezone()).strftime("%H%M")
     except Exception:
         return "0000"
 

@@ -177,7 +177,8 @@ def test_build_things_session_failure_falls_back(monkeypatch) -> None:
 
 def test_render_things_report_uses_thing_narrative() -> None:
     report = render_things_report([_thing()], model_gateway=_Gateway(), title="今日做的事")
-    assert report.startswith("# 今日做的事")
+    assert report.startswith("📍")
+    assert "# 今日做的事" in report
     assert "## 今日概览" in report
     assert "### 修复 timeline" in report
     assert "11a3a9b" in report
