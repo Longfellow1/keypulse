@@ -189,6 +189,14 @@ class IntegrationConfig(BaseModel):
     state_path: str = "~/.keypulse/sink-state.json"
 
 
+class MarkdownVaultSourceConfig(BaseModel):
+    extra_roots: list[str] = Field(default_factory=list)
+
+
+class SourcesConfig(BaseModel):
+    markdown_vault: MarkdownVaultSourceConfig = Field(default_factory=MarkdownVaultSourceConfig)
+
+
 class PolicyConfig(BaseModel):
     scope_type: str
     scope_value: str
@@ -210,6 +218,7 @@ class Config(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
+    sources: SourcesConfig = Field(default_factory=SourcesConfig)
     policies: list[PolicyConfig] = Field(default_factory=list)
 
     @classmethod

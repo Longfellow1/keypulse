@@ -23,32 +23,6 @@ def _system_iana_tz() -> str | None:
     return path[idx + len(marker):]
 
 
-_IANA_TO_CITY: dict[str, str] = {
-    "Asia/Shanghai": "上海",
-    "Asia/Hong_Kong": "香港",
-    "Asia/Taipei": "台北",
-    "Asia/Tokyo": "东京",
-    "Asia/Seoul": "首尔",
-    "Asia/Singapore": "新加坡",
-    "Asia/Bangkok": "曼谷",
-    "Asia/Jakarta": "雅加达",
-    "Asia/Kolkata": "孟买",
-    "Asia/Dubai": "迪拜",
-    "Europe/London": "伦敦",
-    "Europe/Paris": "巴黎",
-    "Europe/Berlin": "柏林",
-    "Europe/Moscow": "莫斯科",
-    "America/New_York": "纽约",
-    "America/Chicago": "芝加哥",
-    "America/Los_Angeles": "洛杉矶",
-    "America/Toronto": "多伦多",
-    "America/Vancouver": "温哥华",
-    "America/Sao_Paulo": "圣保罗",
-    "Australia/Sydney": "悉尼",
-    "Pacific/Auckland": "奥克兰",
-}
-
-
 @lru_cache(maxsize=1)
 def _configured_tz_name() -> str | None:
     """Read timezone from Config.load(). Cached; call clear_timezone_cache() in tests."""
@@ -85,18 +59,13 @@ def current_tz_name() -> str:
 
 
 def local_city_label(tz_name: str | None = None) -> str:
-    """Return the user-visible city label for an IANA tz.
+    """Return the IANA timezone name as the location label.
 
-    tz_name=None reads the current local timezone.
-    Unknown IANA names fall back to the city segment ('Asia/Karachi' → 'Karachi').
+    Why: KeyPulse has no geolocation source. Mapping 'Asia/Shanghai' → '上海' is
+    misleading — the user could be anywhere in that tz. Show the tz verbatim
+    until a real city source exists.
     """
-    if tz_name is None:
-        tz_name = current_tz_name()
-    if tz_name in _IANA_TO_CITY:
-        return _IANA_TO_CITY[tz_name]
-    if "/" in tz_name:
-        return tz_name.split("/", 1)[1].replace("_", " ")
-    return tz_name
+    return tz_name if tz_name is not None else current_tz_name()
 
 
 def resolve_local_date(date: str | None = None, *, yesterday: bool = False, now: datetime | None = None) -> str:
