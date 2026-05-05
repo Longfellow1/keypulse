@@ -10,7 +10,7 @@ KeyPulse 是一个本地优先的 macOS 同行者。它静静地看着你工作�
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
-[![Tests](https://img.shields.io/badge/tests-333%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-800%2B%20passing-brightgreen.svg)](tests/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ---
@@ -28,6 +28,22 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 > *"这三天你反复回到这个终端 —— 是卡住了，还是其实这才是你真正想做的事？"*
 
 这句话不会 Day 1 就出现。它会在 **Day 5** 出现 —— 当系统已经看了足够久，赢得了开口的资格。
+
+---
+
+## 现在长这样
+
+<p align="center">
+  <img src="docs/images/hud-v1.png" alt="KeyPulse HUD" width="320" />
+</p>
+
+装上之后，KeyPulse 是一个**住在你菜单栏的小窗口**。
+
+每天打开看一眼：左上"今日重要的事儿"是你早晨给自己定的锚点，下面四个数字告诉你今天积累了多少，再往下三张卡片是它读完今天觉得"值得你回看一下"的片段。底部那行 *"和你一起记录的第 N 天"* —— 它在记你和它一起走了多久。
+
+出问题的时候，它不会丢一个错误码给你看。HUD 顶上会出现一行黄字 + **一颗按钮**："辅助功能权限未授权 [打开设置]" —— 点一下直接弹到该去的系统面板。**修复路径，不是错误堆栈。**
+
+晚上的小结写到你自己的 Obsidian 库里，那是它和你慢慢长出来的另一面。
 
 ---
 
@@ -82,18 +98,18 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 - **摄像头感知暂停** —— macOS CMIO 激活时（Zoom / FaceTime / 录屏），采集自动暂停。
 - **隐私窗口检测** —— Safari/Chrome/Firefox 的无痕窗口通过 AX 标题识别后排除。
 
-### ♻️ 服务自愈三件套
-后台工具会死。KeyPulse 默认会死，把恢复写进设计：
+### ♻️ 出问题给的是修复路径，不是错误码
+后台工具会死、权限会失效、API 会过期。KeyPulse 默认会死，把恢复写进设计：
 
-- `keypulse healthcheck` —— 原子写 `health.json`，6 种告警码（`DAEMON_DEAD` / `STREAM_STALE` / `SPEAKER_MISLABEL_SPIKE` 等）。launchd 每 10 分钟跑一次。
+- **7 个能力域各自体检** —— 辅助功能权限、采集运行时、剪贴板 watcher、健康新鲜度、LLM 后端…… 每 60s 自查一次，互不影响。任何一项异常，HUD 黄条出现"**人话 + 一颗修复按钮**"，不是抛错误码让你 Google。
 - **每小时增量 Obsidian sync** —— 基于 cursor，按事件身份去重，**append-safe**：你写过的 `## 今日主线` 叙事和 `## 明天的锚点` 永远不会被覆盖。
-- **菜单栏 HUD** —— 直接读 `health.json`，状态表情前缀（✅ / ⚠️）一眼可见。
+- **launchd 托管四件套** —— daemon / healthcheck / 每小时 sync / 每日 sync。开机自启，崩了自动拉起。
 
 ### 📝 Obsidian 作为阅读面
 日报、事件卡、主题卡。反馈以 checkbox 内嵌（`- [ ] 确认 [ ] 否掉 [ ] 拆分`），watcher 同步回反馈库 —— 零切换，**报告本身就是反馈表**。
 
 ### 🧪 质量保障
-一套**黄金集**（Golden Set）标注日记录，作为叙事 pipeline 的回归基线，防止调阈值时静默退化。333 个测试全绿 —— 包括那次把 2341 条用户事件错标成系统事件的迁移事故的回归覆盖。
+一套**黄金集**（Golden Set）标注日记录，作为叙事 pipeline 的回归基线，防止调阈值时静默退化。800+ 个测试全绿 —— 包括那次把 2341 条用户事件错标成系统事件的迁移事故的回归覆盖，以及 capability 框架的架构不变量测试。
 
 ---
 
@@ -126,32 +142,40 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 ┌──────────────────────────────────────────────────────────────┐
 │  呈现面                                                       │
 │  • Obsidian vault（Daily / Events / Topics / Dashboard）      │
-│  • 菜单栏 HUD（健康 + 会话提示）                              │
+│  • 菜单栏 HUD（WKWebView · 今日重点 + 异常即修复入口）         │
 │  • CLI（timeline / search / stats / export）                  │
 └──────────────────────────────────────────────────────────────┘
 
-                launchd 编排四个 job：
-   daemon  •  healthcheck (10m)  •  obsidian-sync-hourly  •  obsidian-sync-daily
+       ↑ Capability 自检层（60s 一轮，7 个能力域各自体检）
+       ↑ launchd 编排四件套：
+         daemon  •  healthcheck (10m)  •  obsidian-sync-hourly  •  obsidian-sync-daily
 ```
 
 ---
 
 ## 快速开始
 
+三步装完，之后它就一直在那。
+
 ```bash
-# 克隆并安装（会在 ~/.keypulse/venv 建 venv，注册 launchd jobs）
+# 1. 装 — 一行命令，打 .app 进 /Applications，挂 launchd
 git clone https://github.com/Longfellow1/keypulse.git
 cd keypulse
-bash install.sh
+make install
 
-# 授权「辅助功能」+「屏幕录制」，然后：
-keypulse start
-keypulse doctor          # 检查 watchers / 权限 / 数据库
-keypulse hud             # 菜单栏状态指示器（可选）
+# 2. 配 — 三选一交互向导（约 2 分钟）
+keypulse setup
+#   ├─ 本地 Ollama  ── 离线优先 / 不想花钱
+#   ├─ 本地 LM Studio ── 想跑本地、UI 用着舒服
+#   └─ 云 API       ── 豆包 / DeepSeek / OpenAI 任选，Key 写进 Keychain
 
-# 一天后，看报告：
-open ~/Go/Knowledge/Dashboard/Today.md
+# 3. 授权 —「辅助功能」+「屏幕录制」（系统设置里勾一下 KeyPulse）
+#    HUD 黄条会告诉你下一步该点哪
 ```
+
+装完它就常驻菜单栏。重启电脑会自动起来，崩了 launchd 帮你拉起来。**一天后**，打开你的 Obsidian 库看 `Daily/<今天>.md`。
+
+> **没配模型也能起**——daemon 照常采集，只是叙事 / 日报先按下不表，等你想起来跑 `keypulse setup` 就接上。
 
 ### 常用命令
 
@@ -161,10 +185,10 @@ open ~/Go/Knowledge/Dashboard/Today.md
 | `keypulse search "<query>"` | 全文搜索你的记忆 |
 | `keypulse obsidian sync --incremental` | 把新事件追加到今日报告（每小时自动） |
 | `keypulse obsidian sync --yesterday` | 生成昨天的完整叙事（每日 09:05 自动） |
-| `keypulse healthcheck` | 原子健康报告 → `~/.keypulse/health.json` |
+| `keypulse healthcheck` | 原子健康报告（launchd 每 10 分钟自动跑） |
 | `keypulse purge --app Slack --confirm` | 彻底删除某个应用的全部数据 |
 
-完整命令参考：`keypulse --help`。
+完整命令参考：`keypulse --help`。首次配置的细节看 [docs/setup-onboarding.md](docs/setup-onboarding.md)。
 
 ---
 
@@ -220,8 +244,9 @@ Obsidian 不只是一个笔记本，它是一张图。当日报、主题卡、�
 ## 当前状态
 
 - **平台：** macOS 12+（Apple Silicon + Intel）
-- **测试：** 333 passing（pytest）
-- **安装：** `bash install.sh` —— 一键幂等，launchd 托管
+- **测试：** 800+ passing（pytest，含 capability 框架架构不变量）
+- **安装：** `make install` 一键打包 .app + 注册 launchd 托管
+- **首次配置：** `keypulse setup` 三选一向导，约 2 分钟
 - **Roadmap：** 季度 / 年度回忆录式整理 · 多设备合并 · 语音反思对话
 
 KeyPulse 还在早期。笔友现在能跟你聊今天，还不能跟你聊今年 —— 这是下一步。
