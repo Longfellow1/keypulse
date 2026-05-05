@@ -172,7 +172,7 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
             fallback_hint="LLM 调用异常，请稍后重试",
         )
 
-    return ("ok", "正常", "", "")
+    return ("ok", "都好", "", "")
 
 
 def _tokenize(text: str) -> list[str]:
@@ -198,6 +198,13 @@ def _boost_score(item: dict[str, Any], today_focus: str, attention_items: list[s
     return boost
 
 
+def _obsidian_open_url(vault_name: str, note_path: str) -> str:
+    from urllib.parse import quote
+
+    file_part = note_path[:-3] if note_path.endswith(".md") else note_path
+    return f"obsidian://open?vault={quote(vault_name, safe='')}&file={quote(file_part, safe='/')}"
+
+
 def _build_top_signals(events: list[dict[str, Any]], *, today_focus: str, attention_items: list[str], vault_name: str, date_str: str) -> list[dict[str, Any]]:
     from keypulse.pipeline.surface import build_surface_snapshot
 
@@ -215,6 +222,7 @@ def _build_top_signals(events: list[dict[str, Any]], *, today_focus: str, attent
             for reason, value in dict(item.get("why_selected") or {}).items()
             if float(value or 0) > 0
         ]
+        note_path = path_by_title.get(item["title"], f"Daily/{date_str}.md")
         candidates.append(
             {
                 "title": item["title"],
@@ -222,7 +230,8 @@ def _build_top_signals(events: list[dict[str, Any]], *, today_focus: str, attent
                 "source_key": str(item.get("source") or ""),
                 "reason": "、".join(why[:3]) or "被系统识别为高价值候选",
                 "score": adjusted_score,
-                "path": path_by_title.get(item["title"], f"Daily/{date_str}.md"),
+                "path": note_path,
+                "obsidian_url": _obsidian_open_url(vault_name, note_path),
             }
         )
     candidates.sort(key=lambda item: (-float(item["score"]), item["title"]))

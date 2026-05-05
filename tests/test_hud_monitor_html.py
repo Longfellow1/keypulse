@@ -31,6 +31,7 @@ def _snapshot(**overrides) -> HUDSnapshot:
                 "reason": "明确表达、新信息、可复用",
                 "score": 1.2,
                 "path": "Daily/2026-05-02.md",
+                "obsidian_url": "obsidian://open?vault=KeyPulse&file=Daily/2026-05-02",
             },
             {
                 "title": "菜单栏 HUD 要不要独立成软件？",
@@ -38,11 +39,12 @@ def _snapshot(**overrides) -> HUDSnapshot:
                 "source_key": "window",
                 "reason": "信息密度高",
                 "score": 0.9,
-                "path": "Daily/2026-05-02.md",
+                "path": "Events/hud/2026-05-02.md",
+                "obsidian_url": "obsidian://open?vault=KeyPulse&file=Events/hud/2026-05-02",
             },
         ],
         service_status="ok",
-        status_label="正常",
+        status_label="都好",
         hint_message="",
         hint_action="",
         companion_days=5,
@@ -77,11 +79,20 @@ def test_monitor_html_uses_snapshot_values_and_delta_classes():
 
     assert '<span class="brand">KeyPulse</span>' in html
     assert '<span class="dot"></span>' in html
-    assert '<span class="status-pill">正常</span>' in html
+    assert '<span class="status-pill">都好</span>' in html
+    # stats 砍成两格：记下来 / 丢掉了
     assert '<div class="stat-num">48 <span class="delta down arr-down">410</span></div>' in html
     assert '<div class="stat-num">13 <span class="delta down arr-down">27</span></div>' in html
-    assert '<div class="stat-num">0 <span class="delta flat">0</span></div>' in html
-    assert '<div class="stat-num">1 <span class="delta arr-up">1</span></div>' in html
+    assert '<div class="stat-lbl">记下来</div>' in html
+    assert '<div class="stat-lbl">丢掉了</div>' in html
+    # 主题 / 标记 字段不再 surface 到 HUD（精确匹配 stat 标签，不影响 title 里出现的同名字符）
+    assert '<div class="stat-lbl">主题</div>' not in html
+    assert '<div class="stat-lbl">标记</div>' not in html
+    # stats 网格两列布局
+    assert "grid-template-columns: 1fr 1fr;" in html
+    # 区块标题
+    assert "今天最新" in html
+    assert "今日提示" not in html
     assert "C_Agents 当前状态 + 下一步 Brief" in html
     assert '<span class="tag green">可复用</span>' in html
     assert '<span class="tag blue">新信息</span>' in html
@@ -176,6 +187,7 @@ def test_monitor_html_escapes_dynamic_text():
                 "reason": "明确表达",
                 "score": 1.0,
                 "path": "Daily/2026-05-02.md",
+                "obsidian_url": "obsidian://open?vault=KeyPulse&file=Daily/2026-05-02",
             }
         ]
     )
@@ -184,3 +196,60 @@ def test_monitor_html_escapes_dynamic_text():
 
     assert '<script>alert("x")</script>' not in html
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in html
+
+
+def test_monitor_html_signals_link_to_obsidian():
+    """每条 signal 整行可点击，跳到 Obsidian 对应 note。"""
+    html = build_monitor_html(_snapshot(), capture_status="running", health_ok=True)
+
+    # 整行 <a> 包裹（不是 <div>）
+    assert '<a class="sugg-item"' in html
+    # 跳转走 keypulse://action/open-url，参数是 percent-encoded 后的 obsidian:// URL
+    assert "keypulse://action/open-url?u=obsidian%3A%2F%2Fopen" in html
+    # vault 名字 + 文件路径都进了链接（路径中的 / 会被编码成 %2F）
+    assert "vault%3DKeyPulse" in html
+    assert "Daily%2F2026-05-02" in html
+    # 右侧箭头指示
+    assert '<div class="sugg-arrow">→</div>' in html
+
+
+def test_monitor_html_pads_with_placeholders_when_signals_under_three():
+    """少于 3 条 signals 时，剩余位置用占位行填满，保持版式稳定。"""
+    snap = _snapshot()  # fixture 里只有 2 条
+    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+
+    # 两条真实 + 一条占位
+    assert html.count('<a class="sugg-item"') == 2
+    assert html.count('<div class="sugg-item placeholder">') == 1
+
+
+def test_monitor_html_empty_signals_show_fallback_message():
+    """0 条 signals 时显示笔友兜底句，而不是工程话术。"""
+    snap = _snapshot(top_signals=[])
+    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+
+    assert "今天还没记下什么，晚点回来看看" in html
+    # 旧文案不应再出现
+    assert "今天还没有重点提示" not in html
+    assert "继续采集" not in html
+    # 占位行也不应出现（兜底句已占位）
+    assert "sugg-item placeholder" not in html
+
+
+def test_monitor_html_three_signals_no_placeholder():
+    """正好 3 条时不再补占位。"""
+    third = {
+        "title": "第三条值得回看",
+        "source": "窗口活动",
+        "source_key": "window",
+        "reason": "信息密度高",
+        "score": 0.7,
+        "path": "Daily/2026-05-02.md",
+        "obsidian_url": "obsidian://open?vault=KeyPulse&file=Daily/2026-05-02",
+    }
+    base = _snapshot()
+    snap = _snapshot(top_signals=[*list(base.top_signals), third])
+    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+
+    assert html.count('<a class="sugg-item"') == 3
+    assert "sugg-item placeholder" not in html
