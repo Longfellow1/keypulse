@@ -198,18 +198,53 @@ def _boost_score(item: dict[str, Any], today_focus: str, attention_items: list[s
     return boost
 
 
-def _obsidian_open_url(vault_root: str, note_path: str) -> str:
-    """obsidian://open?vault=<basename>&file=<path>。
+def _obsidian_open_url(vault_root: str, note_path: str, *, heading: str | None = None) -> str:
+    """obsidian://open?vault=<basename>&file=<path>[#heading]。
 
     vault 名取 vault_root 路径的 basename —— 这是 Obsidian 实际注册的 vault
-    标识（不是 cfg.obsidian.vault_name 那个 KeyPulse 自定义别名）。
+    标识。带 heading 时跳到该 H3 锚点（Obsidian URI 支持 file=path#heading）。
     """
     from pathlib import Path
     from urllib.parse import quote
 
     vault_id = Path(vault_root).name or vault_root
     file_part = note_path[:-3] if note_path.endswith(".md") else note_path
+    if heading:
+        file_part = f"{file_part}#{heading}"
     return f"obsidian://open?vault={quote(vault_id, safe='')}&file={quote(file_part, safe='/')}"
+
+
+_DAILY_GENERIC_TOPICS = {"碎片汇总", "其它", "其他", "杂项"}
+
+
+def _parse_daily_topics(daily_body: str) -> list[tuple[str, str]]:
+    """从 daily.md 的「## 今日主线」段解析 H3 主题。
+
+    返回 [(主题名, 原始 H3 文本), ...]，按 daily 中出现顺序（早→晚）。
+    H3 格式：`### 凌晨访问pairdrop网站 · 5m（2026年5月5日 22:48–22:53）`
+    主题名 = ` · ` 之前那段；锚点 = 整个 H3 文本。过滤"碎片汇总"等泛词。
+    """
+    if not daily_body:
+        return []
+    lines = daily_body.splitlines()
+    main_section_start: int | None = None
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("## 今日主线"):
+            main_section_start = idx
+            break
+    if main_section_start is None:
+        return []
+    out: list[tuple[str, str]] = []
+    for line in lines[main_section_start + 1 :]:
+        stripped = line.strip()
+        if stripped.startswith("## ") and not stripped.startswith("### "):
+            break
+        if stripped.startswith("### "):
+            heading = stripped[4:].strip()
+            topic = heading.split(" · ", 1)[0].strip()
+            if topic and topic not in _DAILY_GENERIC_TOPICS:
+                out.append((topic, heading))
+    return out
 
 
 def _build_top_signals(
@@ -221,58 +256,39 @@ def _build_top_signals(
     vault_root: str,
     date_str: str,
 ) -> list[dict[str, Any]]:
-    """HUD「今天最新」三条 = 直接读 LLM 写过的 event note。
+    """HUD「今天最新」三条 = 日报「今日主线」的主题 H3。
 
-    数据源不再走 surface_snapshot.candidates（那是 raw event title，含
-    窗口元数据 / markdown 片段，HUD 上不可读）。改成遍历
-    build_obsidian_bundle 输出的 events —— H1 是 LLM 写过的友好标题，path
-    精确到具体 note。按 path 倒序 = 按时间倒序（path 文件名以 HHMM 开头）。
+    跳转走 obsidian:// + heading 锚点，直接落到 daily 那一段。
+    主题不足 3 条时由 HUD 渲染层兜底（占位 / 兜底句）。
     """
     from keypulse.pipeline.surface import build_surface_snapshot
 
     snapshot = build_surface_snapshot(events, top_k=20)
     bundle = build_obsidian_bundle(events, vault_name=vault_name, date_str=date_str)
-    from pathlib import Path as _Path
+    daily_cards = list(bundle.get("daily") or [])
+    daily_body = str(daily_cards[0].get("body") or "") if daily_cards else ""
+    daily_path = (
+        str(daily_cards[0].get("path") or f"Daily/{date_str}.md")
+        if daily_cards
+        else f"Daily/{date_str}.md"
+    )
 
-    def _h1_of(note: dict[str, Any]) -> str:
-        body = str(note.get("body") or "")
-        return body.splitlines()[0].removeprefix("# ").strip() if body else ""
-
-    def _is_curated(note: dict[str, Any]) -> bool:
-        """过滤兜底片段：H1 是文件路径 / 应用路径 / 空 → 不上 HUD。"""
-        h1 = _h1_of(note)
-        if not h1:
-            return False
-        if h1.startswith("/"):
-            return False
-        return True
-
-    def _time_key(note: dict[str, Any]) -> str:
-        name = _Path(str(note.get("path") or "")).name
-        match = re.search(r"(\d{4})", name)
-        return match.group(1) if match else "0000"
-
-    notes = [note for note in bundle.get("events", []) if _is_curated(note)]
-    notes.sort(key=_time_key, reverse=True)
+    topics = _parse_daily_topics(daily_body)
+    # 取最新 3 条 = 出现位置末尾 3 条（daily 内主题按时间从早到晚排）
+    latest = list(reversed(topics[-3:]))
 
     candidates: list[dict[str, Any]] = []
-    for note in notes[:3]:
-        body = str(note.get("body") or "")
-        h1 = body.splitlines()[0].removeprefix("# ").strip() if body else ""
-        title = h1 or "未命名片段"
-        note_path = str(note.get("path") or f"Daily/{date_str}.md")
-        properties = dict(note.get("properties") or {})
-        topic_key = str(properties.get("topic") or "")
+    for topic_name, heading in latest:
         candidates.append(
             {
-                "title": title,
-                "source": "事件",
-                "source_key": "event_note",
+                "title": topic_name,
+                "source": "今日主线",
+                "source_key": "daily_topic",
                 "reason": "新信息",
                 "score": 1.0,
-                "path": note_path,
-                "topic_key": topic_key,
-                "obsidian_url": _obsidian_open_url(vault_root, note_path),
+                "path": daily_path,
+                "topic_key": topic_name,
+                "obsidian_url": _obsidian_open_url(vault_root, daily_path, heading=heading),
             }
         )
     return candidates, snapshot

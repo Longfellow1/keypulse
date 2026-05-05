@@ -59,9 +59,10 @@ def test_monitor_html_v1_1_structure():
     # Plan A 主要骨架
     assert '<div class="hud">' in html
     assert '<div class="hdr">' in html
-    # today-card 现在是可点击 <a>（避开 popover 内 IME 遮挡）
-    assert '<a class="today-card"' in html
-    assert "keypulse://action/edit-today-focus" in html
+    # today-card: inline input, 没有 label
+    assert '<div class="today-card">' in html
+    assert 'id="todayFocus"' in html
+    assert "今日重要的事儿" not in html  # label 已去掉
     assert '<div class="stats">' in html
     assert '<div class="suggestions">' in html
     assert '<div class="ftr">' in html
@@ -72,10 +73,6 @@ def test_monitor_html_v1_1_structure():
     assert "mode-row" not in html
     assert "hdr-mode" not in html  # 标准 badge 已去除
     assert 'class="actions"' not in html  # 旧的 保存想法/设意图 按钮区已去除
-    # 旧的 inline input + label 已废弃（IME 遮挡问题）
-    assert 'id="todayFocus"' not in html
-    assert "今日重要的事儿" not in html
-    assert "save-today-focus" not in html
 
 
 def test_monitor_html_uses_snapshot_values_and_delta_classes():
@@ -109,31 +106,21 @@ def test_monitor_html_uses_snapshot_values_and_delta_classes():
 def test_monitor_html_emits_v1_1_action_links():
     html = build_monitor_html(_snapshot(), capture_status="running", health_ok=True)
 
-    # today_focus 现在走 NSAlert（弹窗），点 today-card 触发 edit-today-focus
-    assert 'href="keypulse://action/edit-today-focus"' in html
+    # today_focus 走 inline input，JS 拼 save-today-focus URL
+    assert "keypulse://action/save-today-focus?v=" in html
     assert 'href="keypulse://action/toggle-pause"' in html
     assert 'href="keypulse://action/restart-daemon"' in html
     assert 'href="keypulse://action/quit"' in html
     assert "⏸ 暂停" in html
 
 
-def test_monitor_html_today_card_shows_user_text_when_filled():
-    """已写过 today_focus 时，把内容当主角显示，不再显示 label / placeholder。"""
+def test_monitor_html_today_input_has_value_when_filled():
+    """已写过 today_focus 时 input 直接带 value（当主角），无独立 label。"""
     html = build_monitor_html(_snapshot(today_focus="重做 HUD"), capture_status="running", health_ok=True)
 
-    assert '<div class="today-text filled">重做 HUD</div>' in html
-    # label 移除
-    assert "今日重要的事儿" not in html
-    # placeholder 不应同时出现
-    assert "今天最想完成的一件事" not in html
-
-
-def test_monitor_html_today_card_shows_placeholder_when_empty():
-    """没写过时显示一行温和提示。"""
-    html = build_monitor_html(_snapshot(today_focus=""), capture_status="running", health_ok=True)
-
-    assert '<div class="today-text empty">' in html
-    assert "今天最想完成的一件事" in html
+    assert 'value="重做 HUD"' in html
+    assert "today-input filled" in html
+    assert "今日重要的事儿" not in html  # label 已去掉
 
 
 def test_monitor_html_emits_close_popover_handler():
@@ -202,7 +189,9 @@ def test_monitor_html_empty_today_focus_shows_placeholder():
     html = build_monitor_html(snap, capture_status="running", health_ok=True)
 
     assert "今天最想完成的一件事" in html
-    assert 'today-text filled' not in html
+    assert "today-input filled" not in html
+    # 空状态时 input 不应带 value 属性
+    assert ' value=""' not in html
 
 
 def test_monitor_html_escapes_dynamic_text():
