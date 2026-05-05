@@ -9,12 +9,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Callable, Any
 
+from keypulse.capabilities.registry import CapabilityRegistry, get_default_registry
+from keypulse.capabilities.store import save_states as save_capability_states
 from keypulse.config import Config
 from keypulse.utils.lock import SingleInstanceLock
 from keypulse.utils.logging import setup_logging, get_logger
 from keypulse.store.db import init_db
 
 logger = get_logger("app")
+_COMPAT_CAPTURE_CAPS = {"appkit_runtime", "accessibility_permission", "clipboard_watcher"}
+_COMPAT_LLM_CAPS = {"llm_backend"}
 
 
 def daemonize(pid_path: Path):
@@ -49,13 +53,46 @@ def daemonize(pid_path: Path):
     # PID is written by the lock layer inside run().
 
 
-def _check_accessibility() -> bool:
-    """Return True if Accessibility permission is granted (macOS)."""
-    try:
-        import ApplicationServices
-        return bool(ApplicationServices.AXIsProcessTrusted())
-    except Exception:
-        return False  # pyobjc not available or non-macOS
+def _run_capability_self_check(registry: CapabilityRegistry) -> None:
+    """Probe all capabilities and persist results to the state repo.
+
+    The state repo is the runtime source of truth for capability health.
+    health.json is written by the healthcheck CLI on its own cadence and
+    embeds a snapshot of capability state at that time.
+    """
+    from keypulse.store.repository import set_state
+
+    states = registry.monitor_all()
+    save_capability_states(states)
+
+    capture_failure = registry.select_failure(states, names=_COMPAT_CAPTURE_CAPS)
+    llm_failure = registry.select_failure(states, names=_COMPAT_LLM_CAPS)
+    set_state("capture_error_code", "" if capture_failure is None else capture_failure.state.code)
+    set_state("llm_error_code", "" if llm_failure is None else llm_failure.state.code)
+
+
+_self_check_supervisor_started = False
+
+
+def _spawn_self_check_supervisor(interval_sec: float = 60.0, registry: CapabilityRegistry | None = None) -> None:
+    """Re-run capability monitor every interval_sec and persist capability states."""
+    global _self_check_supervisor_started
+    if _self_check_supervisor_started:
+        return
+    _self_check_supervisor_started = True
+    cap_registry = registry or get_default_registry()
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_sec)
+            try:
+                _run_capability_self_check(cap_registry)
+            except Exception as exc:
+                logger.error(f"self-check supervisor tick failed: {exc}")
+
+    thread = threading.Thread(target=_loop, daemon=True, name="self-check-supervisor")
+    thread.start()
+    logger.info(f"self-check supervisor running (interval={interval_sec}s)")
 
 
 def _run_obsidian_sync_core(cfg: Config, date: Optional[str] = None) -> None:
@@ -262,13 +299,10 @@ def run(config: Optional[Config] = None):
         logger.error(f"Another KeyPulse instance is already running (PID {lock.get_pid()})")
         sys.exit(1)
 
-    # Warn if Accessibility permission is missing — window titles won't be captured
-    if not _check_accessibility():
-        logger.warning(
-            "Accessibility permission not granted. "
-            "Window titles and app names may not be available. "
-            "Grant access in: System Settings → Privacy & Security → Accessibility"
-        )
+    init_db(config.db_path_expanded)
+    registry = get_default_registry()
+    _run_capability_self_check(registry)
+    _spawn_self_check_supervisor(registry=registry)
 
     from keypulse.capture.manager import CaptureManager
 

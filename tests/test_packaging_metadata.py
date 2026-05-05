@@ -9,9 +9,11 @@ def test_pyproject_macos_extras_list_real_frameworks():
     data = tomllib.loads(pyproject.read_text())
     macos_extras = data["project"]["optional-dependencies"]["macos"]
 
+    # NB: AppKit module is shipped inside pyobjc-framework-Cocoa — there is no
+    # standalone pyobjc-framework-AppKit wheel on PyPI. Listing it here would
+    # break `pip install '.[macos]'`.
     required = {
         "pyobjc-framework-Cocoa",
-        "pyobjc-framework-AppKit",
         "pyobjc-framework-ApplicationServices",
         "pyobjc-framework-Quartz",
         "pyobjc-framework-Vision",

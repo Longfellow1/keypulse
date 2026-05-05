@@ -16,8 +16,8 @@ dependencies = [
 
 [project.optional-dependencies]
 macos = [
+    # AppKit ships inside pyobjc-framework-Cocoa — there is no separate AppKit wheel.
     "pyobjc-framework-Cocoa",
-    "pyobjc-framework-AppKit",
     "pyobjc-framework-ApplicationServices",
     "pyobjc-framework-Quartz",
     "pyobjc-framework-Vision",

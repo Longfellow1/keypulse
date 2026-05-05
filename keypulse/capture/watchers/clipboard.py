@@ -29,7 +29,7 @@ class ClipboardWatcher(BaseWatcher):
         try:
             from AppKit import NSPasteboard, NSPasteboardTypeString
         except ImportError:
-            logger.error("pyobjc-framework-AppKit not available")
+            logger.error("pyobjc-framework-AppKit not available — clipboard watcher dead")
             return
 
         pb = NSPasteboard.generalPasteboard()

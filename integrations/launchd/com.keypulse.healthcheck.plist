@@ -8,7 +8,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/Harland/.local/bin/keypulse</string>
+        <string>/Applications/KeyPulse.app/Contents/MacOS/KeyPulse</string>
         <string>healthcheck</string>
     </array>
 
