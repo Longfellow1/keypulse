@@ -67,9 +67,11 @@ def test_render_fallback_cloud_timeout_to_local(tmp_path, monkeypatch):
         return "local ok"
 
     monkeypatch.setattr(gateway, "_call_backend", fake_call_backend)
+    monkeypatch.setattr("keypulse.pipeline.model.time.sleep", lambda *_: None)
 
     assert gateway.render("hello") == "local ok"
-    assert calls == ["openai_compatible", "lm_studio"]
+    # Cloud TimeoutError is retried once before falling back to local.
+    assert calls == ["openai_compatible", "openai_compatible", "lm_studio"]
 
 
 def test_render_raises_last_error_when_cloud_and_local_fail(tmp_path, monkeypatch):
@@ -83,10 +85,13 @@ def test_render_raises_last_error_when_cloud_and_local_fail(tmp_path, monkeypatc
         raise RuntimeError("local failed")
 
     monkeypatch.setattr(gateway, "_call_backend", fake_call_backend)
+    monkeypatch.setattr("keypulse.pipeline.model.time.sleep", lambda *_: None)
 
     with pytest.raises(RuntimeError, match="local failed"):
         gateway.render("hello")
-    assert calls == ["openai_compatible", "lm_studio"]
+    # Cloud retried once (TimeoutError is transient), then local (no retry,
+    # RuntimeError is not in the retryable set).
+    assert calls == ["openai_compatible", "openai_compatible", "lm_studio"]
 
 
 def test_render_cloud_only_raises_without_local_fallback(tmp_path, monkeypatch):

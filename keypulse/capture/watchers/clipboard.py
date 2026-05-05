@@ -17,6 +17,9 @@ POLL_INTERVAL = 1.0  # seconds
 
 class ClipboardWatcher(BaseWatcher):
     name = "clipboard"
+    # Poll loop runs every POLL_INTERVAL=1s; if 5 minutes pass without the
+    # loop ticking, the watcher is silently stuck (not just "user didn't copy").
+    HEARTBEAT_TIMEOUT_SEC = 300.0
 
     def __init__(self, event_queue: queue.Queue, max_text_length: int = 2000, dedup_window_sec: int = 600):
         super().__init__(event_queue)
@@ -46,6 +49,9 @@ class ClipboardWatcher(BaseWatcher):
                     text = pb.stringForType_(NSPasteboardTypeString)
                     if text and isinstance(text, str):
                         self._handle_copy(text)
+                # Always beat once per poll, even when content didn't change —
+                # idle clipboard is the dominant case and must not look dead.
+                self.beat()
             except Exception as e:
                 logger.error(f"ClipboardWatcher error: {e}")
             time.sleep(POLL_INTERVAL)

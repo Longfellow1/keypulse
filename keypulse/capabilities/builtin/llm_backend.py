@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
 from keypulse.capabilities.base import Capability, CheckResult, HealthState, Signal
 from keypulse.capabilities.builtin._common import now_ts, truthy_env
 from keypulse.config import Config
@@ -10,12 +14,18 @@ class LLMBackendCapability(Capability):
     name = "llm_backend"
     level_when_failed = "warn"
     label_when_failed = "LLM 异常"
-    error_codes = {"llm_no_key", "llm_invalid_key", "llm_timeout"}
+    error_codes = {
+        "llm_no_key",
+        "llm_invalid_key",
+        "llm_timeout",
+        "llm_circuit_open",
+    }
 
     _HINTS = {
         "llm_no_key": "LLM API key 未配置，请前往 ~/.keypulse/secrets.env 配置",
         "llm_invalid_key": "LLM API key 失效或余额不足，请检查",
         "llm_timeout": "LLM 调用超时，请检查网络",
+        "llm_circuit_open": "LLM 后端连续失败，已暂停调用进入冷却",
     }
 
     _REQUIRE_CLOUD_PROFILES = {"cloud-first", "cloud-only", "auto"}
@@ -29,12 +39,72 @@ class LLMBackendCapability(Capability):
             return False
         return str(cfg.model.cloud.kind or "") == "openai_compatible"
 
+    def _load_gateway_state(self, cfg: Config) -> dict:
+        path = Path(str(cfg.model.state_path or "")).expanduser()
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _active_circuit(self, gateway_state: dict) -> tuple[str, dict] | None:
+        """Return (backend_name, entry) for the most-tripped active circuit, or None."""
+        circuits = gateway_state.get("short_circuits")
+        if not isinstance(circuits, dict):
+            return None
+        now = datetime.now(timezone.utc)
+        active: list[tuple[str, dict]] = []
+        for name, entry in circuits.items():
+            if not isinstance(entry, dict):
+                continue
+            until_str = str(entry.get("until") or "")
+            if not until_str:
+                continue
+            try:
+                until = datetime.fromisoformat(until_str)
+            except ValueError:
+                continue
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=timezone.utc)
+            if until > now:
+                active.append((name, entry))
+        if not active:
+            return None
+        # Pick the entry with the highest fail_count (worst offender).
+        active.sort(key=lambda item: int(item[1].get("fail_count") or 0), reverse=True)
+        return active[0]
+
+    def _circuit_hint(self, backend_name: str, entry: dict) -> str:
+        reason = str(entry.get("reason") or "unknown")
+        fail_count = int(entry.get("fail_count") or 0)
+        until = str(entry.get("until") or "")
+        return (
+            f"{backend_name} 后端连续失败 {fail_count} 次（{reason}），"
+            f"冷却中（恢复时间 {until}）"
+        )
+
     def _probe(self) -> CheckResult:
+        # 1. Legacy explicit error codes from old code paths take priority.
         code = self._state_code()
         if code in self._HINTS:
             return CheckResult(ok=False, code=code, hint=self._HINTS[code])
 
         cfg = Config.load()
+
+        # 2. Gateway circuit breaker tripped → real-time signal of unhealth.
+        gateway_state = self._load_gateway_state(cfg)
+        active = self._active_circuit(gateway_state)
+        if active is not None:
+            backend_name, entry = active
+            return CheckResult(
+                ok=False,
+                code="llm_circuit_open",
+                hint=self._circuit_hint(backend_name, entry),
+            )
+
+        # 3. No key configured for cloud-required profile.
         if self._needs_cloud_key(cfg):
             key_env = str(cfg.model.cloud.api_key_env or "").strip()
             if key_env and not truthy_env(key_env):
@@ -52,5 +122,5 @@ class LLMBackendCapability(Capability):
     def diagnose(self, state: HealthState) -> Signal:
         if state.ok:
             return Signal(level="ok", label="正常", hint="", action=None)
-        hint = self._HINTS.get(state.code, "LLM 调用异常，请稍后重试")
+        hint = state.detail or self._HINTS.get(state.code, "LLM 调用异常，请稍后重试")
         return Signal(level=self.level_when_failed, label=self.label_when_failed, hint=hint, action=None)

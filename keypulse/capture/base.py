@@ -97,6 +97,15 @@ class BaseWatcher(abc.ABC):
         self._last_emit_at_mono = time.monotonic()
         self._queue.put(event)
 
+    def beat(self) -> None:
+        """Signal liveness without emitting an event.
+
+        For poll-based watchers where 'no event emitted' is normal behavior
+        (clipboard idle, browser history quiet) — call this once per loop
+        iteration to distinguish 'alive but quiet' from 'silently stuck'.
+        """
+        self._last_emit_at_mono = time.monotonic()
+
     def is_heartbeat_dead(self, now_mono: Optional[float] = None) -> bool:
         """Return True if this watcher should be considered silently stuck.
 
