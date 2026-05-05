@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 import signal
+import subprocess
 import AppKit
 import objc
-from Foundation import NSTimer
+from Foundation import NSTimer, NSURL
 from WebKit import WKNavigationActionPolicyAllow, WKNavigationActionPolicyCancel, WKWebView, WKWebViewConfiguration
 
 # 内部模块依赖 (保持原样)
@@ -13,13 +14,16 @@ from keypulse.config import Config
 from keypulse.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
 from keypulse.hud.monitor_html import build_monitor_html
 from keypulse.hud.state import set_today_focus
-from keypulse.hud.summary import _status_symbol, build_hud_snapshot
+from keypulse.hud.summary import build_hud_snapshot
 from keypulse.store.db import init_db
 from keypulse.store.repository import get_state, insert_raw_event, set_state
 
 
-HUD_CONTENT_WIDTH = 280.0
-HUD_CONTENT_HEIGHT = 320.0
+HUD_CONTENT_WIDTH = 365.0
+HUD_CONTENT_HEIGHT_FALLBACK = 440.0  # used until WebView reports actual content height
+HUD_CONTENT_HEIGHT_MIN = 200.0
+HUD_CONTENT_HEIGHT_MAX = 900.0
+DAEMON_LAUNCHD_LABEL = "com.keypulse.daemon"
 
 class KeyPulseHUDApp(AppKit.NSObject):
     def initWithConfig_(self, cfg: Config):
@@ -27,12 +31,17 @@ class KeyPulseHUDApp(AppKit.NSObject):
         if self is None: return None
         self.cfg = cfg
         self.health = read_health()
-        self.snapshot = build_hud_snapshot(cfg, date_str="today")
         self.capture_status = str(get_state("status") or "running")
-        
+        self.snapshot = build_hud_snapshot(
+            cfg,
+            date_str="today",
+            capture_status=self.capture_status,
+            health_ok=self._compute_health_ok(),
+        )
+
         # 1. 状态栏 Item
         self.status_item = AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(AppKit.NSVariableStatusItemLength)
-        self._update_status_title()
+        self._install_status_icon()
         self.status_item.button().setTarget_(self)
         self.status_item.button().setAction_(objc.selector(self.togglePopover_, signature=b"v@:@"))
         
@@ -44,11 +53,21 @@ class KeyPulseHUDApp(AppKit.NSObject):
         
         return self
 
-    def _base_status_title(self) -> str:
-        return f"{_status_symbol(self.capture_status)} {self.snapshot.effective_count}"
-
-    def _status_title(self) -> str:
-        return f"{health_status_emoji(self.health)} · {self._base_status_title()}"
+    def _install_status_icon(self) -> None:
+        """状态栏 icon：本本 + 笔（SF Symbol，模板图标，自动适配深浅色）。"""
+        button = self.status_item.button()
+        button.setTitle_("")
+        image = None
+        if hasattr(AppKit.NSImage, "imageWithSystemSymbolName_accessibilityDescription_"):
+            image = AppKit.NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+                "square.and.pencil", "KeyPulse"
+            )
+        if image is None:
+            image = AppKit.NSImage.imageNamed_("NSActionTemplate")
+        if image is not None:
+            image.setTemplate_(True)
+            button.setImage_(image)
+            button.setImagePosition_(AppKit.NSImageOnly)
 
     def _health_label(self) -> str:
         if not isinstance(self.health, dict):
@@ -69,37 +88,51 @@ class KeyPulseHUDApp(AppKit.NSObject):
             alerts = ["No alert details were provided."]
         return ("Health: Alert", "\n".join(f"• {item}" for item in alerts))
 
-    def _update_status_title(self):
-        self.status_item.button().setTitle_(self._status_title())
+    def _compute_health_ok(self) -> bool:
+        return isinstance(self.health, dict) and health_status_emoji(self.health) == "🟢"
 
     def _health_ok(self) -> bool:
-        return isinstance(self.health, dict) and health_status_emoji(self.health) == "🟢"
+        return self._compute_health_ok()
 
     def refresh_status(self):
         self.health = read_health()
         self.capture_status = str(get_state("status") or "running")
-        self._update_status_title()
 
     def _refresh_content(self):
-        self.snapshot = build_hud_snapshot(self.cfg, date_str="today")
+        self.snapshot = build_hud_snapshot(
+            self.cfg,
+            date_str="today",
+            capture_status=self.capture_status,
+            health_ok=self._compute_health_ok(),
+        )
         if self.popover.isShown():
+            self._measured_height = None
             view = self._build_full_home_view()
             self.popover_vc.setView_(view)
-            self.popover.setContentSize_(self._content_size())
 
     # --- 核心 UI 模块 ---
 
     def _content_size(self):
-        return AppKit.NSMakeSize(HUD_CONTENT_WIDTH, HUD_CONTENT_HEIGHT)
+        height = getattr(self, "_measured_height", None) or HUD_CONTENT_HEIGHT_FALLBACK
+        return AppKit.NSMakeSize(HUD_CONTENT_WIDTH, float(height))
 
     def _build_full_home_view(self):
-        frame = AppKit.NSMakeRect(0.0, 0.0, HUD_CONTENT_WIDTH, HUD_CONTENT_HEIGHT)
+        height = getattr(self, "_measured_height", None) or HUD_CONTENT_HEIGHT_FALLBACK
+        frame = AppKit.NSMakeRect(0.0, 0.0, HUD_CONTENT_WIDTH, float(height))
         config = WKWebViewConfiguration.alloc().init()
         webview = WKWebView.alloc().initWithFrame_configuration_(frame, config)
         webview.setNavigationDelegate_(self)
         webview.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
         if hasattr(webview, "setDrawsBackground_"):
             webview.setDrawsBackground_(False)
+        # Hide WKWebView's own scrollers — we resize the popover to fit content.
+        try:
+            scroll_view = webview.scrollView() if hasattr(webview, "scrollView") else None
+            if scroll_view is not None:
+                scroll_view.setHasVerticalScroller_(False)
+                scroll_view.setHasHorizontalScroller_(False)
+        except Exception:
+            pass
         html = build_monitor_html(
             self.snapshot,
             capture_status=self.capture_status,
@@ -109,17 +142,72 @@ class KeyPulseHUDApp(AppKit.NSObject):
         self.webview = webview
         return webview
 
-    def _handle_keypulse_action(self, action: str):
+    def webView_didFinishNavigation_(self, webview, _navigation):
+        # First measurement after the HTML has rendered.
+        self._measure_and_resize()
+
+    def _measure_and_resize(self) -> None:
+        if not hasattr(self, "webview") or self.webview is None:
+            return
+        def _on_result(value, _err):
+            if value is None:
+                return
+            try:
+                height = float(value)
+            except (TypeError, ValueError):
+                return
+            height = max(HUD_CONTENT_HEIGHT_MIN, min(height, HUD_CONTENT_HEIGHT_MAX))
+            current = getattr(self, "_measured_height", None)
+            if current is not None and abs(current - height) < 1.0:
+                return
+            self._measured_height = height
+            if self.popover.isShown():
+                size = self._content_size()
+                self.popover_vc.setPreferredContentSize_(size)
+                self.popover.setContentSize_(size)
+        try:
+            self.webview.evaluateJavaScript_completionHandler_(
+                "Math.ceil(document.documentElement.scrollHeight)",
+                _on_result,
+            )
+        except Exception:
+            pass
+
+    def _handle_keypulse_action(self, action: str, params: dict[str, str] | None = None):
+        params = params or {}
         if action == "save-thought":
             self.saveThought_(None)
-        elif action == "set-intent":
+        elif action in {"set-intent", "edit-today-focus"}:
             self.setFocus_(None)
+        elif action == "save-today-focus":
+            self._save_today_focus(params.get("v", ""))
         elif action == "toggle-pause":
             self.togglePause_(None)
+        elif action == "restart-daemon":
+            self.restartDaemon_(None)
         elif action == "show-health":
             self.showHealth_(None)
+        elif action == "open-url":
+            url_str = params.get("u", "")
+            if url_str:
+                ns_url = NSURL.URLWithString_(url_str)
+                if ns_url is not None:
+                    AppKit.NSWorkspace.sharedWorkspace().openURL_(ns_url)
         elif action == "quit":
-            self.terminate_(None)
+            self.confirmQuit_(None)
+        elif action == "resize":
+            try:
+                height = float(params.get("h", "0"))
+            except ValueError:
+                return
+            if height <= 0:
+                return
+            height = max(HUD_CONTENT_HEIGHT_MIN, min(height, HUD_CONTENT_HEIGHT_MAX))
+            self._measured_height = height
+            if self.popover.isShown():
+                size = self._content_size()
+                self.popover_vc.setPreferredContentSize_(size)
+                self.popover.setContentSize_(size)
 
     def webView_decidePolicyForNavigationAction_decisionHandler_(self, _webview, navigation_action, decision_handler):
         url = navigation_action.request().URL()
@@ -128,10 +216,21 @@ class KeyPulseHUDApp(AppKit.NSObject):
             path = str(url.path() or "")
             if host == "action":
                 action = path.lstrip("/")
-                self._handle_keypulse_action(action)
+                params = self._parse_query(url)
+                self._handle_keypulse_action(action, params)
             decision_handler(WKNavigationActionPolicyCancel)
             return
         decision_handler(WKNavigationActionPolicyAllow)
+
+    @staticmethod
+    def _parse_query(url) -> dict[str, str]:
+        from urllib.parse import parse_qsl
+        query = str(url.query() or "")
+        return dict(parse_qsl(query, keep_blank_values=True))
+
+    def _save_today_focus(self, value: str):
+        set_today_focus(value)
+        self.refresh()
 
     # --- Actions (保持逻辑，优化交互) ---
 
@@ -180,11 +279,13 @@ class KeyPulseHUDApp(AppKit.NSObject):
     def setFocus_(self, _sender):
         self.popover.performClose_(None)
         alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("🎯 设置今日意图")
-        field = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, 240, 24))
+        alert.setMessageText_("✦ 今日重要的事儿")
+        alert.setInformativeText_("写下今天最想完成的一件事")
+        field = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, 280, 24))
         field.setStringValue_(self.snapshot.today_focus or "")
         alert.setAccessoryView_(field)
-        alert.addButtonWithTitle_("确定")
+        alert.addButtonWithTitle_("保存")
+        alert.addButtonWithTitle_("取消")
         if alert.runModal() == AppKit.NSAlertFirstButtonReturn:
             set_today_focus(field.stringValue())
             self.refresh()
@@ -197,8 +298,43 @@ class KeyPulseHUDApp(AppKit.NSObject):
         self.popover.performClose_(None)
 
     @objc.IBAction
+    def restartDaemon_(self, _sender):
+        self.popover.performClose_(None)
+        alert = AppKit.NSAlert.alloc().init()
+        alert.setMessageText_("重启 KeyPulse daemon？")
+        alert.setInformativeText_("会短暂中断采集，几秒后自动恢复")
+        alert.addButtonWithTitle_("重启")
+        alert.addButtonWithTitle_("取消")
+        if alert.runModal() != AppKit.NSAlertFirstButtonReturn:
+            return
+        target = f"gui/{os.getuid()}/{DAEMON_LAUNCHD_LABEL}"
+        try:
+            subprocess.Popen(
+                ["launchctl", "kickstart", "-k", target],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as exc:
+            err = AppKit.NSAlert.alloc().init()
+            err.setMessageText_("重启失败")
+            err.setInformativeText_(str(exc))
+            err.addButtonWithTitle_("OK")
+            err.runModal()
+
+    @objc.IBAction
     def terminate_(self, _sender):
         AppKit.NSApp.terminate_(None)
+
+    @objc.IBAction
+    def confirmQuit_(self, _sender):
+        self.popover.performClose_(None)
+        alert = AppKit.NSAlert.alloc().init()
+        alert.setMessageText_("退出 KeyPulse HUD？")
+        alert.setInformativeText_("HUD 退出后状态栏图标会消失，后台采集 daemon 继续运行。")
+        alert.addButtonWithTitle_("退出")
+        alert.addButtonWithTitle_("取消")
+        if alert.runModal() == AppKit.NSAlertFirstButtonReturn:
+            AppKit.NSApp.terminate_(None)
 
 # --- 启动器 (彻底解决 Ctrl+C 不响应问题) ---
 

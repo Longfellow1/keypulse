@@ -8,13 +8,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from keypulse.capabilities.registry import get_default_registry
+from keypulse.capabilities.store import load_states, load_states_raw
 from keypulse.config import Config
-from keypulse.health.report import write_health_report
+from keypulse.health.report import HEALTH_JSON_PATH, write_health_report
 from keypulse.store.db import get_conn, init_db
 
 
 HEALTH_SCHEMA_VERSION = 1
-HEALTH_JSON_PATH = Path.home() / ".keypulse" / "health.json"
 DAEMON_LABEL = "com.keypulse.daemon"
 LOGGER = logging.getLogger(__name__)
 
@@ -240,6 +241,8 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
             }
         )
 
+    capabilities_snapshot, capture_error_code, llm_error_code, paused_flag = _capabilities_snapshot()
+
     result = {
         "schema_version": HEALTH_SCHEMA_VERSION,
         "checked_at": checked_at.isoformat(),
@@ -262,6 +265,42 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
             "last_daily_file_date": sync_last_date,
         },
         "alerts": alerts,
+        "capabilities": capabilities_snapshot,
+        "capture_error_code": capture_error_code,
+        "llm_error_code": llm_error_code,
+        "paused": paused_flag,
     }
     write_health_report(HEALTH_JSON_PATH, result)
     return result
+
+
+def _capabilities_snapshot() -> tuple[dict[str, Any], str, str, bool]:
+    """Read latest capability states from the state repo and derive compat fields.
+
+    Returns (capabilities_dict, capture_error_code, llm_error_code, paused).
+    Falls back to ({}, "", "", False) on any error so health report generation
+    never fails because of capability bugs.
+    """
+    from keypulse.store.repository import get_state
+
+    try:
+        capabilities_raw = load_states_raw()
+        states = load_states()
+    except Exception:
+        return {}, "", "", False
+
+    registry = get_default_registry()
+    compat_capture = {"appkit_runtime", "accessibility_permission", "clipboard_watcher"}
+    compat_llm = {"llm_backend"}
+
+    capture_failure = registry.select_failure(states, names=compat_capture) if states else None
+    llm_failure = registry.select_failure(states, names=compat_llm) if states else None
+    capture_code = "" if capture_failure is None else capture_failure.state.code
+    llm_code = "" if llm_failure is None else llm_failure.state.code
+
+    try:
+        paused = str(get_state("status") or "running").strip() == "paused"
+    except Exception:
+        paused = False
+
+    return capabilities_raw, capture_code, llm_code, paused

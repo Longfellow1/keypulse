@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>KeyPulse HUD v1.1 — 布局选型</title>
+<style>
+  :root {
+    --bg-page: #f0eef2;
+    --bg-card: #ffffff;
+    --bg-soft: #f5f5f7;
+    --bg-input: #fafafa;
+    --text-primary: #1c1c1e;
+    --text-secondary: #48484a;
+    --text-tertiary: #8e8e93;
+    --border: #e5e5e7;
+    --border-strong: #d1d1d6;
+    --green: #34c759;
+    --yellow: #ff9f0a;
+    --red: #ff3b30;
+    --gray: #8e8e93;
+    --blue: #0a84ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', sans-serif;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+  body { padding: 40px 24px 80px; }
+  h1 { font-size: 22px; font-weight: 600; text-align: center; margin-bottom: 8px; }
+  .sub { text-align: center; color: var(--text-secondary); font-size: 13px; margin-bottom: 36px; }
+
+  .compare {
+    display: flex;
+    gap: 56px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .col { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+  .col-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .col-desc { font-size: 12px; color: var(--text-tertiary); max-width: 380px; text-align: center; line-height: 1.55; }
+
+  .mock-row { display: flex; gap: 18px; align-items: flex-start; margin-top: 8px; }
+  .mock-label { font-size: 11px; color: var(--text-tertiary); margin-top: 8px; text-align: center; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  /* ───────────── 通用 HUD 容器 ───────────── */
+  .hud {
+    width: 365px;
+    background: var(--bg-card);
+    border: 0.5px solid var(--border-strong);
+    border-radius: 14px;
+    overflow: hidden;
+    color: var(--text-primary);
+    box-shadow: 0 12px 36px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06);
+  }
+
+  /* Header */
+  .hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px 14px;
+  }
+  .hdr-left { display: flex; align-items: center; gap: 9px; }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 3px rgba(52,199,89,0.15);
+  }
+  .dot.warn { background: var(--yellow); box-shadow: 0 0 0 3px rgba(255,159,10,0.18); }
+  .dot.err { background: var(--red); box-shadow: 0 0 0 3px rgba(255,59,48,0.18); }
+  .dot.gray { background: var(--gray); box-shadow: 0 0 0 3px rgba(142,142,147,0.15); }
+  .brand {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .status-pill {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 0.5px solid var(--border-strong);
+    color: var(--text-secondary);
+    background: var(--bg-soft);
+  }
+  .status-pill.warn { color: #b05d00; border-color: #f0c98a; background: #fff5e6; }
+  .status-pill.err { color: #b00020; border-color: #f0a8a8; background: #ffeaea; }
+  .status-pill.gray { color: var(--text-tertiary); }
+
+  /* 异常指引 */
+  .hint-bar {
+    margin: 0 18px 12px;
+    padding: 8px 11px;
+    background: #fff5e6;
+    border: 0.5px solid #f0c98a;
+    border-radius: 8px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #7a4500;
+  }
+  .hint-bar code {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    background: rgba(0,0,0,0.05);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* 今日重要的事儿 输入卡 */
+  .today-card {
+    margin: 0 18px 14px;
+    padding: 12px 13px;
+    background: var(--bg-input);
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+  }
+  .today-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .today-label::before {
+    content: '';
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--blue);
+  }
+  .today-input {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    line-height: 1.5;
+    min-height: 20px;
+  }
+  .today-input.filled { color: var(--text-primary); }
+
+  /* 数字网格 */
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    border-top: 0.5px solid var(--border);
+    border-bottom: 0.5px solid var(--border);
+  }
+  .stat {
+    padding: 13px 0 12px;
+    text-align: center;
+    border-right: 0.5px solid var(--border);
+  }
+  .stat:last-child { border-right: none; }
+  .stat-num {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .stat-num .delta { font-size: 11px; font-weight: 500; color: var(--green); margin-left: 2px; }
+  .stat-num .delta.down { color: var(--red); }
+  .stat-lbl {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 5px;
+    font-weight: 500;
+  }
+
+  /* 提示列表 */
+  .sugg {
+    padding: 14px 18px 10px;
+  }
+  .sugg-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .sugg-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    margin: 0 -10px;
+    border-radius: 8px;
+  }
+  .sugg-item:hover { background: var(--bg-soft); }
+  .sugg-icon {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    background: var(--bg-soft);
+    border: 0.5px solid var(--border);
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+  .sugg-text { flex: 1; min-width: 0; }
+  .sugg-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sugg-tags { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+  .tag {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: 20px;
+    background: var(--bg-soft);
+    color: var(--text-tertiary);
+    border: 0.5px solid var(--border);
+  }
+  .tag.green { background: #e8f7ee; color: #1a7a3d; border-color: #b8e0c8; }
+  .tag.blue { background: #e6f0fb; color: #1a5fa5; border-color: #b8d2ee; }
+
+  /* Footer 通用 */
+  .ftr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px 16px;
+    border-top: 0.5px solid var(--border);
+    gap: 10px;
+  }
+  .companion {
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .companion::before {
+    content: '✿';
+    color: #c8a4d4;
+    font-size: 12px;
+  }
+  .ftr-actions { display: flex; gap: 8px; }
+  .btn {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 7px 13px;
+    border-radius: 7px;
+    border: 0.5px solid var(--border-strong);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn:hover { background: var(--bg-soft); }
+  .btn .ico { font-size: 13px; line-height: 1; }
+
+  /* ───────────── 方案 B 专属：header 内 companion ───────────── */
+  .hdr-right { display: flex; align-items: center; gap: 12px; }
+  .hdr-companion {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .hdr-companion::before {
+    content: '✿';
+    color: #c8a4d4;
+  }
+
+  /* B 方案：底部输入区 */
+  .today-bar {
+    padding: 12px 18px 14px;
+    border-top: 0.5px solid var(--border);
+    background: linear-gradient(180deg, transparent, rgba(245,245,247,0.4));
+  }
+  .today-bar-input {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    background: var(--bg-card);
+    border: 0.5px solid var(--border-strong);
+    border-radius: 9px;
+  }
+  .today-bar-input::before {
+    content: '✦';
+    color: var(--blue);
+    font-size: 13px;
+  }
+  .today-bar-text {
+    flex: 1;
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+  }
+  .today-bar-text.filled { color: var(--text-primary); }
+  .today-bar-edit {
+    font-size: 11px;
+    color: var(--blue);
+    cursor: pointer;
+  }
+
+  /* 状态栏 icon 预览 */
+  .menubar-preview {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: linear-gradient(180deg, #f7f7f9, #e8e8eb);
+    border: 0.5px solid var(--border-strong);
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 28px;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .menubar-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+  }
+
+  /* 异常态副本说明 */
+  .variant-cap {
+    font-size: 10.5px;
+    color: var(--text-tertiary);
+    text-align: center;
+    margin-top: 6px;
+    letter-spacing: 0.04em;
+  }
+
+  .divider {
+    width: 1px;
+    background: var(--border-strong);
+    align-self: stretch;
+    margin: 0 12px;
+  }
+
+  .legend {
+    margin: 48px auto 0;
+    max-width: 880px;
+    padding: 18px 22px;
+    background: var(--bg-card);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+  .legend h3 { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+  .legend ul { margin-left: 18px; }
+  .legend code {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 11.5px;
+    background: var(--bg-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+
+<h1>KeyPulse HUD v1.1 — 布局选型</h1>
+<p class="sub">两个方案差异在「今日重要的事儿」与「陪伴 N 天」的位置 — 决定 HUD 第一眼气质。</p>
+
+<!-- 状态栏 icon 预览 -->
+<div class="menubar-preview">
+  <span>状态栏 icon：</span>
+  <span class="menubar-icon">
+    <!-- 本本 + 笔 SVG -->
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2.5" y="2" width="9" height="13" rx="1.2" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="4.5" y1="5" x2="9.5" y2="5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+      <line x1="4.5" y1="7.5" x2="9.5" y2="7.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+      <line x1="4.5" y1="10" x2="7.5" y2="10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+      <path d="M11.5 11.5 L14.5 8.5 L15.7 9.7 L12.7 12.7 L10.8 13.4 Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="white"/>
+    </svg>
+  </span>
+  <span>正在记录的本本 + 一支笔（macOS 模板图标，自动适配深浅色）</span>
+</div>
+
+<div class="compare">
+
+  <!-- ════════════ 方案 A ════════════ -->
+  <div class="col">
+    <div class="col-title">方案 A · 内容流</div>
+    <div class="col-desc">「今日重要的事儿」置顶为 hero，强引导用户写下重点；陪伴 N 天放底栏，告别区点缀陪伴感。</div>
+
+    <div class="mock-row">
+
+      <!-- A · 正常态 -->
+      <div>
+        <div class="hud">
+          <!-- Header -->
+          <div class="hdr">
+            <div class="hdr-left">
+              <span class="dot"></span>
+              <span class="brand">KeyPulse</span>
+            </div>
+            <span class="status-pill">正常</span>
+          </div>
+
+          <!-- 今日重要的事儿 -->
+          <div class="today-card">
+            <div class="today-label">今日重要的事儿</div>
+            <div class="today-input filled">把 HUD v1.1 视觉对齐设计稿</div>
+          </div>
+
+          <!-- 数字 -->
+          <div class="stats">
+            <div class="stat"><div class="stat-num">48 <span class="delta down">↓410</span></div><div class="stat-lbl">有效</div></div>
+            <div class="stat"><div class="stat-num">13 <span class="delta down">↓27</span></div><div class="stat-lbl">过滤</div></div>
+            <div class="stat"><div class="stat-num">3</div><div class="stat-lbl">主题</div></div>
+            <div class="stat"><div class="stat-num">1 <span class="delta">↑1</span></div><div class="stat-lbl">标记</div></div>
+          </div>
+
+          <!-- 提示 -->
+          <div class="sugg">
+            <div class="sugg-header">今日提示</div>
+            <div class="sugg-item">
+              <div class="sugg-icon">C</div>
+              <div class="sugg-text">
+                <div class="sugg-title">C_Agents 当前状态 + 下一步 Brief</div>
+                <div class="sugg-tags"><span class="tag green">可复用</span><span class="tag blue">新信息</span></div>
+              </div>
+            </div>
+            <div class="sugg-item">
+              <div class="sugg-icon">f</div>
+              <div class="sugg-text">
+                <div class="sugg-title">templ 模板文件状态梳理</div>
+                <div class="sugg-tags"><span class="tag green">可复用</span></div>
+              </div>
+            </div>
+            <div class="sugg-item">
+              <div class="sugg-icon">#</div>
+              <div class="sugg-text">
+                <div class="sugg-title">菜单栏 HUD 要不要独立成软件？</div>
+                <div class="sugg-tags"><span class="tag">高密度</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="ftr">
+            <span class="companion">和你一起记录的第 5 天</span>
+            <div class="ftr-actions">
+              <button class="btn"><span class="ico">↻</span>重启</button>
+              <button class="btn"><span class="ico">⏸</span>暂停</button>
+            </div>
+          </div>
+        </div>
+        <div class="variant-cap">正常态</div>
+      </div>
+
+      <!-- A · LLM 异常 -->
+      <div>
+        <div class="hud">
+          <div class="hdr">
+            <div class="hdr-left">
+              <span class="dot warn"></span>
+              <span class="brand">KeyPulse</span>
+            </div>
+            <span class="status-pill warn">LLM 异常</span>
+          </div>
+
+          <div class="hint-bar">
+            LLM API key 失效或余额不足，请检查
+          </div>
+
+          <div class="today-card">
+            <div class="today-label">今日重要的事儿</div>
+            <div class="today-input">今天最想完成的一件事…</div>
+          </div>
+
+          <div class="stats">
+            <div class="stat"><div class="stat-num">48</div><div class="stat-lbl">有效</div></div>
+            <div class="stat"><div class="stat-num">13</div><div class="stat-lbl">过滤</div></div>
+            <div class="stat"><div class="stat-num">—</div><div class="stat-lbl">主题</div></div>
+            <div class="stat"><div class="stat-num">1</div><div class="stat-lbl">标记</div></div>
+          </div>
+
+          <div class="sugg">
+            <div class="sugg-header">今日提示</div>
+            <div class="sugg-item" style="opacity:0.55">
+              <div class="sugg-icon">⏳</div>
+              <div class="sugg-text">
+                <div class="sugg-title">LLM 服务恢复后将重新生成提示</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ftr">
+            <span class="companion">和你一起记录的第 5 天</span>
+            <div class="ftr-actions">
+              <button class="btn"><span class="ico">↻</span>重启</button>
+              <button class="btn"><span class="ico">⏸</span>暂停</button>
+            </div>
+          </div>
+        </div>
+        <div class="variant-cap">LLM 异常态</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 方案 B ════════════ -->
+  <div class="col">
+    <div class="col-title">方案 B · 数据优先</div>
+    <div class="col-desc">陪伴 N 天上移到 header（每次打开第一眼有陪伴感）；数据 + 提示置顶；「今日重要的事儿」作为底部输入条，常驻但不抢戏。</div>
+
+    <div class="mock-row">
+
+      <!-- B · 正常态 -->
+      <div>
+        <div class="hud">
+          <!-- Header（含 companion） -->
+          <div class="hdr">
+            <div class="hdr-left">
+              <span class="dot"></span>
+              <span class="brand">KeyPulse</span>
+            </div>
+            <div class="hdr-right">
+              <span class="hdr-companion">第 5 天</span>
+              <span class="status-pill">正常</span>
+            </div>
+          </div>
+
+          <div class="stats">
+            <div class="stat"><div class="stat-num">48 <span class="delta down">↓410</span></div><div class="stat-lbl">有效</div></div>
+            <div class="stat"><div class="stat-num">13 <span class="delta down">↓27</span></div><div class="stat-lbl">过滤</div></div>
+            <div class="stat"><div class="stat-num">3</div><div class="stat-lbl">主题</div></div>
+            <div class="stat"><div class="stat-num">1 <span class="delta">↑1</span></div><div class="stat-lbl">标记</div></div>
+          </div>
+
+          <div class="sugg">
+            <div class="sugg-header">今日提示</div>
+            <div class="sugg-item">
+              <div class="sugg-icon">C</div>
+              <div class="sugg-text">
+                <div class="sugg-title">C_Agents 当前状态 + 下一步 Brief</div>
+                <div class="sugg-tags"><span class="tag green">可复用</span><span class="tag blue">新信息</span></div>
+              </div>
+            </div>
+            <div class="sugg-item">
+              <div class="sugg-icon">f</div>
+              <div class="sugg-text">
+                <div class="sugg-title">templ 模板文件状态梳理</div>
+                <div class="sugg-tags"><span class="tag green">可复用</span></div>
+              </div>
+            </div>
+            <div class="sugg-item">
+              <div class="sugg-icon">#</div>
+              <div class="sugg-text">
+                <div class="sugg-title">菜单栏 HUD 要不要独立成软件？</div>
+                <div class="sugg-tags"><span class="tag">高密度</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 今日重要的事儿（底部输入条） -->
+          <div class="today-bar">
+            <div class="today-bar-input">
+              <span class="today-bar-text filled">把 HUD v1.1 视觉对齐设计稿</span>
+              <span class="today-bar-edit">编辑</span>
+            </div>
+          </div>
+
+          <div class="ftr">
+            <span style="font-size:11.5px;color:var(--text-tertiary)">服务运行中</span>
+            <div class="ftr-actions">
+              <button class="btn"><span class="ico">↻</span>重启</button>
+              <button class="btn"><span class="ico">⏸</span>暂停</button>
+            </div>
+          </div>
+        </div>
+        <div class="variant-cap">正常态</div>
+      </div>
+
+      <!-- B · LLM 异常 -->
+      <div>
+        <div class="hud">
+          <div class="hdr">
+            <div class="hdr-left">
+              <span class="dot warn"></span>
+              <span class="brand">KeyPulse</span>
+            </div>
+            <div class="hdr-right">
+              <span class="hdr-companion">第 5 天</span>
+              <span class="status-pill warn">LLM 异常</span>
+            </div>
+          </div>
+
+          <div class="hint-bar">
+            LLM API key 失效或余额不足，请检查
+          </div>
+
+          <div class="stats">
+            <div class="stat"><div class="stat-num">48</div><div class="stat-lbl">有效</div></div>
+            <div class="stat"><div class="stat-num">13</div><div class="stat-lbl">过滤</div></div>
+            <div class="stat"><div class="stat-num">—</div><div class="stat-lbl">主题</div></div>
+            <div class="stat"><div class="stat-num">1</div><div class="stat-lbl">标记</div></div>
+          </div>
+
+          <div class="sugg">
+            <div class="sugg-header">今日提示</div>
+            <div class="sugg-item" style="opacity:0.55">
+              <div class="sugg-icon">⏳</div>
+              <div class="sugg-text">
+                <div class="sugg-title">LLM 服务恢复后将重新生成提示</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="today-bar">
+            <div class="today-bar-input">
+              <span class="today-bar-text">今天最想完成的一件事…</span>
+              <span class="today-bar-edit">写下</span>
+            </div>
+          </div>
+
+          <div class="ftr">
+            <span style="font-size:11.5px;color:#b05d00">部分功能受影响</span>
+            <div class="ftr-actions">
+              <button class="btn"><span class="ico">↻</span>重启</button>
+              <button class="btn"><span class="ico">⏸</span>暂停</button>
+            </div>
+          </div>
+        </div>
+        <div class="variant-cap">LLM 异常态</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 共同约定 -->
+<div class="legend">
+  <h3>两方案共同约定</h3>
+  <ul>
+    <li><strong>状态栏 icon</strong>：本本 + 一支正在写字的笔（模板图标，自动适配深浅色）</li>
+    <li><strong>灯色</strong>：<span style="color:#1a7a3d">●绿</span> 正常 · <span style="color:#b05d00">●黄</span> LLM 异常 / 未配置 · <span style="color:#b00020">●红</span> 采集异常 / 数据异常 · <span style="color:#666">●灰</span> 已暂停</li>
+    <li><strong>状态文本</strong>（带框胶囊）：正常 / LLM 异常 / 采集异常 / 数据异常 / 待配置 / 已暂停</li>
+    <li><strong>异常一句话指引</strong>（精简版）：
+      <ul style="margin-left:18px;margin-top:4px">
+        <li>LLM API key 未配置，请前往 <code>~/.keypulse/secrets.env</code> 配置</li>
+        <li>LLM API key 失效或余额不足，请检查</li>
+        <li>LLM 调用超时，请检查网络</li>
+        <li>输入监控权限不足，请前往系统设置 → 隐私 → 输入监控</li>
+      </ul>
+    </li>
+    <li><strong>底部按钮</strong>：重启（二次确认 → 调 launchctl kickstart）+ 暂停</li>
+    <li><strong>宽度</strong>：280 → 365px（+30%），三条提示标题不回行</li>
+    <li><strong>字重</strong>：品牌/数字 600，正文 500，辅助 500，整体颜色加深</li>
+  </ul>
+</div>
+
+</body>
+</html>

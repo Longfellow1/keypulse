@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
+from keypulse.health.report import HEALTH_JSON_PATH, read_health_report
 
-HEALTH_JSON_PATH = Path("~/.keypulse/health.json").expanduser()
 _FRESHNESS_WINDOW = timedelta(minutes=20)
 
 
@@ -14,13 +12,8 @@ def read_health() -> dict | None:
 
     Missing, unreadable, or malformed files resolve to None.
     """
-    if not HEALTH_JSON_PATH.exists():
-        return None
-    try:
-        payload = json.loads(HEALTH_JSON_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return payload if isinstance(payload, dict) else None
+    payload = read_health_report(HEALTH_JSON_PATH)
+    return payload or None
 
 
 def _parse_checked_at(value: object) -> datetime | None:
