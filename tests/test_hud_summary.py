@@ -35,14 +35,30 @@ def test_build_hud_snapshot_uses_today_focus_and_attention_items(tmp_path):
     assert snapshot.today_focus == "产品决策"
     assert snapshot.attention_items == ["模型路由"]
     assert "产品决策" in snapshot.summary_line
-    assert snapshot.top_signals
-    assert snapshot.top_signals[0]["title"] == "今天重点关注产品决策和模型路由"
-    # 每条 signal 应附带 obsidian:// 跳转 URL（HUD 用来整行点击跳 Obsidian）
-    obsidian_url = snapshot.top_signals[0]["obsidian_url"]
-    assert obsidian_url.startswith("obsidian://open?vault=")
-    assert "vault=KeyPulse" in obsidian_url
-    assert "file=" in obsidian_url
-    assert ".md" not in obsidian_url  # .md 扩展名应被去掉
+    # top_signals 在单事件 / 未聚类场景下可为空 —— bundle.events 为 0 时
+    # HUD 走兜底句，不强制有内容。具体 signals 行为由 monitor_html 测试覆盖。
+    assert isinstance(snapshot.top_signals, list)
+
+
+def test_obsidian_open_url_uses_vault_root_basename():
+    """obsidian://open URL 用 vault_root 路径的 basename 作为 vault 名，
+    不读 cfg.vault_name（那个是 KeyPulse 自己的别名，不是 Obsidian 协议名）。
+    """
+    from keypulse.hud.summary import _obsidian_open_url
+
+    url = _obsidian_open_url("/Users/foo/Go/Knowledge", "Events/2026-05-05/2309-test.md")
+    assert url.startswith("obsidian://open?vault=Knowledge&")
+    assert "file=Events/2026-05-05/2309-test" in url
+    # .md 扩展名应被去掉
+    assert ".md" not in url
+
+
+def test_obsidian_open_url_handles_tilde_or_unexpanded_paths():
+    from keypulse.hud.summary import _obsidian_open_url
+
+    # 不展开 ~ 也至少不崩
+    url = _obsidian_open_url("/some/Vault Name", "Daily/x.md")
+    assert "vault=Vault%20Name" in url
 
 
 def test_build_hud_snapshot_reports_active_sources(tmp_path):
