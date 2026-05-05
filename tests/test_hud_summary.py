@@ -61,6 +61,60 @@ def test_obsidian_open_url_handles_tilde_or_unexpanded_paths():
     assert "vault=Vault%20Name" in url
 
 
+def test_obsidian_open_url_with_heading_anchor():
+    from keypulse.hud.summary import _obsidian_open_url
+
+    url = _obsidian_open_url(
+        "/v/Knowledge",
+        "Daily/2026-05-05.md",
+        heading="凌晨访问pairdrop网站 · 5m",
+    )
+    # # 号被 percent-encoded，heading 文本保留
+    assert "Daily/2026-05-05%23" in url
+    assert "%E5%87%8C%E6%99%A8" in url  # "凌晨..." 中文编码
+
+
+def test_parse_daily_topics_extracts_h3_under_main_section():
+    from keypulse.hud.summary import _parse_daily_topics
+
+    body = """# 2026-05-05
+
+## 今日主线
+
+> 主战场是 凌晨访问pairdrop网站。
+
+### 凌晨访问pairdrop网站 · 5m（22:48–22:53）
+
+- 事件 1
+- 事件 2
+
+### 写周报方案 · 30m（23:00–23:30）
+
+- 事件 3
+
+### 碎片汇总 · 2m
+
+> 11 个零散片段
+
+## 今天涉及的主题
+
+- topic A
+"""
+    topics = _parse_daily_topics(body)
+
+    assert len(topics) == 2  # 碎片汇总 被过滤
+    assert topics[0][0] == "凌晨访问pairdrop网站"
+    assert topics[0][1].startswith("凌晨访问pairdrop网站 · 5m")
+    assert topics[1][0] == "写周报方案"
+
+
+def test_parse_daily_topics_returns_empty_when_no_main_section():
+    from keypulse.hud.summary import _parse_daily_topics
+
+    assert _parse_daily_topics("") == []
+    assert _parse_daily_topics("# 标题\n\n## 别的段\n\n### foo\n") == []
+
+
 def test_build_hud_snapshot_reports_active_sources(tmp_path):
     db_path = tmp_path / "hud.db"
     cfg = Config.model_validate(

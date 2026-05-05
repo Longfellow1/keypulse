@@ -143,20 +143,22 @@ def _hint_bar(hint: str, action: str = "") -> str:
 
 
 def _today_card(today_focus: str) -> str:
-    """点击整张卡 → 弹出系统输入框（NSAlert）—— 避免 popover 内 inline input
-    被 IME 候选框遮挡的 macOS 渲染层级问题。
-
-    已写过的 today_focus 直接当主角显示；没写过时显示一行温和提示。
-    """
-    href = "keypulse://action/edit-today-focus"
-    if today_focus:
-        body = f'<div class="today-text filled">{escape(today_focus)}</div>'
-    else:
-        body = '<div class="today-text empty">今天最想完成的一件事，点这里写下来 →</div>'
+    """Inline input 直接前台输入；已写过的内容当主角显示，没有 label。"""
+    value_attr = f' value="{escape(today_focus, quote=True)}"' if today_focus else ""
+    filled_cls = " filled" if today_focus else ""
     return f"""
-      <a class="today-card" href="{href}">
-        {body}
-      </a>
+      <div class="today-card">
+        <span class="today-mark">✦</span>
+        <input
+          id="todayFocus"
+          class="today-input{filled_cls}"
+          type="text"
+          placeholder="今天最想完成的一件事，回车保存"
+          autocomplete="off"
+          spellcheck="false"
+          {value_attr}
+        />
+      </div>
     """
 
 
@@ -272,41 +274,38 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     }}
     .hint-btn:hover {{ background: #ffd28a; }}
 
-    /* Today card: 点击弹 NSAlert, 避开 popover 内 IME 遮挡 */
+    /* Today card: inline input, 已写过的内容当主角，没有 label */
     .today-card {{
       display: flex;
       align-items: center;
       gap: 8px;
       margin: 0 18px 14px;
-      padding: 14px 14px;
+      padding: 12px 14px;
       background: var(--bg-input);
       border: 0.5px solid var(--border);
       border-radius: 10px;
-      cursor: pointer;
-      transition: background 0.1s;
-      color: inherit;
     }}
-    .today-card::before {{
-      content: '✦';
+    .today-mark {{
       color: var(--blue);
       font-size: 14px;
       flex-shrink: 0;
     }}
-    .today-card:hover {{ background: #f0f0f3; }}
-    .today-text {{
+    .today-input {{
       flex: 1;
       font-size: 14px;
-      line-height: 1.45;
-      min-width: 0;
-    }}
-    .today-text.filled {{
       color: var(--text-primary);
-      font-weight: 500;
+      line-height: 1.45;
+      width: 100%;
+      border: none;
+      outline: none;
+      background: transparent;
+      padding: 0;
+      font-family: inherit;
+      -webkit-appearance: none;
     }}
-    .today-text.empty {{
-      color: var(--text-tertiary);
-      font-weight: 400;
-    }}
+    .today-input::placeholder {{ color: var(--text-tertiary); font-weight: 400; }}
+    .today-input.filled {{ font-weight: 500; }}
+    .today-input.saved-flash {{ color: var(--green); transition: color 0.6s; }}
 
     /* Stats grid */
     .stats {{
@@ -485,6 +484,26 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
   </div>
   <script>
     (function() {{
+      // Inline input: 回车 / 失焦保存 today_focus
+      var input = document.getElementById('todayFocus');
+      if (input) {{
+        var lastSaved = input.value || '';
+        function save() {{
+          var v = input.value.trim();
+          if (v === lastSaved) return;
+          lastSaved = v;
+          var url = 'keypulse://action/save-today-focus?v=' + encodeURIComponent(v);
+          window.location.href = url;
+          input.classList.add('saved-flash');
+          setTimeout(function() {{ input.classList.remove('saved-flash'); }}, 700);
+        }}
+        input.addEventListener('keydown', function(e) {{
+          if (e.key === 'Enter') {{ e.preventDefault(); input.blur(); save(); }}
+          if (e.key === 'Escape') {{ e.preventDefault(); input.value = lastSaved; input.blur(); }}
+        }});
+        input.addEventListener('blur', save);
+      }}
+
       // 点 HUD 任意非交互区域 → 关闭 popover
       document.addEventListener('click', function(e) {{
         var t = e.target;
