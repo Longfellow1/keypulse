@@ -37,6 +37,12 @@ def test_build_hud_snapshot_uses_today_focus_and_attention_items(tmp_path):
     assert "产品决策" in snapshot.summary_line
     assert snapshot.top_signals
     assert snapshot.top_signals[0]["title"] == "今天重点关注产品决策和模型路由"
+    # 每条 signal 应附带 obsidian:// 跳转 URL（HUD 用来整行点击跳 Obsidian）
+    obsidian_url = snapshot.top_signals[0]["obsidian_url"]
+    assert obsidian_url.startswith("obsidian://open?vault=")
+    assert "vault=KeyPulse" in obsidian_url
+    assert "file=" in obsidian_url
+    assert ".md" not in obsidian_url  # .md 扩展名应被去掉
 
 
 def test_build_hud_snapshot_reports_active_sources(tmp_path):

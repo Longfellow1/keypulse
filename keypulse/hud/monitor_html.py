@@ -53,7 +53,20 @@ def _signal_tags(reason: str) -> list[str]:
 def _signal_item(signal: dict[str, object]) -> str:
     title = str(signal.get("title") or "未命名提示")
     reason = str(signal.get("reason") or "")
+    obsidian_url = str(signal.get("obsidian_url") or "")
     tags = "".join(f'<span class="{_tag_class(tag)}">{escape(tag)}</span>' for tag in _signal_tags(reason))
+    if obsidian_url:
+        href = f"keypulse://action/open-url?u={quote(obsidian_url, safe='')}"
+        return f"""
+        <a class="sugg-item" href="{href}" title="在 Obsidian 中打开">
+          <div class="sugg-icon">{escape(_signal_icon(title))}</div>
+          <div class="sugg-text">
+            <div class="sugg-title">{escape(title)}</div>
+            <div class="sugg-tags">{tags}</div>
+          </div>
+          <div class="sugg-arrow">→</div>
+        </a>
+        """
     return f"""
         <div class="sugg-item">
           <div class="sugg-icon">{escape(_signal_icon(title))}</div>
@@ -65,16 +78,30 @@ def _signal_item(signal: dict[str, object]) -> str:
     """
 
 
-def _empty_signal_item() -> str:
+def _placeholder_signal_item() -> str:
     return """
-        <div class="sugg-item">
-          <div class="sugg-icon">#</div>
+        <div class="sugg-item placeholder">
+          <div class="sugg-icon">·</div>
           <div class="sugg-text">
-            <div class="sugg-title">今天还没有重点提示</div>
-            <div class="sugg-tags"><span class="tag">继续采集</span></div>
+            <div class="sugg-title">—</div>
           </div>
         </div>
     """
+
+
+def _empty_signal_block() -> str:
+    return """
+        <div class="sugg-empty">今天还没记下什么，晚点回来看看</div>
+    """
+
+
+def _render_signals(signals: list[dict[str, object]]) -> str:
+    if not signals:
+        return _empty_signal_block()
+    rendered = [_signal_item(signal) for signal in signals[:3]]
+    while len(rendered) < 3:
+        rendered.append(_placeholder_signal_item())
+    return "".join(rendered)
 
 
 def _status_pill_class(level: str) -> str:
@@ -137,7 +164,7 @@ def _today_card(today_focus: str) -> str:
 def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok: bool = True) -> str:
     is_running = capture_status != "paused"
     pause_label = "⏸ 暂停" if is_running else "▶ 恢复"
-    suggestions = "".join(_signal_item(signal) for signal in snapshot.top_signals[:3]) or _empty_signal_item()
+    suggestions = _render_signals(list(snapshot.top_signals))
     dot_cls = _dot_class(snapshot.service_status)
     pill_cls = _status_pill_class(snapshot.service_status)
 
@@ -293,7 +320,7 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     /* Stats grid */
     .stats {{
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       border-top: 0.5px solid var(--border);
       border-bottom: 0.5px solid var(--border);
     }}
@@ -331,13 +358,31 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     }}
     .sugg-item {{
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 10px;
       padding: 8px 10px;
       margin: 0 -10px;
       border-radius: 8px;
+      color: inherit;
     }}
-    .sugg-item:hover {{ background: var(--bg-soft); }}
+    a.sugg-item {{ cursor: pointer; }}
+    a.sugg-item:hover {{ background: var(--bg-soft); }}
+    a.sugg-item:hover .sugg-arrow {{ color: var(--text-secondary); }}
+    .sugg-item.placeholder {{ opacity: 0.35; pointer-events: none; }}
+    .sugg-item.placeholder .sugg-icon {{ background: transparent; border-color: transparent; }}
+    .sugg-arrow {{
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-left: 4px;
+    }}
+    .sugg-empty {{
+      padding: 14px 10px 6px;
+      margin: 0 -10px;
+      font-size: 12.5px;
+      color: var(--text-tertiary);
+      line-height: 1.5;
+    }}
     .sugg-icon {{
       width: 22px; height: 22px;
       border-radius: 6px;
@@ -429,14 +474,12 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     {_today_card(snapshot.today_focus)}
 
     <div class="stats">
-      {_stat_cell("有效", snapshot.effective_count, snapshot.effective_count_delta_vs_yesterday)}
-      {_stat_cell("过滤", snapshot.filtered_count, snapshot.filtered_count_delta_vs_yesterday)}
-      {_stat_cell("主题", snapshot.theme_count, snapshot.theme_count_delta_vs_yesterday)}
-      {_stat_cell("标记", snapshot.manual_marked_count, snapshot.manual_marked_count_delta_vs_yesterday)}
+      {_stat_cell("记下来", snapshot.effective_count, snapshot.effective_count_delta_vs_yesterday)}
+      {_stat_cell("丢掉了", snapshot.filtered_count, snapshot.filtered_count_delta_vs_yesterday)}
     </div>
 
     <div class="suggestions">
-      <div class="sugg-header">今日提示</div>
+      <div class="sugg-header">今天最新</div>
       {suggestions}
     </div>
 
