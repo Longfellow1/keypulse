@@ -102,6 +102,9 @@ def _parse_browser_output(stdout: str) -> tuple[str, str] | None:
 
 class BrowserWatcher(BaseWatcher):
     name = "browser"
+    # Browser tab polling — most cycles produce no event (URL unchanged).
+    # 5 minutes without a single tick = AppleScript hung or thread stuck.
+    HEARTBEAT_TIMEOUT_SEC = 300.0
 
     def __init__(
         self,
@@ -186,6 +189,8 @@ class BrowserWatcher(BaseWatcher):
                 event = self.capture_once()
                 if event is not None:
                     self.emit(event)
+                else:
+                    self.beat()
             except Exception as exc:
                 logger.error("BrowserWatcher error: %s", exc)
             time.sleep(self._poll_interval)

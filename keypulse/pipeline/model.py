@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -228,11 +229,28 @@ class ModelGateway:
         return [mapping[name] for name in self.backend_order(stage) if name in mapping]
 
     def _fallback_order(self, stage: str = "write") -> list[ModelBackend]:
-        return self._backend_candidates(stage)
+        # Skip backends currently short-circuited (failing fast for backoff window).
+        candidates = self._backend_candidates(stage)
+        result: list[ModelBackend] = []
+        for backend in candidates:
+            name = self._backend_name_from_obj(backend)
+            if name in {"cloud", "local"} and self._is_short_circuited(name):
+                continue
+            result.append(backend)
+        # If all are short-circuited, return them anyway — better to try a
+        # known-bad backend than to skip narrative entirely. Short-circuit
+        # state will get refreshed on the attempt.
+        return result or candidates
 
     def _backend_name_from_obj(self, backend: ModelBackend) -> str:
-        cloud = _model_backend_from_config(self._config.model.cloud)
-        local = _model_backend_from_config(self._config.model.local)
+        config = getattr(self, "_config", None)
+        if config is None:
+            return "unknown"
+        try:
+            cloud = _model_backend_from_config(config.model.cloud)
+            local = _model_backend_from_config(config.model.local)
+        except AttributeError:
+            return "unknown"
         if backend.kind == cloud.kind and backend.base_url == cloud.base_url and backend.model == cloud.model:
             return "cloud"
         if backend.kind == local.kind and backend.base_url == local.base_url and backend.model == local.model:
@@ -284,9 +302,20 @@ class ModelGateway:
         return False
 
     def select_backend(self, stage: str = "write") -> ModelBackend:
+        # Prefer backends that are usable AND not in short-circuit cooldown.
+        # If everything is in cooldown, fall back to the first usable one
+        # (the call will refresh circuit state).
+        usable: list[ModelBackend] = []
         for backend in self._backend_candidates(stage):
-            if self._is_backend_usable(backend, require_auth=False):
-                return backend
+            if not self._is_backend_usable(backend, require_auth=False):
+                continue
+            usable.append(backend)
+            name = self._backend_name_from_obj(backend)
+            if name in {"cloud", "local"} and self._is_short_circuited(name):
+                continue
+            return backend
+        if usable:
+            return usable[0]
         return ModelBackend(kind="disabled", base_url="", model="")
 
     def _request_json(
@@ -358,6 +387,82 @@ class ModelGateway:
                 {"role": "user", "content": prompt},
             ],
         )
+
+    # Network-layer transients that warrant a single retry before tripping
+    # the circuit. 4xx errors and parse errors are not in this set — they
+    # need user action, retrying immediately is wasted load.
+    _TRANSIENT_RETRYABLE: tuple[type[BaseException], ...] = (URLError, TimeoutError, OSError)
+
+    def _classify_failure(self, exc: BaseException) -> tuple[int, str]:
+        """Return (cooldown_minutes, reason) for short-circuit policy.
+
+        Tuned by best-practice: auth/rate failures need user action so we
+        cool down longer to stop hammering. Network blips back off shortly.
+        """
+        if isinstance(exc, HTTPError):
+            if exc.code in (401, 403):
+                return (30, f"auth_failed_{exc.code}")
+            if exc.code == 429:
+                return (15, "rate_limited")
+            if 500 <= exc.code < 600:
+                return (5, f"server_error_{exc.code}")
+            return (5, f"http_{exc.code}")
+        if isinstance(exc, (json.JSONDecodeError, ValueError)):
+            return (5, "bad_response")
+        if isinstance(exc, TimeoutError):
+            return (2, "timeout")
+        if isinstance(exc, URLError):
+            return (1, "network_error")
+        return (5, type(exc).__name__)
+
+    def _is_retryable(self, exc: BaseException) -> bool:
+        if isinstance(exc, HTTPError):
+            return 500 <= exc.code < 600
+        return isinstance(exc, self._TRANSIENT_RETRYABLE)
+
+    def _resilient_call(
+        self,
+        backend: ModelBackend,
+        prompt: str,
+        prompt_patch: str | None = "",
+        *,
+        max_retries: int = 1,
+    ) -> str:
+        """Wrap _call_backend with retry-on-transient + circuit breaker.
+
+        Records last_call (with duration) on every attempt outcome. Trips
+        short-circuit on terminal failure with cooldown sized by error type.
+        On success, _record_last_call clears any active circuit for the
+        backend (see method body for that contract).
+        """
+        backend_name = self._backend_name_from_obj(backend)
+        attempts = 0
+        last_exc: BaseException | None = None
+        started = time.monotonic()
+        while True:
+            attempt_start = time.monotonic()
+            try:
+                result = self._call_backend(backend, prompt, prompt_patch=prompt_patch)
+            except BaseException as exc:  # capture all to record + classify
+                last_exc = exc
+                duration_ms = int((time.monotonic() - attempt_start) * 1000)
+                if backend_name in {"cloud", "local"}:
+                    self._record_last_call(backend_name, duration_ms=duration_ms, ok=False)
+                if attempts < max_retries and self._is_retryable(exc):
+                    attempts += 1
+                    # Small jittered backoff between retries — no scientific
+                    # need for full exponential here, single retry suffices.
+                    time.sleep(0.5 * attempts)
+                    continue
+                # Terminal failure. Trip the circuit.
+                if backend_name in {"cloud", "local"}:
+                    minutes, reason = self._classify_failure(exc)
+                    self._short_circuit(backend_name, minutes=minutes, reason=reason)
+                raise
+            duration_ms = int((time.monotonic() - attempt_start) * 1000)
+            if backend_name in {"cloud", "local"}:
+                self._record_last_call(backend_name, duration_ms=duration_ms, ok=True)
+            return result
 
     def _call_backend(self, backend: ModelBackend, prompt: str, prompt_patch: str | None = "") -> str:
         if backend.is_disabled():
@@ -468,7 +573,7 @@ class ModelGateway:
         if backend.is_disabled():
             return _fallback_markdown(text)
         try:
-            result = self._call_backend(backend, prompt, prompt_patch=prompt_patch)
+            result = self._resilient_call(backend, prompt, prompt_patch=prompt_patch)
         except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError, NoBackendAvailable):
             result = ""
         return result.strip() or _fallback_markdown(text)
@@ -491,7 +596,7 @@ class ModelGateway:
             tail = f" ({len(evidence_list)} lines)" if len(evidence_list) > 3 else ""
             return f"{theme_name}: " + "; ".join(head) + tail if head else f"{theme_name}: no evidence"
         try:
-            result = self._call_backend(backend, prompt, prompt_patch=prompt_patch)
+            result = self._resilient_call(backend, prompt, prompt_patch=prompt_patch)
         except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError, NoBackendAvailable):
             result = ""
         if result.strip():
@@ -545,7 +650,7 @@ class ModelGateway:
         if backend.is_disabled():
             return _fallback_daily_narrative(blocks)
         try:
-            result = self._call_backend(backend, prompt, prompt_patch=prompt_patch)
+            result = self._resilient_call(backend, prompt, prompt_patch=prompt_patch)
         except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError, NoBackendAvailable) as exc:
             logger.error(
                 "daily_narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
@@ -559,13 +664,18 @@ class ModelGateway:
         return result.strip() or _fallback_daily_narrative(blocks)
 
     def render(self, prompt: str, *, stage: str = "write") -> str:
-        """Bare LLM call with automatic backend fallback for the chosen stage."""
+        """Bare LLM call with automatic backend fallback for the chosen stage.
+
+        Each backend goes through _resilient_call (single retry on transient
+        + circuit breaker), then we walk down the fallback order. A backend
+        with an active short-circuit is skipped early by _fallback_order.
+        """
         last_error: Exception | None = None
         for backend in self._fallback_order(stage):
             if not self._is_backend_usable(backend, require_auth=False):
                 continue
             try:
-                return self._call_backend(backend, prompt, prompt_patch=None)
+                return self._resilient_call(backend, prompt, prompt_patch=None)
             except Exception as exc:
                 last_error = exc
                 logger.warning(
