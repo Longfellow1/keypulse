@@ -195,6 +195,9 @@ class KeyPulseHUDApp(AppKit.NSObject):
                     AppKit.NSWorkspace.sharedWorkspace().openURL_(ns_url)
         elif action == "quit":
             self.confirmQuit_(None)
+        elif action == "close-popover":
+            if self.popover.isShown():
+                self.popover.performClose_(None)
         elif action == "resize":
             try:
                 height = float(params.get("h", "0"))

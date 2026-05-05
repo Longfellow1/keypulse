@@ -198,44 +198,84 @@ def _boost_score(item: dict[str, Any], today_focus: str, attention_items: list[s
     return boost
 
 
-def _obsidian_open_url(vault_name: str, note_path: str) -> str:
+def _obsidian_open_url(vault_root: str, note_path: str) -> str:
+    """obsidian://open?vault=<basename>&file=<path>。
+
+    vault 名取 vault_root 路径的 basename —— 这是 Obsidian 实际注册的 vault
+    标识（不是 cfg.obsidian.vault_name 那个 KeyPulse 自定义别名）。
+    """
+    from pathlib import Path
     from urllib.parse import quote
 
+    vault_id = Path(vault_root).name or vault_root
     file_part = note_path[:-3] if note_path.endswith(".md") else note_path
-    return f"obsidian://open?vault={quote(vault_name, safe='')}&file={quote(file_part, safe='/')}"
+    return f"obsidian://open?vault={quote(vault_id, safe='')}&file={quote(file_part, safe='/')}"
 
 
-def _build_top_signals(events: list[dict[str, Any]], *, today_focus: str, attention_items: list[str], vault_name: str, date_str: str) -> list[dict[str, Any]]:
+def _build_top_signals(
+    events: list[dict[str, Any]],
+    *,
+    today_focus: str,
+    attention_items: list[str],
+    vault_name: str,
+    vault_root: str,
+    date_str: str,
+) -> list[dict[str, Any]]:
+    """HUD「今天最新」三条 = 直接读 LLM 写过的 event note。
+
+    数据源不再走 surface_snapshot.candidates（那是 raw event title，含
+    窗口元数据 / markdown 片段，HUD 上不可读）。改成遍历
+    build_obsidian_bundle 输出的 events —— H1 是 LLM 写过的友好标题，path
+    精确到具体 note。按 path 倒序 = 按时间倒序（path 文件名以 HHMM 开头）。
+    """
     from keypulse.pipeline.surface import build_surface_snapshot
 
     snapshot = build_surface_snapshot(events, top_k=20)
     bundle = build_obsidian_bundle(events, vault_name=vault_name, date_str=date_str)
-    path_by_title = {
-        note["body"].splitlines()[0].removeprefix("# ").strip(): note["path"]
-        for note in bundle.get("events", [])
-    }
+    from pathlib import Path as _Path
+
+    def _h1_of(note: dict[str, Any]) -> str:
+        body = str(note.get("body") or "")
+        return body.splitlines()[0].removeprefix("# ").strip() if body else ""
+
+    def _is_curated(note: dict[str, Any]) -> bool:
+        """过滤兜底片段：H1 是文件路径 / 应用路径 / 空 → 不上 HUD。"""
+        h1 = _h1_of(note)
+        if not h1:
+            return False
+        if h1.startswith("/"):
+            return False
+        return True
+
+    def _time_key(note: dict[str, Any]) -> str:
+        name = _Path(str(note.get("path") or "")).name
+        match = re.search(r"(\d{4})", name)
+        return match.group(1) if match else "0000"
+
+    notes = [note for note in bundle.get("events", []) if _is_curated(note)]
+    notes.sort(key=_time_key, reverse=True)
+
     candidates: list[dict[str, Any]] = []
-    for item in snapshot.get("candidates", []):
-        adjusted_score = round(float(item["score"]) + _boost_score(item, today_focus, attention_items), 4)
-        why = [
-            REASON_LABELS.get(str(reason), str(reason))
-            for reason, value in dict(item.get("why_selected") or {}).items()
-            if float(value or 0) > 0
-        ]
-        note_path = path_by_title.get(item["title"], f"Daily/{date_str}.md")
+    for note in notes[:3]:
+        body = str(note.get("body") or "")
+        h1 = body.splitlines()[0].removeprefix("# ").strip() if body else ""
+        title = h1 or "未命名片段"
+        note_path = str(note.get("path") or f"Daily/{date_str}.md")
+        properties = dict(note.get("properties") or {})
+        topic_key = str(properties.get("topic") or "")
         candidates.append(
             {
-                "title": item["title"],
-                "source": SOURCE_LABELS.get(str(item.get("source") or ""), str(item.get("source") or "未知来源")),
-                "source_key": str(item.get("source") or ""),
-                "reason": "、".join(why[:3]) or "被系统识别为高价值候选",
-                "score": adjusted_score,
+                "title": title,
+                "source": "事件",
+                "source_key": "event_note",
+                "reason": "新信息",
+                "score": 1.0,
                 "path": note_path,
-                "obsidian_url": _obsidian_open_url(vault_name, note_path),
+                "topic_key": topic_key,
+                "obsidian_url": _obsidian_open_url(vault_root, note_path),
             }
         )
-    candidates.sort(key=lambda item: (-float(item["score"]), item["title"]))
-    return candidates[:3], snapshot
+    return candidates, snapshot
 
 
 def _summarize_metrics(events: list[dict[str, Any]], snapshot: dict[str, Any]) -> dict[str, int]:
@@ -284,6 +324,7 @@ def build_hud_snapshot(
         today_focus=hud_state.today_focus.get(effective_date, ""),
         attention_items=hud_state.attention_items,
         vault_name=cfg.obsidian.vault_name,
+        vault_root=str(Path(cfg.obsidian.vault_path).expanduser()),
         date_str=effective_date,
     )
     today_focus = hud_state.today_focus.get(effective_date, "")
