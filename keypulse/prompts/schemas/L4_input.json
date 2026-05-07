@@ -1,0 +1,92 @@
+{
+  "type": "object",
+  "required": [
+    "scope_week",
+    "candidate_pairs"
+  ],
+  "properties": {
+    "scope_week": {
+      "type": "string",
+      "pattern": "^\\d{4}-W\\d{2}$"
+    },
+    "candidate_pairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "slug_a",
+          "slug_b",
+          "affinity_score",
+          "topic_a_summary",
+          "topic_b_summary"
+        ],
+        "properties": {
+          "slug_a": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,40}$"
+          },
+          "slug_b": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,40}$"
+          },
+          "affinity_score": {
+            "type": "number",
+            "minimum": 0
+          },
+          "topic_a_summary": {
+            "$ref": "#/$defs/topic_summary"
+          },
+          "topic_b_summary": {
+            "$ref": "#/$defs/topic_summary"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "topic_summary": {
+      "type": "object",
+      "required": [
+        "display_name",
+        "keywords",
+        "weekly_entries"
+      ],
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keywords": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "weekly_entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "date",
+              "narrative_one_line"
+            ],
+            "properties": {
+              "date": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "narrative_one_line": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

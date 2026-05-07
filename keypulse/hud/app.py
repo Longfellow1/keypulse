@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
+from pathlib import Path
 import AppKit
 import objc
 from Foundation import NSTimer, NSURL
@@ -13,7 +15,7 @@ from keypulse.capture.normalizer import normalize_manual_event
 from keypulse.config import Config
 from keypulse.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
 from keypulse.hud.monitor_html import build_monitor_html
-from keypulse.hud.state import set_today_focus
+from keypulse.hud.state import dismiss_weekly_echo_for_week, set_today_focus
 from keypulse.hud.summary import build_hud_snapshot
 from keypulse.store.db import init_db
 from keypulse.store.repository import get_state, insert_raw_event, set_state
@@ -24,6 +26,32 @@ HUD_CONTENT_HEIGHT_FALLBACK = 440.0  # used until WebView reports actual content
 HUD_CONTENT_HEIGHT_MIN = 200.0
 HUD_CONTENT_HEIGHT_MAX = 900.0
 DAEMON_LAUNCHD_LABEL = "com.keypulse.daemon"
+HUD_LAUNCHD_LABEL = "com.keypulse.hud"
+
+
+def _hud_launchd_plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{HUD_LAUNCHD_LABEL}.plist"
+
+
+def _restart_hud_process() -> None:
+    if _hud_launchd_plist_path().exists():
+        target = f"gui/{os.getuid()}/{HUD_LAUNCHD_LABEL}"
+        subprocess.Popen(
+            ["launchctl", "kickstart", "-k", target],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+
+    subprocess.Popen(
+        [sys.argv[0], "hud"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    AppKit.NSApp.terminate_(None)
+
 
 class KeyPulseHUDApp(AppKit.NSObject):
     def initWithConfig_(self, cfg: Config):
@@ -190,9 +218,14 @@ class KeyPulseHUDApp(AppKit.NSObject):
         elif action == "open-url":
             url_str = params.get("u", "")
             if url_str:
-                ns_url = NSURL.URLWithString_(url_str)
-                if ns_url is not None:
-                    AppKit.NSWorkspace.sharedWorkspace().openURL_(ns_url)
+                self._open_external_url(url_str)
+        elif action == "open-weekly-echo":
+            url_str = params.get("u", "")
+            week = str(params.get("week") or "").strip()
+            opened = self._open_external_url(url_str)
+            if opened and week:
+                dismiss_weekly_echo_for_week(week)
+                self.refresh()
         elif action == "quit":
             self.confirmQuit_(None)
         elif action == "close-popover":
@@ -230,6 +263,13 @@ class KeyPulseHUDApp(AppKit.NSObject):
         from urllib.parse import parse_qsl
         query = str(url.query() or "")
         return dict(parse_qsl(query, keep_blank_values=True))
+
+    @staticmethod
+    def _open_external_url(url_str: str) -> bool:
+        ns_url = NSURL.URLWithString_(url_str)
+        if ns_url is None:
+            return False
+        return bool(AppKit.NSWorkspace.sharedWorkspace().openURL_(ns_url))
 
     def _save_today_focus(self, value: str):
         set_today_focus(value)
@@ -298,13 +338,12 @@ class KeyPulseHUDApp(AppKit.NSObject):
         new_status = "running" if self.capture_status == "paused" else "paused"
         set_state("status", new_status)
         self.refresh()
-        self.popover.performClose_(None)
 
     @objc.IBAction
     def restartDaemon_(self, _sender):
         self.popover.performClose_(None)
         alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("重启 KeyPulse daemon？")
+        alert.setMessageText_("重启 KeyPulse（daemon + HUD）？")
         alert.setInformativeText_("会短暂中断采集，几秒后自动恢复")
         alert.addButtonWithTitle_("重启")
         alert.addButtonWithTitle_("取消")
@@ -317,6 +356,7 @@ class KeyPulseHUDApp(AppKit.NSObject):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            _restart_hud_process()
         except Exception as exc:
             err = AppKit.NSAlert.alloc().init()
             err.setMessageText_("重启失败")

@@ -49,7 +49,7 @@ def _section(text: str, heading: str) -> str:
 
 
 def _event_links_in_daily(text: str) -> list[str]:
-    return re.findall(r"\[\[Events/[^\]]+\]\]", _section(text, "## 今天的事件卡"))
+    return re.findall(r"\[\[\.\./\.keypulse/events/[^\]]+\]\]", _section(text, "## 今天的事件卡"))
 
 
 def _replace_section_body(text: str, heading: str, body_lines: list[str]) -> str:

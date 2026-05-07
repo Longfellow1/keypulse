@@ -162,6 +162,27 @@ def _today_card(today_focus: str) -> str:
     """
 
 
+def _weekly_echo_top_banner(snapshot: HUDSnapshot) -> str:
+    text = (snapshot.weekly_echo_text or "").strip()
+    target_url = (snapshot.weekly_echo_url or "").strip()
+    week = (snapshot.weekly_echo_week or "").strip()
+    if not text or not target_url or not week:
+        return ""
+    href = (
+        "keypulse://action/open-weekly-echo"
+        f"?u={quote(target_url, safe='')}"
+        f"&week={quote(week, safe='')}"
+    )
+    return f'<a class="weekly-echo-banner" href="{href}" title="打开本周周报">{escape(text)}</a>'
+
+
+def _weekly_notice_banner(snapshot: HUDSnapshot) -> str:
+    notice = (snapshot.weekly_notice or "").strip()
+    if not notice:
+        return ""
+    return f'<div class="weekly-notice">{escape(notice)}</div>'
+
+
 def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok: bool = True) -> str:
     is_running = capture_status != "paused"
     pause_label = "⏸ 暂停" if is_running else "▶ 恢复"
@@ -217,6 +238,7 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
       padding: 16px 18px 14px;
     }}
     .hdr-left {{ display: flex; align-items: center; gap: 9px; }}
+    .hdr-right {{ display: flex; align-items: center; gap: 8px; }}
     .dot {{
       width: 8px; height: 8px;
       border-radius: 50%;
@@ -243,6 +265,27 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     .status-pill.warn {{ color: #b05d00; border-color: #f0c98a; background: #fff5e6; }}
     .status-pill.err  {{ color: #b00020; border-color: #f0a8a8; background: #ffeaea; }}
     .status-pill.gray {{ color: var(--text-tertiary); }}
+    .weekly-echo-banner {{
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #7a4500;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 0.5px solid #f0c98a;
+      background: #fff8e8;
+      white-space: nowrap;
+    }}
+    .weekly-echo-banner:hover {{ background: #ffefc9; }}
+    .weekly-notice {{
+      margin: 0 18px 12px;
+      padding: 8px 11px;
+      border-radius: 8px;
+      border: 0.5px solid #f0c98a;
+      background: #fff8e8;
+      color: #7a4500;
+      font-size: 11.5px;
+      line-height: 1.45;
+    }}
 
     /* Hint bar (异常时) */
     .hint-bar {{
@@ -456,10 +499,14 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
         <span class="{dot_cls}"></span>
         <span class="brand">KeyPulse</span>
       </div>
-      <span class="{pill_cls}">{escape(snapshot.status_label)}</span>
+      <div class="hdr-right">
+        {_weekly_echo_top_banner(snapshot)}
+        <span class="{pill_cls}">{escape(snapshot.status_label)}</span>
+      </div>
     </div>
 
     {_hint_bar(snapshot.hint_message, snapshot.hint_action)}
+    {_weekly_notice_banner(snapshot)}
 
     {_today_card(snapshot.today_focus)}
 
