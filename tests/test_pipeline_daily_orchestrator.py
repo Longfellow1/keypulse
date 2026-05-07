@@ -10,6 +10,7 @@ from click.testing import CliRunner
 
 from keypulse.cli import main
 from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily
+from keypulse.pipeline.daily_orchestrator import _event_value_density
 from keypulse.pipeline.model import ModelBackend
 from keypulse.store.db import close, init_db
 from keypulse.store.models import RawEvent
@@ -175,6 +176,23 @@ def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch
     l2_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L2_narrative")
     assert len(l2_input["clusters"]) == 1
     assert len(l2_input["misc_events"]) == 1
+
+
+def test_event_value_density_promotes_user_decisions_over_tool_echo():
+    decision_event = {
+        "id": "decision",
+        "source": "clipboard",
+        "speaker": "user",
+        "content_text": "我建议选择方案 B，根因是入口职责需要拆开，应该把两个用户路径分开。",
+    }
+    tool_echo_event = {
+        "id": "echo",
+        "source": "ax_text",
+        "speaker": "system",
+        "content_text": "When using Powerlevel10k with instant prompt, console output during zsh initialization may indicate issues. " * 20,
+    }
+
+    assert _event_value_density(decision_event) > _event_value_density(tool_echo_event)
 
 
 def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):

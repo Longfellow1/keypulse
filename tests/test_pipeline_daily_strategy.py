@@ -123,6 +123,113 @@ def test_budget_strategy_calls_l1_and_one_l2_and_tracks_misc():
     assert result.merge_candidates == (("c1", "c2"),)
 
 
+def test_budget_strategy_orders_l2_clusters_by_size_or_peak_density():
+    component_payloads = [
+        {
+            "component_id": "c1",
+            "event_ids": ["1", "2", "3"],
+            "time_range": ["01:00", "01:03"],
+            "h1_entities": [],
+            "h2_contexts": [],
+            "keywords": ["routine"],
+            "peak_event_density": 0.2,
+            "importance_score": 0.6,
+        },
+        {
+            "component_id": "c2",
+            "event_ids": ["4"],
+            "time_range": ["03:00", "03:00"],
+            "h1_entities": [],
+            "h2_contexts": [],
+            "keywords": ["decision"],
+            "peak_event_density": 0.95,
+            "importance_score": 0.95,
+        },
+        {
+            "component_id": "c3",
+            "event_ids": ["5"],
+            "time_range": ["04:00", "04:00"],
+            "h1_entities": [],
+            "h2_contexts": [],
+            "keywords": ["tool"],
+            "peak_event_density": 0.25,
+            "importance_score": 0.25,
+        },
+    ]
+    deps = BudgetStrategyDeps(
+        cluster_components=lambda _events: component_payloads,
+        load_topics_index=lambda: [],
+        load_hot_slugs=lambda: [],
+        prune_topics=lambda topics, _hot, _events: topics,
+        topic_display_name=lambda slug, _topics: slug,
+        detect_merges=lambda _components: [],
+    )
+    gateway = FakeGateway(
+        {
+            "L1_cluster_review": {
+                "clusters": [
+                    {"component_id": "c1", "topic_action": "new", "reason": "routine"},
+                    {"component_id": "c2", "topic_action": "new", "reason": "decision"},
+                    {"component_id": "c3", "topic_action": "new", "reason": "tool echo"},
+                ],
+                "misc_event_ids": [],
+            },
+            "L2_narrative": {"markdown": MARKDOWN},
+        }
+    )
+    events = [
+        {"id": "1", "ts_start": "2026-05-01T01:00:00+00:00", "source": "ax_text", "speaker": "system", "app_name": "Terminal", "content_text": "routine"},
+        {"id": "2", "ts_start": "2026-05-01T01:01:00+00:00", "source": "ax_text", "speaker": "system", "app_name": "Terminal", "content_text": "routine"},
+        {"id": "3", "ts_start": "2026-05-01T01:02:00+00:00", "source": "ax_text", "speaker": "system", "app_name": "Terminal", "content_text": "routine"},
+        {"id": "4", "ts_start": "2026-05-01T03:00:00+00:00", "source": "clipboard", "speaker": "user", "app_name": "Chrome", "content_text": "我建议选择方案 B，根因是入口职责需要拆开"},
+        {"id": "5", "ts_start": "2026-05-01T04:00:00+00:00", "source": "ax_text", "speaker": "system", "app_name": "Terminal", "content_text": "When using Powerlevel10k with instant prompt"},
+    ]
+
+    BudgetTwoStepStrategy(deps).generate(date_str="2026-05-01", events=events, gateway=gateway)
+
+    l2_input = gateway.calls[1][1]
+    assert [cluster["component_id"] for cluster in l2_input["clusters"]] == ["c2", "c1", "c3"]
+
+
+def test_budget_strategy_structurally_keeps_high_density_singletons_out_of_misc():
+    component_payloads = [
+        {
+            "component_id": "c1",
+            "event_ids": ["1"],
+            "time_range": ["03:00", "03:00"],
+            "h1_entities": [],
+            "h2_contexts": [],
+            "keywords": ["decision"],
+            "peak_event_density": 0.9,
+            "importance_score": 0.9,
+        }
+    ]
+    deps = BudgetStrategyDeps(
+        cluster_components=lambda _events: component_payloads,
+        load_topics_index=lambda: [],
+        load_hot_slugs=lambda: [],
+        prune_topics=lambda topics, _hot, _events: topics,
+        topic_display_name=lambda slug, _topics: slug,
+        detect_merges=lambda _components: [],
+    )
+    gateway = FakeGateway(
+        {
+            "L1_cluster_review": {
+                "clusters": [{"component_id": "c1", "topic_action": "misc", "reason": "single event"}],
+                "misc_event_ids": ["1"],
+            },
+            "L2_narrative": {"markdown": MARKDOWN},
+        }
+    )
+
+    result = BudgetTwoStepStrategy(deps).generate(date_str="2026-05-01", events=[_events()[0]], gateway=gateway)
+
+    l2_input = gateway.calls[1][1]
+    assert l2_input["clusters"][0]["component_id"] == "c1"
+    assert l2_input["misc_events"] == []
+    assert result.misc_event_ids == ()
+
+
 @pytest.mark.parametrize(
     "strategy,gateway",
     [
