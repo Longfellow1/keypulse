@@ -202,6 +202,19 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(stripped) // 4)
 
 
+def _strip_json_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    first_newline = stripped.find("\n")
+    if first_newline < 0:
+        return stripped
+    body = stripped[first_newline + 1 :]
+    if body.rstrip().endswith("```"):
+        body = body.rstrip()[:-3]
+    return body.strip()
+
+
 def _validate_jsonschema_minimal(schema: dict[str, Any], value: Any, path: str = "$") -> None:
     schema_type = schema.get("type")
     if schema_type == "object":
@@ -772,16 +785,19 @@ class ModelGateway:
     def _schema_validate(self, schema: Any, output_text: str) -> Any:
         if schema is None:
             return output_text
+        # Strip ```json ... ``` fences — many models (deepseek, qwen, doubao)
+        # wrap JSON output that way despite explicit "no markdown" instructions.
+        text = _strip_json_fence(output_text)
         if isinstance(schema, dict):
-            parsed = json.loads(output_text)
+            parsed = json.loads(text)
             _validate_jsonschema_minimal(schema, parsed)
             return parsed
         if isinstance(schema, type) and issubclass(schema, BaseModel):
-            return schema.model_validate_json(output_text)
+            return schema.model_validate_json(text)
         if hasattr(schema, "model_validate_json"):
-            return schema.model_validate_json(output_text)
+            return schema.model_validate_json(text)
         if hasattr(schema, "model_validate"):
-            parsed = json.loads(output_text)
+            parsed = json.loads(text)
             return schema.model_validate(parsed)
         raise TypeError("unsupported schema type")
 

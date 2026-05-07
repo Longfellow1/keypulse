@@ -145,6 +145,7 @@ class ModelBackendConfig(BaseModel):
     kind: Literal["lm_studio", "openai_compatible", "ollama", "disabled"] = "disabled"
     base_url: str = ""
     model: str = ""
+    tier: str = ""
     api_key_source: str = ""
     api_key_env: str = ""
     timeout_sec: int = 20

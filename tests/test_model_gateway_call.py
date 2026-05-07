@@ -134,3 +134,25 @@ def test_call_retry_exhausted_raises_llm_call_error(tmp_path, monkeypatch):
 
     with pytest.raises(LLMCallError, match="capability=cache_test"):
         gateway.call("cache_test", "hello", prompt_version="L1.v1")
+
+
+def test_strip_json_fence_handles_common_wrappings():
+    from keypulse.pipeline.model import _strip_json_fence
+
+    assert _strip_json_fence('{"a": 1}') == '{"a": 1}'
+    assert _strip_json_fence('```json\n{"a": 1}\n```') == '{"a": 1}'
+    assert _strip_json_fence('```\n{"a": 1}\n```') == '{"a": 1}'
+    assert _strip_json_fence('  ```json\n{"a": 1}\n```  ') == '{"a": 1}'
+    # Truncated response — no closing fence — should still strip the opener.
+    assert _strip_json_fence('```json\n{"a": 1}') == '{"a": 1}'
+
+
+def test_schema_validate_unwraps_fenced_json(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    gateway = ModelGateway(_cfg(tmp_path))
+    schema = {"type": "object", "required": ["markdown"], "properties": {"markdown": {"type": "string"}}}
+    fenced = '```json\n{"markdown": "📍 hello"}\n```'
+
+    parsed = gateway._schema_validate(schema, fenced)
+
+    assert parsed == {"markdown": "📍 hello"}
