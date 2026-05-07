@@ -48,6 +48,19 @@ use_narrative_v2 = true
 use_things_narrative = true
 things_idle_threshold_minutes = 30
 
+[pipeline.value_density]
+enabled = true
+token_target = 80
+decision_bonus = 0.25
+high_density_threshold = 0.75
+decision_regex = "是不是|为什么|决定|选择?|选|根因|结论|判断|取舍|方案|建议|应该|必须|确认|拍板|原因"
+
+[pipeline.value_density.source_weights]
+user_msg = 1.25
+assistant_msg = 0.85
+tool_echo = 0.25
+default = 0.6
+
 [pipeline.signals]
 fs_enabled = false
 fs_watch_paths = ["~/Documents", "~/Desktop", "~/Downloads", "~/Go"]
