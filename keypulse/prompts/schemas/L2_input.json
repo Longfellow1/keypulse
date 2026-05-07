@@ -14,10 +14,21 @@
         "required": ["display_name", "topic_action", "events"],
         "additionalProperties": false,
         "properties": {
+          "component_id": {"type": "string"},
           "display_name": {"type": "string", "minLength": 1},
           "topic_action": {
             "type": "string",
             "enum": ["existing", "new"]
+          },
+          "importance_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "peak_event_density": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           },
           "events": {
             "type": "array",

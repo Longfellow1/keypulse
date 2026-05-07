@@ -49,6 +49,7 @@ class ClusterRecord:
     event_ids: tuple[str, ...]
     keywords: tuple[str, ...]
     narrative_one_line: str  # for daily-summary index, NOT the full daily.md text
+    peak_event_density: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,30 @@ def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     if speaker:
         out["sp"] = speaker
     return out
+
+
+def _payload_float(payload: Mapping[str, Any], key: str, default: float = 0.0) -> float:
+    try:
+        return float(payload.get(key) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _payload_importance_score(payload: Mapping[str, Any]) -> float:
+    explicit = _payload_float(payload, "importance_score", -1.0)
+    if explicit >= 0.0:
+        return explicit
+    event_count = len(payload.get("event_ids") or [])
+    size_score = min(max(event_count, 0) / 5.0, 0.7)
+    peak_density = _payload_float(payload, "peak_event_density", 0.0)
+    return max(size_score, peak_density)
+
+
+def _payload_time_start(payload: Mapping[str, Any]) -> str:
+    time_range = payload.get("time_range") or []
+    if isinstance(time_range, list) and time_range:
+        return str(time_range[0])
+    return ""
 
 
 class DailyStrategy(abc.ABC):
@@ -228,16 +253,23 @@ class BudgetTwoStepStrategy(DailyStrategy):
         misc_events_compact: list[dict[str, Any]] = []
 
         events_by_id = {str(event.get("id")): event for event in events}
+        component_payloads_by_id = {str(payload.get("component_id") or ""): payload for payload in component_payloads}
 
         for component_payload in component_payloads:
             component_id = str(component_payload["component_id"])
             event_ids: list[str] = list(component_payload["event_ids"])
             decision = decisions.get(component_id, {"topic_action": "misc"})
             action = str(decision.get("topic_action") or "misc")
+            peak_event_density = _payload_float(component_payload, "peak_event_density", 0.0)
+            high_density_threshold = _payload_float(component_payload, "high_density_threshold", 0.75)
 
             slug = str(decision.get("topic_slug") or "").strip() or None
             if action == "existing" and not slug:
                 action = "misc"
+
+            if action == "misc" and peak_event_density >= high_density_threshold:
+                action = "new"
+                misc_ids = [eid for eid in misc_ids if eid not in event_ids]
 
             if action == "misc":
                 for eid in event_ids:
@@ -266,12 +298,16 @@ class BudgetTwoStepStrategy(DailyStrategy):
                     event_ids=tuple(event_ids),
                     keywords=keywords,
                     narrative_one_line="",  # populated by orchestrator from L2 output
+                    peak_event_density=peak_event_density,
                 )
             )
             l2_clusters.append(
                 {
+                    "component_id": component_id,
                     "display_name": display_name,
                     "topic_action": action,
+                    "importance_score": round(_payload_importance_score(component_payload), 4),
+                    "peak_event_density": peak_event_density,
                     "events": cluster_events_compact,
                 }
             )
@@ -279,6 +315,14 @@ class BudgetTwoStepStrategy(DailyStrategy):
         for eid in misc_ids:
             if eid in events_by_id:
                 misc_events_compact.append(to_compact_event(events_by_id[eid]))
+
+        l2_clusters.sort(
+            key=lambda item: (
+                -float(item.get("importance_score") or 0.0),
+                _payload_time_start(component_payloads_by_id.get(str(item.get("component_id") or ""), {})),
+                str(item.get("display_name") or ""),
+            )
+        )
 
         l2_input = {
             "date": date_str,

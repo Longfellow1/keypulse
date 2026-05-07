@@ -24,8 +24,11 @@ JSON 格式（已经做好了聚类，你专注叙事）：
   "date": "YYYY-MM-DD",
   "clusters": [
     {
+      "component_id": "c1",
       "display_name": "主题名（可作 H3 标题或调整）",
       "topic_action": "existing | new",
+      "importance_score": 0.95,
+      "peak_event_density": 0.95,
       "events": [{"t":"HH:MM","s":"来源","a":"应用","c":"内容","sp":"speaker"}]
     }
   ],
@@ -87,7 +90,7 @@ JSON 格式（已经做好了聚类，你专注叙事）：
 
 # 「今天做的事」段写作要求
 
-1. **每段对应一个 cluster**，按时间或重要性排序都行，但不要交叉。
+1. **每段对应一个 cluster**，按输入顺序写，输入已经由系统按 `importance_score = max(size_score, peak_event_density)` 排好；不要重新按事件数量二次评分。
 2. **每段 80-120 字**，前半客观（发生了什么），后半价值（为什么这么做 / 结果 / 决策）。
 3. **跳过 misc_events**：这些是噪音，不在主体段写。如果都是工具切换 / 跨域无关浏览（搜歌词 / 玩游戏），最多在「今日要点」末尾一句话扫过。
 4. 主语统一是「你」。提到 AI 时是工具描述（「让 Claude 改 X」），不让 AI 当主语。

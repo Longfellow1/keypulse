@@ -68,6 +68,26 @@
             "items": {
               "type": "string"
             }
+          },
+          "size_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "peak_event_density": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "importance_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "high_density_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           }
         },
         "additionalProperties": false
