@@ -48,6 +48,7 @@ def _snapshot(**overrides) -> HUDSnapshot:
         hint_message="",
         hint_action="",
         companion_days=5,
+        weekly_notice="",
     )
     base.update(overrides)
     return HUDSnapshot(**base)
@@ -154,6 +155,29 @@ def test_monitor_html_warn_state_shows_hint_bar():
     # 没有 hint_action 时不渲染按钮（CSS 类定义存在，但不应出现按钮元素）
     assert 'class="hint-btn"' not in html
     assert "打开设置" not in html
+
+
+def test_monitor_html_renders_weekly_notice_banner():
+    snap = _snapshot(weekly_notice="本周数据不足，周报跳过")
+    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+
+    assert "weekly-notice" in html
+    assert "本周数据不足，周报跳过" in html
+
+
+def test_monitor_html_renders_weekly_echo_and_notice_together():
+    snap = _snapshot(
+        weekly_notice="本周数据不足，周报跳过",
+        weekly_echo_text="本周回声 →",
+        weekly_echo_url="obsidian://open?vault=KeyPulse&file=Weekly/2026-W19",
+        weekly_echo_week="2026-W19",
+    )
+    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+
+    assert "💰" not in html
+    assert "weekly-echo-banner" in html
+    assert "open-weekly-echo" in html
+    assert "weekly-notice" in html
 
 
 def test_monitor_html_hint_bar_renders_action_button():

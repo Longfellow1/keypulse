@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "filename_title"
+  ],
+  "properties": {
+    "filename_title": {
+      "type": "string"
+    }
+  }
+}

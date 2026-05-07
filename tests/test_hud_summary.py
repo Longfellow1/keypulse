@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from keypulse.config import Config
-from keypulse.hud.state import add_attention_item, set_today_focus
+from keypulse.hud.state import add_attention_item, dismiss_weekly_echo_for_week, set_today_focus
 from keypulse.hud.summary import _status_symbol, build_hud_snapshot
 from keypulse.store.db import init_db
 from keypulse.capture.normalizer import normalize_manual_event
@@ -108,6 +111,35 @@ def test_parse_daily_topics_extracts_h3_under_main_section():
     assert topics[1][0] == "写周报方案"
 
 
+def test_parse_daily_topics_extracts_h3_under_overview_section():
+    """things.py 当前主路径写的是「## 今日概览」，parser 必须兼容。"""
+    from keypulse.hud.summary import _parse_daily_topics
+
+    body = """# 今日做的事
+
+## 今日概览
+
+你围绕KeyPulse开展工作...
+
+### 修改KeyPulse HUD代码并提交
+
+正文...
+
+### 访问PairDrop文件传输网站
+
+正文...
+
+## 今天的事件卡
+
+- xxx
+"""
+    topics = _parse_daily_topics(body)
+
+    assert len(topics) == 2
+    assert topics[0][0] == "修改KeyPulse HUD代码并提交"
+    assert topics[1][0] == "访问PairDrop文件传输网站"
+
+
 def test_parse_daily_topics_returns_empty_when_no_main_section():
     from keypulse.hud.summary import _parse_daily_topics
 
@@ -203,3 +235,89 @@ def test_status_symbol_mapping():
     assert _status_symbol("running") == "●"
     assert _status_symbol("paused") == "⏸"
     assert _status_symbol("permission_denied") == "⊘"
+
+
+def test_build_hud_snapshot_includes_weekly_notice_when_week_matches(tmp_path):
+    db_path = tmp_path / "hud.db"
+    cfg = Config.model_validate(
+        {
+            "app": {"db_path": str(db_path), "log_path": str(tmp_path / "hud.log")},
+            "obsidian": {"vault_path": str(tmp_path), "vault_name": "KeyPulse"},
+        }
+    )
+    init_db(cfg.db_path_expanded)
+    set_state("weekly_notice", '{"week":"2026-W16","message":"本周数据不足，周报跳过"}')
+
+    snapshot = build_hud_snapshot(cfg, date_str="2026-04-19", hud_state_path=tmp_path / "hud-state.json")
+
+    assert snapshot.weekly_notice == "本周数据不足，周报跳过"
+
+
+def test_build_hud_snapshot_hides_weekly_notice_when_week_not_match(tmp_path):
+    db_path = tmp_path / "hud.db"
+    cfg = Config.model_validate(
+        {
+            "app": {"db_path": str(db_path), "log_path": str(tmp_path / "hud.log")},
+            "obsidian": {"vault_path": str(tmp_path), "vault_name": "KeyPulse"},
+        }
+    )
+    init_db(cfg.db_path_expanded)
+    set_state("weekly_notice", '{"week":"2026-W99","message":"本周数据不足，周报跳过"}')
+
+    snapshot = build_hud_snapshot(cfg, date_str="2026-04-19", hud_state_path=tmp_path / "hud-state.json")
+
+    assert snapshot.weekly_notice == ""
+
+
+def test_build_hud_snapshot_shows_weekly_echo_banner_after_friday_2340(tmp_path):
+    db_path = tmp_path / "hud.db"
+    cfg = Config.model_validate(
+        {
+            "app": {"db_path": str(db_path), "log_path": str(tmp_path / "hud.log")},
+            "obsidian": {"vault_path": str(tmp_path), "vault_name": "KeyPulse"},
+        }
+    )
+    init_db(cfg.db_path_expanded)
+
+    now_local = datetime(2026, 5, 8, 23, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
+    snapshot = build_hud_snapshot(
+        cfg,
+        date_str="2026-05-08",
+        hud_state_path=tmp_path / "hud-state.json",
+        now_local=now_local,
+    )
+
+    assert snapshot.weekly_echo_text == "本周回声 →"
+    assert snapshot.weekly_echo_week == "2026-W19"
+    assert "file=Weekly/2026-W19" in snapshot.weekly_echo_url
+
+
+def test_build_hud_snapshot_hides_weekly_echo_after_dismiss_and_resets_next_week(tmp_path):
+    db_path = tmp_path / "hud.db"
+    state_path = tmp_path / "hud-state.json"
+    cfg = Config.model_validate(
+        {
+            "app": {"db_path": str(db_path), "log_path": str(tmp_path / "hud.log")},
+            "obsidian": {"vault_path": str(tmp_path), "vault_name": "KeyPulse"},
+        }
+    )
+    init_db(cfg.db_path_expanded)
+    dismiss_weekly_echo_for_week("2026-W19", state_path)
+
+    hidden_snapshot = build_hud_snapshot(
+        cfg,
+        date_str="2026-05-10",
+        hud_state_path=state_path,
+        now_local=datetime(2026, 5, 10, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    assert hidden_snapshot.weekly_echo_text == ""
+    assert hidden_snapshot.weekly_echo_url == ""
+
+    next_week_snapshot = build_hud_snapshot(
+        cfg,
+        date_str="2026-05-15",
+        hud_state_path=state_path,
+        now_local=datetime(2026, 5, 15, 23, 45, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    assert next_week_snapshot.weekly_echo_text == "本周回声 →"
+    assert next_week_snapshot.weekly_echo_week == "2026-W20"

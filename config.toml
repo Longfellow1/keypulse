@@ -59,6 +59,8 @@ vault_path = "~/Go/Knowledge"
 vault_name = "KeyPulse"
 export_hour = 9
 export_minute = 5
+wiki_link_mode = "relative"
+humanize_titles = false
 
 [integration]
 standalone_output_path = "~/Go/Knowledge"
@@ -79,6 +81,12 @@ kind = "openai_compatible"
 base_url = "https://api.openai.com/v1"
 model = "keypulse-cloud"
 api_key_env = "OPENAI_API_KEY"
+
+[llm]
+tier = "mini"
+provider = ""
+monthly_budget_usd = 5.0
+local_ollama_url = "http://localhost:11434"
 
 [[policies]]
 scope_type = "app"

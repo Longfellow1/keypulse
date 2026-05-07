@@ -16,6 +16,7 @@ from keypulse.sources.plugins.markdown_vault import MarkdownVaultSource
 from keypulse.sources.plugins.safari_history import SafariHistorySource
 from keypulse.sources.plugins.wechat import WechatSource
 from keypulse.sources.plugins.zsh_history import ZshHistorySource
+from keypulse.sources.sink import persist_semantic_event
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 from keypulse.utils.logging import get_logger
 
@@ -69,6 +70,7 @@ def read_all(
     until: datetime,
     *,
     source: str | None = None,
+    persist_raw_events: bool = True,
 ) -> Iterator[SemanticEvent]:
     since_utc = _as_utc(since)
     until_utc = _as_utc(until)
@@ -111,7 +113,13 @@ def read_all(
         LOGGER.warning("L4 dedup failed: %s", exc)
         deduped = events
     deduped.sort(key=lambda event: event.time)
-    yield from deduped
+    for event in deduped:
+        if persist_raw_events:
+            try:
+                persist_semantic_event(event)
+            except Exception as exc:  # pragma: no cover - defensive
+                LOGGER.warning("persist semantic event failed source=%s ref=%s: %s", event.source, event.raw_ref, exc)
+        yield event
 
 
 def _select_sources(source: str | None) -> list[DataSource]:

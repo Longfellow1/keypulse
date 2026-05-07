@@ -176,6 +176,17 @@ keypulse setup
 
 完整命令参考：`keypulse --help`。首次配置的细节看 [docs/setup-onboarding.md](docs/setup-onboarding.md)。
 
+### Daily launchd 模板（PR2）
+
+仓库提供 `scripts/com.keypulse.daily.plist`，内置两个触发点：
+- `18:00` → `keypulse daily run --trigger 18:00`
+- `23:30` → `keypulse daily run --trigger 23:30`
+
+建议步骤（只示例文件操作，不用 `launchctl load`）：
+1. 复制模板到 `~/Library/LaunchAgents/com.keypulse.daily.plist`
+2. 按本机路径调整 `ProgramArguments`（例如 `keypulse` 可执行路径）
+3. 用 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.keypulse.daily.plist` 启用
+
 ---
 
 ## 隐私一览

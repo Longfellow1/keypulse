@@ -1,0 +1,80 @@
+{
+  "type": "object",
+  "required": [
+    "decisions"
+  ],
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "slug_a",
+          "slug_b",
+          "action",
+          "reason"
+        ],
+        "properties": {
+          "slug_a": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,40}$"
+          },
+          "slug_b": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,40}$"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "merge",
+              "keep_separate"
+            ]
+          },
+          "into": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,40}$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "action": {
+                  "const": "merge"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "into"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "action": {
+                  "const": "keep_separate"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "into"
+                ]
+              }
+            }
+          }
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

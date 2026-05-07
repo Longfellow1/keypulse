@@ -177,11 +177,20 @@ class ModelConfig(BaseModel):
     )
 
 
+class LLMConfig(BaseModel):
+    tier: Literal["mini", "standard", "premium"] = "mini"
+    provider: str = ""
+    monthly_budget_usd: float = 5.0
+    local_ollama_url: str = "http://localhost:11434"
+
+
 class ObsidianConfig(BaseModel):
     vault_path: str = "~/Go/Knowledge"
     vault_name: str = "KeyPulse"
     export_hour: int = 9
     export_minute: int = 5
+    wiki_link_mode: Literal["relative", "absolute_md"] = "relative"
+    humanize_titles: bool = False
 
 
 class IntegrationConfig(BaseModel):
@@ -216,6 +225,7 @@ class Config(BaseModel):
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
