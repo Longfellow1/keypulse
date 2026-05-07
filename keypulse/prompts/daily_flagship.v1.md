@@ -1,7 +1,7 @@
 ---
 capability: daily_flagship
 version: v1
-model_tier: standard
+model_tier: premium
 input_schema: schemas/daily_flagship_input.json
 output_schema: schemas/daily_flagship_output.json
 max_tokens: 4000

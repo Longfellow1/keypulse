@@ -348,7 +348,7 @@ class ModelGateway:
         return env_value or None
 
     def _auth_mode(self, backend: ModelBackend) -> str:
-        if backend.kind != "openai_compatible":
+        if backend.kind not in {"openai_compatible", "anthropic"}:
             return "none"
         source = (backend.api_key_source or "").strip()
         if source.startswith("keychain:"):
@@ -371,7 +371,7 @@ class ModelGateway:
             return False
         if backend.kind in {"lm_studio", "ollama"}:
             return True
-        if backend.kind == "openai_compatible":
+        if backend.kind in {"openai_compatible", "anthropic"}:
             if not require_auth:
                 return True
             return bool(self._resolve_api_key(backend))
@@ -642,26 +642,12 @@ class ModelGateway:
             "backends": info,
         }
 
-    _DEFAULT_TIER_PROVIDER_MODEL: dict[str, tuple[str, str]] = {
-        "mini": ("ollama_local", "qwen2.5:7b"),
-        "standard": ("deepseek", "deepseek-chat"),
-        "premium": ("anthropic", "claude-sonnet-4-6"),
-    }
-    _PROVIDER_BASE_URL: dict[str, str] = {
-        "deepseek": "https://api.deepseek.com",
-        "openai": "https://api.openai.com/v1",
-        "anthropic": "https://api.anthropic.com",
-    }
-    _PROVIDER_API_ENV: dict[str, str] = {
-        "deepseek": "DEEPSEEK_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-    }
-    _TIER_PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
-        "mini": (0.10, 0.20),
-        "standard": (0.20, 0.80),
-        "premium": (2.00, 10.00),
-    }
+    # cost 估算暂时停用——需求未明确，原硬表与实际 token 价格脱节。
+    # _TIER_PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
+    #     "mini": (0.10, 0.20),
+    #     "standard": (0.20, 0.80),
+    #     "premium": (2.00, 10.00),
+    # }
 
     def _llm_root(self) -> Path:
         root = Path.home() / ".keypulse"
@@ -681,43 +667,12 @@ class ModelGateway:
     def _capability_tier(self, capability: str, model_tier_override: str | None = None) -> str:
         if model_tier_override:
             candidate = model_tier_override.strip().lower()
-            if candidate in self._DEFAULT_TIER_PROVIDER_MODEL:
+            if candidate in {"mini", "standard", "premium"}:
                 return candidate
         capability_key = capability.strip().lower()
         if capability_key in {"l2", "l2_narrative", "narrative", "l3", "l3_topic_naming", "topicnaming"}:
             return "mini"
         return str(getattr(self._config.llm, "tier", "mini")).strip() or "mini"
-
-    def _resolve_provider_model(self, capability: str, model_tier_override: str | None = None) -> dict[str, str]:
-        tier = self._capability_tier(capability, model_tier_override=model_tier_override)
-        default_provider, default_model = self._DEFAULT_TIER_PROVIDER_MODEL.get(
-            tier,
-            self._DEFAULT_TIER_PROVIDER_MODEL["mini"],
-        )
-        provider_override = str(getattr(self._config.llm, "provider", "") or "").strip()
-        provider = provider_override or default_provider
-        model = default_model
-        if provider == "ollama_local":
-            base_url = str(getattr(self._config.llm, "local_ollama_url", "") or "").strip() or "http://localhost:11434"
-            backend = ModelBackend(kind="ollama", base_url=base_url.rstrip("/"), model=model)
-            return {"tier": tier, "provider": provider, "model": model, "base_url": backend.base_url, "kind": backend.kind}
-        if provider == "anthropic":
-            base_url = self._PROVIDER_BASE_URL["anthropic"]
-            return {"tier": tier, "provider": provider, "model": model, "base_url": base_url, "kind": "anthropic"}
-        if provider in {"deepseek", "openai"}:
-            base_url = self._PROVIDER_BASE_URL[provider]
-            return {"tier": tier, "provider": provider, "model": model, "base_url": base_url, "kind": "openai_compatible"}
-
-        cloud = _model_backend_from_config(self._config.model.cloud)
-        if cloud.base_url and cloud.model:
-            return {
-                "tier": tier,
-                "provider": provider,
-                "model": cloud.model,
-                "base_url": cloud.base_url,
-                "kind": cloud.kind,
-            }
-        return {"tier": tier, "provider": provider, "model": model, "base_url": "", "kind": "disabled"}
 
     def _cache_key(
         self,
@@ -775,7 +730,7 @@ class ModelGateway:
             "tier": tier,
             "in_tokens": int(in_tokens),
             "out_tokens": int(out_tokens),
-            "cost_usd": round(float(cost_usd), 8),
+            "cost_usd": 0.0,
             "cache_hit": bool(cache_hit),
             "prompt_version": prompt_version or "",
         }
@@ -788,8 +743,11 @@ class ModelGateway:
         # Strip ```json ... ``` fences — many models (deepseek, qwen, doubao)
         # wrap JSON output that way despite explicit "no markdown" instructions.
         text = _strip_json_fence(output_text)
+        # strict=False tolerates unescaped \n / \t inside string values —
+        # doubao routinely emits raw newlines instead of \\n when packing
+        # a long markdown blob into the "markdown" field.
         if isinstance(schema, dict):
-            parsed = json.loads(text)
+            parsed = json.loads(text, strict=False)
             _validate_jsonschema_minimal(schema, parsed)
             return parsed
         if isinstance(schema, type) and issubclass(schema, BaseModel):
@@ -797,37 +755,32 @@ class ModelGateway:
         if hasattr(schema, "model_validate_json"):
             return schema.model_validate_json(text)
         if hasattr(schema, "model_validate"):
-            parsed = json.loads(text)
+            parsed = json.loads(text, strict=False)
             return schema.model_validate(parsed)
         raise TypeError("unsupported schema type")
 
-    def _estimate_cost_usd(self, *, provider: str, tier: str, in_tokens: int, out_tokens: int) -> float:
-        if provider == "ollama_local":
-            return 0.0
-        in_price, out_price = self._TIER_PRICES_PER_MILLION.get(tier, self._TIER_PRICES_PER_MILLION["mini"])
-        return (max(in_tokens, 0) * in_price + max(out_tokens, 0) * out_price) / 1_000_000
+    def _estimate_cost_usd(self, *, tier: str, in_tokens: int, out_tokens: int) -> float:
+        # cost 估算暂时停用——需求未明确，原硬表与实际 token 价格脱节。
+        return 0.0
 
     def _call_capability_backend(
         self,
         *,
-        provider: str,
-        model: str,
-        kind: str,
-        base_url: str,
+        backend: ModelBackend,
+        backend_name: str,
         prompt: str,
         max_tokens: int | None,
         temperature: float | None,
         tier: str,
         cache_control: Mapping[str, str] | None,
     ) -> dict[str, Any]:
-        if kind == "disabled" or not base_url.strip():
-            raise NoBackendAvailable(f"no backend for provider={provider}")
+        if backend.is_disabled() or not backend.base_url.strip() or not backend.model.strip():
+            raise NoBackendAvailable(f"no backend for {backend_name}")
 
-        if kind == "anthropic":
-            backend = ModelBackend(kind="anthropic", base_url=base_url.rstrip("/"), model=model)
-            api_key = _env_value(self._PROVIDER_API_ENV["anthropic"])
+        if backend.kind == "anthropic":
+            api_key = self._resolve_api_key(backend)
             if not api_key:
-                raise NoBackendAvailable("missing ANTHROPIC_API_KEY")
+                raise NoBackendAvailable(f"missing api key for {backend_name}")
             headers: dict[str, str] = {
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
@@ -835,7 +788,7 @@ class ModelGateway:
             if cache_control:
                 headers.update({str(k): str(v) for k, v in cache_control.items()})
             payload = {
-                "model": model,
+                "model": backend.model,
                 "max_tokens": int(max_tokens or 1024),
                 "temperature": float(0 if temperature is None else temperature),
                 "messages": [{"role": "user", "content": prompt}],
@@ -851,13 +804,12 @@ class ModelGateway:
             usage = data.get("usage") or {}
             in_tokens = int(usage.get("input_tokens") or _estimate_tokens(prompt))
             out_tokens = int(usage.get("output_tokens") or _estimate_tokens(text))
-            cost_usd = self._estimate_cost_usd(provider=provider, tier=tier, in_tokens=in_tokens, out_tokens=out_tokens)
+            cost_usd = self._estimate_cost_usd(tier=tier, in_tokens=in_tokens, out_tokens=out_tokens)
             return {"text": text, "in_tokens": in_tokens, "out_tokens": out_tokens, "cost_usd": cost_usd}
 
-        if kind == "ollama":
-            backend = ModelBackend(kind="ollama", base_url=base_url.rstrip("/"), model=model)
+        if backend.kind == "ollama":
             payload = {
-                "model": model,
+                "model": backend.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "options": {"temperature": float(0 if temperature is None else temperature)},
@@ -872,15 +824,8 @@ class ModelGateway:
             cost_usd = 0.0
             return {"text": text, "in_tokens": in_tokens, "out_tokens": out_tokens, "cost_usd": cost_usd}
 
-        api_env = self._PROVIDER_API_ENV.get(provider, getattr(self._config.model.cloud, "api_key_env", ""))
-        backend = ModelBackend(
-            kind="openai_compatible",
-            base_url=base_url.rstrip("/"),
-            model=model,
-            api_key_env=api_env,
-        )
         payload = {
-            "model": model,
+            "model": backend.model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": float(0 if temperature is None else temperature),
             "max_tokens": int(max_tokens or 1024),
@@ -892,7 +837,7 @@ class ModelGateway:
         usage = data.get("usage") or {}
         in_tokens = int(usage.get("prompt_tokens") or _estimate_tokens(prompt))
         out_tokens = int(usage.get("completion_tokens") or _estimate_tokens(text))
-        cost_usd = self._estimate_cost_usd(provider=provider, tier=tier, in_tokens=in_tokens, out_tokens=out_tokens)
+        cost_usd = self._estimate_cost_usd(tier=tier, in_tokens=in_tokens, out_tokens=out_tokens)
         return {"text": text, "in_tokens": in_tokens, "out_tokens": out_tokens, "cost_usd": cost_usd}
 
     def call(
@@ -924,16 +869,15 @@ class ModelGateway:
             if prompt_version is None:
                 prompt_version = f"{prompt_spec.capability}.{prompt_spec.version}"
 
-        target = self._resolve_provider_model(
+        tier = self._capability_tier(
             capability,
             model_tier_override=(prompt_spec.model_tier if prompt_spec is not None else None),
         )
-        tier = str(target["tier"])
-        provider = str(target["provider"])
-        model = str(target["model"])
-        kind = str(target["kind"])
-        base_url = str(target["base_url"])
-        model_name = f"{provider}/{model}"
+        backend = self.select_backend(stage="write")
+        backend_name = self._backend_name_from_obj(backend)
+        if backend.is_disabled() or not backend.base_url.strip() or not backend.model.strip():
+            raise NoBackendAvailable(f"no backend for {backend_name}")
+        model_name = f"{backend_name}/{backend.model}"
 
         cache_key = self._cache_key(
             capability=capability,
@@ -948,16 +892,6 @@ class ModelGateway:
             try:
                 cached_output = str(cache_payload.get("output") or "")
                 validated_cached = self._schema_validate(schema, cached_output)
-                self._append_cost_row(
-                    capability=capability,
-                    model_name=model_name,
-                    tier=tier,
-                    in_tokens=0,
-                    out_tokens=0,
-                    cost_usd=0.0,
-                    cache_hit=True,
-                    prompt_version=prompt_version,
-                )
                 return validated_cached
             except Exception:
                 logger.warning("cache decode/validation failed for %s; refreshing", cache_key)
@@ -967,10 +901,8 @@ class ModelGateway:
         for _ in range(max_attempts):
             try:
                 result = self._call_capability_backend(
-                    provider=provider,
-                    model=model,
-                    kind=kind,
-                    base_url=base_url,
+                    backend=backend,
+                    backend_name=backend_name,
                     prompt=prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
@@ -981,7 +913,7 @@ class ModelGateway:
                 validated = self._schema_validate(schema, output_text)
                 in_tokens = int(result.get("in_tokens") or _estimate_tokens(prompt))
                 out_tokens = int(result.get("out_tokens") or _estimate_tokens(output_text))
-                cost_usd = float(result.get("cost_usd") or 0.0)
+                cost_usd = 0.0
 
                 payload = {
                     "key": cache_key,
@@ -1006,16 +938,6 @@ class ModelGateway:
                 atomic_write_text(
                     cache_path,
                     json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-                )
-                self._append_cost_row(
-                    capability=capability,
-                    model_name=model_name,
-                    tier=tier,
-                    in_tokens=in_tokens,
-                    out_tokens=out_tokens,
-                    cost_usd=cost_usd,
-                    cache_hit=False,
-                    prompt_version=prompt_version,
                 )
                 return validated
             except Exception as exc:

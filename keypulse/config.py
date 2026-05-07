@@ -142,7 +142,7 @@ class PipelineConfig(BaseModel):
 
 
 class ModelBackendConfig(BaseModel):
-    kind: Literal["lm_studio", "openai_compatible", "ollama", "disabled"] = "disabled"
+    kind: Literal["lm_studio", "openai_compatible", "anthropic", "ollama", "disabled"] = "disabled"
     base_url: str = ""
     model: str = ""
     tier: str = ""
