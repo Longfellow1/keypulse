@@ -4,7 +4,7 @@ import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -18,8 +18,16 @@ from keypulse.pipeline.clustering import (
     connected_components,
     detect_merge_candidates,
 )
+from keypulse.pipeline.daily_strategy import (
+    BudgetStrategyDeps,
+    BudgetTwoStepStrategy,
+    ClusterRecord,
+    DailyStrategyError,
+    FlagshipSingleStepStrategy,
+)
 from keypulse.pipeline.daily_summary import write_daily_summary
 from keypulse.pipeline.model import LLMCallError, ModelGateway, load_model_gateway
+from keypulse.pipeline.model_card import resolve_tier
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.atomic_io import atomic_write_text
 from keypulse.utils.dates import local_day_bounds
@@ -35,17 +43,6 @@ _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
 
 class DailyOrchestratorError(RuntimeError):
     """Raised when daily orchestration cannot complete and caller should fallback."""
-
-
-@dataclass(frozen=True)
-class DailyCluster:
-    component_id: str
-    topic_action: str
-    topic_slug: str | None
-    display_name: str
-    event_ids: tuple[str, ...]
-    narrative: str
-    merge_with_component: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +96,8 @@ def _extract_event_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "id": event_id,
         "ts_start": ts_start,
+        "source": str(row["source"] or "").strip(),
+        "speaker": str(row["speaker"] or "").strip(),
         "app_name": app_name,
         "window_title": window_title,
         "content_text": content_text,
@@ -225,17 +224,40 @@ def _mock_l1_output(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _mock_l2_output(payload: dict[str, Any]) -> dict[str, str]:
-    events = payload.get("events") or []
-    parts: list[str] = []
-    for event in events[:3]:
-        if not isinstance(event, dict):
-            continue
-        app = str(event.get("app") or "应用")
-        content = str(event.get("content") or "处理任务").strip()
-        parts.append(f"在{app}里{content}")
-    sentence = "，随后".join(parts) if parts else "围绕同一主线持续推进并记录了关键动作"
-    text = f"今天这组事件主要是{sentence}，整体节奏连续且目标一致，形成了可回看的一条工作脉络。"
-    return {"markdown": text[:260]}
+    date_str = str(payload.get("date") or "unknown-date")
+    clusters = [item for item in (payload.get("clusters") or []) if isinstance(item, dict)]
+    lines = [
+        "📍 Asia/Shanghai",
+        "",
+        f"# {date_str}",
+        "",
+        "## 今日要点",
+        "",
+        "你今天把分散事件收拢成可复盘的主题叙事，重点不是操作数量，而是确认了哪些工作线索值得沉淀，以及哪些噪音可以被排除在日报主体之外。",
+        "",
+        "## 今天做的事",
+        "",
+    ]
+    if not clusters:
+        lines.extend(["### 日常推进", "", "你围绕同一条工作线持续推进，留下了足够的上下文用于回看。"])
+    for cluster in clusters:
+        display_name = str(cluster.get("display_name") or "日常推进")
+        events = [item for item in (cluster.get("events") or []) if isinstance(item, dict)]
+        content = "；".join(str(item.get("c") or "").strip() for item in events[:2]) or "处理关键任务"
+        lines.extend(
+            [
+                f"### {display_name}",
+                "",
+                f"你围绕「{display_name}」推进了连续事项，输入里能看到 {content}。这组事件形成了相对完整的上下文，适合沉淀为主题而不是散点记录。",
+                "",
+            ]
+        )
+    lines.extend(["## 明日的锚点", "", "> 明天我想：______", ">", "> _写一句话留给明天的自己_", ""])
+    return {"markdown": "\n".join(lines)}
+
+
+def _mock_daily_flagship_output(payload: dict[str, Any]) -> dict[str, str]:
+    return _mock_l2_output({"date": payload.get("date"), "clusters": [{"display_name": "全天主线", "events": payload.get("events") or []}], "misc_events": []})
 
 
 def _mock_l3_output(payload: dict[str, Any]) -> dict[str, Any]:
@@ -279,6 +301,8 @@ def _install_mock_backend(gateway: ModelGateway) -> None:
             body = json.dumps(_mock_l2_output(payload), ensure_ascii=False)
         elif capability == "L3_topic_naming":
             body = json.dumps(_mock_l3_output(payload), ensure_ascii=False)
+        elif capability == "daily_flagship":
+            body = json.dumps(_mock_daily_flagship_output(payload), ensure_ascii=False)
         else:
             body = json.dumps({"ok": True}, ensure_ascii=False)
         return {"text": body, "in_tokens": 120, "out_tokens": 40, "cost_usd": 0.0}
@@ -550,25 +574,38 @@ def _daily_path(date_str: str) -> Path:
     return target
 
 
-def _render_daily_markdown(date_str: str, clusters: list[DailyCluster], misc_event_ids: list[str]) -> str:
-    lines = [f"# {date_str}", "", "## 今日主线", ""]
-    for cluster in clusters:
-        if cluster.topic_action == "misc":
-            continue
-        lines.append(f"### {cluster.display_name}")
-        lines.append(cluster.narrative)
-        links = " ".join(_event_link(date_str, event_id) for event_id in cluster.event_ids)
-        lines.append(f"- 关联事件: {links}")
-        lines.append("")
+def _backend_name_for_tier(backend_model: str, cfg: Config) -> str:
+    if backend_model == cfg.model.cloud.model:
+        return "cloud"
+    if backend_model == cfg.model.local.model:
+        return "local"
+    return "cloud"
 
-    lines.extend(["## 散点", ""])
-    if misc_event_ids:
-        for event_id in misc_event_ids:
-            lines.append(f"- {_event_link(date_str, event_id)}")
-    else:
-        lines.append("- （无）")
-    lines.append("")
-    return "\n".join(lines)
+
+def _resolve_daily_tier(gateway: ModelGateway) -> str:
+    backend = gateway.select_backend(stage="write")
+    cfg = Config.load()
+    backend_name = _backend_name_for_tier(backend.model, cfg)
+    backend_cfg = getattr(cfg.model, backend_name)
+    tier_override = getattr(backend_cfg, "tier", "")
+    return resolve_tier(backend.model, override=tier_override)
+
+
+def _extract_narrative_one_line(markdown: str, display_name: str) -> str:
+    lines = markdown.splitlines()
+    target_heading = f"### {display_name}".strip()
+    in_section = False
+    collected: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("### "):
+            if in_section:
+                break
+            in_section = stripped == target_heading
+            continue
+        if in_section and stripped and not stripped.startswith("#"):
+            collected.append(stripped.lstrip("> ").strip())
+    return " ".join(collected)[:120]
 
 
 def _cost_snapshot(run_started_at: datetime) -> dict[str, Any]:
@@ -665,252 +702,208 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             skipped=True,
         )
 
-    graph = build_evidence_graph(events)
-    components = connected_components(graph)
-    feature_index = build_feature_index(events)
-    merge_candidates = detect_merge_candidates(components, 0.2, feature_index=feature_index)
-    component_map = {f"c{index+1}": sorted(list(component)) for index, component in enumerate(components)}
-    topics = _load_topic_index()
-    hot_slugs = _load_hot_slugs()
-    pruned_topics = _prune_topics(topics, hot_slugs, events)
-
     gateway = _load_gateway()
+    tier = _resolve_daily_tier(gateway)
 
-    component_payloads: list[dict[str, Any]] = []
-    for component_id, event_ids in component_map.items():
-        component_events = [event for event in events if str(event.get("id")) in set(event_ids)]
-        feature = component_features(set(event_ids), feature_index)
-        time_range = list(_component_time_range(component_events))
-        component_payloads.append(
+    if tier == "flagship":
+        strategy = FlagshipSingleStepStrategy()
+        try:
+            result = strategy.generate(date_str=date_str, events=events, gateway=gateway)
+        except DailyStrategyError as exc:
+            raise DailyOrchestratorError(str(exc)) from exc
+
+        daily_path = _daily_path(date_str)
+        atomic_write_text(daily_path, result.markdown)
+        _append_log(
             {
-                "component_id": component_id,
-                "event_ids": event_ids,
-                "time_range": time_range,
-                "h1_entities": sorted(feature["entities"]),
-                "h2_contexts": [],
-                "keywords": sorted(feature["keywords"])[:20],
+                "ts": _now_iso(),
+                "capability": "daily_orchestrator",
+                "date": date_str,
+                "trigger": trigger,
+                "tier": "flagship",
+                "strategy": strategy.name,
             }
         )
-
-    l1_input = {
-        "scope_date": date_str,
-        "trigger": trigger,
-        "components": component_payloads,
-        "merge_candidates": [list(pair) for pair in merge_candidates],
-        "existing_topics_index": pruned_topics,
-        "hot_cache": hot_slugs,
-        "hud_input_today": None,
-    }
-
-    try:
-        from keypulse.prompts.loader import load_prompt
-
-        l1_spec = load_prompt("L1_cluster_review")
-        l1_prompt = _build_prompt(l1_spec.body, "L1_cluster_review", l1_input)
-        l1_output = gateway.call(
-            "L1_cluster_review",
-            l1_prompt,
-            input_data=l1_input,
+        summary_path = write_daily_summary(
+            date_str,
+            clusters=[],
+            misc=[],
+            topic_snapshot={},
+            cost=_cost_snapshot(run_started_at),
         )
-    except (LLMCallError, ValueError, KeyError, OSError) as exc:
-        raise DailyOrchestratorError(f"L1 failed: {exc}") from exc
+        return DailySummary(
+            date=date_str,
+            trigger=trigger,
+            event_count=len(rows),
+            processed_count=len(events),
+            cluster_count=0,
+            misc_event_ids=tuple(),
+            topic_diffs=tuple(),
+            daily_path=str(daily_path),
+            summary_path=str(summary_path),
+            skipped=False,
+        )
 
-    if not isinstance(l1_output, dict):
-        raise DailyOrchestratorError("L1 output must be object")
+    merge_cache: dict[str, Any] = {"pairs": []}
 
-    decision_map: dict[str, dict[str, Any]] = {}
-    for item in l1_output.get("clusters", []):
-        if not isinstance(item, dict):
-            continue
-        component_id = str(item.get("component_id") or "").strip()
-        if component_id:
-            decision_map[component_id] = item
-
-    misc_event_ids = [str(item) for item in (l1_output.get("misc_event_ids") or []) if str(item).strip()]
-    valid_ids = {str(event.get("id")) for event in events}
-    misc_event_ids = [event_id for event_id in misc_event_ids if event_id in valid_ids]
-
-    resolved_clusters: list[DailyCluster] = []
-    new_cluster_inputs: list[tuple[str, list[dict[str, Any]], dict[str, Any]]] = []
-    l2_inputs: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
-
-    for component_id, event_ids in component_map.items():
-        decision = decision_map.get(component_id, {"component_id": component_id, "topic_action": "misc"})
-        topic_action = str(decision.get("topic_action") or "misc")
-        if topic_action not in {"existing", "new", "misc"}:
-            topic_action = "misc"
-        component_events = [event for event in events if str(event.get("id")) in set(event_ids)]
-
-        topic_slug = str(decision.get("topic_slug") or "").strip() or None
-        if topic_action == "existing" and topic_slug is None:
-            topic_action = "misc"
-        if topic_action == "misc":
-            for event_id in event_ids:
-                if event_id not in misc_event_ids:
-                    misc_event_ids.append(event_id)
-
-        if topic_action == "new":
-            new_cluster_inputs.append((component_id, component_events, decision))
-
-        l2_payload = {
-            "scope_date": date_str,
-            "trigger": trigger,
-            "component_id": component_id,
-            "event_ids": event_ids,
-            "events": [
-                {
-                    "id": str(event.get("id")),
-                    "timestamp": str(event.get("ts_start")),
-                    "app": str(event.get("app_name") or "unknown"),
-                    "content": str(event.get("content_text") or ""),
-                }
-                for event in component_events
-            ],
-            "topic_context": {
-                "topic_action": topic_action,
-                "topic_slug": topic_slug,
-                "display_name": _topic_display_name(topic_slug, pruned_topics) if topic_slug else None,
-            },
+    def cluster_components(scoped_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        graph = build_evidence_graph(scoped_events)
+        components = connected_components(graph)
+        feature_index = build_feature_index(scoped_events)
+        raw_merge_candidates = detect_merge_candidates(components, 0.2, feature_index=feature_index)
+        component_ids = [f"c{index+1}" for index in range(len(components))]
+        signature_to_component_id = {
+            ",".join(sorted(component)): component_ids[index] for index, component in enumerate(components)
         }
-        l2_inputs.append((component_id, l2_payload, decision))
+        merge_cache["pairs"] = [
+            (signature_to_component_id[left], signature_to_component_id[right])
+            for left, right in raw_merge_candidates
+            if left in signature_to_component_id and right in signature_to_component_id
+        ]
 
-    # L2 narratives in parallel
-    l2_results: dict[str, str] = {}
-    try:
-        from keypulse.prompts.loader import load_prompt
-
-        l2_spec = load_prompt("L2_narrative")
-        with ThreadPoolExecutor(max_workers=min(8, max(1, len(l2_inputs)))) as executor:
-            futures = {}
-            for component_id, payload, _decision in l2_inputs:
-                prompt = _build_prompt(l2_spec.body, "L2_narrative", payload)
-                futures[
-                    executor.submit(
-                        gateway.call,
-                        "L2_narrative",
-                        prompt,
-                        input_data=payload,
-                    )
-                ] = component_id
-            for future in as_completed(futures):
-                component_id = futures[future]
-                output = future.result()
-                if isinstance(output, dict):
-                    markdown = str(output.get("markdown") or "").strip()
-                else:
-                    markdown = str(output).strip()
-                l2_results[component_id] = markdown
-    except (LLMCallError, ValueError, KeyError, OSError, RuntimeError) as exc:
-        raise DailyOrchestratorError(f"L2 failed: {exc}") from exc
-
-    # L3 naming in parallel for new topics
-    l3_results: dict[str, dict[str, Any]] = {}
-    existing_slugs = {str(item.get("slug")) for item in pruned_topics if str(item.get("slug") or "").strip()}
-    try:
-        from keypulse.prompts.loader import load_prompt
-
-        l3_spec = load_prompt("L3_topic_naming")
-        with ThreadPoolExecutor(max_workers=min(8, max(1, len(new_cluster_inputs)))) as executor:
-            futures = {}
-            for component_id, component_events, _decision in new_cluster_inputs:
-                payload = {
-                    "trigger": trigger,
+        payloads: list[dict[str, Any]] = []
+        for component_id, component in zip(component_ids, components, strict=False):
+            event_ids = sorted(list(component))
+            event_id_set = set(event_ids)
+            component_events = [event for event in scoped_events if str(event.get("id")) in event_id_set]
+            feature = component_features(event_id_set, feature_index)
+            payloads.append(
+                {
                     "component_id": component_id,
-                    "events": [
-                        {
-                            "id": str(event.get("id")),
-                            "content": str(event.get("content_text") or ""),
-                            "app": str(event.get("app_name") or ""),
-                            "timestamp": str(event.get("ts_start") or ""),
-                        }
-                        for event in component_events
-                    ],
-                    "existing_slugs": sorted(existing_slugs),
+                    "event_ids": event_ids,
+                    "time_range": list(_component_time_range(component_events)),
+                    "h1_entities": sorted(feature["entities"]),
+                    "h2_contexts": [],
+                    "keywords": sorted(feature["keywords"])[:20],
                 }
-                prompt = _build_prompt(l3_spec.body, "L3_topic_naming", payload)
-                futures[
-                    executor.submit(
-                        gateway.call,
-                        "L3_topic_naming",
-                        prompt,
-                        input_data=payload,
-                    )
-                ] = component_id
-            for future in as_completed(futures):
-                component_id = futures[future]
-                result = future.result()
-                if isinstance(result, dict):
-                    l3_results[component_id] = result
-                    slug = str(result.get("slug") or "").strip()
-                    if slug:
-                        existing_slugs.add(slug)
-    except (LLMCallError, ValueError, KeyError, OSError, RuntimeError) as exc:
-        raise DailyOrchestratorError(f"L3 failed: {exc}") from exc
+            )
+        return payloads
+
+    deps = BudgetStrategyDeps(
+        cluster_components=cluster_components,
+        load_topics_index=_load_topic_index,
+        load_hot_slugs=_load_hot_slugs,
+        prune_topics=_prune_topics,
+        topic_display_name=_topic_display_name,
+        detect_merges=lambda _component_payloads: list(merge_cache.get("pairs") or []),
+    )
+    strategy = BudgetTwoStepStrategy(deps)
+    try:
+        result = strategy.generate(date_str=date_str, events=events, gateway=gateway)
+    except DailyStrategyError as exc:
+        raise DailyOrchestratorError(str(exc)) from exc
+
+    cluster_records = list(result.clusters)
+    events_by_id = {str(event.get("id")): event for event in events}
+    new_cluster_inputs: list[tuple[ClusterRecord, list[dict[str, Any]]]] = []
+    for cluster in cluster_records:
+        if cluster.topic_action != "new":
+            continue
+        component_events = [events_by_id[event_id] for event_id in cluster.event_ids if event_id in events_by_id]
+        new_cluster_inputs.append((cluster, component_events))
+
+    l3_results: dict[str, dict[str, Any]] = {}
+    topics_index = _load_topic_index()
+    existing_slugs = {str(item.get("slug")) for item in topics_index if str(item.get("slug") or "").strip()}
+    if new_cluster_inputs:
+        try:
+            from keypulse.prompts.loader import load_prompt
+
+            l3_spec = load_prompt("L3_topic_naming")
+            with ThreadPoolExecutor(max_workers=min(8, len(new_cluster_inputs))) as executor:
+                futures = {}
+                for cluster, component_events in new_cluster_inputs:
+                    payload = {
+                        "trigger": trigger,
+                        "component_id": cluster.component_id,
+                        "events": [
+                            {
+                                "id": str(event.get("id")),
+                                "content": str(event.get("content_text") or ""),
+                                "app": str(event.get("app_name") or ""),
+                                "timestamp": str(event.get("ts_start") or ""),
+                            }
+                            for event in component_events
+                        ],
+                        "existing_slugs": sorted(existing_slugs),
+                    }
+                    prompt = _build_prompt(l3_spec.body, "L3_topic_naming", payload)
+                    futures[
+                        executor.submit(
+                            gateway.call,
+                            "L3_topic_naming",
+                            prompt,
+                            input_data=payload,
+                        )
+                    ] = cluster.component_id
+                for future in as_completed(futures):
+                    component_id = futures[future]
+                    try:
+                        named = future.result()
+                    except (LLMCallError, ValueError, KeyError, OSError, RuntimeError):
+                        continue
+                    if isinstance(named, dict):
+                        l3_results[component_id] = named
+                        slug = str(named.get("slug") or "").strip()
+                        if slug:
+                            existing_slugs.add(slug)
+        except (LLMCallError, ValueError, KeyError, OSError, RuntimeError):
+            l3_results = {}
 
     topics_touched: list[tuple[str, str]] = []
     topic_diffs: list[str] = []
-    for component_id, event_ids in component_map.items():
-        decision = decision_map.get(component_id, {"topic_action": "misc"})
-        topic_action = str(decision.get("topic_action") or "misc")
-        component_events = [event for event in events if str(event.get("id")) in set(event_ids)]
-        narrative = l2_results.get(component_id, "").strip()
-        if not narrative:
-            start, end = _component_time_range(component_events)
-            narrative = f"本时段共 {len(event_ids)} 条相关事件，时间范围 {start}-{end}。"
-
-        topic_slug: str | None = None
-        display_name = "散点"
-        if topic_action == "existing":
-            topic_slug = str(decision.get("topic_slug") or "").strip() or None
-            if topic_slug:
-                display_name = _topic_display_name(topic_slug, pruned_topics)
-        elif topic_action == "new":
-            named = l3_results.get(component_id, {})
+    resolved_clusters: list[ClusterRecord] = []
+    for cluster in cluster_records:
+        resolved = cluster
+        if cluster.topic_action == "new":
+            named = l3_results.get(cluster.component_id, {})
             candidate_slug = str(named.get("slug") or "").strip()
             if candidate_slug and _SLUG_RE.fullmatch(candidate_slug):
                 topic_slug = candidate_slug
             else:
-                topic_slug = _slugify_topic(narrative, fallback=f"topic-{date_str.replace('-', '')}-{component_id.lower()}")
+                fallback_text = " ".join(
+                    str(events_by_id[event_id].get("content_text") or "")
+                    for event_id in cluster.event_ids
+                    if event_id in events_by_id
+                )
+                topic_slug = _slugify_topic(
+                    fallback_text or cluster.display_name,
+                    fallback=f"topic-{date_str.replace('-', '')}-{cluster.component_id.lower()}",
+                )
             display_name = str(named.get("display_name") or topic_slug).strip() or topic_slug
+            resolved = replace(cluster, topic_slug=topic_slug, display_name=display_name)
+
+        narrative = _extract_narrative_one_line(result.markdown, resolved.display_name)
+        if not narrative:
+            component_events = [events_by_id[event_id] for event_id in resolved.event_ids if event_id in events_by_id]
+            start, end = _component_time_range(component_events)
+            narrative = f"本主题共 {len(resolved.event_ids)} 条相关事件，时间范围 {start}-{end}。"
+        resolved = replace(resolved, narrative_one_line=narrative)
+
+        keywords = list(resolved.keywords)
+        if resolved.topic_action == "new":
+            keywords = [str(item) for item in (l3_results.get(resolved.component_id, {}).get("keywords") or [])] or keywords
         else:
-            topic_action = "misc"
+            for item in topics_index:
+                if str(item.get("slug") or "") == resolved.topic_slug:
+                    keywords = [str(v) for v in (item.get("keywords") or [])]
+                    break
 
-        if topic_action != "misc" and topic_slug:
-            keywords = []
-            if topic_action == "new":
-                keywords = [str(item) for item in (l3_results.get(component_id, {}).get("keywords") or [])]
-            else:
-                for item in pruned_topics:
-                    if str(item.get("slug") or "") == topic_slug:
-                        keywords = [str(v) for v in (item.get("keywords") or [])]
-                        break
-            diff = _upsert_topic(
-                date_str=date_str,
-                trigger=trigger,
-                slug=topic_slug,
-                display_name=display_name,
-                keywords=keywords,
-                narrative=narrative,
-                event_ids=event_ids,
-            )
-            topic_diffs.append(f"{topic_slug}:{diff}")
-            topics_touched.append((topic_slug, display_name))
-
-        resolved_clusters.append(
-            DailyCluster(
-                component_id=component_id,
-                topic_action=topic_action,
-                topic_slug=topic_slug,
-                display_name=display_name,
-                event_ids=tuple(event_ids),
-                narrative=narrative,
-                merge_with_component=str(decision.get("merge_with_component") or "").strip() or None,
-            )
+        diff = _upsert_topic(
+            date_str=date_str,
+            trigger=trigger,
+            slug=resolved.topic_slug,
+            display_name=resolved.display_name,
+            keywords=keywords,
+            narrative=narrative,
+            event_ids=list(resolved.event_ids),
         )
+        topic_diffs.append(f"{resolved.topic_slug}:{diff}")
+        topics_touched.append((resolved.topic_slug, resolved.display_name))
+        resolved_clusters.append(resolved)
 
     daily_path = _daily_path(date_str)
-    daily_markdown = _render_daily_markdown(date_str, resolved_clusters, misc_event_ids)
-    atomic_write_text(daily_path, daily_markdown)
+    atomic_write_text(daily_path, result.markdown)
 
     _refresh_hot(topics_touched, date_str)
     _append_log(
@@ -919,33 +912,38 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             "capability": "daily_orchestrator",
             "date": date_str,
             "trigger": trigger,
+            "tier": "budget",
+            "strategy": strategy.name,
             "cluster_count": len(resolved_clusters),
-            "misc_count": len(misc_event_ids),
+            "misc_count": len(result.misc_event_ids),
             "topic_diffs": topic_diffs,
-            "merge_candidates": merge_candidates,
+            "merge_candidates": list(result.merge_candidates),
         }
     )
 
+    merge_map: dict[str, list[str]] = {}
+    for left, right in result.merge_candidates:
+        merge_map.setdefault(left, []).append(right)
+        merge_map.setdefault(right, []).append(left)
+
     summary_clusters = []
     for cluster in resolved_clusters:
-        if cluster.topic_action == "misc":
-            continue
-        cluster_events = [event for event in events if str(event.get("id")) in set(cluster.event_ids)]
-        start, end = _component_time_range(cluster_events)
+        component_events = [events_by_id[event_id] for event_id in cluster.event_ids if event_id in events_by_id]
+        start, end = _component_time_range(component_events)
         summary_clusters.append(
             {
-                "slug": cluster.topic_slug or "misc",
+                "slug": cluster.topic_slug,
                 "display_name": cluster.display_name,
-                "narrative_one_line": cluster.narrative[:120],
+                "narrative_one_line": cluster.narrative_one_line,
                 "event_count": len(cluster.event_ids),
                 "time_range": [start, end],
-                "merge_candidate_with": [cluster.merge_with_component] if cluster.merge_with_component else [],
+                "merge_candidate_with": merge_map.get(cluster.component_id, []),
             }
         )
     summary_path = write_daily_summary(
         date_str,
         clusters=summary_clusters,
-        misc=misc_event_ids,
+        misc=list(result.misc_event_ids),
         topic_snapshot={slug: "active" for slug, _ in topics_touched},
         cost=_cost_snapshot(run_started_at),
     )
@@ -956,7 +954,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         event_count=len(rows),
         processed_count=len(events),
         cluster_count=len(resolved_clusters),
-        misc_event_ids=tuple(misc_event_ids),
+        misc_event_ids=tuple(result.misc_event_ids),
         topic_diffs=tuple(topic_diffs),
         daily_path=str(daily_path),
         summary_path=str(summary_path),

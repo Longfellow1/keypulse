@@ -1,14 +1,11 @@
 {
   "type": "object",
-  "required": [
-    "markdown"
-  ],
+  "required": ["markdown"],
+  "additionalProperties": false,
   "properties": {
     "markdown": {
       "type": "string",
-      "minLength": 20,
-      "maxLength": 300
+      "minLength": 100
     }
-  },
-  "additionalProperties": false
+  }
 }

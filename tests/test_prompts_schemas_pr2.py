@@ -60,7 +60,23 @@ def test_l1_output_schema_rejects_missing_topic_slug_for_existing():
 
 
 def test_l2_output_schema_accepts_markdown_object_and_rejects_plain_string():
-    valid = {"markdown": "早上在 Codex 里补了 daily orchestrator 的主链路，随后补了 schema 校验并修复了两个失败用例。"}
+    input_payload = {
+        "date": "2026-05-01",
+        "clusters": [
+            {
+                "display_name": "Daily 编排主线",
+                "topic_action": "new",
+                "events": [
+                    {"t": "09:00", "s": "ax_text", "a": "Codex", "c": "实现 strategy 分支", "sp": "user"},
+                    {"t": "09:10", "s": "ax_text", "a": "Codex", "c": "一次性生成整篇日报", "sp": "ai"},
+                ],
+            }
+        ],
+        "misc_events": [{"t": "10:00", "s": "clipboard", "a": "Chrome", "c": "misc browsing"}],
+    }
+    validate(input_payload, _schema("L2_input.json"))
+
+    valid = {"markdown": "早上在 Codex 里补了 daily orchestrator 的主链路，随后补了 schema 校验并修复了两个失败用例。这个输出超过最小长度，用来确认 L2 新版 schema 仍然要求返回 markdown 对象。"}
     validate(valid, _schema("L2_output.json"))
 
     invalid = "这是纯字符串不是对象"

@@ -6,21 +6,22 @@ from keypulse.prompts.loader import PromptCapabilityNotFoundError, load_prompt
 
 
 @pytest.mark.parametrize(
-    "capability,model_tier,max_tokens,body_marker",
+    "capability,version,model_tier,max_tokens,body_marker",
     [
-        ("L1_cluster_review", "standard", 800, "只输出 JSON"),
-        ("L2_narrative", "mini", 400, "生成 1 段 80-150"),
-        ("L3_topic_naming", "mini", 300, "新主题命名器"),
-        ("L4_weekly_reconcile", "standard", 800, "typed JSON merge 决策"),
-        ("L5_weekly_main_narrative", "standard", 1500, "这周的主线"),
-        ("L6_explorer", "standard", 600, "这周的回声"),
+        ("daily_flagship", "v1", "standard", 4000, "整篇日报内容"),
+        ("L1_cluster_review", "v1", "standard", 800, "只输出 JSON"),
+        ("L2_narrative", "v2", "standard", 4000, "整篇日报内容"),
+        ("L3_topic_naming", "v1", "mini", 300, "新主题命名器"),
+        ("L4_weekly_reconcile", "v1", "standard", 800, "typed JSON merge 决策"),
+        ("L5_weekly_main_narrative", "v1", "standard", 1500, "这周的主线"),
+        ("L6_explorer", "v1", "standard", 600, "这周的回声"),
     ],
 )
-def test_load_prompt_for_all_capabilities(capability, model_tier, max_tokens, body_marker):
+def test_load_prompt_for_all_capabilities(capability, version, model_tier, max_tokens, body_marker):
     spec = load_prompt(capability)
 
     assert spec.capability == capability
-    assert spec.version == "v1"
+    assert spec.version == version
     assert spec.model_tier == model_tier
     assert spec.max_tokens == max_tokens
     assert spec.temperature > 0
