@@ -129,6 +129,22 @@ class PipelineSignalsConfig(BaseModel):
     browser_enabled: bool = True
 
 
+class ValueDensityConfig(BaseModel):
+    enabled: bool = True
+    token_target: int = 80
+    decision_bonus: float = 0.25
+    high_density_threshold: float = 0.75
+    decision_regex: str = "是不是|为什么|决定|选择?|选|根因|结论|判断|取舍|方案|建议|应该|必须|确认|拍板|原因"
+    source_weights: dict[str, float] = Field(
+        default_factory=lambda: {
+            "user_msg": 1.25,
+            "assistant_msg": 0.85,
+            "tool_echo": 0.25,
+            "default": 0.6,
+        }
+    )
+
+
 class PipelineConfig(BaseModel):
     llm_mode: str = "local-first"
     max_llm_calls_per_run: int = 0
@@ -139,6 +155,7 @@ class PipelineConfig(BaseModel):
     use_narrative_skeleton: bool = False
     use_things_narrative: bool = True
     things_idle_threshold_minutes: int = 30
+    value_density: ValueDensityConfig = Field(default_factory=ValueDensityConfig)
 
 
 class ModelBackendConfig(BaseModel):

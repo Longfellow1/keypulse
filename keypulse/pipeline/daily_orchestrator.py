@@ -39,6 +39,10 @@ _INPUT_MARKER_BEGIN = "<<INPUT_JSON>>"
 _INPUT_MARKER_END = "<<END_INPUT_JSON>>"
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{2,40}$")
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
+_TOOL_ECHO_SOURCES = frozenset({"ax_text", "ocr_text", "window", "idle", "knowledgec", "zsh_history"})
+_USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli"})
 
 
 class DailyOrchestratorError(RuntimeError):
@@ -144,6 +148,68 @@ def _keywords_from_text(text: str) -> list[str]:
         seen.add(token)
         result.append(token)
     return result
+
+
+def _estimate_token_count(text: str) -> int:
+    if not text:
+        return 0
+    cjk_count = len(_CJK_RE.findall(text))
+    tokenish_count = len(_TOKENISH_RE.findall(text))
+    return cjk_count + tokenish_count
+
+
+def _source_kind(event: Mapping[str, Any]) -> str:
+    speaker = str(event.get("speaker") or "").strip().lower()
+    source = str(event.get("source") or "").strip().lower()
+    if speaker in {"ai", "assistant"}:
+        return "assistant_msg"
+    if source in _TOOL_ECHO_SOURCES or speaker == "system":
+        return "tool_echo"
+    if speaker == "user" or source in _USER_MESSAGE_SOURCES:
+        return "user_msg"
+    return "default"
+
+
+def _event_value_density(event: Mapping[str, Any], settings: Any | None = None) -> float:
+    cfg = settings or Config().pipeline.value_density
+    if not bool(getattr(cfg, "enabled", True)):
+        return 0.0
+
+    text = " ".join(
+        str(part or "").strip()
+        for part in (event.get("content_text"), event.get("window_title"))
+        if str(part or "").strip()
+    )
+    token_target = max(int(getattr(cfg, "token_target", 80) or 80), 1)
+    base = min(_estimate_token_count(text) / token_target, 1.0)
+    weights = getattr(cfg, "source_weights", {}) or {}
+    weight = float(weights.get(_source_kind(event), weights.get("default", 0.6)) or 0.0)
+    score = base * max(weight, 0.0)
+
+    decision_regex = str(getattr(cfg, "decision_regex", "") or "").strip()
+    if decision_regex:
+        try:
+            if re.search(decision_regex, text):
+                score += max(float(getattr(cfg, "decision_bonus", 0.0) or 0.0), 0.0)
+        except re.error:
+            pass
+
+    return round(min(max(score, 0.0), 1.0), 4)
+
+
+def _component_size_score(event_count: int) -> float:
+    return round(min(max(event_count, 0) / 5.0, 0.7), 4)
+
+
+def _component_density_metadata(component_events: list[dict[str, Any]], settings: Any | None = None) -> dict[str, float]:
+    densities = [_event_value_density(event, settings) for event in component_events]
+    peak = max(densities, default=0.0)
+    size_score = _component_size_score(len(component_events))
+    return {
+        "size_score": size_score,
+        "peak_event_density": peak,
+        "importance_score": round(max(size_score, peak), 4),
+    }
 
 
 def _slugify_topic(text: str, *, fallback: str) -> str:
@@ -744,6 +810,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             skipped=False,
         )
 
+    density_settings = Config.load().pipeline.value_density
     merge_cache: dict[str, Any] = {"pairs": []}
 
     def cluster_components(scoped_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -767,6 +834,8 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             event_id_set = set(event_ids)
             component_events = [event for event in scoped_events if str(event.get("id")) in event_id_set]
             feature = component_features(event_id_set, feature_index)
+            density_metadata = _component_density_metadata(component_events, density_settings)
+            high_density_threshold = float(getattr(density_settings, "high_density_threshold", 0.75) or 0.75)
             payloads.append(
                 {
                     "component_id": component_id,
@@ -775,6 +844,8 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
                     "h1_entities": sorted(feature["entities"]),
                     "h2_contexts": [],
                     "keywords": sorted(feature["keywords"])[:20],
+                    "high_density_threshold": high_density_threshold,
+                    **density_metadata,
                 }
             )
         return payloads
@@ -938,6 +1009,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
                 "event_count": len(cluster.event_ids),
                 "time_range": [start, end],
                 "merge_candidate_with": merge_map.get(cluster.component_id, []),
+                "peak_event_density": cluster.peak_event_density,
             }
         )
     summary_path = write_daily_summary(

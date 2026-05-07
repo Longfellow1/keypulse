@@ -18,6 +18,7 @@ _CLUSTER_KEYS = {
     "time_range",
     "merge_candidate_with",
 }
+_OPTIONAL_CLUSTER_KEYS = {"peak_event_density"}
 _COST_KEYS = {"in_tokens", "out_tokens", "cost_usd"}
 
 
@@ -42,7 +43,7 @@ def _validate_cluster(cluster: Any, index: int) -> dict[str, Any]:
 
     keys = set(cluster.keys())
     missing = sorted(_CLUSTER_KEYS - keys)
-    extra = sorted(keys - _CLUSTER_KEYS)
+    extra = sorted(keys - _CLUSTER_KEYS - _OPTIONAL_CLUSTER_KEYS)
     if missing:
         raise ValueError(f"clusters[{index}] missing fields: {', '.join(missing)}")
     if extra:
@@ -69,7 +70,7 @@ def _validate_cluster(cluster: Any, index: int) -> dict[str, Any]:
         raise ValueError(f"clusters[{index}].merge_candidate_with must be array")
     merge_candidate_with = [str(item) for item in merge_with]
 
-    return {
+    result = {
         "slug": slug,
         "display_name": display_name,
         "narrative_one_line": narrative_one_line,
@@ -77,6 +78,9 @@ def _validate_cluster(cluster: Any, index: int) -> dict[str, Any]:
         "time_range": [start, end],
         "merge_candidate_with": merge_candidate_with,
     }
+    if "peak_event_density" in cluster:
+        result["peak_event_density"] = float(cluster["peak_event_density"] or 0.0)
+    return result
 
 
 def _validate_cost(cost: Any) -> dict[str, Any]:
