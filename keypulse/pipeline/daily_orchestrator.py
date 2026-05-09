@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import date as date_cls, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -25,7 +26,11 @@ from keypulse.pipeline.daily_strategy import (
     DailyStrategyError,
     FlagshipSingleStepStrategy,
 )
-from keypulse.pipeline.daily_summary import write_daily_summary
+from keypulse.pipeline.daily_summary import (
+    build_cluster_stubs_from_narrative,
+    build_topic_status_snapshot_from_narrative,
+    write_daily_summary,
+)
 from keypulse.pipeline.model import LLMCallError, ModelGateway, load_model_gateway
 from keypulse.pipeline.model_card import resolve_tier
 from keypulse.store.repository import query_raw_events
@@ -43,6 +48,8 @@ _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
 _TOOL_ECHO_SOURCES = frozenset({"ax_text", "ocr_text", "window", "idle", "knowledgec", "zsh_history"})
 _USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli"})
+
+_logger = logging.getLogger(__name__)
 
 
 class DailyOrchestratorError(RuntimeError):
@@ -725,6 +732,73 @@ def _filter_for_trigger(date_str: str, trigger: str, rows: list[dict[str, Any]])
     return pending
 
 
+def _maybe_trigger_weekly_after_daily(date_str: str) -> None:
+    """周五下午跑完日报后，尝试触发 weekly（weekly 内部会按阈值判定是否跳过）。"""
+    try:
+        day = date_cls.fromisoformat(str(date_str).strip())
+    except ValueError:
+        _logger.warning("weekly_auto_trigger=skip invalid_date=%s", date_str)
+        return
+
+    if day.weekday() != 4:
+        return
+    if datetime.now().hour < 17:
+        return
+
+    iso = day.isocalendar()
+    week_str = f"{iso.year}-W{iso.week:02d}"
+    _logger.info("weekly_auto_trigger=attempt date=%s week=%s", date_str, week_str)
+
+    try:
+        from keypulse.pipeline.weekly_orchestrator import run_weekly
+
+        output_path = run_weekly(week_str)
+        if output_path:
+            _logger.info("weekly_auto_trigger=ok week=%s weekly_path=%s", week_str, output_path)
+        else:
+            _logger.info("weekly_auto_trigger=skipped week=%s", week_str)
+    except Exception:
+        _logger.exception("weekly_auto_trigger=error week=%s", week_str)
+
+
+def _fallback_summary_clusters_from_events(date_str: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not events:
+        return [
+            {
+                "slug": "no-events",
+                "display_name": "无事件记录",
+                "narrative_one_line": f"{date_str} 当天没有采集到可用事件。",
+                "event_count": 1,
+                "time_range": ["00:00", "23:59"],
+                "merge_candidate_with": [],
+            }
+        ]
+
+    times: list[str] = []
+    for event in events:
+        ts = str(event.get("ts_start") or "")
+        if len(ts) >= 16:
+            times.append(ts[11:16])
+    time_range = [min(times), max(times)] if times else ["00:00", "23:59"]
+    return [
+        {
+            "slug": "low-volume-events",
+            "display_name": "低样本事件",
+            "narrative_one_line": f"{date_str} 仅有 {len(events)} 条事件，已记录为低样本主线。",
+            "event_count": max(1, len(events)),
+            "time_range": time_range,
+            "merge_candidate_with": [],
+        }
+    ]
+
+
+def _ensure_summary_clusters(date_str: str, markdown: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    stubs = build_cluster_stubs_from_narrative(date_str, markdown)
+    if stubs:
+        return stubs
+    return _fallback_summary_clusters_from_events(date_str, events)
+
+
 def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
     if trigger not in _TRIGGER_VALUES:
         raise ValueError(f"invalid trigger: {trigger}")
@@ -740,7 +814,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         atomic_write_text(daily_path, body)
         summary_path = write_daily_summary(
             date_str,
-            clusters=[],
+            clusters=_ensure_summary_clusters(date_str, body, events),
             misc=[str(event.get("id")) for event in events],
             topic_snapshot={},
             cost=_cost_snapshot(run_started_at),
@@ -755,6 +829,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
                 "event_count": len(events),
             }
         )
+        _maybe_trigger_weekly_after_daily(date_str)
         return DailySummary(
             date=date_str,
             trigger=trigger,
@@ -792,11 +867,12 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         )
         summary_path = write_daily_summary(
             date_str,
-            clusters=[],
+            clusters=_ensure_summary_clusters(date_str, result.markdown, events),
             misc=[],
-            topic_snapshot={},
+            topic_snapshot=build_topic_status_snapshot_from_narrative(date_str, result.markdown),
             cost=_cost_snapshot(run_started_at),
         )
+        _maybe_trigger_weekly_after_daily(date_str)
         return DailySummary(
             date=date_str,
             trigger=trigger,
@@ -1016,10 +1092,15 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         date_str,
         clusters=summary_clusters,
         misc=list(result.misc_event_ids),
-        topic_snapshot={slug: "active" for slug, _ in topics_touched},
+        topic_snapshot=build_topic_status_snapshot_from_narrative(date_str, result.markdown)
+        or {
+            slug: {"name": display, "state": "in_progress", "last_seen_date": date_str, "evidence_dates": [date_str]}
+            for slug, display in topics_touched
+        },
         cost=_cost_snapshot(run_started_at),
     )
 
+    _maybe_trigger_weekly_after_daily(date_str)
     return DailySummary(
         date=date_str,
         trigger=trigger,
