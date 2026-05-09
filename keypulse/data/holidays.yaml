@@ -1,0 +1,93 @@
+holidays:
+  - { name: 元旦, region: CN, span: 1, type: single_day_legal, date: "2026-01-01" }
+  - { name: 春节, region: CN, span: 7, type: long_holiday, date: "2026-02-17" }
+  - { name: 春节假期第2天, region: CN, span: 1, type: long_holiday, date: "2026-02-18" }
+  - { name: 春节假期第3天, region: CN, span: 1, type: long_holiday, date: "2026-02-19" }
+  - { name: 春节假期第4天, region: CN, span: 1, type: long_holiday, date: "2026-02-20" }
+  - { name: 春节假期第5天, region: CN, span: 1, type: long_holiday, date: "2026-02-21" }
+  - { name: 春节假期第6天, region: CN, span: 1, type: long_holiday, date: "2026-02-22" }
+  - { name: 春节假期第7天, region: CN, span: 1, type: long_holiday, date: "2026-02-23" }
+  - { name: 清明节, region: CN, span: 1, type: single_day_legal, date: "2026-04-05" }
+  - { name: 劳动节, region: CN, span: 1, type: single_day_legal, date: "2026-05-01" }
+  - { name: 端午节, region: CN, span: 1, type: single_day_legal, date: "2026-06-19" }
+  - { name: 中秋节, region: CN, span: 1, type: single_day_legal, date: "2026-09-25" }
+  - { name: 国庆节, region: CN, span: 7, type: long_holiday, date: "2026-10-01" }
+  - { name: 国庆假期第2天, region: CN, span: 1, type: long_holiday, date: "2026-10-02" }
+  - { name: 国庆假期第3天, region: CN, span: 1, type: long_holiday, date: "2026-10-03" }
+  - { name: 国庆假期第4天, region: CN, span: 1, type: long_holiday, date: "2026-10-04" }
+  - { name: 国庆假期第5天, region: CN, span: 1, type: long_holiday, date: "2026-10-05" }
+  - { name: 国庆假期第6天, region: CN, span: 1, type: long_holiday, date: "2026-10-06" }
+  - { name: 国庆假期第7天, region: CN, span: 1, type: long_holiday, date: "2026-10-07" }
+
+  - { name: New Year, region: US, span: 1, type: single_day_legal, date: "2026-01-01" }
+  - { name: MLK Day, region: US, span: 1, type: single_day_legal, date: "2026-01-19" }
+  - { name: Presidents Day, region: US, span: 1, type: single_day_legal, date: "2026-02-16" }
+  - { name: Memorial Day, region: US, span: 1, type: single_day_legal, date: "2026-05-25" }
+  - { name: Independence Day, region: US, span: 1, type: single_day_legal, date: "2026-07-04" }
+  - { name: Labor Day, region: US, span: 1, type: single_day_legal, date: "2026-09-07" }
+  - { name: Thanksgiving, region: US, span: 4, type: long_holiday, date: "2026-11-26" }
+  - { name: Christmas, region: [US, EU, AU, GB], span: 3, type: long_holiday, date: "2026-12-25" }
+
+  - { name: Easter Monday, region: EU, span: 1, type: religious, date: "2026-04-06" }
+  - { name: May Day, region: EU, span: 1, type: single_day_legal, date: "2026-05-01" }
+  - { name: EU Christmas Eve, region: EU, span: 1, type: cultural, date: "2026-12-24" }
+  - { name: EU Christmas Day, region: EU, span: 1, type: long_holiday, date: "2026-12-25" }
+  - { name: Boxing Day, region: EU, span: 1, type: single_day_legal, date: "2026-12-26" }
+
+  - { name: Early May Bank Holiday, region: GB, span: 1, type: single_day_legal, date: "2026-05-04" }
+  - { name: Spring Bank Holiday, region: GB, span: 1, type: single_day_legal, date: "2026-05-25" }
+  - { name: Summer Bank Holiday, region: GB, span: 1, type: single_day_legal, date: "2026-08-31" }
+  - { name: UK Christmas Day, region: GB, span: 1, type: long_holiday, date: "2026-12-25" }
+  - { name: UK Boxing Day (Observed), region: GB, span: 1, type: single_day_legal, date: "2026-12-28" }
+
+  - { name: 元日, region: JP, span: 1, type: single_day_legal, date: "2026-01-01" }
+  - { name: 成人の日, region: JP, span: 1, type: single_day_legal, date: "2026-01-12" }
+  - { name: 建国記念の日, region: JP, span: 1, type: single_day_legal, date: "2026-02-11" }
+  - { name: 海の日, region: JP, span: 1, type: single_day_legal, date: "2026-07-20" }
+  - { name: お盆, region: JP, span: 3, type: cultural, date: "2026-08-13" }
+  - { name: お盆第2天, region: JP, span: 1, type: cultural, date: "2026-08-14" }
+  - { name: お盆第3天, region: JP, span: 1, type: cultural, date: "2026-08-15" }
+  - { name: 天皇誕生日, region: JP, span: 1, type: single_day_legal, date: "2026-02-23" }
+
+  - { name: Eid al-Fitr, region: MULTI, span: 3, type: religious, date: "2026-03-20" }
+  - { name: Eid al-Fitr Day 2, region: MULTI, span: 1, type: religious, date: "2026-03-21" }
+  - { name: Eid al-Fitr Day 3, region: MULTI, span: 1, type: religious, date: "2026-03-22" }
+  - { name: Eid al-Adha, region: MULTI, span: 3, type: religious, date: "2026-05-27" }
+  - { name: Eid al-Adha Day 2, region: MULTI, span: 1, type: religious, date: "2026-05-28" }
+  - { name: Eid al-Adha Day 3, region: MULTI, span: 1, type: religious, date: "2026-05-29" }
+
+  - { name: Holi, region: IN, span: 1, type: religious, date: "2026-03-04" }
+  - { name: Dussehra, region: IN, span: 1, type: religious, date: "2026-10-20" }
+  - { name: Diwali, region: IN, span: 5, type: religious, date: "2026-11-08" }
+  - { name: Diwali Day 2, region: IN, span: 1, type: religious, date: "2026-11-09" }
+  - { name: Diwali Day 3, region: IN, span: 1, type: religious, date: "2026-11-10" }
+  - { name: Diwali Day 4, region: IN, span: 1, type: religious, date: "2026-11-11" }
+  - { name: Diwali Day 5, region: IN, span: 1, type: religious, date: "2026-11-12" }
+
+  - { name: Passover, region: IL, span: 7, type: religious, date: "2026-04-02" }
+  - { name: Passover Day 2, region: IL, span: 1, type: religious, date: "2026-04-03" }
+  - { name: Passover Day 3, region: IL, span: 1, type: religious, date: "2026-04-04" }
+  - { name: Passover Day 4, region: IL, span: 1, type: religious, date: "2026-04-05" }
+  - { name: Passover Day 5, region: IL, span: 1, type: religious, date: "2026-04-06" }
+  - { name: Passover Day 6, region: IL, span: 1, type: religious, date: "2026-04-07" }
+  - { name: Passover Day 7, region: IL, span: 1, type: religious, date: "2026-04-08" }
+  - { name: Rosh Hashanah, region: IL, span: 2, type: religious, date: "2026-09-12" }
+  - { name: Rosh Hashanah Day 2, region: IL, span: 1, type: religious, date: "2026-09-13" }
+  - { name: Yom Kippur, region: IL, span: 1, type: religious, date: "2026-09-21" }
+  - { name: Hanukkah, region: IL, span: 8, type: religious, date: "2026-12-05" }
+  - { name: Hanukkah Day 2, region: IL, span: 1, type: religious, date: "2026-12-06" }
+  - { name: Hanukkah Day 3, region: IL, span: 1, type: religious, date: "2026-12-07" }
+  - { name: Hanukkah Day 4, region: IL, span: 1, type: religious, date: "2026-12-08" }
+  - { name: Hanukkah Day 5, region: IL, span: 1, type: religious, date: "2026-12-09" }
+  - { name: Hanukkah Day 6, region: IL, span: 1, type: religious, date: "2026-12-10" }
+  - { name: Hanukkah Day 7, region: IL, span: 1, type: religious, date: "2026-12-11" }
+  - { name: Hanukkah Day 8, region: IL, span: 1, type: religious, date: "2026-12-12" }
+
+  - { name: Valentine's Day, region: MULTI, span: 1, type: cultural, date: "2026-02-14" }
+  - { name: Mother's Day, region: MULTI, span: 1, type: cultural, date: "2026-05-10" }
+  - { name: Father's Day, region: MULTI, span: 1, type: cultural, date: "2026-06-21" }
+  - { name: Halloween, region: MULTI, span: 1, type: cultural, date: "2026-10-31" }
+
+fallback:
+  low_activity_threshold: 0.3
+  user_marked_path: ~/.keypulse/marked-holidays.json

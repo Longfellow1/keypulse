@@ -71,6 +71,13 @@ from keypulse.pipeline.model_keychain import (
     store_secret,
 )
 from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily
+from keypulse.pipeline.onboarding import (
+    OnboardingAnswers,
+    QUESTIONS,
+    is_first_run,
+    validate_answers,
+    write_profile,
+)
 from keypulse.pipeline.weekly_orchestrator import WeeklyOrchestratorError, run_weekly
 from keypulse.pipeline.things import build_things, render_things_report, things_as_json
 from keypulse.search.backends import resolve_search_backend
@@ -265,6 +272,90 @@ def _warn_if_model_backends_need_setup(cfg: Config) -> None:
 def main():
     """KeyPulse — macOS personal activity monitoring CLI."""
     pass
+
+
+@main.command()
+@click.option("--force", is_flag=True, help="覆盖已有 profile")
+def setup(force):
+    """首次启动配置（工作类型/区域/节奏/触发/视角）"""
+    profile_path = Path.home() / ".keypulse" / "profile.toml"
+    if (not force) and (not is_first_run(profile_path)):
+        click.echo(f"profile already exists: {profile_path} (use --force to overwrite)")
+        return
+
+    answers_map: dict[str, str] = {}
+    while True:
+        answers_map = {}
+        for item in QUESTIONS:
+            key = str(item["key"])
+            options = [str(opt) for opt in item["options"]]
+            default = str(item["default"])
+            choice = click.Choice(options, case_sensitive=False)
+            value = click.prompt(str(item["question"]), type=choice, default=default, show_choices=True)
+            answers_map[key] = str(value)
+
+        errors = validate_answers(answers_map)
+        if not errors:
+            break
+        for err in errors:
+            click.secho(err, fg="red", err=True)
+        click.echo("输入不合法，请重试。")
+
+    religion = answers_map.get("religion", "")
+    if religion == "unspecified":
+        religion = ""
+    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    answers = OnboardingAnswers(
+        work_type=answers_map["work_type"],
+        region=answers_map["region"],
+        work_mode=answers_map["work_mode"],
+        weekly_trigger=answers_map["weekly_trigger"],
+        weekly_style=answers_map["weekly_style"],
+        religion=religion,
+        created_at=created_at,
+    )
+    write_profile(answers, profile_path)
+    click.echo(f"✓ profile saved to {profile_path}")
+
+
+@main.command(name="mark-holiday")
+@click.argument("week")
+@click.option("--reason", required=True)
+@click.option("--region", default=None)
+def mark_holiday(week, reason, region):
+    """手动标注某周为假期，影响周报模板"""
+    raw_week = str(week).strip()
+    iso_week = raw_week
+    short_match = re.fullmatch(r"[Ww](\d{1,2})", raw_week)
+    full_match = re.fullmatch(r"(\d{4})-[Ww](\d{1,2})", raw_week)
+    if short_match:
+        iso_week = f"{datetime.now().year}-W{int(short_match.group(1)):02d}"
+    elif full_match:
+        iso_week = f"{int(full_match.group(1)):04d}-W{int(full_match.group(2)):02d}"
+    else:
+        raise click.UsageError("week must be W19 or YYYY-W19")
+
+    marked_path = Path.home() / ".keypulse" / "marked-holidays.json"
+    marked_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload: dict[str, object] = {"weeks": {}}
+    if marked_path.exists():
+        try:
+            payload = json.loads(marked_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise click.ClickException(f"failed to read {marked_path}: {exc}") from exc
+        if not isinstance(payload, dict):
+            payload = {"weeks": {}}
+    weeks = payload.get("weeks")
+    if not isinstance(weeks, dict):
+        weeks = {}
+        payload["weeks"] = weeks
+
+    marked_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    weeks[iso_week] = {"reason": reason, "region": region, "marked_at": marked_at}
+
+    marked_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    click.echo(f"✓ holiday marked: {iso_week}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1234,8 +1325,9 @@ def weekly():
 
 @weekly.command("run")
 @click.option("--week", "week_str", required=True, help="ISO week in YYYY-Www format")
+@click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="exec", show_default=True)
 @click.option("--mock-llm", is_flag=True, default=False, help="Use MOCK_LLM=1 stub gateway")
-def weekly_run(week_str, mock_llm):
+def weekly_run(week_str, style, mock_llm):
     """Run PR3 weekly orchestrator once."""
     os.environ["HOME"] = str(Path.home())
     cfg = get_config()
@@ -1246,9 +1338,20 @@ def weekly_run(week_str, mock_llm):
         os.environ["MOCK_LLM"] = "1"
 
     try:
-        weekly_path = run_weekly(week_str)
+        weekly_path = run_weekly(week_str, style=style)
         if weekly_path:
-            click.echo(f"weekly_run=ok week={week_str}")
+            outcome_raw = get_state("weekly_last_outcome") or ""
+            outcome = {}
+            try:
+                outcome = json.loads(outcome_raw) if outcome_raw else {}
+            except json.JSONDecodeError:
+                outcome = {}
+
+            if isinstance(outcome, dict) and outcome.get("outcome") == "partial":
+                count = int(outcome.get("validator_failures") or 0)
+                click.echo(f"weekly_run=partial week={week_str} reason=validator_failures count={count}")
+            else:
+                click.echo(f"weekly_run=ok week={week_str}")
             click.echo(f"weekly_path={weekly_path}")
         else:
             click.echo(f"weekly_run=skipped week={week_str} reason=insufficient_daily_data")
@@ -2207,7 +2310,7 @@ def model_setup():
         click.echo("ℹ️  未能确认 daemon 的 Keychain 访问能力，请稍后用 keypulse model status 检查。")
 
 
-main.add_command(model_setup, "setup")
+main.add_command(model_setup, "model-setup")
 
 
 @model.command("use")
