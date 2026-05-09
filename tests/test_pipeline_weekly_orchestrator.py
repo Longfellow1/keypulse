@@ -10,6 +10,7 @@ from click.testing import CliRunner
 from keypulse.cli import main
 from keypulse.pipeline.daily_summary import write_daily_summary
 from keypulse.pipeline.weekly_orchestrator import run_weekly
+from keypulse.pipeline import weekly_orchestrator
 from keypulse.store.db import close, init_db
 from keypulse.store.repository import get_state
 
@@ -141,7 +142,28 @@ def _seed_cost(tmp_path: Path) -> None:
     cost_path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n", encoding="utf-8")
 
 
+def _reset_weekly_runtime_state() -> None:
+    weekly_orchestrator._WEEKLY_MEMORY_CACHE.clear()
+    weekly_orchestrator._WEEKLY_CIRCUIT.failures = 0
+    weekly_orchestrator._WEEKLY_CIRCUIT.open_until = 0.0
+
+
+class FailingGateway:
+    def __init__(self, mode: str):
+        self.mode = mode
+        self.calls: list[str] = []
+
+    def call(self, capability: str, prompt: str, *, input_data=None, **_kwargs):
+        self.calls.append(capability)
+        if self.mode == "empty":
+            return {}
+        if self.mode == "http400":
+            raise RuntimeError("HTTP 400 bad request")
+        raise RuntimeError("all failed")
+
+
 def test_run_weekly_stub_gateway_full_chain(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     monkeypatch.setattr(
         "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
@@ -152,25 +174,26 @@ def test_run_weekly_stub_gateway_full_chain(tmp_path, monkeypatch):
     _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
     _seed_cost(tmp_path)
     monkeypatch.setenv("MOCK_LLM", "1")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
 
-    output_path = run_weekly("2026-W18")
+    output_path = run_weekly("2026-W18", style="exec")
     assert output_path
 
     weekly_path = Path(output_path)
     assert weekly_path.exists()
     body = weekly_path.read_text(encoding="utf-8")
-    assert "# 这周 (2026-W18)" in body
-    assert "本期成本" in body
-    assert "## 这周的主线" in body
-    assert "## 这周的回声" in body
-    assert "[!note] 我的批注" in body
+    assert "# 本周工作汇报 (2026-W18" in body
+    assert "## TL;DR" in body
+    assert "## 本周关键进展" in body
+    assert "## 没接住的球" in body
+    assert "生成信息:" in body
 
-    # L4 merge should remove beta topic when affinity is high in mock path
     assert (tmp_path / ".keypulse" / "topics" / "alpha-topic.md").exists()
     close()
 
 
 def test_run_weekly_fallback_when_daily_count_below_threshold(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     monkeypatch.setattr(
         "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
@@ -178,9 +201,9 @@ def test_run_weekly_fallback_when_daily_count_below_threshold(tmp_path, monkeypa
     )
     init_db(tmp_path / ".keypulse" / "keypulse.db")
     _seed_topics(tmp_path)
-    _seed_daily_summaries(tmp_path, week="2026-W18", days=4)
+    _seed_daily_summaries(tmp_path, week="2026-W18", days=2)
 
-    output_path = run_weekly("2026-W18")
+    output_path = run_weekly("2026-W18", style="exec")
 
     assert output_path == ""
     notice = get_state("weekly_notice")
@@ -189,7 +212,30 @@ def test_run_weekly_fallback_when_daily_count_below_threshold(tmp_path, monkeypa
     close()
 
 
-def test_run_weekly_l5_l6_parallel_wallclock(tmp_path, monkeypatch):
+def test_run_weekly_runs_when_daily_count_meets_threshold(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
+        lambda _cfg, persist=False: SimpleNamespace(output_dir=tmp_path / "vault"),
+    )
+    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    _seed_topics(tmp_path)
+    _seed_daily_summaries(tmp_path, week="2026-W18", days=3)
+    _seed_cost(tmp_path)
+    monkeypatch.setenv("MOCK_LLM", "1")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
+
+    output_path = run_weekly("2026-W18", style="exec")
+
+    assert output_path
+    assert Path(output_path).exists()
+    assert get_state("weekly_notice") == ""
+    close()
+
+
+def test_run_weekly_l5_topics_parallel_wallclock(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     monkeypatch.setattr(
         "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
@@ -200,17 +246,19 @@ def test_run_weekly_l5_l6_parallel_wallclock(tmp_path, monkeypatch):
     _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
     monkeypatch.setenv("MOCK_LLM", "1")
     monkeypatch.setenv("MOCK_WEEKLY_DELAY_SEC", "0.45")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
 
     started = time.perf_counter()
-    run_weekly("2026-W18")
+    run_weekly("2026-W18", style="exec")
     elapsed = time.perf_counter() - started
 
-    # Two delayed calls (L5/L6) should run in parallel: elapsed << 0.9s + overhead
-    assert elapsed < 0.85
+    # L5 topic calls should run together; L6 waits for generated mainline sections.
+    assert elapsed < 1.8
     close()
 
 
 def test_run_weekly_retry_with_transient_mock_failures(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     monkeypatch.setattr(
         "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
@@ -221,8 +269,9 @@ def test_run_weekly_retry_with_transient_mock_failures(tmp_path, monkeypatch):
     _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
     monkeypatch.setenv("MOCK_LLM", "1")
     monkeypatch.setenv("MOCK_LLM_FAILS", "1")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
 
-    output_path = run_weekly("2026-W18")
+    output_path = run_weekly("2026-W18", style="exec")
 
     assert output_path
     assert Path(output_path).exists()
@@ -230,6 +279,7 @@ def test_run_weekly_retry_with_transient_mock_failures(tmp_path, monkeypatch):
 
 
 def test_weekly_cli_run_with_mock_llm(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     monkeypatch.setattr(
         "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
@@ -242,6 +292,132 @@ def test_weekly_cli_run_with_mock_llm(tmp_path, monkeypatch):
     result = CliRunner().invoke(main, ["weekly", "run", "--week", "2026-W18", "--mock-llm"])
 
     assert result.exit_code == 0
-    assert "weekly_run=ok" in result.output
+    assert "weekly_run=" in result.output
     assert "weekly_path=" in result.output
+    weekly_path = next(line.split("=", 1)[1] for line in result.output.splitlines() if line.startswith("weekly_path="))
+    body = Path(weekly_path).read_text(encoding="utf-8")
+    assert "# 本周工作汇报 (2026-W18" in body
+    close()
+
+
+def test_weekly_validator_triggers_retry_when_mock_outputs_invalid(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
+        lambda _cfg, persist=False: SimpleNamespace(output_dir=tmp_path / "vault"),
+    )
+    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    _seed_topics(tmp_path)
+    _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
+    monkeypatch.setenv("MOCK_LLM", "1")
+    monkeypatch.setenv("MOCK_WEEKLY_INVALID_FIRST_L6", "1")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
+
+    output_path = run_weekly("2026-W18", style="exec")
+
+    assert output_path
+    body = Path(output_path).read_text(encoding="utf-8")
+    assert "生成信息:" in body
+    outcome_raw = get_state("weekly_last_outcome") or ""
+    outcome = json.loads(outcome_raw) if outcome_raw else {}
+    assert outcome.get("outcome") in {"ok", "partial"}
+    assert int(outcome.get("validator_failures") or 0) >= 0
+    assert isinstance(outcome.get("quality_breakdown"), dict)
+    close()
+
+
+def test_weekly_cache_second_run_has_zero_llm_cost_rows(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
+        lambda _cfg, persist=False: SimpleNamespace(output_dir=tmp_path / "vault"),
+    )
+    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    _seed_topics(tmp_path)
+    _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
+    monkeypatch.setenv("MOCK_LLM", "1")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
+
+    run_weekly("2026-W18", style="exec")
+    cost_path = tmp_path / ".keypulse" / "cost.jsonl"
+    cost_path.write_text("", encoding="utf-8")
+    run_weekly("2026-W18", style="exec")
+
+    rows = [json.loads(line) for line in cost_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert rows
+    assert [row.get("source") for row in rows].count("llm") == 0
+    assert all(row.get("source") == "cache" for row in rows)
+    close()
+
+
+def test_weekly_fallback_handles_http_400_empty_json_and_all_failed(tmp_path, monkeypatch):
+    for mode in ("http400", "empty", "all"):
+        _reset_weekly_runtime_state()
+        case_dir = tmp_path / mode
+        monkeypatch.setattr("pathlib.Path.home", lambda case_dir=case_dir: case_dir)
+        monkeypatch.setattr(
+            "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
+            lambda _cfg, persist=False, case_dir=case_dir: SimpleNamespace(output_dir=case_dir / "vault"),
+        )
+        init_db(case_dir / ".keypulse" / "keypulse.db")
+        _seed_topics(case_dir)
+        _seed_daily_summaries(case_dir, week="2026-W18", days=7)
+        monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
+        monkeypatch.setattr("keypulse.pipeline.weekly_orchestrator._load_gateway", lambda mode=mode: FailingGateway(mode))
+
+        output_path = run_weekly("2026-W18", style="exec")
+        body = Path(output_path).read_text(encoding="utf-8")
+
+        assert output_path
+        assert "## 本周关键进展" in body
+        assert "LLM 失败:" in body
+        close()
+
+
+def test_run_weekly_plain_style_contains_mainline_echo_and_cross_week_diff(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
+        lambda _cfg, persist=False: SimpleNamespace(output_dir=tmp_path / "vault"),
+    )
+    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    _seed_topics(tmp_path)
+    _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
+    monkeypatch.setenv("MOCK_LLM", "1")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
+
+    output_path = run_weekly("2026-W18", style="plain")
+    body = Path(output_path).read_text(encoding="utf-8")
+
+    assert body.strip()
+    assert "## 这周的主线" in body
+    assert "## 这周的回声" in body
+    assert "## 跨周差异" in body
+    close()
+
+
+def test_run_weekly_exec_style_contains_mainline_echo_and_cross_week_diff(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
+        lambda _cfg, persist=False: SimpleNamespace(output_dir=tmp_path / "vault"),
+    )
+    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    _seed_topics(tmp_path)
+    _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
+    monkeypatch.setenv("MOCK_LLM", "1")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
+
+    output_path = run_weekly("2026-W18", style="exec")
+    body = Path(output_path).read_text(encoding="utf-8")
+
+    assert body.strip()
+    assert "## 本周关键进展" in body
+    assert "## 没接住的球" in body
+    assert "## 一个观察" in body
+    assert "## 跨周差异" in body
     close()

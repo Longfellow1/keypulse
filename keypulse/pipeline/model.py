@@ -215,6 +215,67 @@ def _strip_json_fence(text: str) -> str:
     return body.strip()
 
 
+def _parse_json_robust(text: str) -> Any | None:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return None
+
+    def _try_parse(candidate: str) -> Any | None:
+        try:
+            return json.loads(candidate, strict=False)
+        except json.JSONDecodeError:
+            return None
+
+    def _strip_trailing_commas(candidate: str) -> str:
+        return re.sub(r",(\s*[}\]])", r"\1", candidate)
+
+    def _single_to_double_quotes(candidate: str) -> str:
+        def _quote(value: str) -> str:
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+
+        repaired = re.sub(
+            r"([{\[,]\s*)'([^'\\]*(?:\\.[^'\\]*)*)'(\s*:)",
+            lambda m: f"{m.group(1)}{_quote(m.group(2))}{m.group(3)}",
+            candidate,
+        )
+        repaired = re.sub(
+            r"(:\s*)'([^'\\]*(?:\\.[^'\\]*)*)'(\s*[,}\]])",
+            lambda m: f"{m.group(1)}{_quote(m.group(2))}{m.group(3)}",
+            repaired,
+        )
+        repaired = re.sub(
+            r"([,\[]\s*)'([^'\\]*(?:\\.[^'\\]*)*)'(\s*[,}\]])",
+            lambda m: f"{m.group(1)}{_quote(m.group(2))}{m.group(3)}",
+            repaired,
+        )
+        return repaired
+
+    candidates: list[str] = [stripped]
+    for match in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", stripped, re.IGNORECASE):
+        chunk = str(match.group(1) or "").strip()
+        if chunk:
+            candidates.append(chunk)
+    for left, right in (("{", "}"), ("[", "]")):
+        start = stripped.find(left)
+        end = stripped.rfind(right)
+        if start >= 0 and end > start:
+            candidates.append(stripped[start : end + 1].strip())
+
+    for candidate in candidates:
+        parsed = _try_parse(candidate)
+        if parsed is not None:
+            return parsed
+        repaired = _strip_trailing_commas(candidate)
+        parsed = _try_parse(repaired)
+        if parsed is not None:
+            return parsed
+        parsed = _try_parse(_single_to_double_quotes(repaired))
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _validate_jsonschema_minimal(schema: dict[str, Any], value: Any, path: str = "$") -> None:
     schema_type = schema.get("type")
     if schema_type == "object":
@@ -747,15 +808,37 @@ class ModelGateway:
         # doubao routinely emits raw newlines instead of \\n when packing
         # a long markdown blob into the "markdown" field.
         if isinstance(schema, dict):
-            parsed = json.loads(text, strict=False)
+            try:
+                parsed = json.loads(text, strict=False)
+            except json.JSONDecodeError:
+                parsed = _parse_json_robust(text)
+                if parsed is None:
+                    raise
             _validate_jsonschema_minimal(schema, parsed)
             return parsed
         if isinstance(schema, type) and issubclass(schema, BaseModel):
-            return schema.model_validate_json(text)
+            try:
+                return schema.model_validate_json(text)
+            except Exception:
+                parsed = _parse_json_robust(text)
+                if parsed is None:
+                    raise
+                return schema.model_validate(parsed)
         if hasattr(schema, "model_validate_json"):
-            return schema.model_validate_json(text)
+            try:
+                return schema.model_validate_json(text)
+            except Exception:
+                parsed = _parse_json_robust(text)
+                if parsed is None:
+                    raise
+                return schema.model_validate(parsed)
         if hasattr(schema, "model_validate"):
-            parsed = json.loads(text, strict=False)
+            try:
+                parsed = json.loads(text, strict=False)
+            except json.JSONDecodeError:
+                parsed = _parse_json_robust(text)
+                if parsed is None:
+                    raise
             return schema.model_validate(parsed)
         raise TypeError("unsupported schema type")
 
