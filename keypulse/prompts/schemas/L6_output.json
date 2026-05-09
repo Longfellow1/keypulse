@@ -1,65 +1,10 @@
 {
   "type": "object",
-  "required": [
-    "missed_balls",
-    "observation"
-  ],
+  "required": ["dropped_balls", "observation", "risks"],
   "properties": {
-    "missed_balls": {
-      "type": "array",
-      "maxItems": 3,
-      "items": {
-        "type": "object",
-        "required": [
-          "what",
-          "anchor_link"
-        ],
-        "properties": {
-          "what": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 30
-          },
-          "anchor_link": {
-            "type": "string",
-            "pattern": "^\\[\\[\\d{4}-\\d{2}-\\d{2}\\]\\]$"
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    "observation": {
-      "type": "object",
-      "required": [
-        "text",
-        "anchor_link",
-        "anchor_quote"
-      ],
-      "properties": {
-        "text": {
-          "type": "string",
-          "minLength": 10,
-          "maxLength": 60,
-          "pattern": ".*[\\?？]\\s*$"
-        },
-        "anchor_link": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "pattern": "^\\[\\[\\d{4}-\\d{2}-\\d{2}\\]\\]$"
-        },
-        "anchor_quote": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 10,
-          "maxLength": 80
-        }
-      },
-      "additionalProperties": false
-    }
+    "dropped_balls": {"type": "array", "maxItems": 3},
+    "observation": {"type": "object"},
+    "risks": {"type": "array"}
   },
   "additionalProperties": false
 }

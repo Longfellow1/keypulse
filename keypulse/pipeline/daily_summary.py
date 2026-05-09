@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import hashlib
 from datetime import date as date_cls
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,199 @@ _CLUSTER_KEYS = {
 }
 _OPTIONAL_CLUSTER_KEYS = {"peak_event_density"}
 _COST_KEYS = {"in_tokens", "out_tokens", "cost_usd"}
+_TOPIC_HEADING_RE = re.compile(r"^#{2,3}\s+(.+?)\s*$")
+_ASCII_WORD_RE = re.compile(r"[a-z0-9]+")
+_TIME_IN_TEXT_RE = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)\b")
+
+
+def _slugify_narrative_topic(name: str) -> str:
+    words = _ASCII_WORD_RE.findall(name.lower())
+    slug = "-".join(words)[:40].strip("-")
+    if len(slug) >= 3 and slug[0].isalpha():
+        return slug
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:10]
+    return f"topic-{digest}"
+
+
+def _infer_topic_state(text: str) -> str:
+    normalized = str(text or "")
+    completed_markers = ("完成", "解决", "修复", "通过", "确认", "写完", "提交", "落完", "重启")
+    blocked_markers = ("卡点", "阻塞", "失败", "报错", "错误", "疑惑", "400", "无法")
+    progress_markers = ("推进", "重构", "优化", "排查", "处理", "讨论", "调整", "配置", "同步")
+    started_markers = ("开始", "启动", "提出", "规划", "浏览", "查看", "查询", "登录", "第一次", "首次")
+
+    if any(marker in normalized for marker in completed_markers):
+        return "completed"
+    if any(marker in normalized for marker in blocked_markers):
+        return "blocked"
+    if any(marker in normalized for marker in progress_markers):
+        return "in_progress"
+    if any(marker in normalized for marker in started_markers):
+        return "started"
+    return "in_progress"
+
+
+def _extract_things_sections(markdown: str) -> list[tuple[str, str]]:
+    lines = str(markdown or "").splitlines()
+    in_things = False
+    current_name = ""
+    current_body: list[str] = []
+    sections: list[tuple[str, str]] = []
+
+    def flush() -> None:
+        nonlocal current_name, current_body
+        if current_name.strip():
+            sections.append((current_name.strip(), "\n".join(current_body).strip()))
+        current_name = ""
+        current_body = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## ") or stripped.startswith("# "):
+            heading_text = stripped.lstrip("#").strip()
+            if "明日" in heading_text or "明天" in heading_text or "事件卡" in heading_text or "涉及的主题" in heading_text:
+                if in_things:
+                    flush()
+                in_things = False
+                continue
+            if "今天做的事" in heading_text or "今日做的事" in heading_text:
+                if in_things:
+                    flush()
+                in_things = True
+                continue
+            if in_things and stripped.startswith("## ") and "概览" not in heading_text:
+                flush()
+                in_things = False
+                continue
+
+        if not in_things:
+            continue
+
+        if stripped.startswith("### "):
+            flush()
+            current_name = stripped[4:].strip()
+            current_body = []
+            continue
+
+        if current_name:
+            current_body.append(line)
+
+    if in_things:
+        flush()
+    return sections
+
+
+def build_cluster_stubs_from_narrative(date: str, markdown: str) -> list[dict[str, Any]]:
+    date_text = _validate_date(date)
+    sections = _extract_things_sections(markdown)
+    if not sections:
+        return []
+
+    stubs: list[dict[str, Any]] = []
+    for name, body in sections:
+        if not name or name in {"其他"}:
+            continue
+        slug = _slugify_narrative_topic(name)
+        clean_body = " ".join(line.strip() for line in body.splitlines() if line.strip())
+        one_line = clean_body[:120] if clean_body else f"{name} 在 {date_text} 有连续推进。"
+        times = [match.group(0) for match in _TIME_IN_TEXT_RE.finditer(body)]
+        if times:
+            time_range = [min(times), max(times)]
+        else:
+            time_range = ["00:00", "23:59"]
+        stubs.append(
+            {
+                "slug": slug,
+                "display_name": name,
+                "narrative_one_line": one_line,
+                "event_count": max(1, len(re.findall(r"[。；;.!?！？]", clean_body)) or 1),
+                "time_range": time_range,
+                "merge_candidate_with": [],
+            }
+        )
+    return stubs
+
+
+def build_topic_status_snapshot_from_narrative(date: str, markdown: str) -> dict[str, dict[str, Any]]:
+    """Infer daily topic status from the existing Things narrative.
+
+    The daily flagship path may only persist the rendered Markdown, leaving
+    `clusters` empty. This parser treats each H3 under a "今天做的事"/"今日做的事"
+    narrative section as one topic, derives a stable ASCII slug from the heading
+    (falling back to a short content hash for Chinese-only names), and classifies
+    state with conservative keyword rules. It does not run clustering, entity
+    extraction, or any LLM call; evidence is the current daily note date.
+    """
+
+    date_text = _validate_date(date)
+    sections = _extract_things_sections(markdown)
+
+    snapshot: dict[str, dict[str, Any]] = {}
+    for name, body in sections:
+        if not name or name in {"其他"}:
+            continue
+        slug = _slugify_narrative_topic(name)
+        state = _infer_topic_state(f"{name}\n{body}")
+        existing = snapshot.get(slug)
+        if existing is None:
+            snapshot[slug] = {
+                "name": name,
+                "state": state,
+                "last_seen_date": date_text,
+                "evidence_dates": [date_text],
+            }
+            continue
+        dates = list(existing.get("evidence_dates") or [])
+        if date_text not in dates:
+            dates.append(date_text)
+        snapshot[slug] = {
+            "name": str(existing.get("name") or name),
+            "state": _merge_topic_states(str(existing.get("state") or ""), state),
+            "last_seen_date": date_text,
+            "evidence_dates": sorted(dates),
+        }
+    return snapshot
+
+
+def _merge_topic_states(left: str, right: str) -> str:
+    priority = {"started": 0, "in_progress": 1, "blocked": 2, "completed": 3}
+    left_value = left if left in priority else "started"
+    right_value = right if right in priority else "started"
+    return left_value if priority[left_value] >= priority[right_value] else right_value
+
+
+def merge_topic_status_snapshots(
+    snapshots: list[dict[str, dict[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        for slug, payload in snapshot.items():
+            if not isinstance(payload, dict):
+                continue
+            key = str(slug or "").strip()
+            if not key:
+                continue
+            dates = [str(item) for item in (payload.get("evidence_dates") or []) if str(item).strip()]
+            last_seen = str(payload.get("last_seen_date") or (dates[-1] if dates else "")).strip()
+            current = result.get(key)
+            if current is None:
+                result[key] = {
+                    "name": str(payload.get("name") or key).strip() or key,
+                    "state": str(payload.get("state") or "started").strip() or "started",
+                    "last_seen_date": last_seen,
+                    "evidence_dates": sorted(set(dates)),
+                }
+                continue
+            merged_dates = sorted(set([*list(current.get("evidence_dates") or []), *dates]))
+            result[key] = {
+                "name": str(current.get("name") or payload.get("name") or key),
+                "state": _merge_topic_states(str(current.get("state") or ""), str(payload.get("state") or "")),
+                "last_seen_date": max(str(current.get("last_seen_date") or ""), last_seen),
+                "evidence_dates": merged_dates,
+            }
+    return result
 
 
 def _summary_dir() -> Path:

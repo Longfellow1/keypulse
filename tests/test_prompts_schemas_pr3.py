@@ -17,93 +17,63 @@ def _schema(name: str) -> dict:
 def test_l4_schema_valid_and_invalid():
     valid_input = {
         "scope_week": "2026-W18",
-        "candidate_pairs": [
+        "daily_topic_status_snapshots": [
+            {"date": "2026-05-04", "topic_status_snapshot": {"keypulse-hud-fix": {"name": "HUD 权限修复", "state": "completed"}}}
+        ],
+        "topics": [
             {
-                "slug_a": "keypulse-hud-fix",
-                "slug_b": "hud-permission-fix",
-                "affinity_score": 6.8,
-                "topic_a_summary": {
-                    "display_name": "HUD 权限修复",
-                    "keywords": ["keypulse", "hud", "permission"],
-                    "weekly_entries": [
-                        {"date": "2026-05-04", "narrative_one_line": "修权限"}
-                    ],
-                },
-                "topic_b_summary": {
-                    "display_name": "HUD 可见性修复",
-                    "keywords": ["hud", "accessibility", "permission"],
-                    "weekly_entries": [
-                        {"date": "2026-05-05", "narrative_one_line": "补校验"}
-                    ],
-                },
+                "slug": "keypulse-hud-fix",
+                "name": "HUD 权限修复",
+                "state": "completed",
+                "weekly_entries": [{"date": "2026-05-04", "narrative_one_line": "修权限", "event_count": 1}],
             }
         ],
+        "event_counts": {"keypulse-hud-fix": 1},
+        "cross_week_diff": [{"topic": "HUD 权限修复", "from_state": "started", "to_state": "in_progress"}],
+        "key_decisions": [{"date": "2026-05-04", "text": "拍板修 HUD 权限路径", "source": "tag"}],
+        "visible_outputs": [{"date": "2026-05-04", "text": "上线权限修复提示", "source": "tag"}],
     }
     validate(valid_input, _schema("L4_input.json"))
 
-    valid_output = {
-        "decisions": [
-            {
-                "slug_a": "keypulse-hud-fix",
-                "slug_b": "hud-permission-fix",
-                "action": "merge",
-                "into": "keypulse-hud-fix",
-                "reason": "same issue",
-            }
-        ]
-    }
+    valid_output = [
+        {"slug": "keypulse-hud-fix", "name": "HUD 权限修复", "state": "completed", "weekly_entries": []}
+    ]
     validate(valid_output, _schema("L4_output.json"))
 
-    invalid_output = {
-        "decisions": [
-            {
-                "slug_a": "a",
-                "slug_b": "b",
-                "action": "merge",
-                "reason": "missing into",
-            }
-        ]
-    }
+    invalid_output = [{"slug": "a", "name": "", "state": "done", "weekly_entries": []}]
     with pytest.raises(ValidationError):
         validate(invalid_output, _schema("L4_output.json"))
 
 
 def test_l5_schema_valid_and_invalid():
     valid_input = {
-        "topics_to_write": [
-            {
-                "slug": "keypulse-weekly",
-                "display_name": "Weekly 主线",
-                "status": "accelerating",
-                "weekly_entries": [
-                    {"date": "2026-05-04", "narrative_one_line": "推进 weekly"}
-                ],
-                "previous_week_narrative": None,
-            }
-        ]
+        "scope_week": "2026-W18",
+        "topic": {
+            "slug": "keypulse-weekly",
+            "name": "Weekly 主线",
+            "state": "in_progress",
+            "weekly_entries": [{"date": "2026-05-04", "narrative_one_line": "推进 weekly"}],
+        },
+        "evidence": [{"date": "2026-05-04", "text": "推进 weekly"}],
+        "previous_week_narrative": None,
+        "cross_week_diff": [{"topic": "Weekly 主线", "from_state": "started", "to_state": "in_progress"}],
+        "key_decisions": [{"date": "2026-05-04", "text": "决定按主线写周报", "source": "tag"}],
+        "visible_outputs": [{"date": "2026-05-04", "text": "weekly markdown 初稿", "source": "tag"}],
+        "tagged_blockers": [{"date": "2026-05-04", "text": "卡在 schema 校验", "source": "tag"}],
     }
     validate(valid_input, _schema("L5_input.json"))
 
     valid_output = {
-        "narratives": [
-            {
-                "slug": "keypulse-weekly",
-                "narrative": "本周这条线明显更频繁，周中几次集中推进并完成关键链路 [[2026-05-04]]。",
-                "anchors": ["[[2026-05-04]]"],
-            }
-        ]
+        "slug": "keypulse-weekly",
+        "narrative": "本周这条线持续推进，周中几次集中处理并完成关键链路 [[2026-05-04]]。",
+        "anchors": ["[[2026-05-04]]"],
+        "decisions": ["确认周报主题归并路径"],
+        "outputs": ["生成 weekly markdown"],
+        "blockers": [],
     }
     validate(valid_output, _schema("L5_output.json"))
 
-    invalid_output = {
-        "narratives": [
-            {
-                "slug": "keypulse-weekly",
-                "narrative": "短",
-                "anchors": [],
-            }
-        ]
-    }
+    invalid_output = {"slug": "keypulse-weekly", "narrative": "短", "anchors": [], "decisions": [], "outputs": [], "blockers": []}
     with pytest.raises(ValidationError):
         validate(invalid_output, _schema("L5_output.json"))
 
@@ -124,12 +94,16 @@ def test_l6_schema_valid_and_invalid():
             }
         ],
         "hud_inputs_this_week": [{"date": "2026-05-04", "content": "今天想收敛 weekly"}],
+        "mainline_sections": [{"slug": "weekly-mainline", "narrative": "推进 weekly 主线"}],
         "last_week_observation_text": None,
+        "cross_week_diff": [{"topic": "Weekly 主线", "from_state": "started", "to_state": "in_progress"}],
+        "key_decisions": [{"date": "2026-05-04", "text": "决定按主线写周报", "source": "tag"}],
+        "visible_outputs": [{"date": "2026-05-04", "text": "weekly markdown 初稿", "source": "tag"}],
     }
     validate(valid_input, _schema("L6_input.json"))
 
     valid_output = {
-        "missed_balls": [
+        "dropped_balls": [
             {"what": "周一你说想收敛周报，后面没看到", "anchor_link": "[[2026-05-04]]"}
         ],
         "observation": {
@@ -137,12 +111,14 @@ def test_l6_schema_valid_and_invalid():
             "anchor_link": "[[2026-05-04]]",
             "anchor_quote": "今天推进 weekly 主线并修复 HUD",
         },
+        "risks": [],
     }
     validate(valid_output, _schema("L6_output.json"))
 
     invalid_output = {
-        "missed_balls": "not-array",
+        "dropped_balls": "not-array",
         "observation": {"text": "bad", "anchor_link": None, "anchor_quote": None},
+        "risks": [],
     }
     with pytest.raises(ValidationError):
         validate(invalid_output, _schema("L6_output.json"))

@@ -12,9 +12,9 @@ from keypulse.prompts.loader import PromptCapabilityNotFoundError, load_prompt
         ("L1_cluster_review", "v1", "standard", 800, "只输出 JSON"),
         ("L2_narrative", "v2", "standard", 4000, "整篇日报内容"),
         ("L3_topic_naming", "v1", "mini", 300, "新主题命名器"),
-        ("L4_weekly_reconcile", "v1", "standard", 800, "typed JSON merge 决策"),
-        ("L5_weekly_main_narrative", "v1", "standard", 1500, "这周的主线"),
-        ("L6_explorer", "v1", "standard", 600, "这周的回声"),
+        ("L4_weekly_reconcile", "v1", "standard", 900, "主题归并器"),
+        ("L5_weekly_main_narrative", "v1", "standard", 900, "单主题叙事"),
+        ("L6_explorer", "v1", "standard", 700, "跨主题观察"),
     ],
 )
 def test_load_prompt_for_all_capabilities(capability, version, model_tier, max_tokens, body_marker):
@@ -29,7 +29,7 @@ def test_load_prompt_for_all_capabilities(capability, version, model_tier, max_t
     assert isinstance(spec.input_schema, dict)
     assert isinstance(spec.output_schema, dict)
     assert spec.input_schema.get("type") == "object"
-    assert spec.output_schema.get("type") == "object"
+    assert spec.output_schema.get("type") in {"object", "array"}
 
 
 def test_load_prompt_supports_short_aliases():
