@@ -20,6 +20,16 @@ _CLUSTER_KEYS = {
     "merge_candidate_with",
 }
 _OPTIONAL_CLUSTER_KEYS = {"peak_event_density"}
+_EVENT_KEYS = {
+    "cluster_id",
+    "display_name",
+    "narrative_one_line",
+    "event_count",
+    "time_range",
+    "anchored_to",
+}
+_OPTIONAL_EVENT_KEYS = {"peak_event_density", "merge_candidate_with"}
+_TOPIC_KEYS = {"anchor", "anchor_state", "narrative", "decisions", "shipped", "events_ref"}
 _COST_KEYS = {"in_tokens", "out_tokens", "cost_usd"}
 _TOPIC_HEADING_RE = re.compile(r"^#{2,3}\s+(.+?)\s*$")
 _ASCII_WORD_RE = re.compile(r"[a-z0-9]+")
@@ -277,6 +287,123 @@ def _validate_cluster(cluster: Any, index: int) -> dict[str, Any]:
     return result
 
 
+def _validate_event(event: Any, index: int) -> dict[str, Any]:
+    if not isinstance(event, dict):
+        raise ValueError(f"events[{index}] must be object")
+
+    keys = set(event.keys())
+    missing = sorted(_EVENT_KEYS - keys)
+    extra = sorted(keys - _EVENT_KEYS - _OPTIONAL_EVENT_KEYS)
+    if missing:
+        raise ValueError(f"events[{index}] missing fields: {', '.join(missing)}")
+    if extra:
+        raise ValueError(f"events[{index}] unexpected fields: {', '.join(extra)}")
+
+    cluster_id = str(event["cluster_id"])
+    display_name = str(event["display_name"])
+    narrative_one_line = str(event["narrative_one_line"])
+
+    event_count = event["event_count"]
+    if not isinstance(event_count, int) or isinstance(event_count, bool):
+        raise ValueError(f"events[{index}].event_count must be integer")
+
+    time_range = event["time_range"]
+    if not isinstance(time_range, list) or len(time_range) != 2:
+        raise ValueError(f"events[{index}].time_range must be [start, end]")
+    start = str(time_range[0])
+    end = str(time_range[1])
+    if _TIME_TEXT.fullmatch(start) is None or _TIME_TEXT.fullmatch(end) is None:
+        raise ValueError(f"events[{index}].time_range items must be HH:MM")
+
+    anchored_raw = event["anchored_to"]
+    if anchored_raw is None:
+        anchored_to = None
+    else:
+        anchored_to = str(anchored_raw).strip() or None
+
+    result = {
+        "cluster_id": cluster_id,
+        "display_name": display_name,
+        "narrative_one_line": narrative_one_line,
+        "event_count": event_count,
+        "time_range": [start, end],
+        "anchored_to": anchored_to,
+    }
+    if "merge_candidate_with" in event:
+        merge_with = event["merge_candidate_with"]
+        if not isinstance(merge_with, list):
+            raise ValueError(f"events[{index}].merge_candidate_with must be array")
+        result["merge_candidate_with"] = [str(item) for item in merge_with]
+    if "peak_event_density" in event:
+        result["peak_event_density"] = float(event["peak_event_density"] or 0.0)
+    return result
+
+
+def _validate_topic(topic: Any, index: int) -> dict[str, Any]:
+    if not isinstance(topic, dict):
+        raise ValueError(f"topics[{index}] must be object")
+    keys = set(topic.keys())
+    missing = sorted(_TOPIC_KEYS - keys)
+    if missing:
+        raise ValueError(f"topics[{index}] missing fields: {', '.join(missing)}")
+    extra = sorted(keys - _TOPIC_KEYS - {"display", "title"})
+    if extra:
+        raise ValueError(f"topics[{index}] unexpected fields: {', '.join(extra)}")
+
+    decisions_raw = topic["decisions"]
+    shipped_raw = topic["shipped"]
+    refs_raw = topic["events_ref"]
+    if not isinstance(decisions_raw, list):
+        raise ValueError(f"topics[{index}].decisions must be array")
+    if not isinstance(shipped_raw, list):
+        raise ValueError(f"topics[{index}].shipped must be array")
+    if not isinstance(refs_raw, list):
+        raise ValueError(f"topics[{index}].events_ref must be array")
+
+    normalized = {
+        "anchor": str(topic["anchor"]).strip(),
+        "anchor_state": str(topic["anchor_state"]).strip(),
+        "narrative": str(topic["narrative"]).strip(),
+        "decisions": [str(item) for item in decisions_raw if str(item).strip()],
+        "shipped": [str(item) for item in shipped_raw if str(item).strip()],
+        "events_ref": [str(item) for item in refs_raw if str(item).strip()],
+    }
+    if "display" in topic:
+        normalized["display"] = str(topic["display"]).strip()
+    if "title" in topic:
+        normalized["title"] = str(topic["title"]).strip()
+    return normalized
+
+
+def _legacy_cluster_to_event(cluster: dict[str, Any]) -> dict[str, Any]:
+    output = {
+        "cluster_id": str(cluster.get("slug") or "").strip(),
+        "display_name": str(cluster.get("display_name") or "").strip(),
+        "narrative_one_line": str(cluster.get("narrative_one_line") or "").strip(),
+        "event_count": int(cluster.get("event_count") or 0),
+        "time_range": list(cluster.get("time_range") or ["00:00", "23:59"]),
+        "anchored_to": None,
+        "merge_candidate_with": [str(item) for item in (cluster.get("merge_candidate_with") or [])],
+    }
+    if "peak_event_density" in cluster:
+        output["peak_event_density"] = float(cluster.get("peak_event_density") or 0.0)
+    return output
+
+
+def _event_to_legacy_cluster(event: dict[str, Any]) -> dict[str, Any]:
+    output = {
+        "slug": str(event.get("cluster_id") or "").strip(),
+        "display_name": str(event.get("display_name") or "").strip(),
+        "narrative_one_line": str(event.get("narrative_one_line") or "").strip(),
+        "event_count": int(event.get("event_count") or 0),
+        "time_range": list(event.get("time_range") or ["00:00", "23:59"]),
+        "merge_candidate_with": [str(item) for item in (event.get("merge_candidate_with") or [])],
+    }
+    if "peak_event_density" in event:
+        output["peak_event_density"] = float(event.get("peak_event_density") or 0.0)
+    return output
+
+
 def _validate_cost(cost: Any) -> dict[str, Any]:
     if not isinstance(cost, dict):
         raise ValueError("cost must be object")
@@ -311,26 +438,40 @@ def _validate_summary_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("daily summary must be object")
 
-    required = {"date", "clusters", "misc_event_ids", "topic_status_snapshot", "cost"}
-    keys = set(payload.keys())
-    missing = sorted(required - keys)
-    extra = sorted(keys - required)
-    if missing:
-        raise ValueError(f"daily summary missing fields: {', '.join(missing)}")
-    if extra:
-        raise ValueError(f"daily summary unexpected fields: {', '.join(extra)}")
-
     date_text = _validate_date(str(payload["date"]))
+    events_raw = payload.get("events")
+    clusters_raw = payload.get("clusters")
+    if events_raw is None and clusters_raw is None:
+        raise ValueError("daily summary missing fields: events/clusters")
 
-    clusters_raw = payload["clusters"]
-    if not isinstance(clusters_raw, list):
-        raise ValueError("clusters must be array")
-    clusters = [_validate_cluster(cluster, index) for index, cluster in enumerate(clusters_raw)]
+    events: list[dict[str, Any]]
+    if events_raw is not None:
+        if not isinstance(events_raw, list):
+            raise ValueError("events must be array")
+        events = [_validate_event(event, index) for index, event in enumerate(events_raw)]
+    else:
+        if not isinstance(clusters_raw, list):
+            raise ValueError("clusters must be array")
+        clusters = [_validate_cluster(cluster, index) for index, cluster in enumerate(clusters_raw)]
+        events = [_legacy_cluster_to_event(cluster) for cluster in clusters]
 
-    misc_raw = payload["misc_event_ids"]
+    topics_raw = payload.get("topics", [])
+    if not isinstance(topics_raw, list):
+        raise ValueError("topics must be array")
+    topics = [_validate_topic(topic, index) for index, topic in enumerate(topics_raw)]
+
+    unanchored_raw = payload.get("unanchored")
+    if unanchored_raw is None:
+        unanchored = [dict(event) for event in events if event.get("anchored_to") is None]
+    else:
+        if not isinstance(unanchored_raw, list):
+            raise ValueError("unanchored must be array")
+        unanchored = [_validate_event(event, index) for index, event in enumerate(unanchored_raw)]
+
+    misc_raw = payload.get("misc_event_ids", [])
     if not isinstance(misc_raw, list):
         raise ValueError("misc_event_ids must be array")
-    misc_event_ids = [str(item) for item in misc_raw]
+    misc_event_ids = [str(item) for item in misc_raw if str(item).strip()]
 
     topic_status_snapshot = payload["topic_status_snapshot"]
     if not isinstance(topic_status_snapshot, dict):
@@ -338,7 +479,10 @@ def _validate_summary_payload(payload: Any) -> dict[str, Any]:
 
     normalized = {
         "date": date_text,
-        "clusters": clusters,
+        "topics": topics,
+        "events": events,
+        "unanchored": unanchored,
+        "clusters": [_event_to_legacy_cluster(event) for event in events],
         "misc_event_ids": misc_event_ids,
         "topic_status_snapshot": topic_status_snapshot,
         "cost": _validate_cost(payload["cost"]),
@@ -346,13 +490,26 @@ def _validate_summary_payload(payload: Any) -> dict[str, Any]:
     return normalized
 
 
-def write_daily_summary(date: str, clusters, misc, topic_snapshot, cost) -> Path:
+def write_daily_summary(
+    date: str,
+    clusters=None,
+    misc=None,
+    topic_snapshot=None,
+    cost=None,
+    *,
+    topics=None,
+    events=None,
+    unanchored=None,
+) -> Path:
     payload = {
         "date": date,
-        "clusters": clusters,
-        "misc_event_ids": misc,
-        "topic_status_snapshot": topic_snapshot,
-        "cost": cost,
+        "clusters": clusters if clusters is not None else [],
+        "events": events,
+        "topics": topics if topics is not None else [],
+        "unanchored": unanchored,
+        "misc_event_ids": misc if misc is not None else [],
+        "topic_status_snapshot": topic_snapshot if topic_snapshot is not None else {},
+        "cost": cost if cost is not None else {"in_tokens": 0, "out_tokens": 0, "cost_usd": 0.0},
     }
     normalized = _validate_summary_payload(payload)
 
@@ -380,3 +537,97 @@ def read_daily_summary(date: str) -> dict[str, Any] | None:
         raise ValueError(f"invalid daily summary JSON: {target}") from exc
 
     return _validate_summary_payload(payload)
+
+
+def _anchor_link(anchor: str, display: str | None = None) -> str:
+    display_text = str(display or "").strip()
+    if display_text:
+        return f"[[{anchor}|{display_text}]]"
+    return f"[[{anchor}]]"
+
+
+def render_daily_markdown(
+    *,
+    date: str,
+    topics: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    unanchored: list[dict[str, Any]],
+    previous_day_anchors: list[str] | None = None,
+) -> str:
+    date_text = _validate_date(date)
+    topic_list = [topic for topic in topics if isinstance(topic, dict)]
+    event_list = [event for event in events if isinstance(event, dict)]
+    unanchored_list = [event for event in unanchored if isinstance(event, dict)]
+    previous = [str(item) for item in (previous_day_anchors or []) if str(item).strip()]
+
+    lines = ["📍 Asia/Shanghai", "", f"# {date_text}", "", "## 今日要点", ""]
+    if topic_list:
+        lines.append(str(topic_list[0].get("narrative") or "").strip())
+    else:
+        lines.append("今天没有形成可归并到主线的推进，主要以 unanchored 事件为主。")
+
+    lines.extend(["", "## 今天做的事", ""])
+    for topic in topic_list:
+        anchor = str(topic.get("anchor") or "").strip()
+        display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
+        heading = _anchor_link(anchor, display) if anchor else display
+        lines.append(f"### {heading}")
+        lines.append("")
+        narrative = str(topic.get("narrative") or "").strip()
+        lines.append(narrative or "无叙事。")
+        decisions = [str(item) for item in (topic.get("decisions") or []) if str(item).strip()]
+        shipped = [str(item) for item in (topic.get("shipped") or []) if str(item).strip()]
+        if decisions:
+            lines.append("")
+            lines.append("决策：")
+            lines.extend([f"- {item}" for item in decisions])
+        if shipped:
+            lines.append("")
+            lines.append("产出：")
+            lines.extend([f"- {item}" for item in shipped])
+        lines.append("")
+    if not topic_list:
+        lines.extend(["暂无主线 topics。", ""])
+
+    lines.extend(["## 没接住的球", "", "暂无可确认的遗漏。", "", "## 一个观察", ""])
+    if previous:
+        lines.append(f"相比前一日主线（{', '.join(previous)}），今天的推进是否真正收敛到了可复用锚点？")
+    else:
+        lines.append("今天的事件分布是否真正体现为跨天主线，而不是被碎片动作掩盖？")
+
+    lines.extend(["", "## 跨周差异", ""])
+    cross_week_items = [
+        topic for topic in topic_list if str(topic.get("anchor_state") or "") in {"started_today", "completed_today"}
+    ]
+    if cross_week_items:
+        for topic in cross_week_items:
+            anchor = str(topic.get("anchor") or "").strip()
+            display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
+            state = str(topic.get("anchor_state") or "").strip()
+            lines.append(f"- {_anchor_link(anchor, display)}: {state}")
+    else:
+        lines.append("- 无")
+
+    lines.extend(["", "## 明日的锚点", "", "> 明天我想：______", ">", "> _写一句话留给明天的自己_", ""])
+    lines.extend(["## 今日 raw events (unanchored)", ""])
+    if unanchored_list:
+        for event in unanchored_list:
+            title = str(event.get("display_name") or event.get("cluster_id") or "unanchored").strip()
+            narrative = str(event.get("narrative_one_line") or "").strip()
+            lines.append(f"- {title}: {narrative}")
+    else:
+        lines.append("- 无")
+
+    lines.extend(["", "## 今日涉及的主题", ""])
+    if topic_list:
+        for topic in topic_list:
+            anchor = str(topic.get("anchor") or "").strip()
+            display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
+            lines.append(f"- {_anchor_link(anchor, display)}")
+    else:
+        lines.append("- 无")
+
+    if event_list and not topic_list:
+        lines.extend(["", "<!-- events_count: {} -->".format(len(event_list))])
+    lines.append("")
+    return "\n".join(lines).strip()
