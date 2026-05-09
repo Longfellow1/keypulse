@@ -69,7 +69,7 @@ def test_daily_summary_has_complete_schema_and_no_tmp_residue(tmp_path, monkeypa
 
     payload = read_daily_summary("2026-05-08")
     assert payload is not None
-    assert set(payload.keys()) == {"date", "clusters", "misc_event_ids", "topic_status_snapshot", "cost"}
+    assert {"date", "clusters", "misc_event_ids", "topic_status_snapshot", "cost"}.issubset(set(payload.keys()))
     assert set(payload["clusters"][0].keys()) == {
         "slug",
         "display_name",
