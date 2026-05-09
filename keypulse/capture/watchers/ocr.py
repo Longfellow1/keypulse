@@ -213,4 +213,10 @@ class OCRWatcher(BaseWatcher):
             event = self.capture_once()
             if event is not None:
                 self.emit(event)
+            else:
+                # Trigger gate is restrictive (window switch + idle + content
+                # change), so legitimate quiet periods routinely exceed
+                # HEARTBEAT_TIMEOUT_SEC. Beat each loop so the supervisor can
+                # tell "alive but no trigger" apart from "silently stuck".
+                self.beat()
             time.sleep(0.5)

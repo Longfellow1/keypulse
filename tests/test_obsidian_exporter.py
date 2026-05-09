@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -289,9 +290,11 @@ def test_build_event_card_uses_fragment_filename_for_dirty_title(monkeypatch):
         "uncategorized",
     )
 
-    assert Path(card.path).name.startswith("片段-1710-")
+    assert Path(card.path).name.startswith("1710-")
+    assert "片段-" not in Path(card.path).name
     assert Path(card.path).suffix == ".md"
-    assert "A-B" not in card.path
+    assert "a-b" not in card.path
+    assert len(Path(card.path).stem.split("-")) >= 2
 
 
 def test_build_event_card_uses_slug_for_meaningful_title(monkeypatch):
@@ -311,8 +314,66 @@ def test_build_event_card_uses_slug_for_meaningful_title(monkeypatch):
         "修复-keypulse-安装问题",
     )
 
-    assert Path(card.path).name.startswith("1710-修复-keypulse-安装问题-")
+    assert Path(card.path).name.startswith("1710-")
     assert "片段-" not in Path(card.path).name
+    assert re.search(r"-[0-9a-f]{8}\.md$", Path(card.path).name) is None
+
+
+def test_build_event_card_humanize_titles_off_does_not_call_gateway(monkeypatch):
+    class _Gateway:
+        def call(self, *args, **kwargs):
+            raise AssertionError("gateway.call should not be called when humanize_titles is off")
+
+    monkeypatch.setattr("keypulse.obsidian.layout.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
+    card = _build_event_card(
+        _to_item(
+            _make_item(
+                created_at="2026-04-20T09:10:00+00:00",
+                ts_start="2026-04-20T09:10:00+00:00",
+                ts_end="2026-04-20T09:16:00+00:00",
+                title="make app bundle 实际成功了 preflight 没装",
+                body="make app bundle 实际成功了 preflight 没装",
+            )
+        ),
+        "2026-04-20",
+        "build-app",
+        model_gateway=_Gateway(),
+        humanize_titles=False,
+    )
+
+    assert "build-app" in Path(card.path).stem
+
+
+def test_build_event_card_humanize_titles_on_calls_gateway(monkeypatch):
+    class _Gateway:
+        def __init__(self):
+            self.calls: list[tuple[str, str]] = []
+
+        def call(self, capability, prompt, **kwargs):
+            self.calls.append((capability, prompt))
+            return {"filename_title": "build app bundle 成功 preflight 跳过"}
+
+    gateway = _Gateway()
+    monkeypatch.setattr("keypulse.obsidian.layout.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
+    card = _build_event_card(
+        _to_item(
+            _make_item(
+                created_at="2026-04-20T09:10:00+00:00",
+                ts_start="2026-04-20T09:10:00+00:00",
+                ts_end="2026-04-20T09:16:00+00:00",
+                title="make app 实际成功了 bundle 已在 dist preflight 在 venv 没装",
+                body="make app 实际成功了 bundle 已在 dist preflight 在 venv 没装",
+            )
+        ),
+        "2026-04-20",
+        "build-app",
+        model_gateway=gateway,
+        humanize_titles=True,
+    )
+
+    assert gateway.calls
+    assert gateway.calls[0][0] == "event_title_humanize"
+    assert "build-app-bundle-成功-preflight-跳过" in Path(card.path).name
 
 
 def test_topic_title_handles_placeholder_keys():
@@ -330,8 +391,31 @@ def test_build_obsidian_bundle_creates_daily_and_event_cards_for_single_item():
     assert bundle["events"][0]["properties"]["type"] == "event"
     assert "修复 keypulse 安装问题" in bundle["events"][0]["body"]
     assert "## 今天的事件卡" in bundle["daily"][0]["body"]
-    assert "[[Events/" in bundle["daily"][0]["body"]
+    assert "[[../.keypulse/events/" in bundle["daily"][0]["body"]
     assert bundle["topics"] == []
+
+
+def test_build_obsidian_bundle_renders_relative_keypulse_links_by_default():
+    bundle = build_obsidian_bundle([_sample_item()], vault_name="Harland Knowledge", date_str="2026-04-18")
+    daily_body = bundle["daily"][0]["body"]
+    assert "[[../.keypulse/events/" in daily_body
+    assert "file:///" not in daily_body
+
+
+def test_build_obsidian_bundle_renders_absolute_md_links(monkeypatch, tmp_path: Path):
+    home = tmp_path / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    bundle = build_obsidian_bundle(
+        [_sample_item()],
+        vault_name="Harland Knowledge",
+        date_str="2026-04-18",
+        wiki_link_mode="absolute_md",
+    )
+    daily_body = bundle["daily"][0]["body"]
+    assert "(file://" in daily_body
+    assert "[[../.keypulse/events/" not in daily_body
 
 
 def test_build_obsidian_bundle_skips_loginwindow_event_cards_and_counts():
@@ -355,7 +439,8 @@ def test_build_obsidian_bundle_skips_loginwindow_event_cards_and_counts():
     assert bundle["topics"] == []
 
 
-def test_write_obsidian_bundle_writes_markdown_notes(tmp_path: Path):
+def test_write_obsidian_bundle_writes_markdown_notes(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("KEYPULSE_HOME", str(tmp_path / ".keypulse"))
     bundle = build_obsidian_bundle([_sample_item()], vault_name="Harland Knowledge", date_str="2026-04-18")
 
     written = write_obsidian_bundle(bundle, tmp_path)
@@ -369,8 +454,10 @@ def test_write_obsidian_bundle_writes_markdown_notes(tmp_path: Path):
     assert "source: keypulse" in content
 
 
-def test_write_obsidian_bundle_replaces_stale_event_files_for_same_day(tmp_path: Path):
-    stale_dir = tmp_path / "Events" / "2026-04-18"
+def test_write_obsidian_bundle_replaces_stale_event_files_for_same_day(tmp_path: Path, monkeypatch):
+    keypulse_home = tmp_path / ".keypulse"
+    monkeypatch.setenv("KEYPULSE_HOME", str(keypulse_home))
+    stale_dir = keypulse_home / "events" / "2026-04-18"
     stale_dir.mkdir(parents=True)
     stale_file = stale_dir / "0900-old-note.md"
     stale_file.write_text("old")
@@ -382,6 +469,20 @@ def test_write_obsidian_bundle_replaces_stale_event_files_for_same_day(tmp_path:
     assert written
     assert not stale_file.exists()
     assert any(path.parent == stale_dir for path in written)
+
+
+def test_write_obsidian_bundle_keeps_historical_event_files_untouched(tmp_path: Path, monkeypatch):
+    keypulse_home = tmp_path / ".keypulse"
+    monkeypatch.setenv("KEYPULSE_HOME", str(keypulse_home))
+    historical_dir = keypulse_home / "events" / "2026-04-17"
+    historical_dir.mkdir(parents=True)
+    historical_file = historical_dir / "0915-old-history.md"
+    historical_file.write_text("history")
+
+    bundle = build_obsidian_bundle([_sample_item()], vault_name="Harland Knowledge", date_str="2026-04-18")
+    write_obsidian_bundle(bundle, tmp_path)
+
+    assert historical_file.exists()
 
 
 def test_build_obsidian_bundle_derives_manual_title_from_body_when_missing():

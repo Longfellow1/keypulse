@@ -58,20 +58,6 @@ The evening summary writes to your own Obsidian vault — the other half of what
 
 ---
 
-## Relationship, not features — three stages
-
-The product unlocks by **calendar days**, not "productive days." Companionship needs real time.
-
-| Stage | Days | Tone | Example line |
-|---|---|---|---|
-| **Acquaintance** | 0–3 | "I'm still learning you — but I'm paying attention." | *"Today you spent time on these things."* |
-| **Familiar** | 3–7 | "I noticed something — can I check with you?" | *"You keep coming back here lately. Is that on purpose?"* |
-| **Exploring** | 7+ | "I understand what you're doing, and beginning to see why." | *"Based on the past two weeks, X is getting heavier for you. Where do you want to take it next week?"* |
-
-The real signal that the relationship has deepened isn't a feature unlock — it's when **your language shifts from "it" to "we."**
-
----
-
 ## The voice it speaks in
 
 | ✗ Machine report | ✓ Pen-pal voice |

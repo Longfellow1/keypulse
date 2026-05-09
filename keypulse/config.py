@@ -129,6 +129,22 @@ class PipelineSignalsConfig(BaseModel):
     browser_enabled: bool = True
 
 
+class ValueDensityConfig(BaseModel):
+    enabled: bool = True
+    token_target: int = 80
+    decision_bonus: float = 0.25
+    high_density_threshold: float = 0.75
+    decision_regex: str = "是不是|为什么|决定|选择?|选|根因|结论|判断|取舍|方案|建议|应该|必须|确认|拍板|原因"
+    source_weights: dict[str, float] = Field(
+        default_factory=lambda: {
+            "user_msg": 1.25,
+            "assistant_msg": 0.85,
+            "tool_echo": 0.25,
+            "default": 0.6,
+        }
+    )
+
+
 class PipelineConfig(BaseModel):
     llm_mode: str = "local-first"
     max_llm_calls_per_run: int = 0
@@ -139,12 +155,14 @@ class PipelineConfig(BaseModel):
     use_narrative_skeleton: bool = False
     use_things_narrative: bool = True
     things_idle_threshold_minutes: int = 30
+    value_density: ValueDensityConfig = Field(default_factory=ValueDensityConfig)
 
 
 class ModelBackendConfig(BaseModel):
-    kind: Literal["lm_studio", "openai_compatible", "ollama", "disabled"] = "disabled"
+    kind: Literal["lm_studio", "openai_compatible", "anthropic", "ollama", "disabled"] = "disabled"
     base_url: str = ""
     model: str = ""
+    tier: str = ""
     api_key_source: str = ""
     api_key_env: str = ""
     timeout_sec: int = 20
@@ -177,11 +195,20 @@ class ModelConfig(BaseModel):
     )
 
 
+class LLMConfig(BaseModel):
+    tier: Literal["mini", "standard", "premium"] = "mini"
+    provider: str = ""
+    monthly_budget_usd: float = 5.0
+    local_ollama_url: str = "http://localhost:11434"
+
+
 class ObsidianConfig(BaseModel):
     vault_path: str = "~/Go/Knowledge"
     vault_name: str = "KeyPulse"
     export_hour: int = 9
     export_minute: int = 5
+    wiki_link_mode: Literal["relative", "absolute_md"] = "relative"
+    humanize_titles: bool = False
 
 
 class IntegrationConfig(BaseModel):
@@ -216,6 +243,7 @@ class Config(BaseModel):
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)

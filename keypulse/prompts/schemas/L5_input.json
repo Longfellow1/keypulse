@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["scope_week", "topic", "evidence", "previous_week_narrative", "cross_week_diff", "key_decisions", "visible_outputs", "tagged_blockers"],
+  "properties": {
+    "scope_week": {"type": "string", "pattern": "^\\d{4}-W\\d{2}$"},
+    "topic": {"type": "object"},
+    "evidence": {"type": "array"},
+    "previous_week_narrative": {"type": ["string", "null"]},
+    "cross_week_diff": {"type": "array"},
+    "key_decisions": {"type": "array"},
+    "visible_outputs": {"type": "array"},
+    "tagged_blockers": {"type": "array"}
+  },
+  "additionalProperties": false
+}

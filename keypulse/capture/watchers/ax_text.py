@@ -172,4 +172,8 @@ class AXTextWatcher(BaseWatcher):
             event = self.capture_once()
             if event is not None:
                 self.emit(event)
+            else:
+                # Same-content polls dedupe to None — beat so heartbeat
+                # supervision can tell "alive but no new text" from "stuck".
+                self.beat()
             time.sleep(self._poll_interval)

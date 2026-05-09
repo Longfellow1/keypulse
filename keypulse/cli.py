@@ -61,7 +61,7 @@ from keypulse.pipeline import (
     record_theme_feedback,
     current_theme_profile,
 )
-from keypulse.pipeline.model import ModelGateway
+from keypulse.pipeline.model import LLMCallError, ModelGateway
 from keypulse.pipeline.model_keychain import (
     KeychainCommandError,
     KeychainUnavailable,
@@ -70,6 +70,15 @@ from keypulse.pipeline.model_keychain import (
     render_plist_advice,
     store_secret,
 )
+from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily
+from keypulse.pipeline.onboarding import (
+    OnboardingAnswers,
+    QUESTIONS,
+    is_first_run,
+    validate_answers,
+    write_profile,
+)
+from keypulse.pipeline.weekly_orchestrator import WeeklyOrchestratorError, run_weekly
 from keypulse.pipeline.things import build_things, render_things_report, things_as_json
 from keypulse.search.backends import resolve_search_backend
 
@@ -82,6 +91,79 @@ err_console = Console(stderr=True)
 def get_config() -> Config:
     """Load config from standard locations."""
     return Config.load()
+
+
+def _parse_cost_ts(value: str) -> datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    normalized = raw.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _iter_cost_rows(cost_path: Path):
+    if not cost_path.exists():
+        return
+    with cost_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                yield row
+
+
+def _month_bounds(month_text: str) -> tuple[datetime, datetime]:
+    try:
+        start = datetime.strptime(month_text, "%Y-%m").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise click.UsageError("`--month` format must be YYYY-MM") from exc
+    year = start.year + 1 if start.month == 12 else start.year
+    month = 1 if start.month == 12 else start.month + 1
+    end = start.replace(year=year, month=month)
+    return start, end
+
+
+def _week_bounds(week_text: str) -> tuple[datetime, datetime]:
+    match = re.fullmatch(r"(\d{4})-W(\d{2})", week_text.strip())
+    if not match:
+        raise click.UsageError("`--week` format must be YYYY-Www")
+    year = int(match.group(1))
+    week = int(match.group(2))
+    try:
+        start_date = datetime.fromisocalendar(year, week, 1)
+    except ValueError as exc:
+        raise click.UsageError("`--week` is not a valid ISO week") from exc
+    start = start_date.replace(tzinfo=timezone.utc)
+    return start, start + timedelta(days=7)
+
+
+def _aggregate_cost(cost_path: Path, start: datetime, end: datetime) -> tuple[float, dict[str, dict[str, float | int]]]:
+    total = 0.0
+    per_capability: dict[str, dict[str, float | int]] = {}
+    for row in _iter_cost_rows(cost_path):
+        ts = _parse_cost_ts(str(row.get("ts") or ""))
+        if ts is None or not (start <= ts < end):
+            continue
+        cost = float(row.get("cost_usd") or 0.0)
+        capability = str(row.get("capability") or "unknown")
+        total += cost
+        bucket = per_capability.setdefault(capability, {"cost_usd": 0.0, "calls": 0, "cache_hits": 0})
+        bucket["cost_usd"] = float(bucket["cost_usd"]) + cost
+        bucket["calls"] = int(bucket["calls"]) + 1
+        if bool(row.get("cache_hit")):
+            bucket["cache_hits"] = int(bucket["cache_hits"]) + 1
+    return total, per_capability
 
 
 def require_db(cfg: Config):
@@ -190,6 +272,90 @@ def _warn_if_model_backends_need_setup(cfg: Config) -> None:
 def main():
     """KeyPulse — macOS personal activity monitoring CLI."""
     pass
+
+
+@main.command()
+@click.option("--force", is_flag=True, help="覆盖已有 profile")
+def setup(force):
+    """首次启动配置（工作类型/区域/节奏/触发/视角）"""
+    profile_path = Path.home() / ".keypulse" / "profile.toml"
+    if (not force) and (not is_first_run(profile_path)):
+        click.echo(f"profile already exists: {profile_path} (use --force to overwrite)")
+        return
+
+    answers_map: dict[str, str] = {}
+    while True:
+        answers_map = {}
+        for item in QUESTIONS:
+            key = str(item["key"])
+            options = [str(opt) for opt in item["options"]]
+            default = str(item["default"])
+            choice = click.Choice(options, case_sensitive=False)
+            value = click.prompt(str(item["question"]), type=choice, default=default, show_choices=True)
+            answers_map[key] = str(value)
+
+        errors = validate_answers(answers_map)
+        if not errors:
+            break
+        for err in errors:
+            click.secho(err, fg="red", err=True)
+        click.echo("输入不合法，请重试。")
+
+    religion = answers_map.get("religion", "")
+    if religion == "unspecified":
+        religion = ""
+    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    answers = OnboardingAnswers(
+        work_type=answers_map["work_type"],
+        region=answers_map["region"],
+        work_mode=answers_map["work_mode"],
+        weekly_trigger=answers_map["weekly_trigger"],
+        weekly_style=answers_map["weekly_style"],
+        religion=religion,
+        created_at=created_at,
+    )
+    write_profile(answers, profile_path)
+    click.echo(f"✓ profile saved to {profile_path}")
+
+
+@main.command(name="mark-holiday")
+@click.argument("week")
+@click.option("--reason", required=True)
+@click.option("--region", default=None)
+def mark_holiday(week, reason, region):
+    """手动标注某周为假期，影响周报模板"""
+    raw_week = str(week).strip()
+    iso_week = raw_week
+    short_match = re.fullmatch(r"[Ww](\d{1,2})", raw_week)
+    full_match = re.fullmatch(r"(\d{4})-[Ww](\d{1,2})", raw_week)
+    if short_match:
+        iso_week = f"{datetime.now().year}-W{int(short_match.group(1)):02d}"
+    elif full_match:
+        iso_week = f"{int(full_match.group(1)):04d}-W{int(full_match.group(2)):02d}"
+    else:
+        raise click.UsageError("week must be W19 or YYYY-W19")
+
+    marked_path = Path.home() / ".keypulse" / "marked-holidays.json"
+    marked_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload: dict[str, object] = {"weeks": {}}
+    if marked_path.exists():
+        try:
+            payload = json.loads(marked_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise click.ClickException(f"failed to read {marked_path}: {exc}") from exc
+        if not isinstance(payload, dict):
+            payload = {"weeks": {}}
+    weeks = payload.get("weeks")
+    if not isinstance(weeks, dict):
+        weeks = {}
+        payload["weeks"] = weeks
+
+    marked_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    weeks[iso_week] = {"reason": reason, "region": region, "marked_at": marked_at}
+
+    marked_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    click.echo(f"✓ holiday marked: {iso_week}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1070,8 +1236,134 @@ def _sync_obsidian_bundle(
             "things_idle_threshold_minutes",
             30,
         ),
+        wiki_link_mode=getattr(getattr(cfg, "obsidian", None), "wiki_link_mode", "relative"),
+        humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
     )
     return len(written), target_output, sink.kind
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 13.4 DAILY (PR2 orchestrator entry)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def daily():
+    """Run daily clustering orchestration."""
+    pass
+
+
+def _daily_note_output_path(cfg: Config, date_str: str) -> Path:
+    sink = resolve_active_sink(cfg, persist=False)
+    path = sink.output_dir / "Daily" / f"{date_str}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _render_daily_fallback_with_things(cfg: Config, date_str: str, *, no_llm: bool) -> Path:
+    since_utc, until_utc = local_day_bounds(date_str)
+    since_dt = datetime.fromisoformat(since_utc)
+    until_dt = datetime.fromisoformat(until_utc)
+    gateway = None if no_llm else load_model_gateway(cfg)
+    thing_list = build_things(
+        since_dt,
+        until_dt,
+        model_gateway=gateway,
+        sources=None,
+        idle_threshold_minutes=getattr(getattr(cfg, "pipeline", None), "things_idle_threshold_minutes", 30),
+    )
+    report = render_things_report(thing_list, model_gateway=gateway, title="今日做的事")
+    target = _daily_note_output_path(cfg, date_str)
+    atomic_write_text(target, report)
+    return target
+
+
+@daily.command("run")
+@click.option("--date", "date_str", required=True, help="Date in YYYY-MM-DD format")
+@click.option("--trigger", type=click.Choice(["18:00", "23:30"]), default="18:00", show_default=True)
+@click.option("--mock-llm", is_flag=True, default=False, help="Use MOCK_LLM=1 stub gateway")
+def daily_run(date_str, trigger, mock_llm):
+    """Run PR2 daily orchestrator once."""
+    cfg = get_config()
+    require_db(cfg)
+
+    previous_mock = os.environ.get("MOCK_LLM")
+    if mock_llm:
+        os.environ["MOCK_LLM"] = "1"
+
+    try:
+        summary = run_daily(date_str, trigger=trigger)
+        click.echo(
+            "daily_run=ok "
+            f"date={summary.date} trigger={summary.trigger} events={summary.processed_count} "
+            f"clusters={summary.cluster_count} skipped={summary.skipped}"
+        )
+        click.echo(f"daily_path={summary.daily_path}")
+        click.echo(f"daily_summary={summary.summary_path}")
+        if summary.topic_diffs:
+            click.echo("topic_diffs=" + ",".join(summary.topic_diffs))
+    except (DailyOrchestratorError, LLMCallError, ValueError, OSError) as exc:
+        fallback_path = _render_daily_fallback_with_things(cfg, date_str, no_llm=mock_llm)
+        click.echo(f"daily_run=fallback date={date_str} trigger={trigger} reason={type(exc).__name__}:{exc}")
+        click.echo(f"fallback_daily_path={fallback_path}")
+    finally:
+        if mock_llm:
+            if previous_mock is None:
+                os.environ.pop("MOCK_LLM", None)
+            else:
+                os.environ["MOCK_LLM"] = previous_mock
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 13.4 WEEKLY (PR3 orchestrator entry)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def weekly():
+    """Run weekly report orchestration."""
+    pass
+
+
+@weekly.command("run")
+@click.option("--week", "week_str", required=True, help="ISO week in YYYY-Www format")
+@click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="exec", show_default=True)
+@click.option("--mock-llm", is_flag=True, default=False, help="Use MOCK_LLM=1 stub gateway")
+def weekly_run(week_str, style, mock_llm):
+    """Run PR3 weekly orchestrator once."""
+    os.environ["HOME"] = str(Path.home())
+    cfg = get_config()
+    require_db(cfg)
+
+    previous_mock = os.environ.get("MOCK_LLM")
+    if mock_llm:
+        os.environ["MOCK_LLM"] = "1"
+
+    try:
+        weekly_path = run_weekly(week_str, style=style)
+        if weekly_path:
+            outcome_raw = get_state("weekly_last_outcome") or ""
+            outcome = {}
+            try:
+                outcome = json.loads(outcome_raw) if outcome_raw else {}
+            except json.JSONDecodeError:
+                outcome = {}
+
+            if isinstance(outcome, dict) and outcome.get("outcome") == "partial":
+                count = int(outcome.get("validator_failures") or 0)
+                click.echo(f"weekly_run=partial week={week_str} reason=validator_failures count={count}")
+            else:
+                click.echo(f"weekly_run=ok week={week_str}")
+            click.echo(f"weekly_path={weekly_path}")
+        else:
+            click.echo(f"weekly_run=skipped week={week_str} reason=insufficient_daily_data")
+    except (WeeklyOrchestratorError, LLMCallError, ValueError, OSError) as exc:
+        click.echo(f"weekly_run=failed week={week_str} reason={type(exc).__name__}:{exc}")
+        sys.exit(1)
+    finally:
+        if mock_llm:
+            if previous_mock is None:
+                os.environ.pop("MOCK_LLM", None)
+            else:
+                os.environ["MOCK_LLM"] = previous_mock
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1415,6 +1707,8 @@ def export(format, days, date, output):
                 "things_idle_threshold_minutes",
                 30,
             ),
+            wiki_link_mode=getattr(getattr(cfg, "obsidian", None), "wiki_link_mode", "relative"),
+            humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
         )
         console.print(f"[green]Exported {len(written)} notes to {target_output}[/green]")
         return
@@ -1503,6 +1797,46 @@ def purge(today, last_hours, app, confirm):
     console.print(f"[green]Deleted {count} events.[/green]")
 
 
+@main.command(name="cost")
+@click.option("--week", "week_text", default=None, help="ISO week, e.g. 2026-W18")
+@click.option("--month", "month_text", default=None, help="Month, e.g. 2026-05")
+def cost_report(week_text, month_text):
+    """Show LLM cost summary from ~/.keypulse/cost.jsonl."""
+    if week_text and month_text:
+        raise click.UsageError("Use either --week or --month, not both")
+
+    cost_path = get_data_dir() / "cost.jsonl"
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_end_year = month_start.year + 1 if month_start.month == 12 else month_start.year
+    month_end_month = 1 if month_start.month == 12 else month_start.month + 1
+    month_end = month_start.replace(year=month_end_year, month=month_end_month)
+    week_start = datetime.fromisocalendar(now.isocalendar().year, now.isocalendar().week, 1).replace(tzinfo=timezone.utc)
+    week_end = week_start + timedelta(days=7)
+
+    if month_text:
+        start, end = _month_bounds(month_text)
+        total, grouped = _aggregate_cost(cost_path, start, end)
+        print(f"月份({month_text}): ${total:.2f}")
+    elif week_text:
+        start, end = _week_bounds(week_text)
+        total, grouped = _aggregate_cost(cost_path, start, end)
+        print(f"周({week_text}): ${total:.2f}")
+    else:
+        this_month, month_grouped = _aggregate_cost(cost_path, month_start, month_end)
+        this_week, _week_grouped = _aggregate_cost(cost_path, week_start, week_end)
+        print(f"本月({month_start.strftime('%Y-%m')}): ${this_month:.2f}")
+        print(f"本周({now.isocalendar().year}-W{now.isocalendar().week:02d}): ${this_week:.2f}")
+        grouped = month_grouped
+
+    print("按 capability:")
+    for capability, metrics in sorted(grouped.items(), key=lambda item: (-float(item[1]["cost_usd"]), item[0])):
+        cost_value = float(metrics["cost_usd"])
+        calls = int(metrics["calls"])
+        cache_hits = int(metrics["cache_hits"])
+        print(f"  {capability}  ${cost_value:.2f}  ({calls} calls, {cache_hits} cache hits)")
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 16. CONFIG (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1544,6 +1878,10 @@ def config_show(plain):
         print(f"model_cloud_model={cfg.model.cloud.model}")
         print(f"model_cloud_api_key_source={getattr(cfg.model.cloud, 'api_key_source', '')}")
         print(f"model_cloud_api_key_env={cfg.model.cloud.api_key_env}")
+        print(f"llm_tier={cfg.llm.tier}")
+        print(f"llm_provider={cfg.llm.provider}")
+        print(f"llm_monthly_budget_usd={cfg.llm.monthly_budget_usd}")
+        print(f"llm_local_ollama_url={cfg.llm.local_ollama_url}")
         print(f"watchers_window={cfg.watchers.window}")
         print(f"watchers_idle={cfg.watchers.idle}")
         print(f"watchers_clipboard={cfg.watchers.clipboard}")
@@ -1972,7 +2310,7 @@ def model_setup():
         click.echo("ℹ️  未能确认 daemon 的 Keychain 访问能力，请稍后用 keypulse model status 检查。")
 
 
-main.add_command(model_setup, "setup")
+main.add_command(model_setup, "model-setup")
 
 
 @model.command("use")

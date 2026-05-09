@@ -53,7 +53,20 @@ def _signal_tags(reason: str) -> list[str]:
 def _signal_item(signal: dict[str, object]) -> str:
     title = str(signal.get("title") or "未命名提示")
     reason = str(signal.get("reason") or "")
+    obsidian_url = str(signal.get("obsidian_url") or "")
     tags = "".join(f'<span class="{_tag_class(tag)}">{escape(tag)}</span>' for tag in _signal_tags(reason))
+    if obsidian_url:
+        href = f"keypulse://action/open-url?u={quote(obsidian_url, safe='')}"
+        return f"""
+        <a class="sugg-item" href="{href}" title="在 Obsidian 中打开">
+          <div class="sugg-icon">{escape(_signal_icon(title))}</div>
+          <div class="sugg-text">
+            <div class="sugg-title">{escape(title)}</div>
+            <div class="sugg-tags">{tags}</div>
+          </div>
+          <div class="sugg-arrow">→</div>
+        </a>
+        """
     return f"""
         <div class="sugg-item">
           <div class="sugg-icon">{escape(_signal_icon(title))}</div>
@@ -65,16 +78,30 @@ def _signal_item(signal: dict[str, object]) -> str:
     """
 
 
-def _empty_signal_item() -> str:
+def _placeholder_signal_item() -> str:
     return """
-        <div class="sugg-item">
-          <div class="sugg-icon">#</div>
+        <div class="sugg-item placeholder">
+          <div class="sugg-icon">·</div>
           <div class="sugg-text">
-            <div class="sugg-title">今天还没有重点提示</div>
-            <div class="sugg-tags"><span class="tag">继续采集</span></div>
+            <div class="sugg-title">—</div>
           </div>
         </div>
     """
+
+
+def _empty_signal_block() -> str:
+    return """
+        <div class="sugg-empty">今天还没记下什么，晚点回来看看</div>
+    """
+
+
+def _render_signals(signals: list[dict[str, object]]) -> str:
+    if not signals:
+        return _empty_signal_block()
+    rendered = [_signal_item(signal) for signal in signals[:3]]
+    while len(rendered) < 3:
+        rendered.append(_placeholder_signal_item())
+    return "".join(rendered)
 
 
 def _status_pill_class(level: str) -> str:
@@ -116,11 +143,12 @@ def _hint_bar(hint: str, action: str = "") -> str:
 
 
 def _today_card(today_focus: str) -> str:
+    """Inline input 直接前台输入；已写过的内容当主角显示，没有 label。"""
     value_attr = f' value="{escape(today_focus, quote=True)}"' if today_focus else ""
     filled_cls = " filled" if today_focus else ""
     return f"""
       <div class="today-card">
-        <div class="today-label">今日重要的事儿</div>
+        <span class="today-mark">✦</span>
         <input
           id="todayFocus"
           class="today-input{filled_cls}"
@@ -134,10 +162,31 @@ def _today_card(today_focus: str) -> str:
     """
 
 
+def _weekly_echo_top_banner(snapshot: HUDSnapshot) -> str:
+    text = (snapshot.weekly_echo_text or "").strip()
+    target_url = (snapshot.weekly_echo_url or "").strip()
+    week = (snapshot.weekly_echo_week or "").strip()
+    if not text or not target_url or not week:
+        return ""
+    href = (
+        "keypulse://action/open-weekly-echo"
+        f"?u={quote(target_url, safe='')}"
+        f"&week={quote(week, safe='')}"
+    )
+    return f'<a class="weekly-echo-banner" href="{href}" title="打开本周周报">{escape(text)}</a>'
+
+
+def _weekly_notice_banner(snapshot: HUDSnapshot) -> str:
+    notice = (snapshot.weekly_notice or "").strip()
+    if not notice:
+        return ""
+    return f'<div class="weekly-notice">{escape(notice)}</div>'
+
+
 def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok: bool = True) -> str:
     is_running = capture_status != "paused"
     pause_label = "⏸ 暂停" if is_running else "▶ 恢复"
-    suggestions = "".join(_signal_item(signal) for signal in snapshot.top_signals[:3]) or _empty_signal_item()
+    suggestions = _render_signals(list(snapshot.top_signals))
     dot_cls = _dot_class(snapshot.service_status)
     pill_cls = _status_pill_class(snapshot.service_status)
 
@@ -189,6 +238,7 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
       padding: 16px 18px 14px;
     }}
     .hdr-left {{ display: flex; align-items: center; gap: 9px; }}
+    .hdr-right {{ display: flex; align-items: center; gap: 8px; }}
     .dot {{
       width: 8px; height: 8px;
       border-radius: 50%;
@@ -215,6 +265,27 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     .status-pill.warn {{ color: #b05d00; border-color: #f0c98a; background: #fff5e6; }}
     .status-pill.err  {{ color: #b00020; border-color: #f0a8a8; background: #ffeaea; }}
     .status-pill.gray {{ color: var(--text-tertiary); }}
+    .weekly-echo-banner {{
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #7a4500;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 0.5px solid #f0c98a;
+      background: #fff8e8;
+      white-space: nowrap;
+    }}
+    .weekly-echo-banner:hover {{ background: #ffefc9; }}
+    .weekly-notice {{
+      margin: 0 18px 12px;
+      padding: 8px 11px;
+      border-radius: 8px;
+      border: 0.5px solid #f0c98a;
+      background: #fff8e8;
+      color: #7a4500;
+      font-size: 11.5px;
+      line-height: 1.45;
+    }}
 
     /* Hint bar (异常时) */
     .hint-bar {{
@@ -246,38 +317,27 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     }}
     .hint-btn:hover {{ background: #ffd28a; }}
 
-    /* 今日重要的事儿 */
+    /* Today card: inline input, 已写过的内容当主角，没有 label */
     .today-card {{
-      display: block;
+      display: flex;
+      align-items: center;
+      gap: 8px;
       margin: 0 18px 14px;
-      padding: 12px 13px;
+      padding: 12px 14px;
       background: var(--bg-input);
       border: 0.5px solid var(--border);
       border-radius: 10px;
-      cursor: pointer;
-      transition: background 0.1s;
     }}
-    .today-card:hover {{ background: #f0f0f3; }}
-    .today-label {{
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-tertiary);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      margin-bottom: 6px;
-      display: flex; align-items: center; gap: 6px;
-    }}
-    .today-label::before {{
-      content: '✦';
+    .today-mark {{
       color: var(--blue);
-      font-size: 13px;
-      letter-spacing: 0;
-      text-transform: none;
+      font-size: 14px;
+      flex-shrink: 0;
     }}
     .today-input {{
-      font-size: 13px;
+      flex: 1;
+      font-size: 14px;
       color: var(--text-primary);
-      line-height: 1.5;
+      line-height: 1.45;
       width: 100%;
       border: none;
       outline: none;
@@ -293,7 +353,7 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     /* Stats grid */
     .stats {{
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       border-top: 0.5px solid var(--border);
       border-bottom: 0.5px solid var(--border);
     }}
@@ -331,13 +391,31 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
     }}
     .sugg-item {{
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 10px;
       padding: 8px 10px;
       margin: 0 -10px;
       border-radius: 8px;
+      color: inherit;
     }}
-    .sugg-item:hover {{ background: var(--bg-soft); }}
+    a.sugg-item {{ cursor: pointer; }}
+    a.sugg-item:hover {{ background: var(--bg-soft); }}
+    a.sugg-item:hover .sugg-arrow {{ color: var(--text-secondary); }}
+    .sugg-item.placeholder {{ opacity: 0.35; pointer-events: none; }}
+    .sugg-item.placeholder .sugg-icon {{ background: transparent; border-color: transparent; }}
+    .sugg-arrow {{
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-left: 4px;
+    }}
+    .sugg-empty {{
+      padding: 14px 10px 6px;
+      margin: 0 -10px;
+      font-size: 12.5px;
+      color: var(--text-tertiary);
+      line-height: 1.5;
+    }}
     .sugg-icon {{
       width: 22px; height: 22px;
       border-radius: 6px;
@@ -421,22 +499,24 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
         <span class="{dot_cls}"></span>
         <span class="brand">KeyPulse</span>
       </div>
-      <span class="{pill_cls}">{escape(snapshot.status_label)}</span>
+      <div class="hdr-right">
+        {_weekly_echo_top_banner(snapshot)}
+        <span class="{pill_cls}">{escape(snapshot.status_label)}</span>
+      </div>
     </div>
 
     {_hint_bar(snapshot.hint_message, snapshot.hint_action)}
+    {_weekly_notice_banner(snapshot)}
 
     {_today_card(snapshot.today_focus)}
 
     <div class="stats">
-      {_stat_cell("有效", snapshot.effective_count, snapshot.effective_count_delta_vs_yesterday)}
-      {_stat_cell("过滤", snapshot.filtered_count, snapshot.filtered_count_delta_vs_yesterday)}
-      {_stat_cell("主题", snapshot.theme_count, snapshot.theme_count_delta_vs_yesterday)}
-      {_stat_cell("标记", snapshot.manual_marked_count, snapshot.manual_marked_count_delta_vs_yesterday)}
+      {_stat_cell("记下来", snapshot.effective_count, snapshot.effective_count_delta_vs_yesterday)}
+      {_stat_cell("丢掉了", snapshot.filtered_count, snapshot.filtered_count_delta_vs_yesterday)}
     </div>
 
     <div class="suggestions">
-      <div class="sugg-header">今日提示</div>
+      <div class="sugg-header">今天最新</div>
       {suggestions}
     </div>
 
@@ -451,6 +531,7 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
   </div>
   <script>
     (function() {{
+      // Inline input: 回车 / 失焦保存 today_focus
       var input = document.getElementById('todayFocus');
       if (input) {{
         var lastSaved = input.value || '';
@@ -469,6 +550,24 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok:
         }});
         input.addEventListener('blur', save);
       }}
+
+      // 点 HUD 任意非交互区域 → 关闭 popover
+      document.addEventListener('click', function(e) {{
+        var t = e.target;
+        while (t && t !== document.body) {{
+          var tag = (t.tagName || '').toLowerCase();
+          if (tag === 'a' || tag === 'button' || tag === 'input' || tag === 'textarea') {{
+            return;  // 点的是交互元素，不关
+          }}
+          t = t.parentNode;
+        }}
+        e.preventDefault();
+        var probe = document.createElement('iframe');
+        probe.style.display = 'none';
+        probe.src = 'keypulse://action/close-popover';
+        document.body.appendChild(probe);
+        setTimeout(function() {{ probe.remove(); }}, 50);
+      }});
 
       // Auto-resize: notify host whenever the HUD height changes (hint bar
       // appears, signals refresh, etc.). Host parses ?h=… and resizes popover.
