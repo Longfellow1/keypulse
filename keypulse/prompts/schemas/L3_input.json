@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "required": [
+    "component_id",
+    "events",
+    "existing_slugs"
+  ],
+  "properties": {
+    "component_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "content"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "app": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "existing_slugs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{2,40}$"
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,14 @@
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["slug", "name", "state", "weekly_entries"],
+    "properties": {
+      "slug": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,40}$"},
+      "name": {"type": "string", "minLength": 1},
+      "state": {"type": "string", "enum": ["started", "in_progress", "completed", "blocked"]},
+      "weekly_entries": {"type": "array"}
+    },
+    "additionalProperties": false
+  }
+}

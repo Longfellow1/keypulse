@@ -10,9 +10,11 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from pydantic import BaseModel
 
 from keypulse.config import Config, ModelBackendConfig
 from keypulse.pipeline.model_keychain import KeychainCommandError, KeychainUnavailable, read_secret
@@ -21,6 +23,7 @@ from keypulse.pipeline.narrative import (
     format_work_block_for_prompt,
     render_daily_narrative as _fallback_daily_narrative,
 )
+from keypulse.prompts.loader import PromptCapabilityNotFoundError, load_prompt
 from keypulse.utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,10 @@ class NoBackendAvailable(RuntimeError):
 
 class PipelineQualityError(RuntimeError):
     """Raised when LLM-backed pipeline cannot produce quality output (no backend, response empty, parse failed)."""
+
+
+class LLMCallError(RuntimeError):
+    """Raised when capability call fails after retries."""
 
 
 @dataclass(frozen=True)
@@ -156,6 +163,10 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _utc_now_iso() -> str:
+    return _utc_now().replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def _parse_iso_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -178,6 +189,132 @@ def _short_circuit_payload(raw: dict[str, Any] | None) -> dict[str, Any]:
     if "active_profile" in raw:
         payload["active_profile"] = raw["active_profile"]
     return payload
+
+
+def _stable_serialize(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _estimate_tokens(text: str) -> int:
+    stripped = text.strip()
+    if not stripped:
+        return 0
+    return max(1, len(stripped) // 4)
+
+
+def _strip_json_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    first_newline = stripped.find("\n")
+    if first_newline < 0:
+        return stripped
+    body = stripped[first_newline + 1 :]
+    if body.rstrip().endswith("```"):
+        body = body.rstrip()[:-3]
+    return body.strip()
+
+
+def _parse_json_robust(text: str) -> Any | None:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return None
+
+    def _try_parse(candidate: str) -> Any | None:
+        try:
+            return json.loads(candidate, strict=False)
+        except json.JSONDecodeError:
+            return None
+
+    def _strip_trailing_commas(candidate: str) -> str:
+        return re.sub(r",(\s*[}\]])", r"\1", candidate)
+
+    def _single_to_double_quotes(candidate: str) -> str:
+        def _quote(value: str) -> str:
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+
+        repaired = re.sub(
+            r"([{\[,]\s*)'([^'\\]*(?:\\.[^'\\]*)*)'(\s*:)",
+            lambda m: f"{m.group(1)}{_quote(m.group(2))}{m.group(3)}",
+            candidate,
+        )
+        repaired = re.sub(
+            r"(:\s*)'([^'\\]*(?:\\.[^'\\]*)*)'(\s*[,}\]])",
+            lambda m: f"{m.group(1)}{_quote(m.group(2))}{m.group(3)}",
+            repaired,
+        )
+        repaired = re.sub(
+            r"([,\[]\s*)'([^'\\]*(?:\\.[^'\\]*)*)'(\s*[,}\]])",
+            lambda m: f"{m.group(1)}{_quote(m.group(2))}{m.group(3)}",
+            repaired,
+        )
+        return repaired
+
+    candidates: list[str] = [stripped]
+    for match in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", stripped, re.IGNORECASE):
+        chunk = str(match.group(1) or "").strip()
+        if chunk:
+            candidates.append(chunk)
+    for left, right in (("{", "}"), ("[", "]")):
+        start = stripped.find(left)
+        end = stripped.rfind(right)
+        if start >= 0 and end > start:
+            candidates.append(stripped[start : end + 1].strip())
+
+    for candidate in candidates:
+        parsed = _try_parse(candidate)
+        if parsed is not None:
+            return parsed
+        repaired = _strip_trailing_commas(candidate)
+        parsed = _try_parse(repaired)
+        if parsed is not None:
+            return parsed
+        parsed = _try_parse(_single_to_double_quotes(repaired))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _validate_jsonschema_minimal(schema: dict[str, Any], value: Any, path: str = "$") -> None:
+    schema_type = schema.get("type")
+    if schema_type == "object":
+        if not isinstance(value, dict):
+            raise ValueError(f"{path} must be object")
+        required = schema.get("required") or []
+        for key in required:
+            if key not in value:
+                raise ValueError(f"{path}.{key} is required")
+        properties = schema.get("properties") or {}
+        for key, prop_schema in properties.items():
+            if key in value and isinstance(prop_schema, dict):
+                _validate_jsonschema_minimal(prop_schema, value[key], f"{path}.{key}")
+    elif schema_type == "array":
+        if not isinstance(value, list):
+            raise ValueError(f"{path} must be array")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for idx, item in enumerate(value):
+                _validate_jsonschema_minimal(item_schema, item, f"{path}[{idx}]")
+    elif schema_type == "string":
+        if not isinstance(value, str):
+            raise ValueError(f"{path} must be string")
+    elif schema_type == "integer":
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{path} must be integer")
+    elif schema_type == "number":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError(f"{path} must be number")
+    elif schema_type == "boolean":
+        if not isinstance(value, bool):
+            raise ValueError(f"{path} must be boolean")
+    elif schema_type == "null":
+        if value is not None:
+            raise ValueError(f"{path} must be null")
+
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and value not in enum_values:
+        raise ValueError(f"{path} must be one of {enum_values}")
 
 
 class ModelGateway:
@@ -272,7 +409,7 @@ class ModelGateway:
         return env_value or None
 
     def _auth_mode(self, backend: ModelBackend) -> str:
-        if backend.kind != "openai_compatible":
+        if backend.kind not in {"openai_compatible", "anthropic"}:
             return "none"
         source = (backend.api_key_source or "").strip()
         if source.startswith("keychain:"):
@@ -295,7 +432,7 @@ class ModelGateway:
             return False
         if backend.kind in {"lm_studio", "ollama"}:
             return True
-        if backend.kind == "openai_compatible":
+        if backend.kind in {"openai_compatible", "anthropic"}:
             if not require_auth:
                 return True
             return bool(self._resolve_api_key(backend))
@@ -324,12 +461,15 @@ class ModelGateway:
         path: str,
         payload: dict[str, Any],
         method: str = "POST",
+        extra_headers: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         normalized_path = path
         if re.search(r"/v\d+$", backend.base_url) and path.startswith("/v1/"):
             normalized_path = path.removeprefix("/v1")
         url = f"{backend.base_url}{normalized_path}"
         headers = {"Content-Type": "application/json"}
+        if extra_headers:
+            headers.update({str(k): str(v) for k, v in extra_headers.items() if str(v).strip()})
         if backend.kind == "openai_compatible":
             resolved_key = self._resolve_api_key(backend)
             if resolved_key:
@@ -562,6 +702,331 @@ class ModelGateway:
             "order": self.backend_order(stage),
             "backends": info,
         }
+
+    # cost 估算暂时停用——需求未明确，原硬表与实际 token 价格脱节。
+    # _TIER_PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
+    #     "mini": (0.10, 0.20),
+    #     "standard": (0.20, 0.80),
+    #     "premium": (2.00, 10.00),
+    # }
+
+    def _llm_root(self) -> Path:
+        root = Path.home() / ".keypulse"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _llm_cache_dir(self) -> Path:
+        cache_dir = self._llm_root() / "cache" / "llm"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+
+    def _llm_cost_path(self) -> Path:
+        path = self._llm_root() / "cost.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _capability_tier(self, capability: str, model_tier_override: str | None = None) -> str:
+        if model_tier_override:
+            candidate = model_tier_override.strip().lower()
+            if candidate in {"mini", "standard", "premium"}:
+                return candidate
+        capability_key = capability.strip().lower()
+        if capability_key in {"l2", "l2_narrative", "narrative", "l3", "l3_topic_naming", "topicnaming"}:
+            return "mini"
+        return str(getattr(self._config.llm, "tier", "mini")).strip() or "mini"
+
+    def _cache_key(
+        self,
+        *,
+        capability: str,
+        prompt_version: str | None,
+        prompt: str,
+        model_name: str,
+        input_data: Any,
+    ) -> str:
+        payload = {
+            "capability": capability,
+            "prompt_version": prompt_version or "",
+            "prompt": prompt,
+            "model": model_name,
+            "input_data": input_data,
+        }
+        return hashlib.sha256(_stable_serialize(payload).encode("utf-8")).hexdigest()
+
+    def _cache_file(self, cache_key: str) -> Path:
+        return self._llm_cache_dir() / f"{cache_key}.json"
+
+    def _read_cache_payload(self, cache_path: Path) -> dict[str, Any] | None:
+        if not cache_path.exists():
+            return None
+        try:
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _cache_is_fresh(self, payload: dict[str, Any]) -> bool:
+        ts = _parse_iso_datetime(str(payload.get("ts") or ""))
+        if not ts:
+            return False
+        ttl_days = int(payload.get("ttl_days") or 30)
+        return _utc_now() <= ts + timedelta(days=ttl_days)
+
+    def _append_cost_row(
+        self,
+        *,
+        capability: str,
+        model_name: str,
+        tier: str,
+        in_tokens: int,
+        out_tokens: int,
+        cost_usd: float,
+        cache_hit: bool,
+        prompt_version: str | None,
+    ) -> None:
+        row = {
+            "ts": _utc_now_iso(),
+            "capability": capability,
+            "model": model_name,
+            "tier": tier,
+            "in_tokens": int(in_tokens),
+            "out_tokens": int(out_tokens),
+            "cost_usd": 0.0,
+            "cache_hit": bool(cache_hit),
+            "prompt_version": prompt_version or "",
+        }
+        with self._llm_cost_path().open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+    def _schema_validate(self, schema: Any, output_text: str) -> Any:
+        if schema is None:
+            return output_text
+        # Strip ```json ... ``` fences — many models (deepseek, qwen, doubao)
+        # wrap JSON output that way despite explicit "no markdown" instructions.
+        text = _strip_json_fence(output_text)
+        # strict=False tolerates unescaped \n / \t inside string values —
+        # doubao routinely emits raw newlines instead of \\n when packing
+        # a long markdown blob into the "markdown" field.
+        if isinstance(schema, dict):
+            try:
+                parsed = json.loads(text, strict=False)
+            except json.JSONDecodeError:
+                parsed = _parse_json_robust(text)
+                if parsed is None:
+                    raise
+            _validate_jsonschema_minimal(schema, parsed)
+            return parsed
+        if isinstance(schema, type) and issubclass(schema, BaseModel):
+            try:
+                return schema.model_validate_json(text)
+            except Exception:
+                parsed = _parse_json_robust(text)
+                if parsed is None:
+                    raise
+                return schema.model_validate(parsed)
+        if hasattr(schema, "model_validate_json"):
+            try:
+                return schema.model_validate_json(text)
+            except Exception:
+                parsed = _parse_json_robust(text)
+                if parsed is None:
+                    raise
+                return schema.model_validate(parsed)
+        if hasattr(schema, "model_validate"):
+            try:
+                parsed = json.loads(text, strict=False)
+            except json.JSONDecodeError:
+                parsed = _parse_json_robust(text)
+                if parsed is None:
+                    raise
+            return schema.model_validate(parsed)
+        raise TypeError("unsupported schema type")
+
+    def _estimate_cost_usd(self, *, tier: str, in_tokens: int, out_tokens: int) -> float:
+        # cost 估算暂时停用——需求未明确，原硬表与实际 token 价格脱节。
+        return 0.0
+
+    def _call_capability_backend(
+        self,
+        *,
+        backend: ModelBackend,
+        backend_name: str,
+        prompt: str,
+        max_tokens: int | None,
+        temperature: float | None,
+        tier: str,
+        cache_control: Mapping[str, str] | None,
+    ) -> dict[str, Any]:
+        if backend.is_disabled() or not backend.base_url.strip() or not backend.model.strip():
+            raise NoBackendAvailable(f"no backend for {backend_name}")
+
+        if backend.kind == "anthropic":
+            api_key = self._resolve_api_key(backend)
+            if not api_key:
+                raise NoBackendAvailable(f"missing api key for {backend_name}")
+            headers: dict[str, str] = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+            }
+            if cache_control:
+                headers.update({str(k): str(v) for k, v in cache_control.items()})
+            payload = {
+                "model": backend.model,
+                "max_tokens": int(max_tokens or 1024),
+                "temperature": float(0 if temperature is None else temperature),
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            data = self._request_json(backend, "/v1/messages", payload, extra_headers=headers)
+            content = data.get("content") or []
+            text_parts = [
+                str(block.get("text") or "")
+                for block in content
+                if isinstance(block, dict) and str(block.get("type") or "") == "text"
+            ]
+            text = "\n".join(part for part in text_parts if part).strip()
+            usage = data.get("usage") or {}
+            in_tokens = int(usage.get("input_tokens") or _estimate_tokens(prompt))
+            out_tokens = int(usage.get("output_tokens") or _estimate_tokens(text))
+            cost_usd = self._estimate_cost_usd(tier=tier, in_tokens=in_tokens, out_tokens=out_tokens)
+            return {"text": text, "in_tokens": in_tokens, "out_tokens": out_tokens, "cost_usd": cost_usd}
+
+        if backend.kind == "ollama":
+            payload = {
+                "model": backend.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": float(0 if temperature is None else temperature)},
+            }
+            if max_tokens is not None:
+                payload["options"]["num_predict"] = int(max_tokens)
+            data = self._request_json(backend, "/api/chat", payload, extra_headers=cache_control)
+            message = data.get("message") or {}
+            text = str(message.get("content") or "").strip()
+            in_tokens = int(data.get("prompt_eval_count") or _estimate_tokens(prompt))
+            out_tokens = int(data.get("eval_count") or _estimate_tokens(text))
+            cost_usd = 0.0
+            return {"text": text, "in_tokens": in_tokens, "out_tokens": out_tokens, "cost_usd": cost_usd}
+
+        payload = {
+            "model": backend.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": float(0 if temperature is None else temperature),
+            "max_tokens": int(max_tokens or 1024),
+        }
+        data = self._request_json(backend, "/v1/chat/completions", payload, extra_headers=cache_control)
+        choices = data.get("choices") or []
+        message = choices[0].get("message") if choices and isinstance(choices[0], dict) else {}
+        text = str((message or {}).get("content") or "").strip()
+        usage = data.get("usage") or {}
+        in_tokens = int(usage.get("prompt_tokens") or _estimate_tokens(prompt))
+        out_tokens = int(usage.get("completion_tokens") or _estimate_tokens(text))
+        cost_usd = self._estimate_cost_usd(tier=tier, in_tokens=in_tokens, out_tokens=out_tokens)
+        return {"text": text, "in_tokens": in_tokens, "out_tokens": out_tokens, "cost_usd": cost_usd}
+
+    def call(
+        self,
+        capability: str,
+        prompt: str,
+        schema: Any = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        prompt_version: str | None = None,
+        *,
+        input_data: Any = None,
+        cache_control: Mapping[str, str] | None = None,
+        retries: int | None = None,
+    ) -> Any:
+        prompt_spec = None
+        try:
+            prompt_spec = load_prompt(capability)
+        except PromptCapabilityNotFoundError:
+            prompt_spec = None
+
+        if prompt_spec is not None:
+            if schema is None:
+                schema = prompt_spec.output_schema
+            if max_tokens is None:
+                max_tokens = prompt_spec.max_tokens
+            if temperature is None:
+                temperature = prompt_spec.temperature
+            if prompt_version is None:
+                prompt_version = f"{prompt_spec.capability}.{prompt_spec.version}"
+
+        tier = self._capability_tier(
+            capability,
+            model_tier_override=(prompt_spec.model_tier if prompt_spec is not None else None),
+        )
+        backend = self.select_backend(stage="write")
+        backend_name = self._backend_name_from_obj(backend)
+        if backend.is_disabled() or not backend.base_url.strip() or not backend.model.strip():
+            raise NoBackendAvailable(f"no backend for {backend_name}")
+        model_name = f"{backend_name}/{backend.model}"
+
+        cache_key = self._cache_key(
+            capability=capability,
+            prompt_version=prompt_version,
+            prompt=prompt,
+            model_name=model_name,
+            input_data=input_data,
+        )
+        cache_path = self._cache_file(cache_key)
+        cache_payload = self._read_cache_payload(cache_path)
+        if cache_payload and self._cache_is_fresh(cache_payload):
+            try:
+                cached_output = str(cache_payload.get("output") or "")
+                validated_cached = self._schema_validate(schema, cached_output)
+                return validated_cached
+            except Exception:
+                logger.warning("cache decode/validation failed for %s; refreshing", cache_key)
+
+        max_attempts = max(1, int((2 if retries is None else retries)) + 1)
+        last_error: Exception | None = None
+        for _ in range(max_attempts):
+            try:
+                result = self._call_capability_backend(
+                    backend=backend,
+                    backend_name=backend_name,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    tier=tier,
+                    cache_control=cache_control,
+                )
+                output_text = str(result.get("text") or "").strip()
+                validated = self._schema_validate(schema, output_text)
+                in_tokens = int(result.get("in_tokens") or _estimate_tokens(prompt))
+                out_tokens = int(result.get("out_tokens") or _estimate_tokens(output_text))
+                cost_usd = 0.0
+
+                payload = {
+                    "key": cache_key,
+                    "input": {
+                        "capability": capability,
+                        "prompt_version": prompt_version or "",
+                        "prompt": prompt,
+                        "model": model_name,
+                        "input_data": input_data,
+                    },
+                    "output": output_text,
+                    "ts": _utc_now_iso(),
+                    "ttl_days": 30,
+                    "model": model_name,
+                    "tier": tier,
+                    "in_tokens": in_tokens,
+                    "out_tokens": out_tokens,
+                    "cost_usd": cost_usd,
+                    "prompt_version": prompt_version or "",
+                    "capability": capability,
+                }
+                atomic_write_text(
+                    cache_path,
+                    json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+                )
+                return validated
+            except Exception as exc:
+                last_error = exc
+                continue
+        raise LLMCallError(f"capability={capability} failed after {max_attempts} attempts: {last_error}") from last_error
 
     def normalize_markdown(self, text: str, prompt_patch: str = "") -> str:
         backend = self.select_backend("write")

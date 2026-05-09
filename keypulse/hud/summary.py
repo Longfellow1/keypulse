@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 from dataclasses import dataclass
-from datetime import date as date_cls, timedelta
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +14,11 @@ from keypulse.capabilities.store import load_states as load_capability_states
 from keypulse.config import Config
 from keypulse.hud.health import read_health
 from keypulse.hud.state import HUDState, read_hud_state
-from keypulse.obsidian.exporter import build_obsidian_bundle
 from keypulse.pipeline.surface import build_surface_snapshot
 from keypulse.store.db import init_db
 from keypulse.store.repository import get_state, query_raw_events, set_state
 from keypulse.utils.dates import local_day_bounds, resolve_local_date
+from keypulse.utils.paths import get_data_dir
 
 
 MODE_LABELS = {
@@ -76,6 +77,14 @@ class HUDSnapshot:
     hint_message: str = ""
     hint_action: str = ""
     companion_days: int = 1
+    monthly_cost_usd: float = 0.0
+    monthly_budget_usd: float = 0.0
+    monthly_cost_level: str = "normal"
+    monthly_cost_tooltip: str = ""
+    weekly_notice: str = ""
+    weekly_echo_text: str = ""
+    weekly_echo_url: str = ""
+    weekly_echo_week: str = ""
 
 
 def _companion_days(today_iso: str) -> int:
@@ -172,7 +181,7 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
             fallback_hint="LLM 调用异常，请稍后重试",
         )
 
-    return ("ok", "正常", "", "")
+    return ("ok", "都好", "", "")
 
 
 def _tokenize(text: str) -> list[str]:
@@ -198,35 +207,100 @@ def _boost_score(item: dict[str, Any], today_focus: str, attention_items: list[s
     return boost
 
 
-def _build_top_signals(events: list[dict[str, Any]], *, today_focus: str, attention_items: list[str], vault_name: str, date_str: str) -> list[dict[str, Any]]:
+def _obsidian_open_url(vault_root: str, note_path: str, *, heading: str | None = None) -> str:
+    """obsidian://open?vault=<basename>&file=<path>[#heading]。
+
+    vault 名取 vault_root 路径的 basename —— 这是 Obsidian 实际注册的 vault
+    标识。带 heading 时跳到该 H3 锚点（Obsidian URI 支持 file=path#heading）。
+    """
+    from pathlib import Path
+    from urllib.parse import quote
+
+    vault_id = Path(vault_root).name or vault_root
+    file_part = note_path[:-3] if note_path.endswith(".md") else note_path
+    if heading:
+        file_part = f"{file_part}#{heading}"
+    return f"obsidian://open?vault={quote(vault_id, safe='')}&file={quote(file_part, safe='/')}"
+
+
+_DAILY_GENERIC_TOPICS = {"碎片汇总", "其它", "其他", "杂项"}
+# things.py 当前写「今日概览」，narrative.py/skeleton.py 写「今日主线」，两条路径并存
+_DAILY_MAIN_SECTION_PREFIXES = ("## 今日概览", "## 今日主线")
+
+
+def _parse_daily_topics(daily_body: str) -> list[tuple[str, str]]:
+    """从 daily.md 的主线段（「## 今日概览」或「## 今日主线」）解析 H3 主题。
+
+    返回 [(主题名, 原始 H3 文本), ...]，按 daily 中出现顺序（早→晚）。
+    H3 格式：`### 凌晨访问pairdrop网站 · 5m（2026年5月5日 22:48–22:53）`
+    主题名 = ` · ` 之前那段；锚点 = 整个 H3 文本。过滤"碎片汇总"等泛词。
+    """
+    if not daily_body:
+        return []
+    lines = daily_body.splitlines()
+    main_section_start: int | None = None
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if any(stripped.startswith(prefix) for prefix in _DAILY_MAIN_SECTION_PREFIXES):
+            main_section_start = idx
+            break
+    if main_section_start is None:
+        return []
+    out: list[tuple[str, str]] = []
+    for line in lines[main_section_start + 1 :]:
+        stripped = line.strip()
+        if stripped.startswith("## ") and not stripped.startswith("### "):
+            break
+        if stripped.startswith("### "):
+            heading = stripped[4:].strip()
+            topic = heading.split(" · ", 1)[0].strip()
+            if topic and topic not in _DAILY_GENERIC_TOPICS:
+                out.append((topic, heading))
+    return out
+
+
+def _build_top_signals(
+    events: list[dict[str, Any]],
+    *,
+    today_focus: str,
+    attention_items: list[str],
+    vault_name: str,
+    vault_root: str,
+    date_str: str,
+) -> list[dict[str, Any]]:
+    """HUD「今天最新」三条 = 日报「今日主线」的主题 H3。
+
+    跳转走 obsidian:// + heading 锚点，直接落到 daily 那一段。
+    主题不足 3 条时由 HUD 渲染层兜底（占位 / 兜底句）。
+    """
     from keypulse.pipeline.surface import build_surface_snapshot
 
     snapshot = build_surface_snapshot(events, top_k=20)
-    bundle = build_obsidian_bundle(events, vault_name=vault_name, date_str=date_str)
-    path_by_title = {
-        note["body"].splitlines()[0].removeprefix("# ").strip(): note["path"]
-        for note in bundle.get("events", [])
-    }
+    # 直接读 obsidian 已生成的 daily.md —— 不再重跑生成管线（之前调用没 LLM
+    # 也没走 things 路径，只产 1-2 个 H3，跟用户实际 daily 完全对不上）
+    daily_path = f"Daily/{date_str}.md"
+    daily_file = Path(vault_root).expanduser() / daily_path
+    daily_body = daily_file.read_text(encoding="utf-8") if daily_file.exists() else ""
+
+    topics = _parse_daily_topics(daily_body)
+    # 取最新 3 条 = 出现位置末尾 3 条（daily 内主题按时间从早到晚排）
+    latest = list(reversed(topics[-3:]))
+
     candidates: list[dict[str, Any]] = []
-    for item in snapshot.get("candidates", []):
-        adjusted_score = round(float(item["score"]) + _boost_score(item, today_focus, attention_items), 4)
-        why = [
-            REASON_LABELS.get(str(reason), str(reason))
-            for reason, value in dict(item.get("why_selected") or {}).items()
-            if float(value or 0) > 0
-        ]
+    for topic_name, heading in latest:
         candidates.append(
             {
-                "title": item["title"],
-                "source": SOURCE_LABELS.get(str(item.get("source") or ""), str(item.get("source") or "未知来源")),
-                "source_key": str(item.get("source") or ""),
-                "reason": "、".join(why[:3]) or "被系统识别为高价值候选",
-                "score": adjusted_score,
-                "path": path_by_title.get(item["title"], f"Daily/{date_str}.md"),
+                "title": topic_name,
+                "source": "今日主线",
+                "source_key": "daily_topic",
+                "reason": "新信息",
+                "score": 1.0,
+                "path": daily_path,
+                "topic_key": topic_name,
+                "obsidian_url": _obsidian_open_url(vault_root, daily_path, heading=heading),
             }
         )
-    candidates.sort(key=lambda item: (-float(item["score"]), item["title"]))
-    return candidates[:3], snapshot
+    return candidates, snapshot
 
 
 def _summarize_metrics(events: list[dict[str, Any]], snapshot: dict[str, Any]) -> dict[str, int]:
@@ -257,6 +331,133 @@ def _status_symbol(capture_status: str) -> str:
     return "⊘"
 
 
+def _parse_cost_ts(value: str) -> datetime | None:
+    raw = value.strip()
+    if not raw:
+        return None
+    normalized = raw.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _iter_cost_rows(cost_path: Path):
+    if not cost_path.exists():
+        return
+    with cost_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                yield row
+
+
+def _monthly_cost_window(cost_path: Path, *, now: datetime | None = None) -> float:
+    current = now or datetime.now(timezone.utc)
+    start = current - timedelta(days=30)
+    total = 0.0
+    for row in _iter_cost_rows(cost_path):
+        ts = _parse_cost_ts(str(row.get("ts") or ""))
+        if ts is None or ts < start or ts > current:
+            continue
+        value = row.get("cost_usd")
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            total += float(value)
+            continue
+        try:
+            total += float(str(value))
+        except ValueError:
+            continue
+    return total
+
+
+def _monthly_cost_state(monthly_cost_usd: float, monthly_budget_usd: float) -> tuple[str, str]:
+    if monthly_budget_usd <= 0:
+        return ("normal", "")
+    if monthly_cost_usd >= monthly_budget_usd:
+        return ("danger", "本月预算已超")
+    if monthly_cost_usd >= monthly_budget_usd * 0.8:
+        return ("warning", "")
+    return ("normal", "")
+
+
+def _iso_week_str(date_text: str) -> str | None:
+    try:
+        parsed = date_cls.fromisoformat(date_text)
+    except ValueError:
+        return None
+    iso = parsed.isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _weekly_notice_for_date(date_text: str) -> str:
+    raw = (get_state("weekly_notice") or "").strip()
+    if not raw:
+        return ""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    message = str(payload.get("message") or "").strip()
+    week = str(payload.get("week") or "").strip()
+    current_week = _iso_week_str(date_text)
+    if not message or not week or not current_week:
+        return ""
+    if week != current_week:
+        return ""
+    return message
+
+
+def _iso_week_of_date(value: date_cls) -> str:
+    iso = value.isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _weekly_echo_week(now_local: datetime) -> str | None:
+    weekday = now_local.weekday()  # Monday=0 ... Sunday=6
+    if weekday == 4:
+        if (now_local.hour, now_local.minute) < (23, 40):
+            return None
+        friday = now_local.date()
+    elif weekday in {5, 6}:
+        friday = (now_local - timedelta(days=weekday - 4)).date()
+    elif weekday == 0:
+        friday = (now_local - timedelta(days=3)).date()
+    else:
+        return None
+    return _iso_week_of_date(friday)
+
+
+def _weekly_echo_banner(
+    *,
+    now_local: datetime,
+    hud_state: HUDState,
+    vault_root: str,
+) -> tuple[str, str, str]:
+    week = _weekly_echo_week(now_local)
+    if not week:
+        return ("", "", "")
+    dismissed = set(hud_state.weekly_echo_dismissed_weeks)
+    if week in dismissed:
+        return ("", "", "")
+    note_path = f"Weekly/{week}.md"
+    url = _obsidian_open_url(vault_root, note_path)
+    return ("本周回声 →", url, week)
+
+
 def build_hud_snapshot(
     cfg: Config,
     *,
@@ -264,6 +465,7 @@ def build_hud_snapshot(
     hud_state_path: str | Path | None = None,
     capture_status: str = "running",
     health_ok: bool = True,
+    now_local: datetime | None = None,
 ) -> HUDSnapshot:
     init_db(cfg.db_path_expanded)
     effective_date = resolve_local_date(date=date_str)
@@ -275,6 +477,7 @@ def build_hud_snapshot(
         today_focus=hud_state.today_focus.get(effective_date, ""),
         attention_items=hud_state.attention_items,
         vault_name=cfg.obsidian.vault_name,
+        vault_root=str(Path(cfg.obsidian.vault_path).expanduser()),
         date_str=effective_date,
     )
     today_focus = hud_state.today_focus.get(effective_date, "")
@@ -303,7 +506,17 @@ def build_hud_snapshot(
     service_level, status_label, hint_message, hint_action = determine_service_status(
         capture_status=capture_status, health_ok=health_ok
     )
+    monthly_cost_usd = _monthly_cost_window(get_data_dir() / "cost.jsonl")
+    monthly_budget_usd = float(getattr(cfg.llm, "monthly_budget_usd", 0.0) or 0.0)
+    monthly_cost_level, monthly_cost_tooltip = _monthly_cost_state(monthly_cost_usd, monthly_budget_usd)
     companion_days = _companion_days(effective_date)
+    weekly_notice = _weekly_notice_for_date(effective_date)
+    current_local = now_local or datetime.now().astimezone()
+    weekly_echo_text, weekly_echo_url, weekly_echo_week = _weekly_echo_banner(
+        now_local=current_local,
+        hud_state=hud_state,
+        vault_root=str(Path(cfg.obsidian.vault_path).expanduser()),
+    )
     return HUDSnapshot(
         date=effective_date,
         mode=hud_state.mode,
@@ -336,4 +549,12 @@ def build_hud_snapshot(
         hint_message=hint_message,
         hint_action=hint_action,
         companion_days=companion_days,
+        monthly_cost_usd=monthly_cost_usd,
+        monthly_budget_usd=monthly_budget_usd,
+        monthly_cost_level=monthly_cost_level,
+        monthly_cost_tooltip=monthly_cost_tooltip,
+        weekly_notice=weekly_notice,
+        weekly_echo_text=weekly_echo_text,
+        weekly_echo_url=weekly_echo_url,
+        weekly_echo_week=weekly_echo_week,
     )

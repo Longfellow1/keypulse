@@ -11,6 +11,8 @@ from keypulse.utils.dates import resolve_local_date
 class _ObsidianConfig:
     vault_path: str = "/tmp/test-vault"
     vault_name: str = "KeyPulse"
+    wiki_link_mode: str = "relative"
+    humanize_titles: bool = False
 
 
 @dataclass
@@ -48,6 +50,8 @@ def test_obsidian_sync_defaults_to_yesterday(monkeypatch):
         use_narrative_skeleton=False,
         use_things_narrative=False,
         things_idle_threshold_minutes=30,
+        wiki_link_mode="relative",
+        humanize_titles=False,
     ):
         captured["output_dir"] = output_dir
         captured["days"] = days
@@ -115,6 +119,8 @@ def test_obsidian_sync_incremental_defaults_to_today(monkeypatch):
         use_narrative_skeleton=False,
         use_things_narrative=False,
         things_idle_threshold_minutes=30,
+        wiki_link_mode="relative",
+        humanize_titles=False,
     ):
         captured["output_dir"] = output_dir
         captured["days"] = days

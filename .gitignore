@@ -56,3 +56,9 @@ keypulse-*-pipeline.md
 
 # Local config backups
 config.toml.bak*
+.gitnexus
+
+# Local IDE / agent / runtime state (not for repo)
+.claude/
+.keypulse/
+Go/

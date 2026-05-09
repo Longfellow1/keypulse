@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "required": ["dropped_balls", "observation", "risks"],
+  "properties": {
+    "dropped_balls": {"type": "array", "maxItems": 3},
+    "observation": {"type": "object"},
+    "risks": {"type": "array"}
+  },
+  "additionalProperties": false
+}

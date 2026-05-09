@@ -129,6 +129,7 @@ def _run_obsidian_sync_core(cfg: Config, date: Optional[str] = None) -> None:
         use_narrative_skeleton=getattr(pipeline_cfg, "use_narrative_skeleton", False),
         use_things_narrative=getattr(pipeline_cfg, "use_things_narrative", True),
         things_idle_threshold_minutes=getattr(pipeline_cfg, "things_idle_threshold_minutes", 30),
+        humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
     )
     logger.info(f"Obsidian sync completed: {len(written)} notes to {target_output}")
 
