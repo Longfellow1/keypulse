@@ -1082,6 +1082,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             unanchored=unanchored_events,
             narrative_markdown=result.markdown,
             topic_snapshot=topic_snapshot,
+            model_gateway=gateway,
         )
         daily_path = _daily_path(date_str)
         atomic_write_text(daily_path, daily_markdown)
@@ -1347,6 +1348,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         unanchored=unanchored_events,
         narrative_markdown=result.markdown,
         topic_snapshot=topic_snapshot,
+        model_gateway=gateway,
     )
     daily_path = _daily_path(date_str)
     atomic_write_text(daily_path, daily_markdown)

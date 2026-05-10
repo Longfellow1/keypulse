@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import hashlib
-from datetime import date as date_cls
+from datetime import date as date_cls, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,7 @@ _COST_KEYS = {"in_tokens", "out_tokens", "cost_usd"}
 _TOPIC_HEADING_RE = re.compile(r"^#{2,3}\s+(.+?)\s*$")
 _ASCII_WORD_RE = re.compile(r"[a-z0-9]+")
 _TIME_IN_TEXT_RE = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)\b")
+_EVENT_H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 
 
 def _slugify_narrative_topic(name: str) -> str:
@@ -546,6 +547,136 @@ def _anchor_link(anchor: str, display: str | None = None) -> str:
     return f"[[{anchor}]]"
 
 
+def _daily_event_cards(date_text: str) -> list[tuple[str, str]]:
+    event_dir = get_data_dir() / "events" / date_text
+    if not event_dir.exists():
+        return []
+
+    cards: list[tuple[str, str]] = []
+    event_paths = sorted(
+        (path for path in event_dir.glob("*.md") if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in event_paths:
+        slug = path.stem
+        try:
+            markdown = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        match = _EVENT_H1_RE.search(markdown)
+        title = match.group(1).strip() if match else slug
+        cards.append((slug, title or slug))
+    return cards
+
+
+def _parse_event_card_selection(response: Any) -> list[str]:
+    payload = response
+    if isinstance(response, str):
+        stripped = response.strip()
+        if not stripped:
+            return []
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            return [item.strip() for item in re.split(r"[\n,，]+", stripped) if item.strip()]
+    if isinstance(payload, dict):
+        raw = payload.get("selected_slugs") or payload.get("slugs") or payload.get("selected")
+        if isinstance(raw, list):
+            return [str(item).strip() for item in raw if str(item).strip()]
+        if isinstance(raw, str):
+            return [item.strip() for item in re.split(r"[\n,，]+", raw) if item.strip()]
+    if isinstance(payload, list):
+        return [str(item).strip() for item in payload if str(item).strip()]
+    return []
+
+
+def filter_daily_event_cards(
+    cards: list[tuple[str, str]],
+    *,
+    model_gateway: Any | None = None,
+    min_count: int = 8,
+    max_count: int = 15,
+    fallback_count: int = 12,
+) -> list[tuple[str, str]]:
+    if not cards:
+        return []
+
+    lower = max(1, min(min_count, max_count))
+    upper = max(lower, max_count)
+    fallback_limit = min(max(fallback_count, lower), upper, len(cards))
+    fallback = cards[:fallback_limit]
+    if model_gateway is None or not hasattr(model_gateway, "call"):
+        return fallback
+
+    candidates = [{"slug": slug, "title": title} for slug, title in cards[:80]]
+    prompt = "\n".join(
+        [
+            "从今天的事件卡中选出最值得放进 daily.md 的精选列表。",
+            f"要求：保留 {lower}-{upper} 条，优先选择能代表主线、决策、产出、卡点的事件，去掉重复/噪声/低价值浏览。",
+            "只输出 JSON：{\"selected_slugs\": [\"...\"]}。",
+            json.dumps({"events": candidates}, ensure_ascii=False),
+        ]
+    )
+    try:
+        response = model_gateway.call(
+            "daily_event_cards_filter",
+            prompt,
+            input_data={"events": candidates, "min_count": lower, "max_count": upper},
+            retries=0,
+        )
+    except Exception as exc:
+        logger.warning("daily event cards LLM filter fallback exc_type=%s exc=%s", type(exc).__name__, exc)
+        return fallback
+
+    by_slug = {slug: (slug, title) for slug, title in cards}
+    selected: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for slug in _parse_event_card_selection(response):
+        if slug in by_slug and slug not in seen:
+            selected.append(by_slug[slug])
+            seen.add(slug)
+        if len(selected) >= upper:
+            break
+
+    if len(selected) < min(lower, len(cards)):
+        for slug, title in cards:
+            if slug in seen:
+                continue
+            selected.append((slug, title))
+            seen.add(slug)
+            if len(selected) >= min(lower, len(cards)):
+                break
+    return selected[:upper] or fallback
+
+
+def _cross_day_continuations(
+    *,
+    date_text: str,
+    snapshot: dict[str, Any],
+    topic_lookup: dict[str, dict[str, Any]],
+) -> list[tuple[str, str]]:
+    previous_date = (date_cls.fromisoformat(date_text) - timedelta(days=1)).isoformat()
+    continuations: list[tuple[str, str]] = []
+    for slug, payload in snapshot.items():
+        if not isinstance(payload, dict):
+            continue
+        evidence_dates = {str(item) for item in (payload.get("evidence_dates") or []) if str(item).strip()}
+        last_seen = str(payload.get("last_seen_date") or "").strip()
+        if previous_date not in evidence_dates or date_text not in evidence_dates and last_seen != date_text:
+            continue
+        topic = topic_lookup.get(str(slug))
+        display = str(
+            (topic or {}).get("display")
+            or (topic or {}).get("title")
+            or payload.get("name")
+            or slug
+        ).strip() or str(slug)
+        anchor = str((topic or {}).get("anchor") or slug).strip() or str(slug)
+        continuations.append((anchor, display))
+    return continuations
+
+
 def render_daily_markdown(
     *,
     date: str,
@@ -556,6 +687,7 @@ def render_daily_markdown(
     previous_day_anchors: list[str] | None = None,
     narrative_markdown: str | None = None,
     topic_snapshot: dict[str, Any] | None = None,
+    model_gateway: Any | None = None,
 ) -> str:
     date_text = _validate_date(date)
     if topics is None and events is None:
@@ -578,7 +710,6 @@ def render_daily_markdown(
 
     topic_list = [topic for topic in (topics or []) if isinstance(topic, dict)]
     event_list = [event for event in (events or []) if isinstance(event, dict)]
-    unanchored_list = [event for event in (unanchored or []) if isinstance(event, dict)]
     previous = [str(item) for item in (previous_day_anchors or []) if str(item).strip()]
     snapshot = topic_snapshot if isinstance(topic_snapshot, dict) else {}
 
@@ -604,8 +735,6 @@ def render_daily_markdown(
 
     source_markdown = str(narrative_markdown or "")
     highlight_section = _extract_section(source_markdown, "今日要点")
-    missed_section = _extract_section(source_markdown, "没接住的球")
-    observation_section = _extract_section(source_markdown, "一个观察")
 
     lines = ["📍 Asia/Shanghai", "", f"# {date_text}", "", "## 今日要点", ""]
     if highlight_section:
@@ -643,57 +772,30 @@ def render_daily_markdown(
     if not topic_list:
         lines.extend(["—", ""])
 
-    lines.extend(["## 没接住的球", ""])
-    if missed_section:
-        lines.append(missed_section)
-    else:
-        lines.append("—")
+    event_cards = _daily_event_cards(date_text)
+    selected_event_cards = filter_daily_event_cards(event_cards, model_gateway=model_gateway)
+    if selected_event_cards:
+        lines.extend(["## 今天的事件卡", ""])
+        for slug, title in selected_event_cards:
+            lines.append(f"- [[../.keypulse/events/{date_text}/{slug}|{title}]]")
 
-    lines.extend(["", "## 一个观察", ""])
-    if observation_section:
-        lines.append(observation_section)
-    elif previous:
-        lines.append(f"相比前一日主线（{', '.join(previous)}），今天的推进是否真正收敛到了可复用锚点？")
-    else:
-        lines.append("—")
+    lines.extend(["", "## 跨日延续"])
 
-    lines.extend(["", "## 跨周差异", ""])
-    cross_week_items = [
-        topic for topic in topic_list if str(topic.get("anchor_state") or "") in {"started_today", "completed_today"}
+    blocked_topics = [
+        topic
+        for topic in topic_list
+        if str(topic.get("anchor_state") or "").strip() == "blocked"
     ]
-    if cross_week_items:
-        for topic in cross_week_items:
+    if blocked_topics:
+        lines.extend(["", "## 今天的卡点", ""])
+        for topic in blocked_topics:
             anchor = str(topic.get("anchor") or "").strip()
             display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
-            state = str(topic.get("anchor_state") or "").strip()
-            lines.append(f"- {_anchor_link(anchor, display)}: {state}")
-    elif snapshot:
-        lines.append(f"- topics={len(snapshot)}")
-    else:
-        lines.append("—")
+            narrative = str(topic.get("narrative") or "").strip()
+            suffix = f": {narrative}" if narrative else ""
+            lines.append(f"- {_anchor_link(anchor, display)}{suffix}")
 
-    lines.extend(["", "## 明日的锚点", "", "> 明天我想：______", ">", "> _写一句话留给明天的自己_", ""])
-    lines.extend(["## 今日 raw events (unanchored)", ""])
-    if unanchored_list:
-        sorted_unanchored = sorted(
-            unanchored_list,
-            key=lambda event: str((event.get("time_range") or ["00:00"])[0]),
-            reverse=True,
-        )
-        for event in sorted_unanchored:
-            title = str(event.get("display_name") or event.get("cluster_id") or "unanchored").strip()
-            narrative = str(event.get("narrative_one_line") or "").strip()
-            lines.append(f"- {title}: {narrative}")
-    else:
-        lines.append("—")
-
-    lines.extend(["", "## 今日涉及的主题", ""])
-    if topic_list:
-        for topic in topic_list:
-            display = str(topic.get("display") or topic.get("title") or topic.get("anchor") or "").strip()
-            lines.append(f"- {display or '—'}")
-    else:
-        lines.append("—")
+    lines.extend(["", "## 明日的锚点", "", "> 明天我想：______", ">", "> _写一句话留给明天的自己_"])
 
     if event_list and not topic_list:
         lines.extend(["", "<!-- events_count: {} -->".format(len(event_list))])

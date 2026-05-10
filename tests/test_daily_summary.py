@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from keypulse.pipeline.daily_summary import (
     build_cluster_stubs_from_narrative,
     build_topic_status_snapshot_from_narrative,
+    filter_daily_event_cards,
     merge_topic_status_snapshots,
     read_daily_summary,
     render_daily_markdown,
@@ -215,6 +217,129 @@ def test_render_daily_markdown_dual_layer_prefers_topics_and_unanchored_desc_tim
     assert "## 今日要点" in body
     assert "## 今天做的事" in body
     assert "### [[weekly-v3-rollout|周报 v3 设计与落地]]" in body
-    assert body.index("登录页") < body.index("提醒邮件")
-    assert "## 今日涉及的主题" in body
-    assert "- 周报 v3 设计与落地" in body
+    assert "## 今日 raw events (unanchored)" not in body
+    assert "## 今日涉及的主题" not in body
+
+
+def test_render_daily_markdown_phase_a_section_contract_and_event_cards(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    event_dir = tmp_path / ".keypulse" / "events" / "2026-05-09"
+    event_dir.mkdir(parents=True)
+    older = event_dir / "0900-with-title.md"
+    newer = event_dir / "1000-without-title.md"
+    older.write_text("# 有标题事件\n\n正文", encoding="utf-8")
+    newer.write_text("没有 H1 的正文", encoding="utf-8")
+    older_mtime = 1_700_000_000
+    newer_mtime = 1_700_000_100
+    older.touch()
+    newer.touch()
+
+    os.utime(older, (older_mtime, older_mtime))
+    os.utime(newer, (newer_mtime, newer_mtime))
+
+    body = render_daily_markdown(
+        date="2026-05-09",
+        topics=[
+            {
+                "anchor": "weekly-v3-rollout",
+                "anchor_state": "continuing",
+                "narrative": "5/9 继续推进周报 v3，完成 daily renderer phase A 契约验证与事件卡回填。",
+                "decisions": ["确定 daily renderer 只保留阶段 A 段名契约"],
+                "shipped": ["落地事件卡 wikilink"],
+                "events_ref": [],
+                "display": "周报 v3 设计与落地",
+            },
+            {
+                "anchor": "blocked-topic",
+                "anchor_state": "blocked",
+                "narrative": "某条链路仍然失败，需要明天继续排查。",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": [],
+                "display": "被阻塞主题",
+            },
+        ],
+        topic_snapshot={
+            "weekly-v3-rollout": {
+                "name": "周报 v3 设计与落地",
+                "state": "in_progress",
+                "last_seen_date": "2026-05-09",
+                "evidence_dates": ["2026-05-08", "2026-05-09"],
+            }
+        },
+    )
+
+    headings = [line for line in body.splitlines() if line.startswith("## ")]
+    assert headings == [
+        "## 今日要点",
+        "## 今天做的事",
+        "## 今天的事件卡",
+        "## 跨日延续",
+        "## 今天的卡点",
+        "## 明日的锚点",
+    ]
+    assert body.index("[[../.keypulse/events/2026-05-09/1000-without-title|1000-without-title]]") < body.index(
+        "[[../.keypulse/events/2026-05-09/0900-with-title|有标题事件]]"
+    )
+    assert "## 跨日延续\n\n## 今天的卡点" in body
+    assert "- [[blocked-topic|被阻塞主题]]" in body
+
+
+def test_render_daily_markdown_omits_event_cards_when_no_files(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    body = render_daily_markdown(
+        date="2026-05-09",
+        topics=[],
+        events=[],
+        topic_snapshot={},
+    )
+
+    assert "## 今天的事件卡" not in body
+
+
+def test_render_daily_markdown_omits_blocked_section_when_no_blocked_topics(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    body = render_daily_markdown(
+        date="2026-05-09",
+        topics=[
+            {
+                "anchor": "weekly-v3-rollout",
+                "anchor_state": "continuing",
+                "narrative": "5/9 继续推进周报 v3，完成 daily renderer phase A 契约验证与事件卡回填。",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": [],
+                "display": "周报 v3 设计与落地",
+            }
+        ],
+        events=[],
+        topic_snapshot={},
+    )
+
+    assert "## 跨日延续" in body
+    assert "## 今天的卡点" not in body
+
+
+def test_filter_daily_event_cards_uses_llm_selection_with_bounds():
+    class _Gateway:
+        def call(self, capability, prompt, **kwargs):
+            return {"selected_slugs": [f"event-{index:02d}" for index in range(20)]}
+
+    cards = [(f"event-{index:02d}", f"事件 {index:02d}") for index in range(20)]
+
+    selected = filter_daily_event_cards(cards, model_gateway=_Gateway())
+
+    assert len(selected) == 15
+    assert selected[0] == ("event-00", "事件 00")
+    assert selected[-1] == ("event-14", "事件 14")
+
+
+def test_filter_daily_event_cards_falls_back_to_preview_limit_without_gateway():
+    cards = [(f"event-{index:02d}", f"事件 {index:02d}") for index in range(20)]
+
+    selected = filter_daily_event_cards(cards, model_gateway=None)
+
+    assert len(selected) == 12
+    assert selected == cards[:12]
