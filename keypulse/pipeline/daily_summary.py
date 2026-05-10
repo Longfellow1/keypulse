@@ -688,6 +688,7 @@ def render_daily_markdown(
     narrative_markdown: str | None = None,
     topic_snapshot: dict[str, Any] | None = None,
     model_gateway: Any | None = None,
+    event_cards: list[tuple[str, str]] | None = None,
 ) -> str:
     date_text = _validate_date(date)
     if topics is None and events is None:
@@ -772,8 +773,8 @@ def render_daily_markdown(
     if not topic_list:
         lines.extend(["—", ""])
 
-    event_cards = _daily_event_cards(date_text)
-    selected_event_cards = filter_daily_event_cards(event_cards, model_gateway=model_gateway)
+    raw_event_cards = event_cards if event_cards is not None else _daily_event_cards(date_text)
+    selected_event_cards = filter_daily_event_cards(raw_event_cards, model_gateway=model_gateway)
     if selected_event_cards:
         lines.extend(["## 今天的事件卡", ""])
         for slug, title in selected_event_cards:
