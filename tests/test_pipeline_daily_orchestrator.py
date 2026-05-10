@@ -232,6 +232,61 @@ def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):
     assert gateway.calls == ["daily_flagship", "L0_anchor"]
 
 
+def test_flagship_path_caps_events_and_keeps_high_value_user_signal(tmp_path, monkeypatch):
+    _write_config(tmp_path, cloud_model="deepseek-chat")
+    rows: list[dict[str, Any]] = []
+    for index in range(104):
+        rows.append(
+            {
+                "id": index + 1,
+                "source": "ax_text",
+                "speaker": "system",
+                "ts_start": f"2026-05-01T{index % 24:02d}:00:00+00:00",
+                "app_name": "Terminal",
+                "window_title": "export HTTPS_PROXY",
+                "content_text": "export https_proxy=http://127.0.0.1:7890 " * 8,
+                "metadata_json": json.dumps({"entities": {"session_id": f"noise-{index}"}}),
+            }
+        )
+    rows.append(
+        {
+            "id": 105,
+            "source": "clipboard",
+            "speaker": "user",
+            "ts_start": "2026-05-01T23:55:00+00:00",
+            "app_name": "Obsidian",
+            "window_title": "Daily decision",
+            "content_text": "用户拍板：今天选择规则化 events filter，根因是事件卡价值低，不再调用 LLM。",
+            "metadata_json": json.dumps({"entities": {"session_id": "decision"}}),
+        }
+    )
+    _patch_io(monkeypatch, tmp_path, rows)
+    gateway = FakeGateway(
+        "deepseek-chat",
+        {
+            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
+    log_records: list[dict[str, Any]] = []
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._append_log", log_records.append)
+
+    run_daily("2026-05-01", trigger="18:00")
+
+    flagship_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "daily_flagship")
+    compact_events = flagship_input["events"]
+    assert len(compact_events) == 100
+    assert any("用户拍板" in item["c"] for item in compact_events)
+    assert any(
+        record.get("decision") == "events_capped"
+        and record.get("event_count") == 105
+        and record.get("capped_count") == 100
+        and record.get("reason") == "token_guard"
+        for record in log_records
+    )
+
+
 def test_tier_override_wins_over_model_card(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="deepseek-chat", cloud_tier="budget")
     _patch_io(monkeypatch, tmp_path, _rows())

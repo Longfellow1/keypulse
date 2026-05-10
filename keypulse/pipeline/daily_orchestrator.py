@@ -60,6 +60,18 @@ _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
 _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 _TOOL_ECHO_SOURCES = frozenset({"ax_text", "ocr_text", "window", "idle", "knowledgec", "zsh_history"})
 _USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli"})
+_FLAGSHIP_EVENT_LIMIT = 100
+_FLAGSHIP_NOISE_MARKERS = (
+    "export ",
+    "export-",
+    "http://",
+    "https://",
+    "redacted-shell",
+    "uncategorized",
+    "obsidian-clipboard-copy",
+    "users-harland-",
+    "/users/harland/",
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -228,6 +240,43 @@ def _component_density_metadata(component_events: list[dict[str, Any]], settings
         "size_score": size_score,
         "peak_event_density": peak,
     }
+
+
+def _flagship_event_score(event: Mapping[str, Any]) -> float:
+    text = " ".join(
+        str(part or "").strip()
+        for part in (event.get("content_text"), event.get("window_title"), event.get("app_name"))
+        if str(part or "").strip()
+    )
+    lowered = text.lower()
+    if any(marker in lowered for marker in _FLAGSHIP_NOISE_MARKERS):
+        return 0.0
+
+    score = _event_value_density(event)
+    if _CJK_RE.search(text):
+        score += 0.3
+    if 12 <= len(str(event.get("content_text") or "").strip()) <= 260:
+        score += 0.15
+    if _source_kind(event) == "user_msg":
+        score += 0.25
+    return round(score, 4)
+
+
+def _cap_flagship_events_for_prompt(
+    events: list[dict[str, Any]],
+    *,
+    limit: int = _FLAGSHIP_EVENT_LIMIT,
+) -> tuple[list[dict[str, Any]], bool]:
+    if limit <= 0 or len(events) <= limit:
+        return events, False
+
+    ranked = sorted(
+        enumerate(events),
+        key=lambda item: (_flagship_event_score(item[1]), item[0]),
+        reverse=True,
+    )
+    keep_indices = sorted(index for index, _event in ranked[:limit])
+    return [events[index] for index in keep_indices], True
 
 
 def _slugify_topic(text: str, *, fallback: str) -> str:
@@ -1062,8 +1111,29 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
 
     if tier == "flagship":
         strategy = FlagshipSingleStepStrategy()
+        flagship_events, events_capped = _cap_flagship_events_for_prompt(events)
+        if events_capped:
+            _logger.warning(
+                "daily_orchestrator events_capped count=%s capped=%s reason=token_guard",
+                len(events),
+                len(flagship_events),
+            )
+            _append_log(
+                {
+                    "ts": _now_iso(),
+                    "capability": "daily_orchestrator",
+                    "date": date_str,
+                    "trigger": trigger,
+                    "decision": "events_capped",
+                    "reason": "token_guard",
+                    "count": len(events),
+                    "capped": len(flagship_events),
+                    "event_count": len(events),
+                    "capped_count": len(flagship_events),
+                }
+            )
         try:
-            result = strategy.generate(date_str=date_str, events=events, gateway=gateway)
+            result = strategy.generate(date_str=date_str, events=flagship_events, gateway=gateway)
         except DailyStrategyError as exc:
             raise DailyOrchestratorError(str(exc)) from exc
 
