@@ -34,8 +34,8 @@ def test_pipeline_draft_prints_daily_body(monkeypatch):
     result = CliRunner().invoke(main, ["pipeline", "draft", "--date", "2026-04-18"])
 
     assert result.exit_code == 0
-    assert "碎片汇总" in result.output
-    assert "另有 1 个零散片段" in result.output
+    assert "## 今日要点" in result.output
+    assert "## 今天做的事" in result.output
 
 
 def test_pipeline_feedback_round_trip(monkeypatch, tmp_path):

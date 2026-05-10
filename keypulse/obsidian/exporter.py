@@ -1488,6 +1488,8 @@ def build_obsidian_bundle(
         },
         model_gateway=model_gateway,
         event_cards=daily_event_cards,
+        previous_plan=previous_plan,
+        tomorrow_plan=current_plan_existing,
     )
 
     daily_card = _build_note_card(

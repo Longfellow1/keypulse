@@ -50,13 +50,9 @@ from keypulse.capture.normalizer import normalize_manual_event
 from keypulse.utils.dates import local_day_bounds, resolve_local_date, local_timezone
 from keypulse.hud import run_hud
 from keypulse.pipeline import (
-    PipelineInputs,
-    build_daily_draft,
     append_feedback_event,
     read_feedback_events,
     FeedbackEvent,
-    build_pipeline_plan,
-    LLMMode,
     load_model_gateway,
     record_theme_feedback,
     current_theme_profile,
@@ -1502,61 +1498,26 @@ def pipeline_sync(date, yesterday, output, vault_name):
 @click.option("--yesterday", is_flag=True, default=False, help="Build yesterday's draft")
 @click.option("--output", default=None, help="Write the draft to a file instead of stdout")
 def pipeline_draft(date, yesterday, output):
-    """Build a deterministic daily draft from raw events."""
+    """Render a daily draft through the unified daily renderer."""
     cfg = get_config()
     require_db(cfg)
 
     date_str = _resolve_obsidian_date(date, yesterday)
-    since, until = local_day_bounds(date_str)
-    events = query_raw_events(since=since, until=until, limit=50000)
-    inputs = PipelineInputs(
-        event_count=len(events),
-        candidate_count=0,
-        topic_count=0,
-        active_days=1,
-    )
-    llm_mode = getattr(cfg.pipeline, "llm_mode", "off")
-    feedback_events = read_feedback_events(Path(cfg.pipeline.feedback_path).expanduser())
-    draft = build_daily_draft(
-        inputs,
-        events,
+    payload = read_daily_summary(date_str) or {}
+    body = render_daily_markdown(
+        date=date_str,
+        topics=payload.get("topics") if isinstance(payload, dict) else [],
+        events=payload.get("events") if isinstance(payload, dict) else [],
+        unanchored=payload.get("unanchored") if isinstance(payload, dict) else [],
+        topic_snapshot=payload.get("topic_status_snapshot") if isinstance(payload, dict) else {},
         model_gateway=load_model_gateway(cfg) if hasattr(cfg, "model") else None,
-        plan=build_pipeline_plan(LLMMode.OFF if llm_mode == "off" else LLMMode(llm_mode), inputs),
-        feedback_events=feedback_events,
-        use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
-        use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
-        db_path=cfg.db_path_expanded,
-        date_str=date_str,
     )
 
     if output:
-        Path(output).write_text(draft.body)
+        Path(output).write_text(body)
         console.print(f"[green]Draft written to {output}[/green]")
     else:
-        console.print(draft.body)
-
-
-def _parse_pipeline_bound(raw: str | None, *, is_since: bool) -> datetime:
-    local_tz = local_timezone()
-    now_local = datetime.now(local_tz)
-
-    if raw is None:
-        if is_since:
-            return datetime.combine(now_local.date(), datetime.min.time(), tzinfo=local_tz).astimezone(timezone.utc)
-        return now_local.astimezone(timezone.utc)
-
-    if len(raw) == 10:
-        day = datetime.fromisoformat(raw)
-        if is_since:
-            local_value = datetime.combine(day.date(), datetime.min.time(), tzinfo=local_tz)
-        else:
-            local_value = datetime.combine(day.date(), datetime.max.time(), tzinfo=local_tz)
-        return local_value.astimezone(timezone.utc)
-
-    parsed = datetime.fromisoformat(raw)
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        parsed = parsed.replace(tzinfo=local_tz)
-    return parsed.astimezone(timezone.utc)
+        console.print(body)
 
 
 @pipeline.group()
