@@ -40,4 +40,10 @@ from keypulse.cli import main  # noqa: E402
 
 
 if __name__ == "__main__":
+    # GUI launch (Finder/Dock double-click) lands here with no argv.
+    # Route to `hud start` so the .app behaves as a menu-bar app per
+    # Info.plist LSUIElement=true; otherwise click would print --help
+    # and exit 1, which LaunchServices reports as a py2app launch error.
+    if len(sys.argv) == 1:
+        sys.argv.extend(["hud", "start"])
     sys.exit(main())
