@@ -1022,7 +1022,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
 
     if len(events) < 3:
         daily_path = _daily_path(date_str)
-        body = "\n".join([f"# {date_str}", "", "## 今日主线", "", "- 今日事件不足 3 条，跳过聚类。", ""])
+        body = render_daily_markdown(date=date_str, topics=[], events=[], topic_snapshot={})
         atomic_write_text(daily_path, body)
         summary_path = write_daily_summary(
             date_str,
