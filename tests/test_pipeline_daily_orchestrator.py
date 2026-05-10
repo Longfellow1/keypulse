@@ -274,7 +274,9 @@ def test_low_volume_skip_unchanged(tmp_path, monkeypatch):
     assert summary.skipped is True
     assert summary.cluster_count == 0
     assert summary.misc_event_ids == ("1", "2")
-    assert "事件不足 3 条" in Path(summary.daily_path).read_text(encoding="utf-8")
+    daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
+    assert "## 今日要点" in daily_body
+    assert "## 今天做的事" in daily_body
 
 
 def _insert_event(

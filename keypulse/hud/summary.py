@@ -224,16 +224,14 @@ def _obsidian_open_url(vault_root: str, note_path: str, *, heading: str | None =
 
 
 _DAILY_GENERIC_TOPICS = {"碎片汇总", "其它", "其他", "杂项"}
-# things.py 当前写「今日概览」，narrative.py/skeleton.py 写「今日主线」，两条路径并存
-_DAILY_MAIN_SECTION_PREFIXES = ("## 今日概览", "## 今日主线")
+_DAILY_MAIN_SECTION_PREFIXES = ("## 今天做的事",)
 
 
 def _parse_daily_topics(daily_body: str) -> list[tuple[str, str]]:
-    """从 daily.md 的主线段（「## 今日概览」或「## 今日主线」）解析 H3 主题。
+    """从 daily.md 的「## 今天做的事」段解析 H3 主题。
 
     返回 [(主题名, 原始 H3 文本), ...]，按 daily 中出现顺序（早→晚）。
-    H3 格式：`### 凌晨访问pairdrop网站 · 5m（2026年5月5日 22:48–22:53）`
-    主题名 = ` · ` 之前那段；锚点 = 整个 H3 文本。过滤"碎片汇总"等泛词。
+    H3 可为 `### [[anchor-slug|display]]` 或普通标题；锚点 = 整个 H3 文本。
     """
     if not daily_body:
         return []
@@ -254,6 +252,11 @@ def _parse_daily_topics(daily_body: str) -> list[tuple[str, str]]:
         if stripped.startswith("### "):
             heading = stripped[4:].strip()
             topic = heading.split(" · ", 1)[0].strip()
+            wikilink = re.fullmatch(r"\[\[[^|\]]+\|([^\]]+)\]\]", topic)
+            if wikilink:
+                topic = wikilink.group(1).strip()
+            elif topic.startswith("[[") and topic.endswith("]]"):
+                topic = topic[2:-2].strip()
             if topic and topic not in _DAILY_GENERIC_TOPICS:
                 out.append((topic, heading))
     return out
@@ -268,7 +271,7 @@ def _build_top_signals(
     vault_root: str,
     date_str: str,
 ) -> list[dict[str, Any]]:
-    """HUD「今天最新」三条 = 日报「今日主线」的主题 H3。
+    """HUD「今天最新」三条 = 日报「今天做的事」的主题 H3。
 
     跳转走 obsidian:// + heading 锚点，直接落到 daily 那一段。
     主题不足 3 条时由 HUD 渲染层兜底（占位 / 兜底句）。
@@ -291,7 +294,7 @@ def _build_top_signals(
         candidates.append(
             {
                 "title": topic_name,
-                "source": "今日主线",
+                "source": "今天做的事",
                 "source_key": "daily_topic",
                 "reason": "新信息",
                 "score": 1.0,
