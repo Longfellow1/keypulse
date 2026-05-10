@@ -120,6 +120,10 @@ def _rows() -> list[dict[str, Any]]:
 
 def _patch_io(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: list[dict[str, Any]]) -> None:
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_topic_anchor._DEFAULT_PATH",
+        tmp_path / ".keypulse" / "weekly-anchor.json",
+    )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_rows_for_date", lambda _date: rows)
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._filter_for_trigger", lambda _date, _trigger, loaded: loaded)
     monkeypatch.setattr(
@@ -131,15 +135,26 @@ def _patch_io(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: list[dict[s
 def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="doubao-seed-1-6-250615")
     _patch_io(monkeypatch, tmp_path, _rows())
-    gateway = FakeGateway("doubao-seed-1-6-250615", {"daily_flagship": {"markdown": DAILY_MARKDOWN}})
+    gateway = FakeGateway(
+        "doubao-seed-1-6-250615",
+        {
+            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
 
     summary = run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["daily_flagship"]
+    assert gateway.calls == ["daily_flagship", "L0_anchor"]
     assert summary.cluster_count == 0
     assert summary.misc_event_ids == ()
-    assert Path(summary.daily_path).read_text(encoding="utf-8") == DAILY_MARKDOWN.strip()
+    daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
+    assert "## 今日 raw events (unanchored)" in daily_body
+    summary_payload = json.loads(Path(summary.summary_path).read_text(encoding="utf-8"))
+    assert len(summary_payload["events"]) >= 1
+    assert "topics" in summary_payload
+    assert (tmp_path / ".keypulse" / "weekly-anchor.json").exists()
     assert not (tmp_path / ".keypulse" / "hot.md").exists()
 
 
@@ -162,13 +177,17 @@ def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch
                 "display_name": "KeyPulse Daily Strategy",
                 "keywords": ["keypulse", "daily", "strategy", "tier", "budget"],
             },
+            "L0_anchor": {
+                "assignments": {"c1": "weekly-v3-rollout"},
+                "new_anchors": [],
+            },
         },
     )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
 
     summary = run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["L1_cluster_review", "L2_narrative", "L3_topic_naming"]
+    assert gateway.calls == ["L1_cluster_review", "L2_narrative", "L3_topic_naming", "L0_anchor"]
     assert summary.cluster_count == 1
     assert summary.misc_event_ids == ("3",)
     assert summary.topic_diffs == ("keypulse-daily-strategy:created",)
@@ -198,12 +217,18 @@ def test_event_value_density_promotes_user_decisions_over_tool_echo():
 def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="deepseek-chat")
     _patch_io(monkeypatch, tmp_path, _rows())
-    gateway = FakeGateway("deepseek-chat", {"daily_flagship": {"markdown": DAILY_MARKDOWN}})
+    gateway = FakeGateway(
+        "deepseek-chat",
+        {
+            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
 
     run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["daily_flagship"]
+    assert gateway.calls == ["daily_flagship", "L0_anchor"]
 
 
 def test_tier_override_wins_over_model_card(tmp_path, monkeypatch):
@@ -226,7 +251,7 @@ def test_tier_override_wins_over_model_card(tmp_path, monkeypatch):
 
     run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["L1_cluster_review", "L2_narrative"]
+    assert gateway.calls == ["L1_cluster_review", "L2_narrative", "L0_anchor"]
 
 
 def test_daily_strategy_error_is_translated(tmp_path, monkeypatch):

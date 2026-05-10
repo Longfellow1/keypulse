@@ -104,16 +104,6 @@ def _payload_float(payload: Mapping[str, Any], key: str, default: float = 0.0) -
         return default
 
 
-def _payload_importance_score(payload: Mapping[str, Any]) -> float:
-    explicit = _payload_float(payload, "importance_score", -1.0)
-    if explicit >= 0.0:
-        return explicit
-    event_count = len(payload.get("event_ids") or [])
-    size_score = min(max(event_count, 0) / 5.0, 0.7)
-    peak_density = _payload_float(payload, "peak_event_density", 0.0)
-    return max(size_score, peak_density)
-
-
 def _payload_time_start(payload: Mapping[str, Any]) -> str:
     time_range = payload.get("time_range") or []
     if isinstance(time_range, list) and time_range:
@@ -261,15 +251,10 @@ class BudgetTwoStepStrategy(DailyStrategy):
             decision = decisions.get(component_id, {"topic_action": "misc"})
             action = str(decision.get("topic_action") or "misc")
             peak_event_density = _payload_float(component_payload, "peak_event_density", 0.0)
-            high_density_threshold = _payload_float(component_payload, "high_density_threshold", 0.75)
 
             slug = str(decision.get("topic_slug") or "").strip() or None
             if action == "existing" and not slug:
                 action = "misc"
-
-            if action == "misc" and peak_event_density >= high_density_threshold:
-                action = "new"
-                misc_ids = [eid for eid in misc_ids if eid not in event_ids]
 
             if action == "misc":
                 for eid in event_ids:
@@ -306,7 +291,6 @@ class BudgetTwoStepStrategy(DailyStrategy):
                     "component_id": component_id,
                     "display_name": display_name,
                     "topic_action": action,
-                    "importance_score": round(_payload_importance_score(component_payload), 4),
                     "peak_event_density": peak_event_density,
                     "events": cluster_events_compact,
                 }
@@ -318,7 +302,7 @@ class BudgetTwoStepStrategy(DailyStrategy):
 
         l2_clusters.sort(
             key=lambda item: (
-                -float(item.get("importance_score") or 0.0),
+                -float(item.get("peak_event_density") or 0.0),
                 _payload_time_start(component_payloads_by_id.get(str(item.get("component_id") or ""), {})),
                 str(item.get("display_name") or ""),
             )

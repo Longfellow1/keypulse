@@ -24,6 +24,10 @@ class FakeGateway:
 
 def _patch_io(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: list[dict[str, Any]]) -> None:
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_topic_anchor._DEFAULT_PATH",
+        tmp_path / ".keypulse" / "weekly-anchor.json",
+    )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_rows_for_date", lambda _date: rows)
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._filter_for_trigger", lambda _date, _trigger, loaded: loaded)
     monkeypatch.setattr(

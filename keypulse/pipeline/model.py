@@ -317,6 +317,9 @@ def _validate_jsonschema_minimal(schema: dict[str, Any], value: Any, path: str =
         raise ValueError(f"{path} must be one of {enum_values}")
 
 
+validate_schema_minimal = _validate_jsonschema_minimal
+
+
 class ModelGateway:
     def __init__(self, config: Config, state_path: str | Path | None = None):
         self._config = config
