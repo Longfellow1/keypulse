@@ -322,24 +322,37 @@ def test_render_daily_markdown_omits_blocked_section_when_no_blocked_topics(tmp_
     assert "## 今天的卡点" not in body
 
 
-def test_filter_daily_event_cards_uses_llm_selection_with_bounds():
+def test_filter_daily_event_cards_uses_rule_scores_and_never_calls_gateway():
     class _Gateway:
         def call(self, capability, prompt, **kwargs):
-            return {"selected_slugs": [f"event-{index:02d}" for index in range(20)]}
+            raise AssertionError("event card filtering must not call LLM")
 
-    cards = [(f"event-{index:02d}", f"事件 {index:02d}") for index in range(20)]
+    cards = [
+        ("export-https-proxy-http-127-7890", "export https_proxy=http://127.0.0.1:7890"),
+        ("https-github-com-example-project", "https://github.com/example/project"),
+        ("1948-obsidian-clipboard-copy-query", "obsidian clipboard copy query"),
+        ("1142-cd-users-harland-go-corpusflow-npm", "cd /Users/Harland/Go/CorpusFlow && npm run keepalive"),
+        ("1521-weekly-v3-review", "周报设计方案迭代与评审"),
+        ("1406-lion-carmind-agent-runtime-项目-brief", "Lion-CarMind / Agent Runtime 项目 Brief"),
+        ("1957-car-agent-product", "座舱实时语音 Agent 产品化"),
+        ("1023-deep-fix-v5-skill", "安装并启动 deep-fix-v5 技能"),
+        ("1445-walking-or-driving", "结论：要看你洗的对象是谁"),
+        ("1924-http-127-7860", "http://127.0.0.1:7860"),
+    ]
 
-    selected = filter_daily_event_cards(cards, model_gateway=_Gateway())
+    selected = filter_daily_event_cards(cards, model_gateway=_Gateway(), target_count=6)
 
-    assert len(selected) == 15
-    assert selected[0] == ("event-00", "事件 00")
-    assert selected[-1] == ("event-14", "事件 14")
+    assert len(selected) == 6
+    selected_slugs = [slug for slug, _title in selected]
+    assert "1521-weekly-v3-review" in selected_slugs
+    assert "1957-car-agent-product" in selected_slugs
+    assert "export-https-proxy-http-127-7890" not in selected_slugs
+    assert "https-github-com-example-project" not in selected_slugs
 
 
-def test_filter_daily_event_cards_falls_back_to_preview_limit_without_gateway():
-    cards = [(f"event-{index:02d}", f"事件 {index:02d}") for index in range(20)]
+def test_filter_daily_event_cards_defaults_to_six_representative_items():
+    cards = [(f"event-{index:02d}", f"代表性事件 {index:02d}") for index in range(20)]
 
-    selected = filter_daily_event_cards(cards, model_gateway=None)
+    selected = filter_daily_event_cards(cards)
 
-    assert len(selected) == 12
-    assert selected == cards[:12]
+    assert len(selected) == 6

@@ -570,84 +570,59 @@ def _daily_event_cards(date_text: str) -> list[tuple[str, str]]:
     return cards
 
 
-def _parse_event_card_selection(response: Any) -> list[str]:
-    payload = response
-    if isinstance(response, str):
-        stripped = response.strip()
-        if not stripped:
-            return []
-        try:
-            payload = json.loads(stripped)
-        except json.JSONDecodeError:
-            return [item.strip() for item in re.split(r"[\n,，]+", stripped) if item.strip()]
-    if isinstance(payload, dict):
-        raw = payload.get("selected_slugs") or payload.get("slugs") or payload.get("selected")
-        if isinstance(raw, list):
-            return [str(item).strip() for item in raw if str(item).strip()]
-        if isinstance(raw, str):
-            return [item.strip() for item in re.split(r"[\n,，]+", raw) if item.strip()]
-    if isinstance(payload, list):
-        return [str(item).strip() for item in payload if str(item).strip()]
-    return []
+_EVENT_CARD_NOISE_PREFIXES = (
+    "export-",
+    "https-",
+    "http-",
+    "redacted-shell",
+    "uncategorized",
+    "obsidian-clipboard-copy",
+    "https-github-com-",
+    "https-mp-weixin-",
+)
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_ASCII_START_RE = re.compile(r"^[0-9A-Za-z]")
+
+
+def _event_card_score(slug: str, title: str) -> int:
+    slug_text = str(slug or "").strip().lower()
+    title_text = " ".join(str(title or "").split()).strip()
+    title_lower = title_text.lower()
+    if (
+        any(slug_text.startswith(prefix) or title_lower.startswith(prefix) for prefix in _EVENT_CARD_NOISE_PREFIXES)
+        or "users-harland-" in slug_text
+        or "/users/harland/" in title_lower
+        or " users/harland/" in title_lower
+    ):
+        return 0
+
+    score = 1
+    if _CJK_RE.search(title_text):
+        score += 3
+    if 8 <= len(title_text) <= 40:
+        score += 2
+    if title_text and _ASCII_START_RE.match(title_text) is None:
+        score += 1
+    return score
 
 
 def filter_daily_event_cards(
     cards: list[tuple[str, str]],
     *,
     model_gateway: Any | None = None,
-    min_count: int = 8,
-    max_count: int = 15,
-    fallback_count: int = 12,
+    target_count: int = 6,
 ) -> list[tuple[str, str]]:
     if not cards:
         return []
 
-    lower = max(1, min(min_count, max_count))
-    upper = max(lower, max_count)
-    fallback_limit = min(max(fallback_count, lower), upper, len(cards))
-    fallback = cards[:fallback_limit]
-    if model_gateway is None or not hasattr(model_gateway, "call"):
-        return fallback
-
-    candidates = [{"slug": slug, "title": title} for slug, title in cards[:80]]
-    prompt = "\n".join(
-        [
-            "从今天的事件卡中选出最值得放进 daily.md 的精选列表。",
-            f"要求：保留 {lower}-{upper} 条，优先选择能代表主线、决策、产出、卡点的事件，去掉重复/噪声/低价值浏览。",
-            "只输出 JSON：{\"selected_slugs\": [\"...\"]}。",
-            json.dumps({"events": candidates}, ensure_ascii=False),
-        ]
+    del model_gateway
+    limit = min(max(int(target_count or 6), 5), 8, len(cards))
+    ranked = sorted(
+        enumerate(cards),
+        key=lambda item: (-_event_card_score(item[1][0], item[1][1]), item[0]),
     )
-    try:
-        response = model_gateway.call(
-            "daily_event_cards_filter",
-            prompt,
-            input_data={"events": candidates, "min_count": lower, "max_count": upper},
-            retries=0,
-        )
-    except Exception as exc:
-        logger.warning("daily event cards LLM filter fallback exc_type=%s exc=%s", type(exc).__name__, exc)
-        return fallback
-
-    by_slug = {slug: (slug, title) for slug, title in cards}
-    selected: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for slug in _parse_event_card_selection(response):
-        if slug in by_slug and slug not in seen:
-            selected.append(by_slug[slug])
-            seen.add(slug)
-        if len(selected) >= upper:
-            break
-
-    if len(selected) < min(lower, len(cards)):
-        for slug, title in cards:
-            if slug in seen:
-                continue
-            selected.append((slug, title))
-            seen.add(slug)
-            if len(selected) >= min(lower, len(cards)):
-                break
-    return selected[:upper] or fallback
+    selected_indices = sorted(index for index, _card in ranked[:limit])
+    return [cards[index] for index in selected_indices]
 
 
 def _cross_day_continuations(
