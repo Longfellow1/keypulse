@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -18,13 +18,9 @@ from pydantic import BaseModel
 
 from keypulse.config import Config, ModelBackendConfig
 from keypulse.pipeline.model_keychain import KeychainCommandError, KeychainUnavailable, read_secret
-from keypulse.pipeline.narrative import (
-    WorkBlock,
-    format_work_block_for_prompt,
-    render_daily_narrative as _fallback_daily_narrative,
-)
 from keypulse.prompts.loader import PromptCapabilityNotFoundError, load_prompt
 from keypulse.utils.atomic_io import atomic_write_text
+from keypulse.utils.dates import local_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +45,54 @@ class PipelineQualityError(RuntimeError):
 
 class LLMCallError(RuntimeError):
     """Raised when capability call fails after retries."""
+
+
+@dataclass(frozen=True)
+class WorkBlock:
+    theme: str
+    duration_sec: int
+    ts_start: str
+    ts_end: str
+    primary_app: str
+    event_count: int
+    key_candidates: list[dict[str, Any]]
+    continuity: str
+    user_candidates: list[dict[str, Any]] = field(default_factory=list)
+    system_candidates: list[dict[str, Any]] = field(default_factory=list)
+    subtopics: tuple[str, ...] = ()
+    session_id: str | None = None
+    fragment: bool = False
+
+
+def _format_local_datetime(dt: datetime) -> str:
+    local_dt = dt.astimezone(local_timezone())
+    return f"{local_dt.year}年{local_dt.month}月{local_dt.day}日 {local_dt:%H:%M}"
+
+
+def _format_work_block_for_prompt(block: WorkBlock) -> dict[str, Any]:
+    payload = asdict(block)
+    for key in ("ts_start", "ts_end"):
+        value = str(payload.get(key) or "")
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        payload[key] = _format_local_datetime(parsed)
+    return payload
+
+
+def _fallback_daily_narrative(blocks: list[WorkBlock]) -> str:
+    if not blocks:
+        return "## 今日主线\n\n正在持续记录中ing..."
+    lead = max((block for block in blocks if not block.fragment), default=blocks[0], key=lambda block: block.duration_sec)
+    lines = ["## 今日主线", "", f"> 主战场是 {lead.theme}。", ""]
+    for block in blocks:
+        if block.fragment:
+            continue
+        lines.extend([f"### {block.theme}", "", str(block.key_candidates[0].get("title") if block.key_candidates else "—"), ""])
+    return "\n".join(lines).strip()
 
 
 @dataclass(frozen=True)
@@ -1086,7 +1130,7 @@ class ModelGateway:
         # Limit to top 3 blocks by duration to avoid timeout
         sorted_blocks = sorted(blocks, key=lambda b: b.duration_sec, reverse=True)
         limited_blocks = sorted_blocks[:3]
-        blocks_payload = [format_work_block_for_prompt(block) for block in limited_blocks]
+        blocks_payload = [_format_work_block_for_prompt(block) for block in limited_blocks]
         backend = self.select_backend("write")
         prompt = "\n".join(
             [

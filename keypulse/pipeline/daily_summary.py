@@ -689,6 +689,8 @@ def render_daily_markdown(
     topic_snapshot: dict[str, Any] | None = None,
     model_gateway: Any | None = None,
     event_cards: list[tuple[str, str]] | None = None,
+    previous_plan: str = "",
+    tomorrow_plan: str = "",
 ) -> str:
     date_text = _validate_date(date)
     if topics is None and events is None:
@@ -737,7 +739,11 @@ def render_daily_markdown(
     source_markdown = str(narrative_markdown or "")
     highlight_section = _extract_section(source_markdown, "今日要点")
 
-    lines = ["📍 Asia/Shanghai", "", f"# {date_text}", "", "## 今日要点", ""]
+    lines = ["📍 Asia/Shanghai", "", f"# {date_text}"]
+    previous_plan_text = " ".join(str(previous_plan or "").split()).strip()
+    if previous_plan_text:
+        lines.extend(["", f"> 💭 昨天你说想：{previous_plan_text}"])
+    lines.extend(["", "## 今日要点", ""])
     if highlight_section:
         lines.append(highlight_section)
     elif topic_list:
@@ -796,7 +802,8 @@ def render_daily_markdown(
             suffix = f": {narrative}" if narrative else ""
             lines.append(f"- {_anchor_link(anchor, display)}{suffix}")
 
-    lines.extend(["", "## 明日的锚点", "", "> 明天我想：______", ">", "> _写一句话留给明天的自己_"])
+    tomorrow_plan_text = " ".join(str(tomorrow_plan or "").split()).strip() or "______"
+    lines.extend(["", "## 明日的锚点", "", f"> 明天我想：{tomorrow_plan_text}", ">", "> _写一句话留给明天的自己_"])
 
     if event_list and not topic_list:
         lines.extend(["", "<!-- events_count: {} -->".format(len(event_list))])

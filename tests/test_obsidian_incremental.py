@@ -113,7 +113,7 @@ def test_incremental_preserves_narrative(tmp_path: Path, monkeypatch):
     daily_path = _daily_path(vault_path)
     customized = _replace_section_body(
         _read(daily_path),
-        "## 今日主线",
+        "## 今天做的事",
         ["", "今天我把关键链路打通了，剩下的是收尾。", ""],
     )
     _write(daily_path, customized)
@@ -122,7 +122,7 @@ def test_incremental_preserves_narrative(tmp_path: Path, monkeypatch):
     export_obsidian_incremental(db_path, vault_path, cursor_path, DATE)
     after = _read(daily_path)
 
-    assert "今天我把关键链路打通了，剩下的是收尾。" in _section(after, "## 今日主线")
+    assert "今天我把关键链路打通了，剩下的是收尾。" in _section(after, "## 今天做的事")
 
 
 def test_incremental_preserves_tomorrow_plan(tmp_path: Path, monkeypatch):

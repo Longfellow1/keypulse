@@ -150,7 +150,8 @@ def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
     assert summary.cluster_count == 0
     assert summary.misc_event_ids == ()
     daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
-    assert "## 今日 raw events (unanchored)" in daily_body
+    assert "## 今天做的事" in daily_body
+    assert "## 今日 raw events (unanchored)" not in daily_body
     summary_payload = json.loads(Path(summary.summary_path).read_text(encoding="utf-8"))
     assert len(summary_payload["events"]) >= 1
     assert "topics" in summary_payload
@@ -306,7 +307,7 @@ def _seed_minimal_events() -> None:
     _insert_event(ts_start="2026-05-01T01:20:00+00:00", content="补 L2 narrative prompt", session_id="s2")
 
 
-def test_daily_cli_falls_back_to_things_when_mock_llm_keeps_failing(tmp_path, monkeypatch):
+def test_daily_cli_falls_back_to_unified_renderer_when_mock_llm_keeps_failing(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     init_db(tmp_path / ".keypulse" / "keypulse.db")
     _seed_minimal_events()
@@ -315,10 +316,10 @@ def test_daily_cli_falls_back_to_things_when_mock_llm_keeps_failing(tmp_path, mo
 
     def fake_fallback(_cfg, _date_str, *, no_llm):
         fallback_target.parent.mkdir(parents=True, exist_ok=True)
-        fallback_target.write_text("# fallback\n\n## 今日概览\n\n- things fallback\n", encoding="utf-8")
+        fallback_target.write_text("# fallback\n\n## 今日要点\n\n- fallback\n", encoding="utf-8")
         return fallback_target
 
-    monkeypatch.setattr("keypulse.cli._render_daily_fallback_with_things", fake_fallback)
+    monkeypatch.setattr("keypulse.cli._render_daily_fallback", fake_fallback)
 
     result = CliRunner().invoke(
         main,

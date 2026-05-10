@@ -118,7 +118,8 @@ def test_full_sync_creates_complete_files(monkeypatch, tmp_path: Path):
     assert any((home / ".keypulse" / "events" / DATE).glob("*.md"))
     daily = _read(_daily_note(vault))
     assert "## 今天的事件卡" in daily
-    assert "## 今天涉及的主题" in daily
+    assert "## 今天做的事" in daily
+    assert "## 今天涉及的主题" not in daily
 
 
 def test_incremental_appends_three_new_events_without_rewriting_narrative(monkeypatch, tmp_path: Path):
@@ -135,7 +136,7 @@ def test_incremental_appends_three_new_events_without_rewriting_narrative(monkey
 
     export_obsidian(vault, date_str=DATE)
     before = _read(_daily_note(vault))
-    narrative_before = _extract_section(before, "## 今日主线")
+    narrative_before = _extract_section(before, "## 今天做的事")
 
     dataset.extend(
         [
@@ -147,7 +148,7 @@ def test_incremental_appends_three_new_events_without_rewriting_narrative(monkey
     export_obsidian(vault, date_str=DATE, incremental=True)
 
     after = _read(_daily_note(vault))
-    assert _extract_section(after, "## 今日主线") == narrative_before
+    assert _extract_section(after, "## 今天做的事") == narrative_before
     assert len(_event_links(after)) == len(_event_links(before)) + 3
     assert "## 今天的事件卡" in after
 
@@ -164,17 +165,17 @@ def test_incremental_preserves_daily_protected_sections(monkeypatch, tmp_path: P
 
     export_obsidian(vault, date_str=DATE)
     before = _read(_daily_note(vault))
-    main_before = _extract_section(before, "## 今日主线")
+    main_before = _extract_section(before, "## 今天做的事")
     decide_before = _extract_section(before, "## 需要你决定")
-    tomorrow_before = _extract_section(before, "## 明天的锚点")
+    tomorrow_before = _extract_section(before, "## 明日的锚点")
 
     dataset.append(_event("11:00:00", "补充 hourly plist", tags="launchd,plist"))
     export_obsidian(vault, date_str=DATE, incremental=True)
 
     after = _read(_daily_note(vault))
-    assert _extract_section(after, "## 今日主线") == main_before
+    assert _extract_section(after, "## 今天做的事") == main_before
     assert _extract_section(after, "## 需要你决定") == decide_before
-    assert _extract_section(after, "## 明天的锚点") == tomorrow_before
+    assert _extract_section(after, "## 明日的锚点") == tomorrow_before
 
 
 def test_incremental_is_idempotent_for_same_batch(monkeypatch, tmp_path: Path):

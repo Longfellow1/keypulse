@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from keypulse.obsidian.exporter import (
+    ExportWorkBlock,
     _build_event_card,
     _is_meaningful_topic,
     _render_dashboard_blocks,
@@ -17,7 +18,8 @@ from keypulse.obsidian.exporter import (
     write_obsidian_bundle,
 )
 from keypulse.obsidian.layout import slugify
-from keypulse.pipeline.narrative import WorkBlock
+
+WorkBlock = ExportWorkBlock
 
 
 def _sample_item():
@@ -402,7 +404,7 @@ def test_build_obsidian_bundle_renders_relative_keypulse_links_by_default():
     assert "file:///" not in daily_body
 
 
-def test_build_obsidian_bundle_renders_absolute_md_links(monkeypatch, tmp_path: Path):
+def test_build_obsidian_bundle_daily_contract_keeps_relative_event_links(monkeypatch, tmp_path: Path):
     home = tmp_path / "home"
     home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(Path, "home", lambda: home)
@@ -414,8 +416,8 @@ def test_build_obsidian_bundle_renders_absolute_md_links(monkeypatch, tmp_path: 
         wiki_link_mode="absolute_md",
     )
     daily_body = bundle["daily"][0]["body"]
-    assert "(file://" in daily_body
-    assert "[[../.keypulse/events/" not in daily_body
+    assert "[[../.keypulse/events/" in daily_body
+    assert "(file://" not in daily_body
 
 
 def test_build_obsidian_bundle_skips_loginwindow_event_cards_and_counts():
@@ -435,7 +437,7 @@ def test_build_obsidian_bundle_skips_loginwindow_event_cards_and_counts():
 
     assert bundle["events"] == []
     assert bundle["daily"][0]["properties"]["item_count"] == 0
-    assert "事件卡：0" in bundle["daily"][0]["body"]
+    assert "## 今天的事件卡" not in bundle["daily"][0]["body"]
     assert bundle["topics"] == []
 
 
@@ -540,155 +542,3 @@ def test_render_dashboard_blocks_limits_to_top_five_non_fragments():
     assert body.count("### ") == 5
     assert "topic-0" in body
     assert "topic-5" not in body
-
-
-def test_build_obsidian_bundle_prefers_skeleton_when_enabled(monkeypatch):
-    class _Backend:
-        kind = "openai_compatible"
-        base_url = "https://example.com"
-        model = "gpt-test"
-
-    class _Gateway:
-        def select_backend(self, stage: str = "write"):
-            return _Backend()
-
-    monkeypatch.setattr(
-        "keypulse.obsidian.exporter.build_daily_skeleton_report",
-        lambda *args, **kwargs: "# 2026-04-20 骨架报告\n\n## 今日主线\n- skeleton",
-    )
-
-    bundle = build_obsidian_bundle(
-        [
-            _make_item(
-                title="分析 数据 导出",
-                body="分析 数据 导出",
-                tags="alpha,beta,gamma",
-            )
-        ],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-        model_gateway=_Gateway(),
-        use_narrative_skeleton=True,
-        db_path="/tmp/keypulse-test.db",
-    )
-
-    daily_body = bundle["daily"][0]["body"]
-    assert "骨架报告" in daily_body
-    assert "## 今天的事件卡" in daily_body
-
-
-def test_build_obsidian_bundle_prefers_things_narrative_when_enabled(monkeypatch):
-    class _Backend:
-        kind = "openai_compatible"
-        base_url = "https://example.com"
-        model = "gpt-test"
-
-    class _Gateway:
-        def select_backend(self, stage: str = "write"):
-            return _Backend()
-
-    captured: dict[str, object] = {}
-
-    def _fake_build_things(since, until, *, model_gateway=None, sources=None, idle_threshold_minutes=30):
-        captured["since"] = since
-        captured["until"] = until
-        captured["idle_threshold_minutes"] = idle_threshold_minutes
-        captured["model_gateway"] = model_gateway
-        captured["sources"] = sources
-        return [object()]
-
-    monkeypatch.setattr("keypulse.pipeline.things.build_things", _fake_build_things)
-    monkeypatch.setattr(
-        "keypulse.pipeline.things.render_things_report",
-        lambda *args, **kwargs: "# 今日做的事\n\n- things narrative body",
-    )
-    monkeypatch.setattr(
-        "keypulse.obsidian.exporter.build_daily_skeleton_report",
-        lambda *args, **kwargs: "# 2026-04-20 骨架报告\n\n## 今日主线\n- skeleton",
-    )
-
-    bundle = build_obsidian_bundle(
-        [
-            _make_item(
-                title="分析 数据 导出",
-                body="分析 数据 导出",
-                tags="alpha,beta,gamma",
-            )
-        ],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-        model_gateway=_Gateway(),
-        use_things_narrative=True,
-        things_idle_threshold_minutes=45,
-        use_narrative_skeleton=True,
-        db_path="/tmp/keypulse-test.db",
-    )
-
-    daily_body = bundle["daily"][0]["body"]
-    assert "things narrative body" in daily_body
-    assert "# 今日做的事" not in daily_body
-    assert "骨架报告" not in daily_body
-    assert captured["idle_threshold_minutes"] == 45
-    assert captured["model_gateway"] is not None
-    assert captured["sources"] is None
-
-
-def test_build_obsidian_bundle_falls_back_to_skeleton_when_things_empty(monkeypatch):
-    class _Backend:
-        kind = "openai_compatible"
-        base_url = "https://example.com"
-        model = "gpt-test"
-
-    class _Gateway:
-        def select_backend(self, stage: str = "write"):
-            return _Backend()
-
-    monkeypatch.setattr("keypulse.pipeline.things.build_things", lambda *args, **kwargs: [])
-    monkeypatch.setattr(
-        "keypulse.obsidian.exporter.build_daily_skeleton_report",
-        lambda *args, **kwargs: "# 2026-04-20 骨架报告\n\n## 今日主线\n- skeleton fallback",
-    )
-
-    bundle = build_obsidian_bundle(
-        [_make_item(title="分析 数据 导出", body="分析 数据 导出", tags="alpha,beta,gamma")],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-        model_gateway=_Gateway(),
-        use_things_narrative=True,
-        use_narrative_skeleton=True,
-        db_path="/tmp/keypulse-test.db",
-    )
-
-    assert "skeleton fallback" in bundle["daily"][0]["body"]
-
-
-def test_build_obsidian_bundle_falls_back_to_skeleton_when_things_fail(monkeypatch):
-    class _Backend:
-        kind = "openai_compatible"
-        base_url = "https://example.com"
-        model = "gpt-test"
-
-    class _Gateway:
-        def select_backend(self, stage: str = "write"):
-            return _Backend()
-
-    def _boom(*args, **kwargs):
-        raise RuntimeError("things failed")
-
-    monkeypatch.setattr("keypulse.pipeline.things.build_things", _boom)
-    monkeypatch.setattr(
-        "keypulse.obsidian.exporter.build_daily_skeleton_report",
-        lambda *args, **kwargs: "# 2026-04-20 骨架报告\n\n## 今日主线\n- skeleton after things error",
-    )
-
-    bundle = build_obsidian_bundle(
-        [_make_item(title="分析 数据 导出", body="分析 数据 导出", tags="alpha,beta,gamma")],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-        model_gateway=_Gateway(),
-        use_things_narrative=True,
-        use_narrative_skeleton=True,
-        db_path="/tmp/keypulse-test.db",
-    )
-
-    assert "skeleton after things error" in bundle["daily"][0]["body"]
