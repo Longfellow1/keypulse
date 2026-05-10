@@ -133,7 +133,6 @@ class ValueDensityConfig(BaseModel):
     enabled: bool = True
     token_target: int = 80
     decision_bonus: float = 0.25
-    high_density_threshold: float = 0.75
     decision_regex: str = "是不是|为什么|决定|选择?|选|根因|结论|判断|取舍|方案|建议|应该|必须|确认|拍板|原因"
     source_weights: dict[str, float] = Field(
         default_factory=lambda: {

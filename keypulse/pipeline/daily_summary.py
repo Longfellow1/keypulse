@@ -549,51 +549,113 @@ def _anchor_link(anchor: str, display: str | None = None) -> str:
 def render_daily_markdown(
     *,
     date: str,
-    topics: list[dict[str, Any]],
-    events: list[dict[str, Any]],
-    unanchored: list[dict[str, Any]],
+    clusters: list[dict[str, Any]] | None = None,
+    topics: list[dict[str, Any]] | None = None,
+    events: list[dict[str, Any]] | None = None,
+    unanchored: list[dict[str, Any]] | None = None,
     previous_day_anchors: list[str] | None = None,
+    narrative_markdown: str | None = None,
+    topic_snapshot: dict[str, Any] | None = None,
 ) -> str:
     date_text = _validate_date(date)
-    topic_list = [topic for topic in topics if isinstance(topic, dict)]
-    event_list = [event for event in events if isinstance(event, dict)]
-    unanchored_list = [event for event in unanchored if isinstance(event, dict)]
+    if topics is None and events is None:
+        legacy_clusters = [cluster for cluster in (clusters or []) if isinstance(cluster, dict)]
+        events = [_legacy_cluster_to_event(cluster) for cluster in legacy_clusters]
+        topics = [
+            {
+                "anchor": str(cluster.get("slug") or "").strip(),
+                "anchor_state": "continuing",
+                "narrative": str(cluster.get("narrative_one_line") or "").strip(),
+                "decisions": [],
+                "shipped": [],
+                "events_ref": [str(cluster.get("slug") or "").strip()],
+                "display": str(cluster.get("display_name") or cluster.get("slug") or "").strip(),
+            }
+            for cluster in legacy_clusters
+            if str(cluster.get("slug") or "").strip()
+        ]
+        unanchored = [event for event in (events or []) if event.get("anchored_to") is None]
+
+    topic_list = [topic for topic in (topics or []) if isinstance(topic, dict)]
+    event_list = [event for event in (events or []) if isinstance(event, dict)]
+    unanchored_list = [event for event in (unanchored or []) if isinstance(event, dict)]
     previous = [str(item) for item in (previous_day_anchors or []) if str(item).strip()]
+    snapshot = topic_snapshot if isinstance(topic_snapshot, dict) else {}
+
+    def _extract_section(source: str, heading: str) -> str:
+        if not source.strip():
+            return ""
+        lines = source.splitlines()
+        start = -1
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("## ") and heading in stripped[3:]:
+                start = idx + 1
+                break
+        if start < 0:
+            return ""
+        collected: list[str] = []
+        for line in lines[start:]:
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                break
+            collected.append(line)
+        return "\n".join(collected).strip()
+
+    source_markdown = str(narrative_markdown or "")
+    highlight_section = _extract_section(source_markdown, "今日要点")
+    missed_section = _extract_section(source_markdown, "没接住的球")
+    observation_section = _extract_section(source_markdown, "一个观察")
 
     lines = ["📍 Asia/Shanghai", "", f"# {date_text}", "", "## 今日要点", ""]
-    if topic_list:
-        lines.append(str(topic_list[0].get("narrative") or "").strip())
+    if highlight_section:
+        lines.append(highlight_section)
+    elif topic_list:
+        lines.append(str(topic_list[0].get("narrative") or "").strip() or "—")
     else:
-        lines.append("今天没有形成可归并到主线的推进，主要以 unanchored 事件为主。")
+        lines.append("—")
 
     lines.extend(["", "## 今天做的事", ""])
+    event_lookup = {str(item.get("cluster_id") or ""): item for item in event_list}
     for topic in topic_list:
         anchor = str(topic.get("anchor") or "").strip()
         display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
         heading = _anchor_link(anchor, display) if anchor else display
         lines.append(f"### {heading}")
         lines.append("")
+        refs = [str(item) for item in (topic.get("events_ref") or []) if str(item).strip()]
         narrative = str(topic.get("narrative") or "").strip()
-        lines.append(narrative or "无叙事。")
-        decisions = [str(item) for item in (topic.get("decisions") or []) if str(item).strip()]
-        shipped = [str(item) for item in (topic.get("shipped") or []) if str(item).strip()]
-        if decisions:
+        if not narrative and refs:
+            narrative = "；".join(
+                str((event_lookup.get(ref) or {}).get("narrative_one_line") or "").strip()
+                for ref in refs
+                if str((event_lookup.get(ref) or {}).get("narrative_one_line") or "").strip()
+            )
+        lines.append(narrative or "—")
+        if refs:
             lines.append("")
-            lines.append("决策：")
-            lines.extend([f"- {item}" for item in decisions])
-        if shipped:
-            lines.append("")
-            lines.append("产出：")
-            lines.extend([f"- {item}" for item in shipped])
+            for ref in refs:
+                event_payload = event_lookup.get(ref) or {}
+                event_line = str(event_payload.get("narrative_one_line") or "").strip()
+                event_title = str(event_payload.get("display_name") or ref).strip() or ref
+                lines.append(f"- {event_title}: {event_line or '—'}")
         lines.append("")
     if not topic_list:
-        lines.extend(["暂无主线 topics。", ""])
+        lines.extend(["—", ""])
 
-    lines.extend(["## 没接住的球", "", "暂无可确认的遗漏。", "", "## 一个观察", ""])
-    if previous:
+    lines.extend(["## 没接住的球", ""])
+    if missed_section:
+        lines.append(missed_section)
+    else:
+        lines.append("—")
+
+    lines.extend(["", "## 一个观察", ""])
+    if observation_section:
+        lines.append(observation_section)
+    elif previous:
         lines.append(f"相比前一日主线（{', '.join(previous)}），今天的推进是否真正收敛到了可复用锚点？")
     else:
-        lines.append("今天的事件分布是否真正体现为跨天主线，而不是被碎片动作掩盖？")
+        lines.append("—")
 
     lines.extend(["", "## 跨周差异", ""])
     cross_week_items = [
@@ -605,27 +667,33 @@ def render_daily_markdown(
             display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
             state = str(topic.get("anchor_state") or "").strip()
             lines.append(f"- {_anchor_link(anchor, display)}: {state}")
+    elif snapshot:
+        lines.append(f"- topics={len(snapshot)}")
     else:
-        lines.append("- 无")
+        lines.append("—")
 
     lines.extend(["", "## 明日的锚点", "", "> 明天我想：______", ">", "> _写一句话留给明天的自己_", ""])
     lines.extend(["## 今日 raw events (unanchored)", ""])
     if unanchored_list:
-        for event in unanchored_list:
+        sorted_unanchored = sorted(
+            unanchored_list,
+            key=lambda event: str((event.get("time_range") or ["00:00"])[0]),
+            reverse=True,
+        )
+        for event in sorted_unanchored:
             title = str(event.get("display_name") or event.get("cluster_id") or "unanchored").strip()
             narrative = str(event.get("narrative_one_line") or "").strip()
             lines.append(f"- {title}: {narrative}")
     else:
-        lines.append("- 无")
+        lines.append("—")
 
     lines.extend(["", "## 今日涉及的主题", ""])
     if topic_list:
         for topic in topic_list:
-            anchor = str(topic.get("anchor") or "").strip()
-            display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
-            lines.append(f"- {_anchor_link(anchor, display)}")
+            display = str(topic.get("display") or topic.get("title") or topic.get("anchor") or "").strip()
+            lines.append(f"- {display or '—'}")
     else:
-        lines.append("- 无")
+        lines.append("—")
 
     if event_list and not topic_list:
         lines.extend(["", "<!-- events_count: {} -->".format(len(event_list))])

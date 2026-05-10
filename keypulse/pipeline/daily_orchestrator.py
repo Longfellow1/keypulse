@@ -32,11 +32,14 @@ from keypulse.pipeline.daily_summary import (
     render_daily_markdown,
     write_daily_summary,
 )
+from keypulse.pipeline.daily_validator import _DECISION_RE, _OUTPUT_RE
+from keypulse.pipeline.anchor_gateway import AnchorGateway, AnchorGatewayError
 from keypulse.pipeline.weekly_topic_anchor import (
-    WeeklyAnchor,
     anchor_today_clusters,
     load_weekly_anchors,
+    seed_w19_anchors,
     save_weekly_anchors,
+    split_topics_and_unanchored,
     update_anchors_with_assignments,
 )
 from keypulse.pipeline.model import LLMCallError, ModelGateway, load_model_gateway
@@ -54,6 +57,7 @@ _SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{2,40}$")
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
+_TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 _TOOL_ECHO_SOURCES = frozenset({"ax_text", "ocr_text", "window", "idle", "knowledgec", "zsh_history"})
 _USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli"})
 
@@ -223,7 +227,6 @@ def _component_density_metadata(component_events: list[dict[str, Any]], settings
     return {
         "size_score": size_score,
         "peak_event_density": peak,
-        "importance_score": round(max(size_score, peak), 4),
     }
 
 
@@ -341,6 +344,17 @@ def _mock_daily_flagship_output(payload: dict[str, Any]) -> dict[str, str]:
     return _mock_l2_output({"date": payload.get("date"), "clusters": [{"display_name": "全天主线", "events": payload.get("events") or []}], "misc_events": []})
 
 
+def _mock_l0_anchor_output(payload: dict[str, Any]) -> dict[str, Any]:
+    assignments = {}
+    for cluster in payload.get("today_clusters") or []:
+        if not isinstance(cluster, dict):
+            continue
+        cluster_id = str(cluster.get("cluster_id") or "").strip()
+        if cluster_id:
+            assignments[cluster_id] = "unanchored"
+    return {"assignments": assignments, "new_anchors": []}
+
+
 def _mock_l3_output(payload: dict[str, Any]) -> dict[str, Any]:
     events = payload.get("events") or []
     existing = {str(item) for item in (payload.get("existing_slugs") or [])}
@@ -382,6 +396,8 @@ def _install_mock_backend(gateway: ModelGateway) -> None:
             body = json.dumps(_mock_l2_output(payload), ensure_ascii=False)
         elif capability == "L3_topic_naming":
             body = json.dumps(_mock_l3_output(payload), ensure_ascii=False)
+        elif capability == "L0_anchor":
+            body = json.dumps(_mock_l0_anchor_output(payload), ensure_ascii=False)
         elif capability == "daily_flagship":
             body = json.dumps(_mock_daily_flagship_output(payload), ensure_ascii=False)
         else:
@@ -834,58 +850,109 @@ def _summary_clusters_to_anchor_clusters(clusters: list[dict[str, Any]]) -> list
     return normalized
 
 
-def _build_topics_from_assignments(
+def _unique_keep_order(items: list[str], limit: int = 3) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _infer_decisions_shipped(narrative: str) -> tuple[list[str], list[str]]:
+    sentences = [part.strip() for part in _TOPIC_SENTENCE_SPLIT_RE.split(str(narrative or "")) if part.strip()]
+    decisions: list[str] = []
+    shipped: list[str] = []
+    for sentence in sentences:
+        if _DECISION_RE.search(sentence):
+            decisions.append(sentence)
+        if _OUTPUT_RE.search(sentence):
+            shipped.append(sentence)
+    decisions = _unique_keep_order(decisions, limit=3)
+    shipped = _unique_keep_order(shipped, limit=3)
+    if not decisions and not shipped and sentences:
+        decisions = [sentences[0]]
+    return decisions, shipped
+
+
+def _run_anchor_for_clusters(
     *,
     date_str: str,
-    clusters: list[dict[str, Any]],
-    assignments: dict[str, str],
-    weekly_anchors: list[WeeklyAnchor],
+    today_clusters: list[dict[str, Any]],
+    gateway: ModelGateway,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    anchors_by_slug = {anchor.slug: anchor for anchor in weekly_anchors}
-    events: list[dict[str, Any]] = []
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    started_today: set[str] = set()
+    week_str = _week_str_from_date(date_str)
+    weekly_anchors = load_weekly_anchors(week_str)
+    day = date_cls.fromisoformat(date_str)
+    if not weekly_anchors and date_cls(2026, 5, 4) <= day <= date_cls(2026, 5, 10):
+        weekly_anchors = seed_w19_anchors()
+        save_weekly_anchors(week_str, weekly_anchors)
 
-    for cluster in clusters:
-        cluster_id = str(cluster.get("cluster_id") or "").strip()
-        if not cluster_id:
-            continue
-        target = str(assignments.get(cluster_id) or "unanchored").strip() or "unanchored"
-        anchor_slug: str | None = None
-        if target == "unanchored":
-            anchor_slug = None
-        elif target.startswith("new_anchor:"):
-            anchor_slug = target.split(":", 1)[1].strip() or None
-            if anchor_slug:
-                started_today.add(anchor_slug)
+    assignment_result: dict[str, Any]
+    try:
+        assignment_result = anchor_today_clusters(
+            date_str=date_str,
+            today_clusters=today_clusters,
+            weekly_anchors=weekly_anchors,
+            gateway=AnchorGateway(gateway),
+        )
+    except Exception as exc:
+        if isinstance(exc, AnchorGatewayError):
+            _logger.warning(
+                "anchor_llm_failed date=%s reason=%s prompt=%s raw_response=%r",
+                date_str,
+                exc,
+                exc.prompt,
+                exc.raw_response,
+            )
         else:
-            anchor_slug = target
-
-        event_payload = {
-            "cluster_id": cluster_id,
-            "display_name": str(cluster.get("display_name") or cluster_id).strip(),
-            "narrative_one_line": str(cluster.get("narrative_one_line") or "").strip(),
-            "event_count": int(cluster.get("event_count") or 0),
-            "time_range": list(cluster.get("time_range") or ["00:00", "23:59"]),
-            "anchored_to": anchor_slug,
-            "merge_candidate_with": [str(item) for item in (cluster.get("merge_candidate_with") or [])],
-            "peak_event_density": float(cluster.get("peak_event_density") or 0.0),
+            _logger.warning("anchor_llm_failed date=%s reason=%s", date_str, exc, exc_info=True)
+        assignment_result = {
+            "assignments": {str(cluster.get("cluster_id") or ""): "unanchored" for cluster in today_clusters},
+            "new_anchors": [],
         }
-        events.append(event_payload)
-        if anchor_slug:
-            grouped.setdefault(anchor_slug, []).append(event_payload)
 
+    updated_anchors, final_mapping = update_anchors_with_assignments(
+        weekly_anchors,
+        assignment_result,
+        today_clusters,
+        date_str,
+    )
+    save_weekly_anchors(week_str, updated_anchors)
+    split_topics, unanchored = split_topics_and_unanchored(today_clusters, final_mapping, updated_anchors)
+    cluster_narratives = {
+        str(cluster.get("cluster_id") or ""): str(cluster.get("narrative_one_line") or "").strip()
+        for cluster in today_clusters
+        if str(cluster.get("cluster_id") or "").strip()
+    }
+
+    existing_anchor_slugs = {anchor.slug for anchor in weekly_anchors}
     topics: list[dict[str, Any]] = []
-    for anchor_slug, anchor_events in grouped.items():
-        evidence_narratives = [str(item.get("narrative_one_line") or "").strip() for item in anchor_events if str(item.get("narrative_one_line") or "").strip()]
-        narrative = "；".join(evidence_narratives)
-        if len(narrative) < 80:
-            narrative = f"{date_str} 围绕 {anchor_slug} 形成连续推进：{narrative or '今天完成了关键判断并收敛了执行路径。'}"
-
-        decisions = [f"把 {anchor_slug} 归并为本日主线锚点"]
-        shipped = [f"关联 {len(anchor_events)} 个 events 到 {anchor_slug}"]
-        display = anchors_by_slug.get(anchor_slug).display if anchor_slug in anchors_by_slug else str(anchor_events[0].get("display_name") or anchor_slug)
-        state = "started_today" if anchor_slug in started_today else "continuing"
+    for item in split_topics:
+        if not isinstance(item, dict):
+            continue
+        anchor_slug = str(item.get("anchor") or "").strip()
+        if not anchor_slug:
+            continue
+        state = "started_today" if anchor_slug not in existing_anchor_slugs else "continuing"
+        refs = [str(v) for v in (item.get("events_ref") or []) if str(v).strip()]
+        narrative = str(item.get("narrative") or "").strip()
+        if not narrative and refs:
+            narrative = "；".join(
+                text
+                for text in (cluster_narratives.get(ref, "").strip() for ref in refs)
+                if text
+            )
+        existing_decisions = [str(v) for v in (item.get("decisions") or []) if str(v).strip()]
+        existing_shipped = [str(v) for v in (item.get("shipped") or []) if str(v).strip()]
+        inferred_decisions, inferred_shipped = _infer_decisions_shipped(narrative)
+        decisions = _unique_keep_order([*existing_decisions, *inferred_decisions], limit=3)
+        shipped = _unique_keep_order([*existing_shipped, *inferred_shipped], limit=3)
         topics.append(
             {
                 "anchor": anchor_slug,
@@ -893,14 +960,55 @@ def _build_topics_from_assignments(
                 "narrative": narrative,
                 "decisions": decisions,
                 "shipped": shipped,
-                "events_ref": [str(item.get("cluster_id") or "") for item in anchor_events],
-                "display": display,
+                "events_ref": refs,
+                "display": str(item.get("anchor_display") or anchor_slug).strip() or anchor_slug,
             }
         )
-
     topics.sort(key=lambda item: str(item.get("anchor") or ""))
-    unanchored = [item for item in events if item.get("anchored_to") is None]
-    return topics, unanchored, events
+
+    summary_events: list[dict[str, Any]] = []
+    for cluster in today_clusters:
+        cluster_id = str(cluster.get("cluster_id") or "").strip()
+        if not cluster_id:
+            continue
+        target = str(final_mapping.get(cluster_id) or "").strip() or None
+        summary_events.append(
+            {
+                "cluster_id": cluster_id,
+                "display_name": str(cluster.get("display_name") or cluster_id).strip(),
+                "narrative_one_line": str(cluster.get("narrative_one_line") or "").strip(),
+                "event_count": int(cluster.get("event_count") or 0),
+                "time_range": list(cluster.get("time_range") or ["00:00", "23:59"]),
+                "anchored_to": target,
+                "merge_candidate_with": [str(v) for v in (cluster.get("merge_candidate_with") or []) if str(v).strip()],
+                "peak_event_density": float(cluster.get("peak_event_density") or 0.0),
+            }
+        )
+    summary_events.sort(
+        key=lambda item: (
+            -float(item.get("peak_event_density") or 0.0),
+            str((item.get("time_range") or ["00:00"])[0]),
+            str(item.get("display_name") or ""),
+        )
+    )
+
+    unanchored_events: list[dict[str, Any]] = []
+    for item in unanchored:
+        if not isinstance(item, dict):
+            continue
+        unanchored_events.append(
+            {
+                "cluster_id": str(item.get("cluster_id") or "").strip(),
+                "display_name": str(item.get("display_name") or "").strip(),
+                "narrative_one_line": str(item.get("narrative_one_line") or "").strip(),
+                "event_count": int(item.get("event_count") or 0),
+                "time_range": list(item.get("time_range") or ["00:00", "23:59"]),
+                "anchored_to": None,
+                "merge_candidate_with": [str(v) for v in (item.get("merge_candidate_with") or []) if str(v).strip()],
+                "peak_event_density": float(item.get("peak_event_density") or 0.0),
+            }
+        )
+    return topics, summary_events, unanchored_events
 
 
 def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
@@ -922,6 +1030,8 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             misc=[str(event.get("id")) for event in events],
             topic_snapshot={},
             cost=_cost_snapshot(run_started_at),
+            topics=[],
+            unanchored=[],
         )
         _append_log(
             {
@@ -957,8 +1067,24 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         except DailyStrategyError as exc:
             raise DailyOrchestratorError(str(exc)) from exc
 
+        summary_clusters = _ensure_summary_clusters(date_str, result.markdown, events)
+        today_clusters = _summary_clusters_to_anchor_clusters(summary_clusters)
+        topics, summary_events, unanchored_events = _run_anchor_for_clusters(
+            date_str=date_str,
+            today_clusters=today_clusters,
+            gateway=gateway,
+        )
+        topic_snapshot = build_topic_status_snapshot_from_narrative(date_str, result.markdown)
+        daily_markdown = render_daily_markdown(
+            date=date_str,
+            topics=topics,
+            events=summary_events,
+            unanchored=unanchored_events,
+            narrative_markdown=result.markdown,
+            topic_snapshot=topic_snapshot,
+        )
         daily_path = _daily_path(date_str)
-        atomic_write_text(daily_path, result.markdown)
+        atomic_write_text(daily_path, daily_markdown)
         _append_log(
             {
                 "ts": _now_iso(),
@@ -971,10 +1097,13 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         )
         summary_path = write_daily_summary(
             date_str,
-            clusters=_ensure_summary_clusters(date_str, result.markdown, events),
-            misc=[],
-            topic_snapshot=build_topic_status_snapshot_from_narrative(date_str, result.markdown),
+            clusters=summary_clusters,
+            misc=[str(event.get("cluster_id") or "") for event in unanchored_events if str(event.get("cluster_id") or "").strip()],
+            topic_snapshot=topic_snapshot,
             cost=_cost_snapshot(run_started_at),
+            topics=topics,
+            events=summary_events,
+            unanchored=unanchored_events,
         )
         _maybe_trigger_weekly_after_daily(date_str)
         return DailySummary(
@@ -1015,7 +1144,6 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             component_events = [event for event in scoped_events if str(event.get("id")) in event_id_set]
             feature = component_features(event_id_set, feature_index)
             density_metadata = _component_density_metadata(component_events, density_settings)
-            high_density_threshold = float(getattr(density_settings, "high_density_threshold", 0.75) or 0.75)
             payloads.append(
                 {
                     "component_id": component_id,
@@ -1024,7 +1152,6 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
                     "h1_entities": sorted(feature["entities"]),
                     "h2_contexts": [],
                     "keywords": sorted(feature["keywords"])[:20],
-                    "high_density_threshold": high_density_threshold,
                     **density_metadata,
                 }
             )
@@ -1153,9 +1280,6 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         topics_touched.append((resolved.topic_slug, resolved.display_name))
         resolved_clusters.append(resolved)
 
-    daily_path = _daily_path(date_str)
-    atomic_write_text(daily_path, result.markdown)
-
     _refresh_hot(topics_touched, date_str)
     _append_log(
         {
@@ -1177,7 +1301,8 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         merge_map.setdefault(left, []).append(right)
         merge_map.setdefault(right, []).append(left)
 
-    summary_clusters = []
+    summary_clusters: list[dict[str, Any]] = []
+    today_clusters: list[dict[str, Any]] = []
     for cluster in resolved_clusters:
         component_events = [events_by_id[event_id] for event_id in cluster.event_ids if event_id in events_by_id]
         start, end = _component_time_range(component_events)
@@ -1192,16 +1317,49 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
                 "peak_event_density": cluster.peak_event_density,
             }
         )
+        today_clusters.append(
+            {
+                "cluster_id": cluster.component_id,
+                "display_name": cluster.display_name,
+                "narrative_one_line": cluster.narrative_one_line,
+                "event_count": len(cluster.event_ids),
+                "time_range": [start, end],
+                "merge_candidate_with": merge_map.get(cluster.component_id, []),
+                "peak_event_density": cluster.peak_event_density,
+            }
+        )
+
+    topics, summary_events, unanchored_events = _run_anchor_for_clusters(
+        date_str=date_str,
+        today_clusters=today_clusters,
+        gateway=gateway,
+    )
+
+    topic_snapshot = build_topic_status_snapshot_from_narrative(date_str, result.markdown) or {
+        slug: {"name": display, "state": "in_progress", "last_seen_date": date_str, "evidence_dates": [date_str]}
+        for slug, display in topics_touched
+    }
+
+    daily_markdown = render_daily_markdown(
+        date=date_str,
+        topics=topics,
+        events=summary_events,
+        unanchored=unanchored_events,
+        narrative_markdown=result.markdown,
+        topic_snapshot=topic_snapshot,
+    )
+    daily_path = _daily_path(date_str)
+    atomic_write_text(daily_path, daily_markdown)
+
     summary_path = write_daily_summary(
         date_str,
         clusters=summary_clusters,
-        misc=list(result.misc_event_ids),
-        topic_snapshot=build_topic_status_snapshot_from_narrative(date_str, result.markdown)
-        or {
-            slug: {"name": display, "state": "in_progress", "last_seen_date": date_str, "evidence_dates": [date_str]}
-            for slug, display in topics_touched
-        },
+        misc=[str(event.get("cluster_id") or "") for event in unanchored_events if str(event.get("cluster_id") or "").strip()],
+        topic_snapshot=topic_snapshot,
         cost=_cost_snapshot(run_started_at),
+        topics=topics,
+        events=summary_events,
+        unanchored=unanchored_events,
     )
 
     _maybe_trigger_weekly_after_daily(date_str)

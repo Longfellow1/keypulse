@@ -7,6 +7,7 @@ from keypulse.pipeline.daily_summary import (
     build_topic_status_snapshot_from_narrative,
     merge_topic_status_snapshots,
     read_daily_summary,
+    render_daily_markdown,
     write_daily_summary,
 )
 
@@ -166,3 +167,54 @@ def test_merge_topic_status_snapshot_single_topic_across_days():
     assert merged["keypulse-weekly"]["state"] == "completed"
     assert merged["keypulse-weekly"]["last_seen_date"] == "2026-05-08"
     assert merged["keypulse-weekly"]["evidence_dates"] == ["2026-05-07", "2026-05-08"]
+
+
+def test_render_daily_markdown_dual_layer_prefers_topics_and_unanchored_desc_time():
+    body = render_daily_markdown(
+        date="2026-05-09",
+        topics=[
+            {
+                "anchor": "weekly-v3-rollout",
+                "anchor_state": "continuing",
+                "narrative": "你完成了 daily v3 M5 的 phase2 核心收敛。",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": ["c1"],
+                "display": "周报 v3 设计与落地",
+            }
+        ],
+        events=[
+            {
+                "cluster_id": "c1",
+                "display_name": "daily-v3-m5-phase2",
+                "narrative_one_line": "接通 anchor + 删除错误升格机制",
+                "event_count": 4,
+                "time_range": ["18:00", "20:00"],
+                "anchored_to": "weekly-v3-rollout",
+            }
+        ],
+        unanchored=[
+            {
+                "cluster_id": "u1",
+                "display_name": "提醒邮件",
+                "narrative_one_line": "浏览了通知邮件",
+                "event_count": 1,
+                "time_range": ["08:30", "08:31"],
+                "anchored_to": None,
+            },
+            {
+                "cluster_id": "u2",
+                "display_name": "登录页",
+                "narrative_one_line": "登录某服务后台",
+                "event_count": 1,
+                "time_range": ["12:30", "12:31"],
+                "anchored_to": None,
+            },
+        ],
+    )
+    assert "## 今日要点" in body
+    assert "## 今天做的事" in body
+    assert "### [[weekly-v3-rollout|周报 v3 设计与落地]]" in body
+    assert body.index("登录页") < body.index("提醒邮件")
+    assert "## 今日涉及的主题" in body
+    assert "- 周报 v3 设计与落地" in body
