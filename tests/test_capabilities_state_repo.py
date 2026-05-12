@@ -169,7 +169,7 @@ def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) 
     asserting the state-repo value wins."""
     _init_test_db(tmp_path)
     try:
-        # state repo: ax_denied (err)
+        # state repo: ax_denied probe hint
         save_states({
             "accessibility_permission": HealthState(
                 ok=False, code="ax_denied", last_checked=time.time(), detail="denied",
@@ -186,7 +186,7 @@ def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) 
         level, label, hint, action = determine_service_status(
             capture_status="running", health_ok=True,
         )
-        assert level == "err"
+        assert level == "warn"
         assert "辅助功能" in (hint or "") or "ax" in (hint or "").lower()
         assert action.startswith("open://")
     finally:

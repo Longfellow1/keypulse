@@ -289,12 +289,11 @@ def _capabilities_snapshot() -> tuple[dict[str, Any], str, str, bool]:
     except Exception:
         return {}, "", "", False
 
-    registry = get_default_registry()
-    compat_capture = {"appkit_runtime", "accessibility_permission", "clipboard_watcher"}
-    compat_llm = {"llm_backend"}
+    from keypulse.app import _CAPTURE_FACT_CAPS, _LLM_FACT_CAPS
 
-    capture_failure = registry.select_failure(states, names=compat_capture) if states else None
-    llm_failure = registry.select_failure(states, names=compat_llm) if states else None
+    registry = get_default_registry()
+    capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS) if states else None
+    llm_failure = registry.select_failure(states, names=_LLM_FACT_CAPS) if states else None
     capture_code = "" if capture_failure is None else capture_failure.state.code
     llm_code = "" if llm_failure is None else llm_failure.state.code
 
