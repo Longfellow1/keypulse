@@ -221,6 +221,44 @@ def test_render_daily_markdown_dual_layer_prefers_topics_and_unanchored_desc_tim
     assert "## 今日涉及的主题" not in body
 
 
+def test_render_daily_markdown_h3_matches_cluster_display_name_when_anchor_display_differs():
+    """LLM 写 H3 用 cluster.display_name；renderer 需用 events_ref 反查命中，不能只看 anchor.display"""
+    llm_md = (
+        "## 今日要点\n\n要点正文\n\n"
+        "## 今天做的事\n\n"
+        "### 周报设计与成功标准定义\n\n"
+        "01:08-01:45 你与Claude协作明确周报成功标准，采用Q3/Q2/Q1排列组合。\n"
+    )
+    body = render_daily_markdown(
+        date="2026-05-08",
+        topics=[
+            {
+                "anchor": "weekly-v3-rollout",
+                "anchor_state": "continuing",
+                "narrative": "（120字截断后的索引片段——不应被采用）",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": ["topic-be3da44cbe"],
+                "display": "周报 v3 设计与落地",
+            }
+        ],
+        events=[
+            {
+                "cluster_id": "topic-be3da44cbe",
+                "display_name": "周报设计与成功标准定义",
+                "narrative_one_line": "（120字索引）",
+                "event_count": 5,
+                "time_range": ["01:08", "01:45"],
+                "anchored_to": "weekly-v3-rollout",
+            }
+        ],
+        unanchored=[],
+        narrative_markdown=llm_md,
+    )
+    assert "01:08-01:45 你与Claude协作明确周报成功标准" in body
+    assert "（120字截断后的索引片段——不应被采用）" not in body
+
+
 def test_render_daily_markdown_phase_a_section_contract_and_event_cards(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     event_dir = tmp_path / ".keypulse" / "events" / "2026-05-09"
@@ -274,15 +312,28 @@ def test_render_daily_markdown_phase_a_section_contract_and_event_cards(tmp_path
         "## 今日要点",
         "## 今天做的事",
         "## 今天的事件卡",
-        "## 跨日延续",
         "## 今天的卡点",
         "## 明日的锚点",
     ]
     assert body.index("[[../.keypulse/events/2026-05-09/1000-without-title|1000-without-title]]") < body.index(
         "[[../.keypulse/events/2026-05-09/0900-with-title|有标题事件]]"
     )
-    assert "## 跨日延续\n\n## 今天的卡点" in body
+    assert "## 跨日延续" not in body
     assert "- [[blocked-topic|被阻塞主题]]" in body
+
+
+def test_render_daily_markdown_includes_cross_day_section_from_narrative(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    body = render_daily_markdown(
+        date="2026-05-09",
+        topics=[],
+        events=[],
+        topic_snapshot={},
+        narrative_markdown="## 跨日延续\n\n昨天的主线今天继续推进。\n\n## 明日的锚点\n\n占位",
+    )
+
+    assert "## 跨日延续\n\n昨天的主线今天继续推进。" in body
 
 
 def test_render_daily_markdown_omits_event_cards_when_no_files(tmp_path, monkeypatch):
@@ -316,9 +367,10 @@ def test_render_daily_markdown_omits_blocked_section_when_no_blocked_topics(tmp_
         ],
         events=[],
         topic_snapshot={},
+        narrative_markdown="",
     )
 
-    assert "## 跨日延续" in body
+    assert "## 跨日延续" not in body
     assert "## 今天的卡点" not in body
 
 

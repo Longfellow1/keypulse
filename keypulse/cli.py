@@ -1280,6 +1280,13 @@ def daily_run(date_str, trigger, mock_llm):
     cfg = get_config()
     require_db(cfg)
 
+    if trigger == "23:30":
+        click.echo(
+            "⚠️  --trigger 23:30 是增量模式：只消费 18:00 跑过之后新增的 events。"
+            "如要全量重跑该日，请使用 --trigger 18:00。",
+            err=True,
+        )
+
     previous_mock = os.environ.get("MOCK_LLM")
     if mock_llm:
         os.environ["MOCK_LLM"] = "1"
@@ -1305,6 +1312,65 @@ def daily_run(date_str, trigger, mock_llm):
                 os.environ.pop("MOCK_LLM", None)
             else:
                 os.environ["MOCK_LLM"] = previous_mock
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 13.3b EVAL — 把 validator 包成一行命令，列 fail case + 出 score
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def eval():
+    """Score daily/weekly outputs against validator + golden baselines."""
+    pass
+
+
+@eval.command("daily")
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 daily.md 路径")
+@click.option("--summary", "summary_path", type=click.Path(exists=True), default=None,
+              help="对应 daily-summary JSON 路径（可选，提供后会跑数据层断言）")
+@click.option("--fail-only", is_flag=True, default=False, help="只列 fail case 不打印 banner")
+def eval_daily(candidate, summary_path, fail_only):
+    """Score one daily.md and list all failing checks.
+
+    Examples:
+        keypulse eval daily --candidate ~/Go/Knowledge/Daily/2026-05-12.md
+        keypulse eval daily --candidate docs/golden-daily/2026-05-06.md
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    from keypulse.pipeline.daily_validator import quick_score, validate_daily_output
+
+    md = _Path(candidate).read_text(encoding="utf-8")
+    summary = None
+    if summary_path:
+        summary = _json.loads(_Path(summary_path).read_text(encoding="utf-8"))
+
+    failures = validate_daily_output(rendered_markdown=md, daily_summary=summary)
+    score = quick_score(failures)
+    errors = [f for f in failures if f.severity == "error"]
+    warns = [f for f in failures if f.severity == "warn"]
+
+    if not fail_only:
+        click.echo(f"=== eval daily: {candidate} ===")
+        click.echo(f"score={score}/100  errors={len(errors)}  warns={len(warns)}")
+        if summary_path:
+            click.echo(f"data layer: ON (summary={summary_path})")
+        else:
+            click.echo("data layer: OFF (only rendered markdown checks)")
+        click.echo("")
+
+    if not failures:
+        click.echo("✅ 全部通过，无 fail case")
+        return
+
+    for f in failures:
+        sev_tag = "❌" if f.severity == "error" else "⚠️"
+        click.echo(f"{sev_tag} [{f.rule}] {f.message}")
+        click.echo(f"   @ {f.location}")
+
+    if errors:
+        raise SystemExit(1)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

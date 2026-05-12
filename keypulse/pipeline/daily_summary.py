@@ -478,6 +478,14 @@ def _validate_summary_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(topic_status_snapshot, dict):
         raise ValueError("topic_status_snapshot must be object")
 
+    narrative_md_raw = payload.get("narrative_markdown", "")
+    if narrative_md_raw is None:
+        narrative_md = ""
+    elif isinstance(narrative_md_raw, str):
+        narrative_md = narrative_md_raw
+    else:
+        raise ValueError("narrative_markdown must be string")
+
     normalized = {
         "date": date_text,
         "topics": topics,
@@ -487,6 +495,7 @@ def _validate_summary_payload(payload: Any) -> dict[str, Any]:
         "misc_event_ids": misc_event_ids,
         "topic_status_snapshot": topic_status_snapshot,
         "cost": _validate_cost(payload["cost"]),
+        "narrative_markdown": narrative_md,
     }
     return normalized
 
@@ -501,6 +510,7 @@ def write_daily_summary(
     topics=None,
     events=None,
     unanchored=None,
+    narrative_markdown: str | None = None,
 ) -> Path:
     payload = {
         "date": date,
@@ -511,6 +521,7 @@ def write_daily_summary(
         "misc_event_ids": misc if misc is not None else [],
         "topic_status_snapshot": topic_snapshot if topic_snapshot is not None else {},
         "cost": cost if cost is not None else {"in_tokens": 0, "out_tokens": 0, "cost_usd": 0.0},
+        "narrative_markdown": str(narrative_markdown) if narrative_markdown else "",
     }
     normalized = _validate_summary_payload(payload)
 
@@ -711,6 +722,31 @@ def render_daily_markdown(
             collected.append(line)
         return "\n".join(collected).strip()
 
+    def _extract_h3_section(source: str, candidates: list[str]) -> str:
+        if not source.strip():
+            return ""
+        targets = [c.strip() for c in candidates if c and c.strip()]
+        if not targets:
+            return ""
+        lines = source.splitlines()
+        in_section = False
+        collected: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                if in_section:
+                    break
+                continue
+            if stripped.startswith("### "):
+                if in_section:
+                    break
+                if any(t in stripped for t in targets):
+                    in_section = True
+                continue
+            if in_section:
+                collected.append(line)
+        return "\n".join(collected).strip()
+
     source_markdown = str(narrative_markdown or "")
     highlight_section = _extract_section(source_markdown, "今日要点")
 
@@ -735,7 +771,14 @@ def render_daily_markdown(
         lines.append(f"### {heading}")
         lines.append("")
         refs = [str(item) for item in (topic.get("events_ref") or []) if str(item).strip()]
-        narrative = str(topic.get("narrative") or "").strip()
+        h3_candidates = [display]
+        for ref in refs:
+            cluster_display = str((event_lookup.get(ref) or {}).get("display_name") or "").strip()
+            if cluster_display:
+                h3_candidates.append(cluster_display)
+        narrative = _extract_h3_section(source_markdown, h3_candidates)
+        if not narrative:
+            narrative = str(topic.get("narrative") or "").strip()
         if not narrative and refs:
             narrative = "；".join(
                 str((event_lookup.get(ref) or {}).get("narrative_one_line") or "").strip()
@@ -743,13 +786,6 @@ def render_daily_markdown(
                 if str((event_lookup.get(ref) or {}).get("narrative_one_line") or "").strip()
             )
         lines.append(narrative or "—")
-        if refs:
-            lines.append("")
-            for ref in refs:
-                event_payload = event_lookup.get(ref) or {}
-                event_line = str(event_payload.get("narrative_one_line") or "").strip()
-                event_title = str(event_payload.get("display_name") or ref).strip() or ref
-                lines.append(f"- {event_title}: {event_line or '—'}")
         lines.append("")
     if not topic_list:
         lines.extend(["—", ""])
@@ -761,7 +797,13 @@ def render_daily_markdown(
         for slug, title in selected_event_cards:
             lines.append(f"- [[../.keypulse/events/{date_text}/{slug}|{title}]]")
 
-    lines.extend(["", "## 跨日延续"])
+    cross_day_section = _extract_section(source_markdown, "跨日延续").strip()
+    if cross_day_section:
+        lines.extend(["", "## 跨日延续", "", cross_day_section])
+
+    stuck_section = _extract_section(source_markdown, "今天的卡壳").strip()
+    if stuck_section:
+        lines.extend(["", "## 今天的卡壳", "", stuck_section])
 
     blocked_topics = [
         topic
