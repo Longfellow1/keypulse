@@ -1373,6 +1373,71 @@ def eval_daily(candidate, summary_path, fail_only):
         raise SystemExit(1)
 
 
+@eval.command("weekly")
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 weekly.md 路径")
+@click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="plain", show_default=True)
+@click.option("--dailies-dir", "dailies_dir", type=click.Path(exists=True), default=None,
+              help="本周 daily.md 所在目录，用于客观性溯源（可选）")
+@click.option("--fail-only", is_flag=True, default=False)
+def eval_weekly(candidate, style, dailies_dir, fail_only):
+    """Score one weekly.md and list all failing checks.
+
+    Examples:
+        keypulse eval weekly --candidate docs/golden-weekly/2026-W19-exec.md --style exec
+        keypulse eval weekly --candidate ~/Go/Knowledge/Weekly/2026-W19.md --style plain \\
+            --dailies-dir ~/Go/Knowledge/Daily
+    """
+    from pathlib import Path as _Path
+
+    from keypulse.pipeline.weekly_validator import quick_score, validate_weekly_output
+
+    md = _Path(candidate).read_text(encoding="utf-8")
+    dailies_corpus = ""
+    if dailies_dir:
+        for daily_file in sorted(_Path(dailies_dir).glob("2026-*.md")):
+            dailies_corpus += daily_file.read_text(encoding="utf-8") + "\n"
+
+    failures = validate_weekly_output(
+        style=style,
+        rendered_markdown=md,
+        dailies_corpus=dailies_corpus,
+        hud_input_dates=[],
+    )
+    if not dailies_dir:
+        # 没 corpus 时 validator 把每个数字都判 unverified，会淹没真实问题；CLI 层过滤。
+        failures = [f for f in failures if f.field != "objectivity"]
+    score = quick_score(failures)
+
+    if not fail_only:
+        click.echo(f"=== eval weekly: {candidate} (style={style}) ===")
+        click.echo(f"score={score}/100  failures={len(failures)}")
+        if dailies_dir:
+            click.echo(f"data layer: ON (dailies={dailies_dir})")
+        else:
+            click.echo("data layer: OFF (objectivity check 已跳过，传 --dailies-dir 启用)")
+        click.echo("")
+
+    if not failures:
+        click.echo("✅ 全部通过，无 fail case")
+        return
+
+    for f in failures:
+        click.echo(f"❌ [{f.field}/{f.rule}] {f.detail}")
+
+    raise SystemExit(1)
+
+
+@eval.command("skill")
+def eval_skill():
+    """[占位] skill propose eval — 等 V0 hello world 跑通才有数据，详见 docs/skill-v0-plan.md §14.3。"""
+    click.echo("skill propose eval 暂未实现。前置依赖：")
+    click.echo("  1. V0 hello world 跑通（docs/skill-v0-plan.md §5）")
+    click.echo("  2. 至少 2-3 个 skill 候选历史样本")
+    click.echo("  3. 候选独特性 / 历史冲突 / 用户保留率拟合三个评估维度的 baseline")
+    click.echo("解锁后此命令格式将是：keypulse eval skill --candidate <propose.md>")
+    raise SystemExit(2)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 13.4 WEEKLY (PR3 orchestrator entry)
 # ═════════════════════════════════════════════════════════════════════════════
