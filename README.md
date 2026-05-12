@@ -36,6 +36,8 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 <p align="center">
   <img src="docs/images/hud-v1.png" alt="KeyPulse HUD" width="320" />
 </p>
+<img width="1576" height="1578" alt="图片-2" src="https://github.com/user-attachments/assets/68560f60-46f8-499a-9c25-38965d6dba99" />
+<img width="1552" height="1482" alt="图片-1" src="https://github.com/user-attachments/assets/fb66b0fb-8725-4216-ba20-8edbf7959fa6" />
 
 装上之后，KeyPulse 是一个**住在你菜单栏的小窗口**。
 
