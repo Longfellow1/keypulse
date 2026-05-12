@@ -16,6 +16,7 @@ from keypulse.config import Config
 from keypulse.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
 from keypulse.hud.monitor_html import build_monitor_html
 from keypulse.hud.state import dismiss_weekly_echo_for_week, set_today_focus
+from keypulse.hud.state_reset import _reset_transient_error_state
 from keypulse.hud.summary import build_hud_snapshot
 from keypulse.store.db import init_db
 from keypulse.store.repository import get_state, insert_raw_event, set_state
@@ -351,6 +352,9 @@ class KeyPulseHUDApp(AppKit.NSObject):
             return
         target = f"gui/{os.getuid()}/{DAEMON_LAUNCHD_LABEL}"
         try:
+            cfg = getattr(self, "cfg", None)
+            if cfg is not None:
+                _reset_transient_error_state(cfg)
             subprocess.Popen(
                 ["launchctl", "kickstart", "-k", target],
                 stdout=subprocess.DEVNULL,
