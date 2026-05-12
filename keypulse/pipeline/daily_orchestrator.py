@@ -1175,6 +1175,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             topics=topics,
             events=summary_events,
             unanchored=unanchored_events,
+            narrative_markdown=result.markdown,
         )
         _maybe_trigger_weekly_after_daily(date_str)
         return DailySummary(
@@ -1432,6 +1433,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         topics=topics,
         events=summary_events,
         unanchored=unanchored_events,
+        narrative_markdown=result.markdown,
     )
 
     _maybe_trigger_weekly_after_daily(date_str)

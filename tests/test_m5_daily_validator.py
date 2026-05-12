@@ -194,6 +194,82 @@ commit 落地 M0-M3, 13 个新文件 5/9。
     assert "coverage" in rules
 
 
+def test_validator_catches_h3_truncation_at_120_chars() -> None:
+    """模拟 5/11 那种 H3 段被 cluster.narrative_one_line[:120] 拼接截断的形态。"""
+    base = "01:08-01:45 你与Claude协作明确周报成功标准，采用Q3（60%）、Q2（30%）、Q1（10%）的排列组合方案"
+    truncated_body = (base + "测试" * 30)[:120]
+    assert len(truncated_body) == 120
+    assert truncated_body[-1] not in "。！？.!?"
+    md = f"""# 2026-05-08
+
+## 今日要点
+
+凑数测试。
+
+## 今天做的事
+
+### 周报 v3 设计与落地
+
+{truncated_body}
+"""
+    failures = validate_daily_output(rendered_markdown=md)
+    assert any(
+        "120 字索引截断" in f.message and f.severity == "error"
+        for f in failures
+    ), f"应识别 120 字截断: {[f.message for f in failures]}"
+
+
+def test_validator_catches_duplicate_bullet_residue() -> None:
+    """模拟旧 renderer 残留：H3 段下出现 '- 标题: 同正文' 重复 bullet。"""
+    paragraph = "02:51-07:10你诊断KeyPulse架构债，修复日报排序逻辑改为上下午分段，block gap 调整至 30 分钟。"
+    md = f"""# 2026-05-08
+
+## 今日要点
+
+凑数。
+
+## 今天做的事
+
+### 日报质量退化修复与优化
+
+{paragraph}
+
+- 日报质量退化修复: {paragraph}
+"""
+    failures = validate_daily_output(rendered_markdown=md)
+    assert any(
+        "重复 bullet" in f.message and f.severity == "error"
+        for f in failures
+    ), f"应识别重复 bullet: {[f.message for f in failures]}"
+
+
+def test_validator_catches_bug_a_topics_empty_with_events() -> None:
+    """Bug A detector：events>=5 但 topics=[] 说明 LLM anchor 全判 unanchored。"""
+    md = """# 2026-05-09
+
+## 今日要点
+
+有要点。
+
+## 今天做的事
+
+—
+"""
+    daily_summary = {
+        "topics": [],
+        "events": [
+            {"cluster_id": f"c{i}", "anchored_to": None, "event_count": 3, "display_name": f"d{i}", "narrative_one_line": ""}
+            for i in range(6)
+        ],
+        "unanchored": [],
+    }
+    failures = validate_daily_output(rendered_markdown=md, daily_summary=daily_summary)
+    assert any(
+        "Bug A" in f.message and f.severity == "error"
+        for f in failures
+    ), f"应识别 Bug A: {[f.message for f in failures]}"
+
+
 def test_baseline_detects_degradation_5_9_vs_5_6() -> None:
     md_56 = GOLDEN_56.read_text()
     md_59_actual = Path("/Users/Harland/Go/Knowledge/Daily/2026-05-09.md")

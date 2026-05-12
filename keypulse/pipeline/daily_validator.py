@@ -279,6 +279,9 @@ def _validate_antipattern(
                 location=seg["title"],
             ))
 
+    _check_h3_truncation(segments, failures)
+    _check_duplicate_bullets(segments, failures)
+
     if daily_summary is not None:
         events = daily_summary.get("events") or []
         for i, e in enumerate(events):
@@ -292,6 +295,64 @@ def _validate_antipattern(
                     message=f"events[{i}] event_count=1 却 anchored 到 '{anchored}'（单 event 不应升格）",
                     location=f"events[{i}].{e.get('cluster_id', '?')}",
                 ))
+
+        topics = daily_summary.get("topics") or []
+        if len(events) >= 5 and len(topics) == 0:
+            failures.append(DailyValidationFailure(
+                rule="antipattern", severity="error",
+                message=f"events={len(events)} >= 5 但 topics 为空（Bug A：LLM anchor 全判 unanchored）",
+                location="daily_summary",
+            ))
+
+
+_SENTENCE_ENDS = "。！？.!?"
+
+
+def _check_h3_truncation(segments: list[dict[str, Any]], failures: list[DailyValidationFailure]) -> None:
+    """H3 段尾巴恰好被 120 字索引拼接截断的特征：
+    - 段末字符不是句号类
+    - 段长 == 120 或多个 120 拼接（120 / 240 / 360 字附近 ±5）
+    """
+    for seg in segments:
+        body = seg["body"].strip()
+        if not body or len(body) < 100:
+            continue
+        last_char = body.rstrip()[-1:]
+        if last_char in _SENTENCE_ENDS:
+            continue
+        ratio = len(body) / 120
+        near_multiple = abs(ratio - round(ratio)) * 120 <= 5
+        if near_multiple and round(ratio) >= 1:
+            failures.append(DailyValidationFailure(
+                rule="antipattern", severity="error",
+                message=f"主题段疑似被 120 字索引截断 (len={len(body)}, 末字符='{last_char}')",
+                location=seg["title"],
+            ))
+
+
+_DUP_BULLET_RE = re.compile(r"^-\s+([^:：]+)[:：]\s*(.+)$")
+
+
+def _check_duplicate_bullets(segments: list[dict[str, Any]], failures: list[DailyValidationFailure]) -> None:
+    """H3 段下出现 '- 标题: 同正文' 形态的重复 bullet（旧 renderer 残留）。"""
+    for seg in segments:
+        body = seg["body"]
+        body_lines = [ln for ln in body.splitlines() if ln.strip()]
+        if len(body_lines) < 2:
+            continue
+        paragraph = body_lines[0].strip()
+        for ln in body_lines[1:]:
+            m = _DUP_BULLET_RE.match(ln.strip())
+            if not m:
+                continue
+            bullet_body = m.group(2).strip()
+            if len(bullet_body) >= 30 and bullet_body[:30] == paragraph[:30]:
+                failures.append(DailyValidationFailure(
+                    rule="antipattern", severity="error",
+                    message=f"主题段下出现重复 bullet（旧 renderer 残留）: '{ln.strip()[:50]}'",
+                    location=seg["title"],
+                ))
+                break
 
 
 def _validate_objectivity(

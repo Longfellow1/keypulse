@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import abc
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import date, timedelta
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from keypulse.pipeline.model import LLMCallError, ModelGateway
@@ -97,6 +100,124 @@ def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _daily_dir_from_config() -> Path:
+    """Resolve the configured Obsidian Daily directory."""
+    from keypulse.config import Config
+
+    cfg = Config.load()
+    vault = Path(cfg.obsidian.vault_path).expanduser()
+    return vault / "Daily"
+
+
+def _load_yesterday_anchor(date_str: str) -> str:
+    """Load yesterday's manually filled tomorrow anchor."""
+    try:
+        yesterday = (date.fromisoformat(date_str) - timedelta(days=1)).isoformat()
+        daily_path = _daily_dir_from_config() / f"{yesterday}.md"
+        if not daily_path.exists():
+            return ""
+        text = daily_path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return ""
+
+    heading = re.search(r"^## 明日的锚点\s*$", text, re.MULTILINE)
+    if heading is None:
+        return ""
+    next_heading = re.search(r"^## ", text[heading.end() :], re.MULTILINE)
+    section_end = heading.end() + next_heading.start() if next_heading else len(text)
+    section = text[heading.end() : section_end]
+
+    lines: list[str] = []
+    for raw_line in section.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped == ">":
+            continue
+        if stripped.startswith("> 明天我想：") or stripped.startswith("> _写一句话"):
+            continue
+        cleaned = re.sub(r"^>\s?", "", stripped).strip()
+        if cleaned:
+            lines.append(cleaned)
+    return " ".join(lines).strip()
+
+
+def _build_recent_topic_history(date_str: str, days: int = 7) -> list[dict[str, Any]]:
+    """Build recent topic history from prior Daily H3 anchors."""
+    try:
+        current_date = date.fromisoformat(date_str)
+        daily_dir = _daily_dir_from_config()
+    except (OSError, ValueError):
+        return []
+
+    topics: dict[str, dict[str, Any]] = {}
+    for offset in range(days, 0, -1):
+        active_date = current_date - timedelta(days=offset)
+        active_date_str = active_date.isoformat()
+        daily_path = daily_dir / f"{active_date_str}.md"
+        try:
+            if not daily_path.exists():
+                continue
+            text = daily_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        matches = list(re.finditer(r"^### \[\[(?P<anchor>[^|\]]+)\|(?P<display>[^\]]+)\]\]", text, re.MULTILINE))
+        for match in matches:
+            anchor = match.group("anchor").strip()
+            display = match.group("display").strip()
+            body_start = match.end()
+            next_match = re.search(r"^(?:### |## )", text[body_start:], re.MULTILINE)
+            body_end = body_start + next_match.start() if next_match else len(text)
+            summary = _topic_history_summary(text[body_start:body_end])
+            record = topics.setdefault(
+                anchor,
+                {
+                    "anchor": anchor,
+                    "display": display,
+                    "active_dates": [],
+                    "last_status": "new",
+                    "last_summary": "",
+                },
+            )
+            record["display"] = display
+            record["active_dates"] = [*record["active_dates"], active_date_str]
+            record["last_summary"] = summary
+
+    for record in topics.values():
+        active_dates = record["active_dates"]
+        record["last_status"] = _topic_history_status(active_dates)
+
+    return sorted(topics.values(), key=lambda item: item["active_dates"][-1], reverse=True)
+
+
+def _topic_history_summary(markdown: str) -> str:
+    """Extract a compact summary from a topic section body."""
+    plain = re.sub(r"^\s*[-*>#]+\s*", "", markdown, flags=re.MULTILINE)
+    plain = plain.strip()
+    if not plain:
+        return ""
+    parts = [part.strip() for part in re.split(r"[。.!?！？\n]+", plain) if part.strip()]
+    summary = " ".join(parts[:2]).strip() if parts else plain
+    return summary[:80].strip()
+
+
+def _topic_history_status(active_dates: list[str]) -> str:
+    """Classify recent topic continuity."""
+    if len(active_dates) <= 1:
+        return "new"
+    parsed_dates = [date.fromisoformat(item) for item in active_dates]
+    current_chain = 1
+    max_chain = 1
+    for previous, current in zip(parsed_dates, parsed_dates[1:]):
+        if (current - previous).days <= 1:
+            current_chain += 1
+            max_chain = max(max_chain, current_chain)
+        else:
+            current_chain = 1
+    if max_chain >= 2 and max_chain / len(parsed_dates) >= 0.5:
+        return "active"
+    return "reopens"
+
+
 def _payload_float(payload: Mapping[str, Any], key: str, default: float = 0.0) -> float:
     try:
         return float(payload.get(key) or default)
@@ -145,7 +266,12 @@ class FlagshipSingleStepStrategy(DailyStrategy):
         from keypulse.prompts.loader import load_prompt
 
         compact = [to_compact_event(event) for event in events]
-        payload: dict[str, Any] = {"date": date_str, "events": compact}
+        payload: dict[str, Any] = {
+            "date": date_str,
+            "events": compact,
+            "yesterday_anchor": _load_yesterday_anchor(date_str),
+            "recent_topic_history": _build_recent_topic_history(date_str, days=7),
+        }
 
         try:
             spec = load_prompt(self.capability)

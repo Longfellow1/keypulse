@@ -41,3 +41,26 @@ This project is indexed by GitNexus as **keypulse** (10292 symbols, 17189 relati
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## 输出质量标准 — Gold Set
+
+任何用户可见的 LLM 产出（daily / weekly / skill propose / 其他直接给用户看的总结）统一走 Gold Set 流程，不允许"一版定稿"或"改完 prompt 没对照就上线"。
+
+### 流程
+
+1. **起 2-3 个候选版本**：Opus 4.7 用不同 prompt / 视角 / 详略各起一版
+2. **人工对照微调**：挑出最佳版，标记 anti-pattern（套话、流水话、堆专有词等）
+3. **固化为 gold set baseline**：作为该任务的退化检查锚点
+4. **后续 prompt 改动跟 baseline 比**：通过 daily_validator / weekly_validator 之类的工具确认不退化才能合并
+
+### 禁止
+
+- 一版直接定稿
+- 没经过人工对照就上线 prompt
+- 改 prompt 不跑 validator 对照 baseline
+
+### 现有 gold set
+
+- `daily` — `docs/golden-daily/2026-05-06.md`（黄金 baseline，validator score ≥ 97 不退化）+ `2026-05-09.md`
+- `weekly` — `docs/golden-weekly/2026-W19-exec.md` + `2026-W19-plain.md`（M5 内容修后会重起 baseline）
+- `skill propose` — 待 v0 hello world 跑通后建立
