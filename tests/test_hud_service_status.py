@@ -50,7 +50,7 @@ def test_determine_service_status_falls_back_to_legacy_codes_when_capabilities_m
     assert action == ""
 
 
-def test_determine_service_status_surfaces_action_for_ax_denied(monkeypatch) -> None:
+def test_determine_service_status_surfaces_hint_action_for_ax_denied(monkeypatch) -> None:
     monkeypatch.setattr(
         summary,
         "load_capability_states",
@@ -68,8 +68,8 @@ def test_determine_service_status_surfaces_action_for_ax_denied(monkeypatch) -> 
         capture_status="running", health_ok=True
     )
 
-    assert level == "err"
-    assert label == "采集异常"
+    assert level == "warn"
+    assert label == "采集建议"
     assert "辅助功能" in hint
     assert action.startswith("open://")
     assert "Privacy_Accessibility" in action

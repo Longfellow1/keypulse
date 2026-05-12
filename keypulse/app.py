@@ -17,8 +17,21 @@ from keypulse.utils.logging import setup_logging, get_logger
 from keypulse.store.db import init_db
 
 logger = get_logger("app")
-_COMPAT_CAPTURE_CAPS = {"appkit_runtime", "accessibility_permission", "clipboard_watcher"}
-_COMPAT_LLM_CAPS = {"llm_backend"}
+_CAPTURE_FACT_CAPS = {
+    "clipboard_watcher",
+    "ax_text_watcher",
+    "window_watcher",
+    "browser_watcher",
+    "ocr_watcher",
+}
+_CAPTURE_PROBE_CAPS = {
+    "accessibility_permission",
+    "screen_recording_permission",
+    "appkit_runtime",
+}
+_LLM_FACT_CAPS = {"llm_backend"}
+_COMPAT_CAPTURE_CAPS = _CAPTURE_FACT_CAPS
+_COMPAT_LLM_CAPS = _LLM_FACT_CAPS
 
 
 def daemonize(pid_path: Path):
@@ -65,8 +78,8 @@ def _run_capability_self_check(registry: CapabilityRegistry) -> None:
     states = registry.monitor_all()
     save_capability_states(states)
 
-    capture_failure = registry.select_failure(states, names=_COMPAT_CAPTURE_CAPS)
-    llm_failure = registry.select_failure(states, names=_COMPAT_LLM_CAPS)
+    capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS)
+    llm_failure = registry.select_failure(states, names=_LLM_FACT_CAPS)
     set_state("capture_error_code", "" if capture_failure is None else capture_failure.state.code)
     set_state("llm_error_code", "" if llm_failure is None else llm_failure.state.code)
 

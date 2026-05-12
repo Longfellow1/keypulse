@@ -8,6 +8,7 @@ from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from keypulse.app import _CAPTURE_FACT_CAPS, _CAPTURE_PROBE_CAPS, _LLM_FACT_CAPS
 from keypulse.capabilities.base import HealthState
 from keypulse.capabilities.registry import get_default_registry
 from keypulse.capabilities.store import load_states as load_capability_states
@@ -100,8 +101,7 @@ def _companion_days(today_iso: str) -> int:
     return max((today - install_date).days + 1, 1)
 
 
-_CAPTURE_CAPS = {"appkit_runtime", "accessibility_permission", "clipboard_watcher"}
-_LLM_CAPS = {"llm_backend"}
+_LEGACY_CAPTURE_SIGNAL_CAPS = _CAPTURE_FACT_CAPS | _CAPTURE_PROBE_CAPS
 
 
 def _capability_states_from_health(payload: dict[str, Any] | None) -> dict[str, HealthState]:
@@ -136,6 +136,10 @@ def _legacy_signal(code: str, *, names: set[str], fallback_label: str, fallback_
     return (signal.level, signal.label, signal.hint or "", signal.action or "")
 
 
+def _probe_hint(label: str, hint: str, action: str) -> tuple[str, str, str, str]:
+    return ("warn", "采集建议", hint or label, action)
+
+
 def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[str, str, str, str]:
     """Returns (level, label, hint_message, hint_action). Level ∈ ok/warn/err/gray.
 
@@ -145,10 +149,11 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
 
     Priority (first hit wins):
       1. paused              → gray
-      2. capture_error_code  → err  (specific hint per code)
+      2. capture fact failure → err  (specific hint per code)
       3. health stale        → warn (体检员失联，但采集本身可能还活着)
       4. llm_error_code      → warn
-      5. ok                  → ok
+      5. capture probe fail  → warn (permission/runtime hint, not global error)
+      6. ok                  → ok
     """
     if capture_status == "paused":
         return ("gray", "已暂停", "", "")
@@ -157,17 +162,32 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
     if not capability_states:
         capability_states = _capability_states_from_health(read_health())
     if capability_states:
-        signal = get_default_registry().aggregate_signal(capability_states)
-        return (signal.level, signal.label, signal.hint or "", signal.action or "")
+        registry = get_default_registry()
+        capture_failure = registry.select_failure(capability_states, names=_CAPTURE_FACT_CAPS)
+        if capture_failure is not None:
+            signal = capture_failure.signal
+            return ("err", signal.label, signal.hint or "", signal.action or "")
+
+        non_probe_names = set(capability_states) - _CAPTURE_PROBE_CAPS
+        non_probe_failure = registry.select_failure(capability_states, names=non_probe_names)
+        if non_probe_failure is not None:
+            signal = non_probe_failure.signal
+            return (signal.level, signal.label, signal.hint or "", signal.action or "")
+
+        probe_failure = registry.select_failure(capability_states, names=_CAPTURE_PROBE_CAPS)
+        if probe_failure is not None:
+            signal = probe_failure.signal
+            return _probe_hint(signal.label, signal.hint or "", signal.action or "")
 
     capture_code = (get_state("capture_error_code") or "").strip()
     if capture_code:
-        return _legacy_signal(
+        _level, label, hint, action = _legacy_signal(
             capture_code,
-            names=_CAPTURE_CAPS,
+            names=_LEGACY_CAPTURE_SIGNAL_CAPS,
             fallback_label="采集异常",
             fallback_hint="采集组件异常，请重启 daemon",
         )
+        return ("err", label, hint, action)
 
     if not health_ok:
         return ("warn", "体检失联", "健康监测未在运行，状态可能不准；请运行 make install 重挂体检", "")
@@ -176,7 +196,7 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
     if llm_code:
         return _legacy_signal(
             llm_code,
-            names=_LLM_CAPS,
+            names=_LLM_FACT_CAPS,
             fallback_label="LLM 异常",
             fallback_hint="LLM 调用异常，请稍后重试",
         )
