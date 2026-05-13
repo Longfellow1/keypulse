@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 MIGRATIONS = [
     # v1
@@ -181,6 +181,12 @@ MIGRATIONS = [
     # v18 — daily_skeletons add timezone column
     """
     ALTER TABLE daily_skeletons ADD COLUMN timezone TEXT;
+    """,
+    # v19 — daily v3 removed hourly summaries and daily skeleton cache tables
+    """
+    DROP INDEX IF EXISTS idx_hourly_summaries_date;
+    DROP TABLE IF EXISTS hourly_summaries;
+    DROP TABLE IF EXISTS daily_skeletons;
     """,
 ]
 

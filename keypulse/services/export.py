@@ -100,10 +100,6 @@ def export_obsidian(
     incremental: bool = False,
     db_path: str | None = None,
     cursor_path: str | None = None,
-    use_narrative_v2: bool = False,
-    use_narrative_skeleton: bool = False,
-    use_things_narrative: bool = False,
-    things_idle_threshold_minutes: int = 30,
     wiki_link_mode: str = "relative",
     humanize_titles: bool = False,
 ) -> list[str]:
@@ -116,10 +112,6 @@ def export_obsidian(
         incremental=incremental,
         db_path=db_path,
         cursor_path=cursor_path,
-        use_narrative_v2=use_narrative_v2,
-        use_narrative_skeleton=use_narrative_skeleton,
-        use_things_narrative=use_things_narrative,
-        things_idle_threshold_minutes=things_idle_threshold_minutes,
         wiki_link_mode=wiki_link_mode,
         humanize_titles=humanize_titles,
     )

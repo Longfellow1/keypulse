@@ -51,9 +51,12 @@ _ACTION_OBJECT_TITLE_RE = re.compile(
     r"^(修改|查看|浏览|登录|启动|设置|配置|打开|访问|抓取|刷新|检查|连接|执行|输入)"
     r"[A-Za-z0-9一-龥/. _-]+$"
 )
+_TIME_RE = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)\b")
+_EVENT_CARD_LINK_RE = re.compile(r"^\s*-\s+\[\[\.{0,2}/?\.keypulse/events/", re.MULTILINE)
 
 _REQUIRED_SECTIONS = ("今日要点",)
 _RECOMMENDED_SECTIONS = ("今天做的事", "今日做的事")
+_MAX_DAILY_EVENT_CARDS = 10
 
 
 def _collect_headings(markdown: str) -> list[dict[str, Any]]:
@@ -107,6 +110,46 @@ def _topic_segments(markdown: str) -> list[dict[str, Any]]:
         body = "\n".join(lines[body_start:body_end]).strip()
         segments.append({"title": h["title"], "body": body})
     return segments
+
+
+def _section_body(markdown: str, heading_keyword: str) -> str:
+    lines = markdown.splitlines()
+    start = -1
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("## ") and heading_keyword in stripped:
+            start = idx + 1
+            break
+    if start < 0:
+        return ""
+    collected: list[str] = []
+    for line in lines[start:]:
+        if line.strip().startswith("## "):
+            break
+        collected.append(line)
+    return "\n".join(collected)
+
+
+def _time_minutes(text: str) -> list[int]:
+    minutes: list[int] = []
+    for match in _TIME_RE.finditer(text):
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        minutes.append(hour * 60 + minute)
+    return minutes
+
+
+def _day_periods(minutes: list[int]) -> set[str]:
+    periods: set[str] = set()
+    for value in minutes:
+        hour = value // 60
+        if 5 <= hour < 12:
+            periods.add("morning")
+        elif 12 <= hour < 18:
+            periods.add("afternoon")
+        elif 18 <= hour < 24:
+            periods.add("evening")
+    return periods
 
 
 def _validate_structure(
@@ -175,6 +218,17 @@ def _validate_coverage(
                 severity="error",
                 message="主题段缺决策或可见产出（'决定/拍板/敲定' 或 'commit/落地/提交' 任一）",
                 location=seg["title"],
+            ))
+
+    narrative_minutes = _time_minutes("\n".join(str(seg["body"]) for seg in segments))
+    if narrative_minutes:
+        span_minutes = max(narrative_minutes) - min(narrative_minutes)
+        if span_minutes < 240 and len(_day_periods(narrative_minutes)) < 2:
+            failures.append(DailyValidationFailure(
+                rule="coverage",
+                severity="error",
+                message=f"narrative 时间覆盖不足：跨度 {span_minutes // 60}h{span_minutes % 60:02d}m，少于 4 小时且未覆盖 2 个日间段",
+                location="今天做的事",
             ))
 
     if daily_summary is not None:
@@ -281,6 +335,8 @@ def _validate_antipattern(
 
     _check_h3_truncation(segments, failures)
     _check_duplicate_bullets(segments, failures)
+    _check_daily_event_card_count(markdown, failures)
+    _check_timezone_consistency(markdown, segments, failures)
 
     if daily_summary is not None:
         events = daily_summary.get("events") or []
@@ -306,6 +362,42 @@ def _validate_antipattern(
 
 
 _SENTENCE_ENDS = "。！？.!?"
+
+
+def _check_daily_event_card_count(markdown: str, failures: list[DailyValidationFailure]) -> None:
+    body = _section_body(markdown, "今天的事件卡")
+    if not body:
+        return
+    count = len(_EVENT_CARD_LINK_RE.findall(body))
+    if count > _MAX_DAILY_EVENT_CARDS:
+        failures.append(DailyValidationFailure(
+            rule="antipattern",
+            severity="error",
+            message=f"事件卡数量 {count} 超过上限 {_MAX_DAILY_EVENT_CARDS}",
+            location="今天的事件卡",
+        ))
+
+
+def _check_timezone_consistency(
+    markdown: str,
+    segments: list[dict[str, Any]],
+    failures: list[DailyValidationFailure],
+) -> None:
+    if "Asia/Shanghai" not in markdown:
+        return
+    minutes = _time_minutes("\n".join(str(seg["body"]) for seg in segments))
+    if len(minutes) < 2:
+        return
+    early = [value for value in minutes if value < 8 * 60]
+    daytime = [value for value in minutes if value >= 8 * 60]
+    if early and not daytime:
+        examples = ", ".join(f"{value // 60:02d}:{value % 60:02d}" for value in early[:3])
+        failures.append(DailyValidationFailure(
+            rule="objectivity",
+            severity="error",
+            message=f"Asia/Shanghai 正文时间疑似仍为 UTC：只出现凌晨时间 {examples}",
+            location="今天做的事",
+        ))
 
 
 def _check_h3_truncation(segments: list[dict[str, Any]], failures: list[DailyValidationFailure]) -> None:

@@ -21,7 +21,7 @@ class _Config:
     obsidian: _ObsidianConfig
 
 
-def test_obsidian_sync_defaults_to_yesterday(monkeypatch):
+def test_obsidian_sync_defaults_to_today(monkeypatch):
     captured = {}
 
     def fake_get_config():
@@ -46,10 +46,6 @@ def test_obsidian_sync_defaults_to_yesterday(monkeypatch):
         incremental=False,
         db_path=None,
         cursor_path=None,
-        use_narrative_v2=False,
-        use_narrative_skeleton=False,
-        use_things_narrative=False,
-        things_idle_threshold_minutes=30,
         wiki_link_mode="relative",
         humanize_titles=False,
     ):
@@ -80,11 +76,11 @@ def test_obsidian_sync_defaults_to_yesterday(monkeypatch):
     result = runner.invoke(main, ["obsidian", "sync"])
 
     assert result.exit_code == 0
-    expected_yesterday = resolve_local_date(None, yesterday=True)
+    expected_today = resolve_local_date("today", yesterday=False)
     assert captured["db_checked"] is True
     assert captured["sink_resolved"] is True
     assert captured["output_dir"] == "/tmp/test-vault"
-    assert captured["date_str"] == expected_yesterday
+    assert captured["date_str"] == expected_today
     assert captured["vault_name"] == "KeyPulse"
     assert captured["incremental"] is False
     assert captured["db_path"] is not None
@@ -115,10 +111,6 @@ def test_obsidian_sync_incremental_defaults_to_today(monkeypatch):
         incremental=False,
         db_path=None,
         cursor_path=None,
-        use_narrative_v2=False,
-        use_narrative_skeleton=False,
-        use_things_narrative=False,
-        things_idle_threshold_minutes=30,
         wiki_link_mode="relative",
         humanize_titles=False,
     ):
@@ -157,6 +149,33 @@ def test_obsidian_sync_incremental_defaults_to_today(monkeypatch):
     assert captured["vault_name"] == "KeyPulse"
     assert captured["incremental"] is True
     assert captured["db_path"] is not None
+
+
+def test_sync_bundle_runs_daily_orchestrator_after_event_export(monkeypatch, tmp_path):
+    from keypulse.cli import _sync_obsidian_bundle
+
+    called: list[tuple[str, object]] = []
+
+    cfg = type("Cfg", (), {
+        "db_path_expanded": tmp_path / "keypulse.db",
+        "obsidian": _ObsidianConfig(),
+    })()
+
+    monkeypatch.setattr(
+        "keypulse.cli.resolve_active_sink",
+        lambda *args, **kwargs: type("Sink", (), {"kind": "obsidian", "output_dir": tmp_path / "vault", "source": "filesystem"})(),
+    )
+    monkeypatch.setattr("keypulse.cli.load_model_gateway", lambda cfg: object())
+    monkeypatch.setattr("keypulse.cli.export_obsidian", lambda *args, **kwargs: [tmp_path / "event.md"])
+    monkeypatch.setattr(
+        "keypulse.cli.run_daily_after_obsidian_sync",
+        lambda date_str, *, db_path: called.append((date_str, db_path)),
+    )
+
+    written, _target, _kind = _sync_obsidian_bundle(cfg, "2026-05-13", incremental=True)
+
+    assert written == 1
+    assert called == [("2026-05-13", tmp_path / "keypulse.db")]
 
 
 def test_obsidian_sync_rejects_mutually_exclusive_options(monkeypatch):

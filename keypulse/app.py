@@ -15,6 +15,7 @@ from keypulse.config import Config
 from keypulse.utils.lock import SingleInstanceLock
 from keypulse.utils.logging import setup_logging, get_logger
 from keypulse.store.db import init_db
+from keypulse.pipeline.daily_orchestrator import run_daily_after_obsidian_sync
 
 logger = get_logger("app")
 _CAPTURE_FACT_CAPS = {
@@ -130,7 +131,6 @@ def _run_obsidian_sync_core(cfg: Config, date: Optional[str] = None) -> None:
     target_vault = cfg.obsidian.vault_name
     gateway = load_model_gateway(cfg) if hasattr(cfg, "model") else None
 
-    pipeline_cfg = getattr(cfg, "pipeline", None)
     written = export_obsidian(
         target_output,
         date_str=date_str,
@@ -138,12 +138,14 @@ def _run_obsidian_sync_core(cfg: Config, date: Optional[str] = None) -> None:
         model_gateway=gateway,
         incremental=False,
         db_path=str(cfg.db_path_expanded),
-        use_narrative_v2=getattr(pipeline_cfg, "use_narrative_v2", False),
-        use_narrative_skeleton=getattr(pipeline_cfg, "use_narrative_skeleton", False),
-        use_things_narrative=getattr(pipeline_cfg, "use_things_narrative", True),
-        things_idle_threshold_minutes=getattr(pipeline_cfg, "things_idle_threshold_minutes", 30),
         humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
     )
+    try:
+        ran = run_daily_after_obsidian_sync(date_str, db_path=cfg.db_path_expanded)
+        if ran:
+            logger.info("daily_orchestrator ran via obsidian sync")
+    except Exception as exc:
+        logger.error(f"daily_orchestrator failed via obsidian sync: {exc}")
     logger.info(f"Obsidian sync completed: {len(written)} notes to {target_output}")
 
 

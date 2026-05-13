@@ -838,12 +838,18 @@ class ModelGateway:
             "tier": tier,
             "in_tokens": int(in_tokens),
             "out_tokens": int(out_tokens),
-            "cost_usd": 0.0,
+            "cost_usd": float(cost_usd),
             "cache_hit": bool(cache_hit),
             "prompt_version": prompt_version or "",
         }
         with self._llm_cost_path().open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+    def _append_cost_row_safe(self, **kwargs: Any) -> None:
+        try:
+            self._append_cost_row(**kwargs)
+        except Exception as exc:
+            logger.warning("cost trail append failed capability=%s exc=%s", kwargs.get("capability"), exc)
 
     def _schema_validate(self, schema: Any, output_text: str) -> Any:
         if schema is None:
@@ -1022,6 +1028,16 @@ class ModelGateway:
             try:
                 cached_output = str(cache_payload.get("output") or "")
                 validated_cached = self._schema_validate(schema, cached_output)
+                self._append_cost_row_safe(
+                    capability=capability,
+                    model_name=str(cache_payload.get("model") or model_name),
+                    tier=str(cache_payload.get("tier") or tier),
+                    in_tokens=int(cache_payload.get("in_tokens") or _estimate_tokens(prompt)),
+                    out_tokens=int(cache_payload.get("out_tokens") or _estimate_tokens(cached_output)),
+                    cost_usd=0.0,
+                    cache_hit=True,
+                    prompt_version=str(cache_payload.get("prompt_version") or prompt_version or ""),
+                )
                 return validated_cached
             except Exception:
                 logger.warning("cache decode/validation failed for %s; refreshing", cache_key)
@@ -1043,7 +1059,7 @@ class ModelGateway:
                 validated = self._schema_validate(schema, output_text)
                 in_tokens = int(result.get("in_tokens") or _estimate_tokens(prompt))
                 out_tokens = int(result.get("out_tokens") or _estimate_tokens(output_text))
-                cost_usd = 0.0
+                cost_usd = float(result.get("cost_usd") or 0.0)
 
                 payload = {
                     "key": cache_key,
@@ -1069,10 +1085,30 @@ class ModelGateway:
                     cache_path,
                     json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
                 )
+                self._append_cost_row_safe(
+                    capability=capability,
+                    model_name=model_name,
+                    tier=tier,
+                    in_tokens=in_tokens,
+                    out_tokens=out_tokens,
+                    cost_usd=cost_usd,
+                    cache_hit=False,
+                    prompt_version=prompt_version,
+                )
                 return validated
             except Exception as exc:
                 last_error = exc
                 continue
+        self._append_cost_row_safe(
+            capability=capability,
+            model_name=model_name,
+            tier=tier,
+            in_tokens=_estimate_tokens(prompt),
+            out_tokens=0,
+            cost_usd=0.0,
+            cache_hit=False,
+            prompt_version=prompt_version,
+        )
         raise LLMCallError(f"capability={capability} failed after {max_attempts} attempts: {last_error}") from last_error
 
     def normalize_markdown(self, text: str, prompt_patch: str = "") -> str:

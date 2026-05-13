@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -16,8 +17,11 @@ from keypulse.pipeline.daily_orchestrator import (
     _component_time_range,
     _event_value_density,
     _fallback_summary_clusters_from_events,
+    maybe_run_daily_for_sync,
+    run_daily_after_obsidian_sync,
 )
 from keypulse.pipeline.model import ModelBackend
+from keypulse.pipeline.triggers import record_trigger
 from keypulse.store.db import close, init_db
 from keypulse.store.models import RawEvent
 from keypulse.store.repository import insert_raw_event
@@ -220,6 +224,106 @@ def test_daily_orchestrator_llm_time_exports_use_local_timezone(monkeypatch):
 
     low_volume = _fallback_summary_clusters_from_events("2026-05-12", events)
     assert low_volume[0]["time_range"] == ["11:11", "11:16"]
+
+
+def test_maybe_run_daily_for_sync_skips_when_t1_gate_blocks(tmp_path, monkeypatch):
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "keypulse.pipeline.triggers.should_trigger",
+        lambda *args, **kwargs: (False, "T1:no_activity_5h"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.run_daily",
+        lambda date_str, trigger="18:00": calls.append((date_str, trigger)),
+    )
+
+    assert maybe_run_daily_for_sync(
+        "2026-05-13",
+        db_path=tmp_path / "keypulse.db",
+        now=datetime(2026, 5, 13, 4, 0, 0),
+    ) == (False, "skip:no_activity")
+    assert calls == []
+
+
+def test_maybe_run_daily_for_sync_skips_recent_success_dedupe(tmp_path, monkeypatch):
+    db_path = tmp_path / "keypulse.db"
+    now = datetime(2026, 5, 13, 4, 10, 0)
+    record_trigger(
+        "T2",
+        now=datetime(2026, 5, 13, 4, 0, 0),
+        db_path=db_path,
+        outcome="ran:ok",
+        note="daily_orchestrator:2026-05-13",
+    )
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "keypulse.pipeline.triggers.should_trigger",
+        lambda *args, **kwargs: (True, "T1:activity_ok"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.run_daily",
+        lambda date_str, trigger="18:00": calls.append((date_str, trigger)),
+    )
+
+    assert maybe_run_daily_for_sync("2026-05-13", db_path, now=now) == (False, "skip:dedupe_15min")
+    assert calls == []
+
+
+def test_maybe_run_daily_for_sync_runs_daily_when_gates_allow(tmp_path, monkeypatch):
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "keypulse.pipeline.triggers.should_trigger",
+        lambda *args, **kwargs: (True, "T1:activity_ok"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.run_daily",
+        lambda date_str, trigger="18:00": calls.append((date_str, trigger)),
+    )
+
+    ran, reason = maybe_run_daily_for_sync(
+        "2026-05-13",
+        db_path=tmp_path / "keypulse.db",
+        now=datetime(2026, 5, 13, 4, 0, 0),
+    )
+
+    assert ran is True
+    assert reason == "ran:ok"
+    assert calls == [("2026-05-13", "18:00")]
+
+
+def test_maybe_run_daily_for_sync_returns_error_without_raising(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "keypulse.pipeline.triggers.should_trigger",
+        lambda *args, **kwargs: (True, "T1:activity_ok"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.run_daily",
+        lambda date_str, trigger="18:00": (_ for _ in ()).throw(RuntimeError("llm down")),
+    )
+
+    ran, reason = maybe_run_daily_for_sync(
+        "2026-05-13",
+        db_path=tmp_path / "keypulse.db",
+        now=datetime(2026, 5, 13, 4, 0, 0),
+    )
+
+    assert ran is False
+    assert reason.startswith("error:RuntimeError:")
+    assert "llm down" in reason
+
+
+def test_run_daily_after_obsidian_sync_wraps_maybe_helper(tmp_path, monkeypatch):
+    calls: list[tuple[str, Path]] = []
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.maybe_run_daily_for_sync",
+        lambda date_str, db_path, now=None: calls.append((date_str, db_path)) or (True, "ran:ok"),
+    )
+
+    assert run_daily_after_obsidian_sync(
+        "2026-05-13",
+        db_path=tmp_path / "keypulse.db",
+    ) is True
+    assert calls == [("2026-05-13", tmp_path / "keypulse.db")]
 
 
 def test_event_value_density_promotes_user_decisions_over_tool_echo():
@@ -425,6 +529,8 @@ def _seed_minimal_events() -> None:
 
 def test_daily_cli_falls_back_to_unified_renderer_when_mock_llm_keeps_failing(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
     init_db(tmp_path / ".keypulse" / "keypulse.db")
     _seed_minimal_events()
     monkeypatch.setenv("MOCK_LLM_FAILS", "99")

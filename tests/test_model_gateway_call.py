@@ -48,7 +48,7 @@ class _OutputSchema(BaseModel):
     ok: str
 
 
-def test_call_cache_miss_then_hit_does_not_write_cost_rows(tmp_path, monkeypatch):
+def test_call_cache_miss_then_hit_writes_cost_rows(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     gateway = ModelGateway(_cfg(tmp_path))
 
@@ -74,7 +74,19 @@ def test_call_cache_miss_then_hit_does_not_write_cost_rows(tmp_path, monkeypatch
     assert len(calls) == 1
 
     cost_path = tmp_path / ".keypulse" / "cost.jsonl"
-    assert not cost_path.exists()
+    rows = [json.loads(line) for line in cost_path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 2
+    assert rows[0]["capability"] == "cache_test"
+    assert rows[0]["model"] == "local/local-model"
+    assert rows[0]["in_tokens"] == 120
+    assert rows[0]["out_tokens"] == 20
+    assert rows[0]["cost_usd"] == 0.001
+    assert rows[0]["cache_hit"] is False
+    assert rows[0]["prompt_version"] == "L1.v1"
+    assert rows[1]["cache_hit"] is True
+    assert rows[1]["in_tokens"] == 120
+    assert rows[1]["out_tokens"] == 20
+    assert rows[1]["cost_usd"] == 0.0
 
 
 def test_call_uses_configured_cloud_backend_when_profile_selects_cloud(tmp_path, monkeypatch):
@@ -224,6 +236,14 @@ def test_call_retry_exhausted_raises_llm_call_error(tmp_path, monkeypatch):
 
     with pytest.raises(LLMCallError, match="capability=cache_test"):
         gateway.call("cache_test", "hello", prompt_version="L1.v1")
+
+    cost_path = tmp_path / ".keypulse" / "cost.jsonl"
+    rows = [json.loads(line) for line in cost_path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["capability"] == "cache_test"
+    assert rows[0]["cache_hit"] is False
+    assert rows[0]["in_tokens"] > 0
+    assert rows[0]["out_tokens"] == 0
 
 
 def test_strip_json_fence_handles_common_wrappings():
