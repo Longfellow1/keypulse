@@ -65,7 +65,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
             cfg,
             date_str="today",
             capture_status=self.capture_status,
-            health_ok=self._compute_health_ok(),
         )
 
         # 1. 状态栏 Item
@@ -117,12 +116,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
             alerts = ["No alert details were provided."]
         return ("Health: Alert", "\n".join(f"• {item}" for item in alerts))
 
-    def _compute_health_ok(self) -> bool:
-        return isinstance(self.health, dict) and health_status_emoji(self.health) == "🟢"
-
-    def _health_ok(self) -> bool:
-        return self._compute_health_ok()
-
     def refresh_status(self):
         self.health = read_health()
         self.capture_status = str(get_state("status") or "running")
@@ -132,7 +125,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
             self.cfg,
             date_str="today",
             capture_status=self.capture_status,
-            health_ok=self._compute_health_ok(),
         )
         if self.popover.isShown():
             self._measured_height = None
@@ -165,7 +157,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
         html = build_monitor_html(
             self.snapshot,
             capture_status=self.capture_status,
-            health_ok=self._health_ok(),
         )
         webview.loadHTMLString_baseURL_(html, None)
         self.webview = webview

@@ -183,7 +183,7 @@ def _weekly_notice_banner(snapshot: HUDSnapshot) -> str:
     return f'<div class="weekly-notice">{escape(notice)}</div>'
 
 
-def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str, health_ok: bool = True) -> str:
+def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
     is_running = capture_status != "paused"
     pause_label = "⏸ 暂停" if is_running else "▶ 恢复"
     suggestions = _render_signals(list(snapshot.top_signals))

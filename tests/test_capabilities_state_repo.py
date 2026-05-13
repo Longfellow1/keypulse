@@ -184,7 +184,7 @@ def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) 
         from keypulse.hud.summary import determine_service_status
 
         level, label, hint, action = determine_service_status(
-            capture_status="running", health_ok=True,
+            capture_status="running",
         )
         assert level == "warn"
         assert "辅助功能" in (hint or "") or "ax" in (hint or "").lower()
