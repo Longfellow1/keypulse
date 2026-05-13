@@ -46,7 +46,7 @@ from keypulse.pipeline.model import LLMCallError, ModelGateway, load_model_gatew
 from keypulse.pipeline.model_card import resolve_tier
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.atomic_io import atomic_write_text
-from keypulse.utils.dates import local_day_bounds
+from keypulse.utils.dates import local_day_bounds, local_timezone
 from keypulse.utils.paths import get_data_dir
 
 
@@ -60,7 +60,7 @@ _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
 _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 _TOOL_ECHO_SOURCES = frozenset({"ax_text", "ocr_text", "window", "idle", "knowledgec", "zsh_history"})
 _USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli"})
-_FLAGSHIP_EVENT_LIMIT = 100
+_FLAGSHIP_EVENT_LIMIT = 40
 _FLAGSHIP_NOISE_MARKERS = (
     "export ",
     "export-",
@@ -96,6 +96,27 @@ class DailySummary:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _to_local_datetime(ts_iso: str) -> datetime | None:
+    text = str(ts_iso or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone(local_timezone())
+
+
+def _to_local_hhmm(ts_iso: str) -> str:
+    local_dt = _to_local_datetime(ts_iso)
+    return local_dt.strftime("%H:%M") if local_dt is not None else ""
+
+
+def _to_local_mmdd_hhmm(ts_iso: str) -> str:
+    local_dt = _to_local_datetime(ts_iso)
+    return local_dt.strftime("%m-%d %H:%M") if local_dt is not None else ""
 
 
 def _parse_metadata(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -262,6 +283,13 @@ def _flagship_event_score(event: Mapping[str, Any]) -> float:
     return round(score, 4)
 
 
+def _event_hour_key(event: Mapping[str, Any]) -> str:
+    ts = str(event.get("ts_start") or "").strip()
+    if len(ts) >= 13 and ts[10] == "T":
+        return ts[:13]
+    return ""
+
+
 def _cap_flagship_events_for_prompt(
     events: list[dict[str, Any]],
     *,
@@ -275,7 +303,30 @@ def _cap_flagship_events_for_prompt(
         key=lambda item: (_flagship_event_score(item[1]), item[0]),
         reverse=True,
     )
-    keep_indices = sorted(index for index, _event in ranked[:limit])
+    indices_by_hour: dict[str, list[int]] = {}
+    for index, event in enumerate(events):
+        hour = _event_hour_key(event)
+        if hour:
+            indices_by_hour.setdefault(hour, []).append(index)
+
+    keep: set[int] = set()
+    hourly_representatives: list[tuple[float, int]] = []
+    for indices in indices_by_hour.values():
+        best_index = max(indices, key=lambda index: (_flagship_event_score(events[index]), -index))
+        best_score = _flagship_event_score(events[best_index])
+        if best_score > 0:
+            hourly_representatives.append((best_score, best_index))
+
+    if len(hourly_representatives) > limit:
+        hourly_representatives = sorted(hourly_representatives, key=lambda item: (item[0], item[1]), reverse=True)[:limit]
+    keep.update(index for _score, index in hourly_representatives)
+
+    for index, _event in ranked:
+        if len(keep) >= limit:
+            break
+        keep.add(index)
+
+    keep_indices = sorted(keep)
     return [events[index] for index in keep_indices], True
 
 
@@ -583,10 +634,14 @@ def _component_time_range(component_events: list[dict[str, Any]]) -> tuple[str, 
     times: list[datetime] = []
     for event in component_events:
         ts = str(event.get("ts_start") or "")
-        times.append(datetime.fromisoformat(ts.replace("Z", "+00:00")))
+        parsed = _to_local_datetime(ts)
+        if parsed is not None:
+            times.append(parsed)
+    if not times:
+        return "00:00", "23:59"
     times.sort()
-    start = times[0].astimezone(timezone.utc).strftime("%H:%M")
-    end = times[-1].astimezone(timezone.utc).strftime("%H:%M")
+    start = times[0].strftime("%H:%M")
+    end = times[-1].strftime("%H:%M")
     return start, end
 
 
@@ -850,8 +905,9 @@ def _fallback_summary_clusters_from_events(date_str: str, events: list[dict[str,
     times: list[str] = []
     for event in events:
         ts = str(event.get("ts_start") or "")
-        if len(ts) >= 16:
-            times.append(ts[11:16])
+        local_hhmm = _to_local_hhmm(ts)
+        if local_hhmm:
+            times.append(local_hhmm)
     time_range = [min(times), max(times)] if times else ["00:00", "23:59"]
     return [
         {
@@ -1271,7 +1327,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
                                 "id": str(event.get("id")),
                                 "content": str(event.get("content_text") or ""),
                                 "app": str(event.get("app_name") or ""),
-                                "timestamp": str(event.get("ts_start") or ""),
+                                "timestamp": _to_local_mmdd_hhmm(str(event.get("ts_start") or "")),
                             }
                             for event in component_events
                         ],
