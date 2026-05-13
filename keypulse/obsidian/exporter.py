@@ -280,27 +280,6 @@ def _query_events_by_date(db_path: Path, date_str: str, *, min_id_exclusive: int
     return [dict(row) for row in rows]
 
 
-def _query_sessions_by_date(db_path: Path, date_str: str, *, limit: int = 500) -> list[dict[str, Any]]:
-    if not db_path.exists():
-        return []
-
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            "SELECT * FROM sessions WHERE started_at LIKE ? ORDER BY started_at ASC LIMIT ?",
-            (f"{date_str}%", limit),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [dict(row) for row in rows]
-
-
-def _max_ts_start(rows: list[dict[str, Any]]) -> str | None:
-    timestamps = [str(row.get("ts_start") or "").strip() for row in rows if str(row.get("ts_start") or "").strip()]
-    return max(timestamps) if timestamps else None
-
-
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -435,20 +414,6 @@ def _append_unique_section_lines(
     if merged and merged[-1].strip():
         merged.append("")
     return _replace_section_body(text, heading, merged)
-
-
-def _replace_or_append_top_line(text: str, prefix: str, value: int) -> str:
-    lines = text.splitlines()
-    pattern = re.compile(rf"^{re.escape(prefix)}\s*\d+\s*$")
-    replaced = False
-    for index, line in enumerate(lines):
-        if pattern.match(line.strip()):
-            lines[index] = f"{prefix} {value}"
-            replaced = True
-            break
-    if not replaced:
-        return text
-    return "\n".join(lines).rstrip() + "\n"
 
 
 def _replace_first_matching_line(text: str, pattern: str, replacement: str) -> str:
@@ -1620,53 +1585,16 @@ def export_obsidian_incremental(
         keypulse_home=keypulse_home,
     )
 
-    daily_path = output_path / "Daily" / f"{date_str}.md"
-    previous_day = (datetime.fromisoformat(f"{date_str}T00:00:00+00:00") - timedelta(days=1)).date().isoformat()
-    previous_plan = _read_tomorrow_plan(output_path / "Daily" / f"{previous_day}.md")
-    current_plan_existing = _read_tomorrow_plan(daily_path)
-    existing_daily_text = _read_text(daily_path)
     if db_path_resolved.exists():
         window_raw_events = _query_events_by_date(db_path_resolved, date_str, min_id_exclusive=last_event_id)
-        full_day_raw_events = _query_events_by_date(db_path_resolved, date_str)
-        sessions = _query_sessions_by_date(db_path_resolved, date_str, limit=500)
     else:
         day_since, day_until = local_day_bounds(date_str)
-        full_day_raw_events = query_raw_events(since=day_since, until=day_until, limit=5000)
-        if any(row.get("id") is not None for row in full_day_raw_events):
-            window_raw_events = [row for row in full_day_raw_events if int(row.get("id") or 0) > last_event_id]
+        raw_events = query_raw_events(since=day_since, until=day_until, limit=5000)
+        if any(row.get("id") is not None for row in raw_events):
+            window_raw_events = [row for row in raw_events if int(row.get("id") or 0) > last_event_id]
         else:
-            window_raw_events = list(full_day_raw_events)
-        sessions = []
-        try:
-            from keypulse.store.repository import get_sessions
-
-            sessions = get_sessions(date_str=date_str, limit=500)
-        except Exception:
-            sessions = []
+            window_raw_events = list(raw_events)
     written: list[Path] = []
-
-    if not existing_daily_text:
-        bundle = build_obsidian_bundle(
-            full_day_raw_events,
-            vault_name=vault_name,
-            date_str=date_str,
-            sessions=sessions,
-            model_gateway=model_gateway,
-            previous_plan=previous_plan,
-            current_plan_existing=current_plan_existing,
-            wiki_link_mode=wiki_link_mode,
-            humanize_titles=humanize_titles,
-        )
-        written = write_obsidian_bundle(bundle, output_path)
-        max_new_id = max((int(row.get("id") or 0) for row in window_raw_events), default=last_event_id)
-        _write_cursor_state_atomic(
-            cursor_file,
-            {
-                "last_event_id": max(last_event_id, max_new_id),
-                "last_run_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-        return written
 
     event_items: list[dict[str, Any]] = []
     for raw_event in sorted(window_raw_events, key=lambda row: str(row.get("ts_start") or "")):
@@ -1674,10 +1602,7 @@ def export_obsidian_incremental(
         if item is not None:
             event_items.append(item)
 
-    existing_event_keys = _section_link_keys(existing_daily_text, "## 今天的事件卡", kind="event")
-    existing_topic_keys = _section_link_keys(existing_daily_text, "## 今天涉及的主题", kind="topic")
     topic_items_by_key: dict[str, list[tuple[dict[str, Any], str]]] = defaultdict(list)
-    daily_event_lines: list[str] = []
 
     for item in event_items:
         event_card = _build_event_card(
@@ -1688,21 +1613,14 @@ def export_obsidian_incremental(
             model_gateway=model_gateway,
             humanize_titles=humanize_titles,
         )
-        event_key = _event_link_key_from_target(event_card.path)
-        if event_key in existing_event_keys:
-            continue
-        existing_event_keys.add(event_key)
-        daily_event_lines.append(f"- {_obsidian_link(event_card.path, item['title'], link_formatter=link_formatter)}")
         topic_bucket = _existing_topic_alias(topics_dir, item) or item["topic_key"]
-        topic_items_by_key[topic_bucket].append((item, event_card.path))
         written_path = _write_note_if_missing(output_path, keypulse_home, event_card.as_dict())
         if written_path is not None:
+            topic_items_by_key[topic_bucket].append((item, event_card.path))
             written.append(written_path)
 
-    daily_topic_lines: list[str] = []
     for topic_key, topic_entries in sorted(topic_items_by_key.items()):
         topic_path = topics_dir / f"{topic_key}.md"
-        topic_link = _obsidian_link(f"Topics/{topic_key}.md", _topic_title(topic_key), link_formatter=link_formatter)
         if topic_path.exists():
             topic_text = _read_text(topic_path)
             existing_topic_event_keys = _section_link_keys(topic_text, "## 相关证据", kind="event")
@@ -1727,9 +1645,6 @@ def export_obsidian_incremental(
                 _write_text(topic_path, updated_text)
                 written.append(topic_path)
 
-            if topic_key not in existing_topic_keys:
-                daily_topic_lines.append(f"- {topic_link}")
-                existing_topic_keys.add(topic_key)
             continue
 
         if topic_key == "uncategorized" or len(topic_entries) < 2:
@@ -1746,18 +1661,6 @@ def export_obsidian_incremental(
         written_path = _write_note_if_missing(output_path, keypulse_home, topic_card.as_dict())
         if written_path is not None:
             written.append(written_path)
-        if topic_key not in existing_topic_keys:
-            daily_topic_lines.append(f"- {topic_link}")
-            existing_topic_keys.add(topic_key)
-
-    updated_daily = existing_daily_text
-    updated_daily = _replace_or_append_top_line(updated_daily, "- 事件卡：", len(existing_event_keys))
-    updated_daily = _replace_or_append_top_line(updated_daily, "- 主题卡：", len(existing_topic_keys))
-    updated_daily = _append_unique_section_lines(updated_daily, "## 今天的事件卡", daily_event_lines, kind="event")
-    updated_daily = _append_unique_section_lines(updated_daily, "## 今天涉及的主题", daily_topic_lines, kind="topic")
-    if updated_daily != existing_daily_text:
-        _write_text(daily_path, updated_daily)
-        written.append(daily_path)
 
     max_new_id = max((int(row.get("id") or 0) for row in window_raw_events), default=last_event_id)
     _write_cursor_state_atomic(

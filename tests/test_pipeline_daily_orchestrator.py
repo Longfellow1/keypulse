@@ -4,13 +4,19 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from click.testing import CliRunner
 
 from keypulse.cli import main
 from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily
-from keypulse.pipeline.daily_orchestrator import _event_value_density
+from keypulse.pipeline.daily_orchestrator import (
+    _cap_flagship_events_for_prompt,
+    _component_time_range,
+    _event_value_density,
+    _fallback_summary_clusters_from_events,
+)
 from keypulse.pipeline.model import ModelBackend
 from keypulse.store.db import close, init_db
 from keypulse.store.models import RawEvent
@@ -161,6 +167,7 @@ def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
 
 def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="qwen2.5-7b")
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
     _patch_io(monkeypatch, tmp_path, _rows())
     gateway = FakeGateway(
         "qwen2.5-7b",
@@ -196,6 +203,23 @@ def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch
     l2_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L2_narrative")
     assert len(l2_input["clusters"]) == 1
     assert len(l2_input["misc_events"]) == 1
+    l1_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L1_cluster_review")
+    assert l1_input["components"][0]["time_range"] == ["09:00", "09:03"]
+    l3_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L3_topic_naming")
+    assert [event["timestamp"] for event in l3_input["events"]] == ["05-01 09:00", "05-01 09:03"]
+
+
+def test_daily_orchestrator_llm_time_exports_use_local_timezone(monkeypatch):
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
+    events = [
+        {"id": "1", "ts_start": "2026-05-12T03:11:00+00:00"},
+        {"id": "2", "ts_start": "2026-05-12T03:16:00+00:00"},
+    ]
+
+    assert _component_time_range(events) == ("11:11", "11:16")
+
+    low_volume = _fallback_summary_clusters_from_events("2026-05-12", events)
+    assert low_volume[0]["time_range"] == ["11:11", "11:16"]
 
 
 def test_event_value_density_promotes_user_decisions_over_tool_echo():
@@ -232,7 +256,7 @@ def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):
     assert gateway.calls == ["daily_flagship", "L0_anchor"]
 
 
-def test_flagship_path_caps_events_and_keeps_high_value_user_signal(tmp_path, monkeypatch):
+def test_flagship_path_caps_events_to_forty_and_keeps_high_value_user_signal(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="deepseek-chat")
     rows: list[dict[str, Any]] = []
     for index in range(104):
@@ -276,15 +300,50 @@ def test_flagship_path_caps_events_and_keeps_high_value_user_signal(tmp_path, mo
 
     flagship_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "daily_flagship")
     compact_events = flagship_input["events"]
-    assert len(compact_events) == 100
+    assert len(compact_events) == 40
     assert any("用户拍板" in item["c"] for item in compact_events)
     assert any(
         record.get("decision") == "events_capped"
         and record.get("event_count") == 105
-        and record.get("capped_count") == 100
+        and record.get("capped_count") == 40
         and record.get("reason") == "token_guard"
         for record in log_records
     )
+
+
+def test_flagship_event_cap_keeps_hourly_coverage_before_score_fill():
+    rows: list[dict[str, Any]] = []
+    for index in range(5):
+        rows.append(
+            {
+                "id": str(index + 1),
+                "source": "clipboard",
+                "speaker": "user",
+                "ts_start": f"2026-05-01T01:{index:02d}:00+00:00",
+                "app_name": "Obsidian",
+                "window_title": "early dense work",
+                "content_text": "用户拍板：早上高价值决策 " * 8,
+                "metadata_json": "{}",
+            }
+        )
+    rows.append(
+        {
+            "id": "99",
+            "source": "manual",
+            "speaker": "user",
+            "ts_start": "2026-05-01T22:30:00+00:00",
+            "app_name": "Terminal",
+            "window_title": "late verification",
+            "content_text": "晚上完成真实数据重渲染验收。",
+            "metadata_json": "{}",
+        }
+    )
+
+    selected, capped = _cap_flagship_events_for_prompt(rows, limit=3)
+
+    assert capped is True
+    assert len(selected) == 3
+    assert any(str(event["ts_start"]).startswith("2026-05-01T22:") for event in selected)
 
 
 def test_tier_override_wins_over_model_card(tmp_path, monkeypatch):

@@ -84,10 +84,6 @@ def _dashboard_note(vault: Path) -> Path:
     return vault / "Dashboard" / "Today.md"
 
 
-def _event_links(text: str) -> list[str]:
-    return re.findall(r"\[\[\.\./\.keypulse/events/[^\]]+\]\]", text)
-
-
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -122,8 +118,8 @@ def test_full_sync_creates_complete_files(monkeypatch, tmp_path: Path):
     assert "## 今天涉及的主题" not in daily
 
 
-def test_incremental_appends_three_new_events_without_rewriting_narrative(monkeypatch, tmp_path: Path):
-    _patch_home(monkeypatch, tmp_path)
+def test_incremental_writes_three_new_event_cards_without_rewriting_daily(monkeypatch, tmp_path: Path):
+    home = _patch_home(monkeypatch, tmp_path)
     vault = tmp_path / "vault"
     dataset = [
         _event("09:00:00", "修复 keypulse 安装问题", tags="keypulse,install"),
@@ -137,6 +133,8 @@ def test_incremental_appends_three_new_events_without_rewriting_narrative(monkey
     export_obsidian(vault, date_str=DATE)
     before = _read(_daily_note(vault))
     narrative_before = _extract_section(before, "## 今天做的事")
+    event_dir = home / ".keypulse" / "events" / DATE
+    before_event_files = set(event_dir.glob("*.md"))
 
     dataset.extend(
         [
@@ -148,8 +146,10 @@ def test_incremental_appends_three_new_events_without_rewriting_narrative(monkey
     export_obsidian(vault, date_str=DATE, incremental=True)
 
     after = _read(_daily_note(vault))
+    after_event_files = set(event_dir.glob("*.md"))
     assert _extract_section(after, "## 今天做的事") == narrative_before
-    assert len(_event_links(after)) == len(_event_links(before)) + 3
+    assert after == before
+    assert len(after_event_files - before_event_files) == 3
     assert "## 今天的事件卡" in after
 
 

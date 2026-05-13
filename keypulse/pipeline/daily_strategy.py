@@ -23,11 +23,12 @@ import abc
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from keypulse.pipeline.model import LLMCallError, ModelGateway
+from keypulse.utils.dates import local_timezone
 
 
 _INPUT_MARKER_BEGIN = "<<INPUT_JSON>>"
@@ -85,7 +86,11 @@ def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     full-day prompt within tokens budget while preserving signal density.
     """
     ts = str(event.get("ts_start") or "")
-    hhmm = ts[11:16] if len(ts) >= 16 and ts[10] == "T" else ts[:5]
+    try:
+        parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        hhmm = parsed.astimezone(local_timezone()).strftime("%H:%M")
+    except ValueError:
+        hhmm = ts[11:16] if len(ts) >= 16 and ts[10] == "T" else ts[:5]
     out: dict[str, Any] = {
         "t": hhmm,
         "s": str(event.get("source") or "ax_text"),

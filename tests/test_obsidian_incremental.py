@@ -48,16 +48,12 @@ def _section(text: str, heading: str) -> str:
     return match.group(1) if match else ""
 
 
-def _event_links_in_daily(text: str) -> list[str]:
-    return re.findall(r"\[\[\.\./\.keypulse/events/[^\]]+\]\]", _section(text, "## 今天的事件卡"))
-
-
 def _replace_section_body(text: str, heading: str, body_lines: list[str]) -> str:
     replacement = heading + "\n" + "\n".join(body_lines).rstrip() + "\n"
     return re.sub(rf"(?ms)^{re.escape(heading)}\n.*?(?=^## |\Z)", replacement, text)
 
 
-def test_incremental_appends_new_events(tmp_path: Path, monkeypatch):
+def test_incremental_writes_event_cards_without_touching_daily(tmp_path: Path, monkeypatch):
     keypulse_home = tmp_path / "kp-home"
     monkeypatch.setenv("KEYPULSE_HOME", str(keypulse_home))
     db_path = tmp_path / "keypulse.db"
@@ -68,15 +64,17 @@ def test_incremental_appends_new_events(tmp_path: Path, monkeypatch):
     _insert_event(db_path, "09:10:00", "baseline two")
     export_obsidian(vault_path, date_str=DATE, db_path=db_path)
     before_daily = _read(_daily_path(vault_path))
-    before_links = set(_event_links_in_daily(before_daily))
+    event_dir = keypulse_home / "events" / DATE
+    before_event_files = set(event_dir.glob("*.md"))
 
     _insert_event(db_path, "10:00:00", "new event one")
     _insert_event(db_path, "10:10:00", "new event two")
     export_obsidian_incremental(db_path, vault_path, cursor_path, DATE)
 
     after_daily = _read(_daily_path(vault_path))
-    after_links = set(_event_links_in_daily(after_daily))
-    assert len(after_links - before_links) == 2
+    after_event_files = set(event_dir.glob("*.md"))
+    assert after_daily == before_daily
+    assert len(after_event_files - before_event_files) == 2
 
 
 def test_incremental_dedupes(tmp_path: Path, monkeypatch):
@@ -181,6 +179,8 @@ def test_cursor_first_run(tmp_path: Path, monkeypatch):
     newest_id = _insert_event(db_path, "09:00:00", "baseline one")
     export_obsidian_incremental(db_path, vault_path, cursor_path, DATE)
 
+    assert not _daily_path(vault_path).exists()
+    assert any((keypulse_home / "events" / DATE).glob("*.md"))
     assert cursor_path.exists()
     cursor_payload = json.loads(cursor_path.read_text(encoding="utf-8"))
     assert cursor_payload["last_event_id"] == newest_id
