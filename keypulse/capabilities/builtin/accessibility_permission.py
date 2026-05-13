@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from keypulse.capabilities.base import Capability, CheckResult, HealthState, Signal
-from keypulse.capabilities.builtin._common import now_ts
+from keypulse.capabilities.builtin._common import capture_pipeline_healthy, now_ts
 
 
 _ACCESSIBILITY_ACTION = "open://x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
@@ -30,6 +30,12 @@ class AccessibilityPermissionCapability(Capability):
             trusted = False
 
         if not trusted:
+            if capture_pipeline_healthy(["window", "ax_text"]):
+                return CheckResult(
+                    ok=True,
+                    code="ok",
+                    hint="AXIsProcessTrusted 误报（launchd 缓存），capture 实际正常",
+                )
             return CheckResult(
                 ok=False,
                 code="ax_denied",

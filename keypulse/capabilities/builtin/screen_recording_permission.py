@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from keypulse.capabilities.base import Capability, CheckResult, HealthState, Signal
-from keypulse.capabilities.builtin._common import now_ts
+from keypulse.capabilities.builtin._common import now_ts, watcher_healthy
 
 
 _SCREEN_RECORDING_ACTION = (
@@ -52,6 +52,12 @@ class ScreenRecordingPermissionCapability(Capability):
             granted = False
 
         if not granted:
+            if watcher_healthy("ocr"):
+                return CheckResult(
+                    ok=True,
+                    code="ok",
+                    hint="CGPreflightScreenCaptureAccess 误报（launchd 缓存），OCR watcher 实际正常",
+                )
             return CheckResult(
                 ok=False,
                 code="screen_capture_denied",
