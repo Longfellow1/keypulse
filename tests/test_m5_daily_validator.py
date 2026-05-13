@@ -270,6 +270,76 @@ def test_validator_catches_bug_a_topics_empty_with_events() -> None:
     ), f"应识别 Bug A: {[f.message for f in failures]}"
 
 
+def test_validator_caps_daily_event_cards() -> None:
+    cards = "\n".join(
+        f"- [[../.keypulse/events/2026-05-12/{i:02d}|事件 {i:02d}]]"
+        for i in range(11)
+    )
+    md = f"""# 2026-05-12
+
+## 今日要点
+
+完成 5/12 daily v3 调度修复，并确认事件卡数量需要被质量门拦截。
+
+## 今天做的事
+
+### Daily v3 收口
+
+09:00-14:30 你确认 daily v3 调度链路必须重新接回 obsidian sync，完成 run_daily 接线、cost trail 记录和 validator 防退化规则，避免 5/12 的 62 张事件卡再次进入日报。
+
+## 今天的事件卡
+
+{cards}
+"""
+    failures = validate_daily_output(rendered_markdown=md)
+    assert any(
+        "事件卡数量" in f.message and f.severity == "error"
+        for f in failures
+    ), f"应识别事件卡爆炸: {[f.message for f in failures]}"
+
+
+def test_validator_requires_narrative_time_coverage() -> None:
+    md = """# 2026-05-12
+
+## 今日要点
+
+只覆盖了凌晨片段。
+
+## 今天做的事
+
+### Daily v3 时区修复
+
+03:11-03:16 你确认 daily_orchestrator 把 UTC 时间直接暴露给 LLM，完成 local_timezone 出口转换和测试覆盖，但正文只覆盖了一个很短的凌晨窗口。
+"""
+    failures = validate_daily_output(rendered_markdown=md)
+    assert any(
+        "时间覆盖不足" in f.message and f.severity == "error"
+        for f in failures
+    ), f"应识别 narrative 时间覆盖不足: {[f.message for f in failures]}"
+
+
+def test_validator_flags_asia_shanghai_utc_like_early_only_times() -> None:
+    md = """📍 Asia/Shanghai
+
+# 2026-05-12
+
+## 今日要点
+
+正文时间看起来仍是 UTC。
+
+## 今天做的事
+
+### Daily v3 时区修复
+
+03:04-03:21 你确认 daily_orchestrator 的 cluster time_range 仍然沿用 UTC，完成出口本地化设计、测试补齐和后续重渲染准备。
+"""
+    failures = validate_daily_output(rendered_markdown=md)
+    assert any(
+        "Asia/Shanghai" in f.message and "UTC" in f.message and f.severity == "error"
+        for f in failures
+    ), f"应识别时区矛盾: {[f.message for f in failures]}"
+
+
 def test_baseline_detects_degradation_5_9_vs_5_6() -> None:
     md_56 = GOLDEN_56.read_text()
     md_59_actual = Path("/Users/Harland/Go/Knowledge/Daily/2026-05-09.md")

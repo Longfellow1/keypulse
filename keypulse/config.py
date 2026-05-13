@@ -150,10 +150,6 @@ class PipelineConfig(BaseModel):
     max_llm_input_chars_per_run: int = 0
     feedback_path: str = "~/.keypulse/feedback.jsonl"
     signals: PipelineSignalsConfig = Field(default_factory=PipelineSignalsConfig)
-    use_narrative_v2: bool = False
-    use_narrative_skeleton: bool = False
-    use_things_narrative: bool = True
-    things_idle_threshold_minutes: int = 30
     value_density: ValueDensityConfig = Field(default_factory=ValueDensityConfig)
 
 

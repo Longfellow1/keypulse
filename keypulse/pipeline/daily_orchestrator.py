@@ -4,11 +4,12 @@ import json
 import logging
 import os
 import re
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
-from datetime import date as date_cls, datetime, timezone
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from keypulse.config import Config
 from keypulse.integrations import resolve_active_sink
@@ -536,6 +537,143 @@ def _write_state(payload: dict[str, Any]) -> None:
     path = _state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+
+
+def _sync_now(now: datetime | None) -> datetime:
+    if now is None:
+        return datetime.now(timezone.utc).replace(tzinfo=None)
+    if now.tzinfo is not None:
+        return now.astimezone(timezone.utc).replace(tzinfo=None)
+    return now
+
+
+def _parse_trigger_ts(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _last_daily_sync_success_at(date_str: str, db_path: Path) -> datetime | None:
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT ts_utc
+            FROM llm_trigger_log
+            WHERE kind='T2'
+              AND outcome='ran:ok'
+              AND note LIKE ?
+            ORDER BY ts_utc DESC
+            LIMIT 1
+            """,
+            (f"%{date_str}%",),
+        )
+        row = cursor.fetchone()
+        conn.close()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    return _parse_trigger_ts(str(row[0] or ""))
+
+
+def maybe_run_daily_for_sync(date_str: str, db_path: Path, *, now: datetime | None = None) -> tuple[bool, str]:
+    """Decide if daily orchestrator should run after Obsidian sync."""
+
+    active_now = _sync_now(now)
+    try:
+        from keypulse.pipeline.triggers import record_trigger, should_trigger
+
+        allowed, reason = should_trigger("T1", now=active_now, db_path=db_path, cfg={})
+        if not allowed:
+            if reason.startswith("error:"):
+                _logger.error("daily_orchestrator skipped via obsidian sync: %s", reason)
+                return False, reason
+            _logger.info("daily_orchestrator skipped via obsidian sync: %s", reason)
+            return False, "skip:no_activity"
+
+        last_success = _last_daily_sync_success_at(date_str, db_path)
+        if last_success is not None and active_now - last_success < timedelta(minutes=15):
+            _logger.info("daily_orchestrator skipped via obsidian sync: daily:dedupe_15min")
+            record_trigger(
+                "T2",
+                now=active_now,
+                db_path=db_path,
+                outcome="skipped:daily:dedupe_15min",
+                note=f"daily_orchestrator:{date_str}",
+            )
+            return False, "skip:dedupe_15min"
+
+        run_daily(date_str, trigger="18:00")
+        record_trigger(
+            "T2",
+            now=active_now,
+            db_path=db_path,
+            outcome="ran:ok",
+            note=f"daily_orchestrator:{date_str}",
+        )
+        return True, "ran:ok"
+    except Exception as exc:
+        reason = f"error:{type(exc).__name__}:{exc}"
+        _logger.error("daily_orchestrator failed via obsidian sync: %s", reason)
+        try:
+            from keypulse.pipeline.triggers import record_trigger
+
+            record_trigger(
+                "T2",
+                now=active_now,
+                db_path=db_path,
+                outcome="ran:fail",
+                note=f"daily_orchestrator:{date_str}:{reason}",
+            )
+        except Exception:
+            pass
+        return False, reason
+
+
+def run_daily_after_obsidian_sync(
+    date_str: str,
+    *,
+    db_path: Path,
+    now: datetime | None = None,
+    min_interval_minutes: int = 30,
+    should_trigger_fn: Callable[..., tuple[bool, str]] | None = None,
+    run_daily_fn: Callable[..., Any] | None = None,
+    logger_fn: Callable[[str], None] | None = None,
+) -> bool:
+    """Run daily v3 from Obsidian sync when activity and dedupe gates allow it."""
+
+    if should_trigger_fn is None and run_daily_fn is None:
+        ran, reason = maybe_run_daily_for_sync(date_str, db_path, now=now)
+        if ran:
+            _logger.info("daily_orchestrator ran via obsidian sync: %s", reason)
+        return ran
+
+    active_now = _sync_now(now)
+    try:
+        trigger_check = should_trigger_fn
+        if trigger_check is None:
+            from keypulse.pipeline.triggers import should_trigger as trigger_check
+
+        allowed, reason = trigger_check("T1", now=active_now, db_path=db_path, cfg={})
+        if not allowed:
+            _logger.info("daily_after_obsidian_sync skipped date=%s reason=%s", date_str, reason)
+            return False
+
+        runner = run_daily_fn or run_daily
+        runner(date_str, trigger="18:00")
+        return True
+    except Exception as exc:
+        message = f"daily_after_obsidian_sync failed date={date_str} exc={type(exc).__name__}:{exc}"
+        if logger_fn is not None:
+            logger_fn(message)
+        _logger.error(message)
+        return False
 
 
 def _load_topic_index() -> list[dict[str, Any]]:

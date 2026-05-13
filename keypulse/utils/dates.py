@@ -71,10 +71,10 @@ def local_city_label(tz_name: str | None = None) -> str:
 def resolve_local_date(date: str | None = None, *, yesterday: bool = False, now: datetime | None = None) -> str:
     tz = local_timezone(now)
     current = (now or datetime.now(tz)).astimezone(tz)
-    if date == "today":
-        return current.date().isoformat()
-    if date == "yesterday" or yesterday or date is None:
+    if date == "yesterday" or yesterday:
         return (current.date() - timedelta(days=1)).isoformat()
+    if date is None or date == "today":
+        return current.date().isoformat()
     return date
 
 

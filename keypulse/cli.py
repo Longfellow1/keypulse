@@ -66,7 +66,7 @@ from keypulse.pipeline.model_keychain import (
     render_plist_advice,
     store_secret,
 )
-from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily
+from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily, run_daily_after_obsidian_sync
 from keypulse.pipeline.daily_summary import read_daily_summary, render_daily_markdown
 from keypulse.pipeline.onboarding import (
     OnboardingAnswers,
@@ -1224,17 +1224,15 @@ def _sync_obsidian_bundle(
         model_gateway=gateway,
         incremental=incremental,
         db_path=str(cfg.db_path_expanded),
-        use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
-        use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
-        use_things_narrative=getattr(getattr(cfg, "pipeline", None), "use_things_narrative", True),
-        things_idle_threshold_minutes=getattr(
-            getattr(cfg, "pipeline", None),
-            "things_idle_threshold_minutes",
-            30,
-        ),
         wiki_link_mode=getattr(getattr(cfg, "obsidian", None), "wiki_link_mode", "relative"),
         humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
     )
+    try:
+        ran = run_daily_after_obsidian_sync(date_str, db_path=cfg.db_path_expanded)
+        if ran:
+            click.echo("[daily] orchestrator ran via obsidian sync")
+    except Exception as exc:
+        click.echo(f"[daily] orchestrator failed via obsidian sync: {exc}", err=True)
     return len(written), target_output, sink.kind
 
 
@@ -1755,13 +1753,6 @@ def export(format, days, date, output):
             date_str=date,
             vault_name=cfg.obsidian.vault_name,
             model_gateway=gateway,
-            use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
-            use_things_narrative=getattr(getattr(cfg, "pipeline", None), "use_things_narrative", True),
-            things_idle_threshold_minutes=getattr(
-                getattr(cfg, "pipeline", None),
-                "things_idle_threshold_minutes",
-                30,
-            ),
             wiki_link_mode=getattr(getattr(cfg, "obsidian", None), "wiki_link_mode", "relative"),
             humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
         )
