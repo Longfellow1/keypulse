@@ -140,7 +140,7 @@ def _probe_hint(label: str, hint: str, action: str) -> tuple[str, str, str, str]
     return ("warn", "采集建议", hint or label, action)
 
 
-def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[str, str, str, str]:
+def determine_service_status(*, capture_status: str) -> tuple[str, str, str, str]:
     """Returns (level, label, hint_message, hint_action). Level ∈ ok/warn/err/gray.
 
     hint_action carries the Capability.diagnose() action URL when available
@@ -148,12 +148,19 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
     1-click "打开设置" button in the hint bar. Empty string when no action.
 
     Priority (first hit wins):
-      1. paused              → gray
-      2. capture fact failure → err  (specific hint per code)
-      3. health stale        → warn (体检员失联，但采集本身可能还活着)
-      4. llm_error_code      → warn
-      5. capture probe fail  → warn (permission/runtime hint, not global error)
-      6. ok                  → ok
+      1. paused                         → gray
+      2. capability layer (runtime truth, 13 caps incl. health_freshness):
+         2a. capture fact failure       → err
+         2b. non-probe failure          → diagnose() level (warn/err)
+         2c. capture probe failure      → warn (permission/runtime hint)
+      3. legacy capture_error_code      → err  (灾备：capability state 完全缺失)
+      4. legacy llm_error_code          → warn (灾备：同上)
+      5. ok                             → ok
+
+    The health_freshness capability (step 2b) owns the "healthcheck alive"
+    judgement. We deliberately do NOT consult ``health.json.overall`` here —
+    it mixes runtime health with business alerts (e.g. SYNC_STALE) and
+    misreports unrelated warnings as "健康监测未在运行".
     """
     if capture_status == "paused":
         return ("gray", "已暂停", "", "")
@@ -188,9 +195,6 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
             fallback_hint="采集组件异常，请重启 daemon",
         )
         return ("err", label, hint, action)
-
-    if not health_ok:
-        return ("warn", "体检失联", "健康监测未在运行，状态可能不准；请运行 make install 重挂体检", "")
 
     llm_code = (get_state("llm_error_code") or "").strip()
     if llm_code:
@@ -487,7 +491,6 @@ def build_hud_snapshot(
     date_str: str | None = None,
     hud_state_path: str | Path | None = None,
     capture_status: str = "running",
-    health_ok: bool = True,
     now_local: datetime | None = None,
 ) -> HUDSnapshot:
     init_db(cfg.db_path_expanded)
@@ -527,7 +530,7 @@ def build_hud_snapshot(
         HEALTH_LABELS["ocr"]: bool(getattr(cfg.watchers, "ocr", False)),
     }
     service_level, status_label, hint_message, hint_action = determine_service_status(
-        capture_status=capture_status, health_ok=health_ok
+        capture_status=capture_status
     )
     monthly_cost_usd = _monthly_cost_window(get_data_dir() / "cost.jsonl")
     monthly_budget_usd = float(getattr(cfg.llm, "monthly_budget_usd", 0.0) or 0.0)

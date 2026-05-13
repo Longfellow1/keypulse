@@ -125,7 +125,6 @@ def test_hud_summary_probe_only_failure_renders_as_hint(monkeypatch) -> None:
 
     level, label, hint, action = summary.determine_service_status(
         capture_status="running",
-        health_ok=True,
     )
 
     assert level == "warn"
