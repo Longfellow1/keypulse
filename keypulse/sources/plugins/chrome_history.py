@@ -19,6 +19,7 @@ class ChromeHistorySource(DataSource):
     name = "chrome_history"
     privacy_tier = "green"
     liveness = "app_running"
+    app_hints = ("com.google.Chrome", "Google Chrome", "Chrome")
     description = "Chrome visit history reader"
 
     def __init__(self, *, profiles_root: Path | None = None) -> None:
