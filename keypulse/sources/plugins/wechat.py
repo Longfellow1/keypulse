@@ -15,6 +15,7 @@ class WechatSource(DataSource):
     name = "wechat"
     privacy_tier = "red"
     liveness = "after_unlock"
+    app_hints = ("com.tencent.xinWeChat", "WeChat", "微信")
     description = "微信本地消息（红区，需用户授权 + chatlog 工具）"
 
     def discover(self) -> list[DataSourceInstance]:

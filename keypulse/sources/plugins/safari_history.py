@@ -19,6 +19,7 @@ class SafariHistorySource(DataSource):
     name = "safari_history"
     privacy_tier = "green"
     liveness = "app_running"
+    app_hints = ("com.apple.Safari", "Safari")
     description = "Safari visit history reader"
 
     def __init__(self, *, history_path: Path | None = None) -> None:

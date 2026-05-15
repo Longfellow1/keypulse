@@ -5,9 +5,10 @@
 | 类型 | 格式 | Plugin / Discoverer | 价值密度 |
 |---|---|---|---|
 | 关系型 | SQLite | `sqlite_discoverer` + `chrome_history/safari_history` 等 plugins | ⭐⭐⭐⭐⭐ |
-| KV/LSM | LevelDB | `leveldb_discoverer`（识别 only） | ⭐⭐⭐⭐⭐（待读取） |
+| KV/LSM | LevelDB | `leveldb_discoverer` + `leveldb_reader` ✅ | ⭐⭐⭐⭐⭐ |
 | 文档 | Markdown Vault | `markdown_vault` | ⭐⭐⭐⭐ |
 | 文档 | JSON | `json_files_discoverer` | ⭐⭐⭐⭐ |
+| 系统索引 | Spotlight (mdfind/mdls) | `spotlight` ✅ | ⭐⭐⭐ |
 | 日志流 | JSONL | `jsonl_discoverer` + `claude_code/codex_cli` | ⭐⭐⭐⭐⭐ |
 | 配置 | plist | `plist_discoverer` | ⭐⭐ |
 | 关系型 | IndexedDB | 未接入 | ⭐⭐⭐ |

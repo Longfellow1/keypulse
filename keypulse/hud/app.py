@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 import AppKit
 import objc
@@ -14,9 +15,10 @@ from WebKit import WKNavigationActionPolicyAllow, WKNavigationActionPolicyCancel
 # 内部模块依赖 (保持原样)
 from keypulse.capture.normalizer import normalize_manual_event
 from keypulse.config import Config
+from keypulse.hud.approval_window import ApprovalWindowController, safe_pending_candidate_count
 from keypulse.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
 from keypulse.hud.monitor_html import build_monitor_html
-from keypulse.hud.state import dismiss_weekly_echo_for_week, set_today_focus
+from keypulse.hud.state import dismiss_weekly_echo_for_week, read_hud_state, set_pending_count, set_today_focus
 from keypulse.hud.state_reset import _reset_transient_error_state
 from keypulse.hud.summary import build_hud_snapshot
 from keypulse.store.db import init_db
@@ -62,6 +64,10 @@ class KeyPulseHUDApp(AppKit.NSObject):
         self.cfg = cfg
         self.health = read_health()
         self.capture_status = str(get_state("status") or "running")
+        self.pending_count = int(read_hud_state().pending_count)
+        self.pending_count_error: str | None = None
+        self.approval_window = None
+        self._pending_count_last_sync = 0.0
         self.snapshot = build_hud_snapshot(
             cfg,
             date_str="today",
@@ -73,12 +79,21 @@ class KeyPulseHUDApp(AppKit.NSObject):
         self._install_status_icon()
         self.status_item.button().setTarget_(self)
         self.status_item.button().setAction_(objc.selector(self.togglePopover_, signature=b"v@:@"))
+        if hasattr(self.status_item.button(), "sendActionOn_"):
+            events = 0
+            events |= int(getattr(AppKit, "NSEventMaskLeftMouseUp", 0))
+            events |= int(getattr(AppKit, "NSEventMaskRightMouseUp", 0))
+            if events:
+                self.status_item.button().sendActionOn_(events)
+        self._setup_status_menu()
+        self._refresh_approval_menu_item()
         
         # 2. Popover 初始化
         self.popover = AppKit.NSPopover.alloc().init()
         self.popover.setBehavior_(AppKit.NSPopoverBehaviorTransient)
         self.popover_vc = AppKit.NSViewController.alloc().init()
         self.popover.setContentViewController_(self.popover_vc)
+        self.refresh_status()
         
         return self
 
@@ -120,6 +135,15 @@ class KeyPulseHUDApp(AppKit.NSObject):
     def refresh_status(self):
         self.health = read_health()
         self.capture_status = str(get_state("status") or "running")
+        now = time.monotonic()
+        if now - float(getattr(self, "_pending_count_last_sync", 0.0)) >= 60.0:
+            pending_count, pending_error = safe_pending_candidate_count()
+            self.pending_count_error = pending_error
+            if pending_count is not None:
+                self.pending_count = int(pending_count)
+                set_pending_count(self.pending_count)
+            self._pending_count_last_sync = now
+        self._refresh_approval_menu_item()
 
     def _refresh_content(self):
         self.snapshot = build_hud_snapshot(
@@ -272,6 +296,11 @@ class KeyPulseHUDApp(AppKit.NSObject):
 
     @objc.IBAction
     def togglePopover_(self, sender):
+        if self._is_secondary_click():
+            self._refresh_approval_menu_item()
+            if getattr(self, "status_menu", None) is not None and hasattr(self.status_item, "popUpStatusItemMenu_"):
+                self.status_item.popUpStatusItemMenu_(self.status_menu)
+            return
         if self.popover.isShown():
             self.popover.performClose_(None)
         else:
@@ -368,6 +397,83 @@ class KeyPulseHUDApp(AppKit.NSObject):
         alert.addButtonWithTitle_("取消")
         if alert.runModal() == AppKit.NSAlertFirstButtonReturn:
             AppKit.NSApp.terminate_(None)
+
+    def _setup_status_menu(self) -> None:
+        self.status_menu = AppKit.NSMenu.alloc().init()
+
+        self.approval_menu_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "候选审批",
+            objc.selector(self.openApprovalWindow_, signature=b"v@:@"),
+            "",
+        )
+        self.approval_menu_item.setTarget_(self)
+        self.status_menu.addItem_(self.approval_menu_item)
+
+        self.status_menu.addItem_(AppKit.NSMenuItem.separatorItem())
+
+        restart_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "启动一键自愈",
+            objc.selector(self.restartDaemon_, signature=b"v@:@"),
+            "",
+        )
+        restart_item.setTarget_(self)
+        self.status_menu.addItem_(restart_item)
+
+        quit_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "退出 HUD",
+            objc.selector(self.confirmQuit_, signature=b"v@:@"),
+            "",
+        )
+        quit_item.setTarget_(self)
+        self.status_menu.addItem_(quit_item)
+
+    def _refresh_approval_menu_item(self) -> None:
+        item = getattr(self, "approval_menu_item", None)
+        if item is None:
+            return
+        if self.pending_count_error:
+            item.setTitle_("候选审批 (?)")
+            item.setEnabled_(True)
+            return
+        count = max(int(getattr(self, "pending_count", 0)), 0)
+        if count <= 0:
+            item.setTitle_("候选审批")
+            item.setEnabled_(False)
+            return
+        item.setTitle_(f"候选审批 ({count})")
+        item.setEnabled_(True)
+
+    def _is_secondary_click(self) -> bool:
+        if not hasattr(AppKit.NSApp, "currentEvent"):
+            return False
+        event = AppKit.NSApp.currentEvent()
+        if event is None or not hasattr(event, "type"):
+            return False
+        event_type = int(event.type())
+        right_up = int(getattr(AppKit, "NSEventTypeRightMouseUp", -1))
+        right_down = int(getattr(AppKit, "NSEventTypeRightMouseDown", -2))
+        return event_type in {right_up, right_down}
+
+    def _show_approval_error(self, error_message: str) -> None:
+        alert = AppKit.NSAlert.alloc().init()
+        alert.setMessageText_("候选审批读取失败")
+        alert.setInformativeText_(error_message)
+        alert.addButtonWithTitle_("OK")
+        alert.runModal()
+
+    @objc.IBAction
+    def openApprovalWindow_(self, _sender):
+        if self.pending_count_error:
+            self._pending_count_last_sync = 0.0
+            self.refresh_status()
+            if self.pending_count_error:
+                self._show_approval_error(self.pending_count_error)
+                return
+        if self.approval_window is None:
+            self.approval_window = ApprovalWindowController.alloc().initWithStore_(None)
+        self.approval_window.showWindow_(None)
+        self._pending_count_last_sync = 0.0
+        self.refresh_status()
 
 # --- 启动器 (彻底解决 Ctrl+C 不响应问题) ---
 

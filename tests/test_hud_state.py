@@ -5,6 +5,7 @@ from keypulse.hud.state import (
     dismiss_weekly_echo_for_week,
     read_hud_state,
     remove_attention_item,
+    set_pending_count,
     set_hud_mode,
     set_today_focus,
 )
@@ -51,3 +52,17 @@ def test_hud_state_records_weekly_echo_dismissal(tmp_path):
     state = read_hud_state(state_path)
 
     assert state.weekly_echo_dismissed_weeks == ["2026-W19", "2026-W20"]
+
+
+def test_hud_state_persists_pending_count(tmp_path):
+    state_path = tmp_path / "hud-state.json"
+
+    set_hud_mode("review", state_path)
+    set_today_focus("保持稳定", date_str="2026-04-19", path=state_path)
+    set_pending_count(7, state_path)
+
+    state = read_hud_state(state_path)
+
+    assert state.mode == "review"
+    assert state.today_focus["2026-04-19"] == "保持稳定"
+    assert state.pending_count == 7
