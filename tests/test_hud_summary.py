@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 

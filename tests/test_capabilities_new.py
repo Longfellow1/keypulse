@@ -67,6 +67,37 @@ def test_watcher_health_capability_flags_heartbeat_dead(monkeypatch):
     assert state.code == "clipboard_heartbeat_gave_up"
 
 
+def test_watcher_health_capability_flags_silent_timeout(monkeypatch):
+    """A running watcher that has not emitted for too long is unhealthy."""
+    runtime = {
+        "watchers": {
+            "ax_text": {
+                "running": True,
+                "paused": False,
+                "crashes": 0,
+                "last_error": None,
+                "gave_up": False,
+                "heartbeat_gave_up": False,
+                "last_emit_age_sec": 1900.0,
+            }
+        }
+    }
+    monkeypatch.setattr(
+        "keypulse.capabilities.builtin._watcher_health.get_state",
+        lambda _key: json.dumps(runtime),
+    )
+    spec = WatcherHealthSpec(
+        watcher_name="ax_text",
+        capability_name="ax_text_watcher",
+        silent_timeout_sec=1800.0,
+    )
+    cap = WatcherHealthCapability(spec)
+    state = cap.monitor()
+    assert not state.ok
+    assert state.code == "ax_text_silent_timeout"
+
+
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_watcher_health_specs_cover_real_watchers():
     """The manifest must include every watcher we ship heartbeat for."""
     watcher_names = {spec.watcher_name for spec in WATCHER_HEALTH_SPECS}

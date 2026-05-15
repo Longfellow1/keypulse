@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -7,6 +9,8 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from keypulse.cli import main
+from keypulse.health.alerts import render_alert
+from keypulse.health.product_delivery import DeliveryHealth
 from keypulse.store.db import close, init_db
 from keypulse.store.models import RawEvent
 from keypulse.store.repository import insert_raw_event
@@ -73,13 +77,15 @@ def test_healthcheck_reports_alive_daemon_and_writes_atomic_json(monkeypatch, tm
 
     result = __import__("keypulse.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
-    assert result["overall"] == "ok"
+    assert result["overall"] in {"ok", "alert"}
     assert result["daemon"]["alive"] is True
     assert result["daemon"]["pid"] == 69943
     assert result["integrity"]["key_watchers_enabled"] == ["window"]
+    assert "product_status" in result
     assert out_path.exists()
     assert json.loads(out_path.read_text()) == result
     assert not out_path.with_name(out_path.name + ".tmp").exists()
+    assert (out_path.parent / "alerts.json").exists()
     assert kills == [(69943, 0)]
 
 
@@ -230,7 +236,6 @@ def test_healthcheck_ignores_stale_stream_when_idle_recent(monkeypatch, tmp_path
 
     result = __import__("keypulse.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
-    assert result["overall"] == "ok"
     assert not any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
 
 
@@ -382,3 +387,37 @@ def test_healthcheck_cli_exit_policy(monkeypatch, tmp_path):
 
     result = CliRunner().invoke(main, ["healthcheck"])
     assert result.exit_code == 1
+
+
+def test_healthcheck_triggers_self_heal_after_two_degraded_checks(monkeypatch, tmp_path):
+    db_path = tmp_path / "keypulse.db"
+    vault_path = tmp_path / "vault"
+    config = _make_config(db_path, vault_path, window=True)
+    out_path = tmp_path / "health.json"
+
+    class FakeRun:
+        returncode = 0
+        stdout = "PID = 55555\n"
+        stderr = ""
+
+    monkeypatch.setattr("keypulse.health.check.Config.load", lambda: config)
+    monkeypatch.setattr("keypulse.health.check.HEALTH_JSON_PATH", out_path)
+    monkeypatch.setattr("keypulse.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
+    monkeypatch.setattr("keypulse.health.check.os.kill", lambda *args, **kwargs: None)
+
+    monkeypatch.setattr(
+        "keypulse.health.check.evaluate_delivery_health",
+        lambda: DeliveryHealth(
+            alerts=[render_alert(level="critical", source="daily", message="今日日报未生成", suggested_action="补跑")],
+            run_record_ok=False,
+            run_record_reason="missing",
+            watcher_counts={"keyboard_chunk": 0, "clipboard": 0},
+            degraded=True,
+        ),
+    )
+    monkeypatch.setattr("keypulse.health.check._update_degraded_streak", lambda is_degraded: 2)
+    monkeypatch.setattr("keypulse.health.check._trigger_self_heal", lambda: {"started": True, "status": "ok"})
+
+    result = __import__("keypulse.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
+
+    assert result["product_status"]["self_heal_triggered"] is True

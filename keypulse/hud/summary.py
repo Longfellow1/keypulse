@@ -13,6 +13,7 @@ from keypulse.capabilities.base import HealthState
 from keypulse.capabilities.registry import get_default_registry
 from keypulse.capabilities.store import load_states as load_capability_states
 from keypulse.config import Config
+from keypulse.health.product_delivery import evaluate_delivery_health
 from keypulse.hud.health import read_health
 from keypulse.hud.state import HUDState, read_hud_state
 from keypulse.pipeline.surface import build_surface_snapshot
@@ -485,6 +486,39 @@ def _weekly_echo_banner(
     return ("本周回声 →", url, week)
 
 
+def _self_heal_progress() -> str:
+    raw = str(get_state("self_heal_progress") or "").strip()
+    if not raw:
+        return ""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("message") or "").strip()
+
+
+def _choose_top_status(*, capture_status: str) -> tuple[str, str, str]:
+    if capture_status == "paused":
+        return ("gray", "已暂停", "")
+
+    if str(get_state("self_heal_running") or "").strip() == "1":
+        progress = _self_heal_progress() or "系统正在自愈，请稍候"
+        return ("warn", "自愈中", progress)
+
+    delivery = evaluate_delivery_health(watcher_window_hours=1)
+    critical = [item for item in delivery.alerts if item.level == "critical"]
+    if critical:
+        return ("err", "需要处理", critical[0].message)
+    warn = [item for item in delivery.alerts if item.level == "warn"]
+    if warn:
+        return ("warn", "轻度降级", warn[0].message)
+    if delivery.run_record_reason == "before_cutoff":
+        return ("ok", "进行中", "今天日报将在晚间自动生成")
+    return ("ok", "今天已就绪", "")
+
+
 def build_hud_snapshot(
     cfg: Config,
     *,
@@ -529,9 +563,12 @@ def build_hud_snapshot(
         HEALTH_LABELS["ax_text"]: bool(getattr(cfg.watchers, "ax_text", False)),
         HEALTH_LABELS["ocr"]: bool(getattr(cfg.watchers, "ocr", False)),
     }
-    service_level, status_label, hint_message, hint_action = determine_service_status(
-        capture_status=capture_status
-    )
+    service_level, status_label, hint_message = _choose_top_status(capture_status=capture_status)
+    hint_action = ""
+    cap_level, _cap_label, cap_hint, cap_action = determine_service_status(capture_status=capture_status)
+    if service_level == "ok" and cap_level in {"warn", "err"}:
+        hint_message = cap_hint or "采集能力有轻微异常，不影响今日交付"
+        hint_action = cap_action
     monthly_cost_usd = _monthly_cost_window(get_data_dir() / "cost.jsonl")
     monthly_budget_usd = float(getattr(cfg.llm, "monthly_budget_usd", 0.0) or 0.0)
     monthly_cost_level, monthly_cost_tooltip = _monthly_cost_state(monthly_cost_usd, monthly_budget_usd)

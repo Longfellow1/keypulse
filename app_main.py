@@ -1,8 +1,27 @@
 #!/usr/bin/env python3
 
+import locale
 import os
 import sys
 from pathlib import Path
+
+
+def _force_utf8_locale() -> None:
+    """py2app's embedded Python ignores LANG/LC_ALL/PYTHONUTF8 env vars at
+    boot, leaving locale.getpreferredencoding()='US-ASCII'. This breaks any
+    `Path.read_text()` / `open()` without explicit encoding when files contain
+    non-ASCII bytes (Chinese topic names, anchors, etc.). Set locale before
+    any keypulse imports happen.
+    """
+    for candidate in ("en_US.UTF-8", "C.UTF-8", "UTF-8"):
+        try:
+            locale.setlocale(locale.LC_ALL, candidate)
+            return
+        except locale.Error:
+            continue
+
+
+_force_utf8_locale()
 
 
 def _load_secrets_env() -> None:

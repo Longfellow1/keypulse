@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import pytest
+
 import json
 
 from keypulse.capture.manager import CaptureManager
 from keypulse.capture.normalizer import normalize_ax_text_event
+from keypulse.capture.normalizer import normalize_keyboard_chunk_event
 from keypulse.capture.normalizer import normalize_manual_event
 from keypulse.capture.normalizer import normalize_window_event
 from keypulse.config import Config
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_manager_wires_light_capture_watchers_only_when_enabled():
     config = Config.model_validate(
         {
@@ -17,6 +21,7 @@ def test_manager_wires_light_capture_watchers_only_when_enabled():
                 "idle": False,
                 "clipboard": False,
                 "manual": False,
+                "keyboard_chunk": True,
                 "browser": False,
                 "ax_text": True,
                 "ocr": True,
@@ -28,7 +33,30 @@ def test_manager_wires_light_capture_watchers_only_when_enabled():
 
     manager._init_watchers()
 
-    assert set(manager._watchers) == {"ax_text", "ocr"}
+    assert set(manager._watchers) == {"keyboard_chunk", "ax_text", "ocr"}
+
+
+def test_manager_wires_keyboard_chunk_watcher_when_enabled():
+    config = Config.model_validate(
+        {
+            "watchers": {
+                "window": False,
+                "idle": False,
+                "clipboard": False,
+                "manual": False,
+                "keyboard_chunk": True,
+                "browser": False,
+                "ax_text": False,
+                "ocr": False,
+            }
+        }
+    )
+
+    manager = CaptureManager(config)
+
+    manager._init_watchers()
+
+    assert set(manager._watchers) == {"keyboard_chunk"}
 
 
 def test_manager_wires_browser_watcher_when_enabled():
@@ -39,6 +67,7 @@ def test_manager_wires_browser_watcher_when_enabled():
                 "idle": False,
                 "clipboard": False,
                 "manual": False,
+                "keyboard_chunk": False,
                 "browser": True,
                 "ax_text": False,
                 "ocr": False,
@@ -75,6 +104,7 @@ class _StubWindowAwareOCRWatcher:
         self.window_calls.append(now)
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_manager_notifies_ocr_on_window_title_change():
     manager = CaptureManager(Config())
     ocr = _StubWindowAwareOCRWatcher()
@@ -92,6 +122,7 @@ def test_manager_notifies_ocr_on_window_title_change():
     assert ocr.window_calls == [None]
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_manager_can_trigger_ocr_from_explicit_image():
     manager = CaptureManager(Config())
     ocr = _StubOCRWatcher()
@@ -186,3 +217,50 @@ def test_manager_attaches_current_window_session_id_to_non_window_events(monkeyp
 
     assert captured
     assert captured[0].session_id == "session-123"
+
+
+def test_manager_redacts_keyboard_chunk_content_before_persisting(monkeypatch):
+    manager = CaptureManager(Config())
+    captured = []
+
+    monkeypatch.setattr(manager._policy, "apply", lambda event: event)
+    monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
+    monkeypatch.setattr("keypulse.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+
+    manager._process_event(
+        normalize_manual_event(
+            text="email alice@example.com phone 13800138000 token sk-ant-abcdefghijklmnopqrst1234567890",
+            app_name="Claude",
+            window_title="Draft",
+            ts_start="2026-04-22T09:10:00+00:00",
+        )
+    )
+
+    assert captured
+    assert "[REDACTED]" in (captured[0].content_text or "")
+
+
+def test_manager_keeps_keyboard_chunk_weight_high_for_chat_style_apps(monkeypatch):
+    manager = CaptureManager(Config())
+    captured = []
+
+    monkeypatch.setattr(manager._policy, "apply", lambda event: event)
+    monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
+    monkeypatch.setattr("keypulse.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+
+    manager._process_event(
+        normalize_keyboard_chunk_event(
+            text="hello",
+            app_name="Claude",
+            window_title="Draft",
+            process_name="com.anthropic.claude",
+            ts_start="2026-04-22T09:10:00+00:00",
+        )
+    )
+
+    assert captured
+    assert captured[0].semantic_weight == 1.0

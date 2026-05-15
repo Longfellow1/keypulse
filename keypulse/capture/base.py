@@ -1,14 +1,58 @@
 from __future__ import annotations
 import abc
+import os
 import queue
+import signal
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 from keypulse.store.models import RawEvent
 from keypulse.utils.logging import get_logger
 
 
 _LOGGER = get_logger("capture.watcher")
+
+
+def reconcile_orphan_lock(lock_path: str | Path, current_pid: int) -> bool:
+    """Ensure stale/orphan lock files do not block watcher startup.
+
+    Returns True when the file was removed or did not exist; False when the
+    file exists and points to the current PID.
+    """
+    path = Path(lock_path).expanduser()
+    if not path.exists():
+        return True
+    try:
+        owner_pid = int(path.read_text(encoding="utf-8").strip())
+    except Exception:
+        path.unlink(missing_ok=True)
+        return True
+    if owner_pid == current_pid:
+        return False
+    try:
+        os.kill(owner_pid, 0)
+    except Exception:
+        path.unlink(missing_ok=True)
+        return True
+    try:
+        os.kill(owner_pid, signal.SIGTERM)
+    except Exception:
+        pass
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        try:
+            os.kill(owner_pid, 0)
+        except Exception:
+            path.unlink(missing_ok=True)
+            return True
+        time.sleep(0.1)
+    try:
+        os.kill(owner_pid, signal.SIGKILL)
+    except Exception:
+        pass
+    path.unlink(missing_ok=True)
+    return True
 
 
 class BaseWatcher(abc.ABC):
@@ -46,13 +90,25 @@ class BaseWatcher(abc.ABC):
         self._last_error: Optional[str] = None
         self._gave_up: bool = False
         self._started_at_mono: Optional[float] = None
+        # _last_emit_at_mono = real RawEvent push (consumed by silent_timeout
+        # detection and capability fact-overrides). _last_beat_at_mono = any
+        # liveness signal including beat()-only ticks (consumed by heartbeat
+        # supervisor). Separating them prevents a session-quiet watcher from
+        # masquerading as a watcher silently losing macOS permissions.
         self._last_emit_at_mono: Optional[float] = None
+        self._last_beat_at_mono: Optional[float] = None
         self._heartbeat_revival_count: int = 0
         self._heartbeat_gave_up: bool = False
 
     def start(self):
         if self._thread and self._thread.is_alive():
             return
+        lock_path = getattr(self, "lock_path", None)
+        if lock_path:
+            try:
+                reconcile_orphan_lock(lock_path, os.getpid())
+            except Exception:
+                _LOGGER.exception("watcher %s lock reconcile failed", self.name)
         self._running.set()
         self._paused.clear()
         self._crash_count = 0
@@ -60,6 +116,7 @@ class BaseWatcher(abc.ABC):
         self._gave_up = False
         self._started_at_mono = time.monotonic()
         self._last_emit_at_mono = None
+        self._last_beat_at_mono = None
         self._thread = threading.Thread(
             target=self._supervised_run, daemon=True, name=f"watcher-{self.name}"
         )
@@ -81,6 +138,13 @@ class BaseWatcher(abc.ABC):
         return self._thread is not None and self._thread.is_alive()
 
     def health(self) -> dict:
+        last_emit_age_sec = None
+        last_beat_age_sec = None
+        now = time.monotonic()
+        if self._last_emit_at_mono is not None:
+            last_emit_age_sec = max(0.0, now - self._last_emit_at_mono)
+        if self._last_beat_at_mono is not None:
+            last_beat_age_sec = max(0.0, now - self._last_beat_at_mono)
         return {
             "name": self.name,
             "running": self.is_running(),
@@ -90,21 +154,28 @@ class BaseWatcher(abc.ABC):
             "gave_up": self._gave_up,
             "heartbeat_revivals": self._heartbeat_revival_count,
             "heartbeat_gave_up": self._heartbeat_gave_up,
+            "last_emit_age_sec": last_emit_age_sec,
+            "last_beat_age_sec": last_beat_age_sec,
         }
 
     def emit(self, event: RawEvent):
         """Put event onto shared queue."""
-        self._last_emit_at_mono = time.monotonic()
+        now = time.monotonic()
+        self._last_emit_at_mono = now
+        self._last_beat_at_mono = now
         self._queue.put(event)
 
     def beat(self) -> None:
-        """Signal liveness without emitting an event.
+        """Signal thread liveness without emitting an event.
 
         For poll-based watchers where 'no event emitted' is normal behavior
-        (clipboard idle, browser history quiet) — call this once per loop
-        iteration to distinguish 'alive but quiet' from 'silently stuck'.
+        (clipboard idle, browser history quiet, AX text deduped) — call this
+        once per loop iteration. This refreshes the heartbeat supervisor's
+        liveness reference but does NOT mark a real emit, so silent-fail
+        detection (which compares last_emit_age_sec against silent_timeout_sec)
+        still trips when the watcher polls happily but produces nothing.
         """
-        self._last_emit_at_mono = time.monotonic()
+        self._last_beat_at_mono = time.monotonic()
 
     def is_heartbeat_dead(self, now_mono: Optional[float] = None) -> bool:
         """Return True if this watcher should be considered silently stuck.
@@ -119,7 +190,7 @@ class BaseWatcher(abc.ABC):
             return False
         if not self.is_running() or self._paused.is_set() or self._heartbeat_gave_up:
             return False
-        reference = self._last_emit_at_mono if self._last_emit_at_mono is not None else self._started_at_mono
+        reference = self._last_beat_at_mono if self._last_beat_at_mono is not None else self._started_at_mono
         if reference is None:
             return False
         if now_mono is None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from keypulse.capabilities.base import HealthState
 from keypulse.hud import summary
 

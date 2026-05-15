@@ -34,7 +34,7 @@ def read_feedback_events(path: str | Path) -> list[FeedbackEvent]:
     if not feedback_path.exists():
         return []
     events: list[FeedbackEvent] = []
-    for line in feedback_path.read_text().splitlines():
+    for line in feedback_path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         data = json.loads(line)

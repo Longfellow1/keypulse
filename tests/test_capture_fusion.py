@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import json
 
 from keypulse.capture.fusion import CaptureFusionEngine
@@ -9,6 +11,7 @@ from keypulse.capture.normalizer import (
 )
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_fusion_promotes_high_priority_source_and_carries_aux_sources():
     engine = CaptureFusionEngine(similarity_threshold=0.9)
 

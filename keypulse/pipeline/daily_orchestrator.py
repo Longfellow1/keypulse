@@ -13,6 +13,7 @@ from typing import Any, Callable, Mapping
 
 from keypulse.config import Config
 from keypulse.integrations import resolve_active_sink
+from keypulse.observability.watcher_tiers import WATCHER_TIERS
 from keypulse.pipeline.clustering import (
     build_evidence_graph,
     build_feature_index,
@@ -35,6 +36,8 @@ from keypulse.pipeline.daily_summary import (
 )
 from keypulse.pipeline.daily_validator import _DECISION_RE, _OUTPUT_RE
 from keypulse.pipeline.anchor_gateway import AnchorGateway, AnchorGatewayError
+from keypulse.pipeline.artifact_writer import write_artifact
+from keypulse.pipeline.llm_errors import classify_llm_error
 from keypulse.pipeline.weekly_topic_anchor import (
     anchor_today_clusters,
     load_weekly_anchors,
@@ -45,6 +48,7 @@ from keypulse.pipeline.weekly_topic_anchor import (
 )
 from keypulse.pipeline.model import LLMCallError, ModelGateway, load_model_gateway
 from keypulse.pipeline.model_card import resolve_tier
+from keypulse.pipeline.run_record import RunRecorder
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.atomic_io import atomic_write_text
 from keypulse.utils.dates import local_day_bounds, local_timezone
@@ -59,7 +63,11 @@ _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
 _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
-_TOOL_ECHO_SOURCES = frozenset({"ax_text", "ocr_text", "window", "idle", "knowledgec", "zsh_history"})
+# === OCR watcher 已下线 2026-05-14 ===
+# 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+# 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+# 历史 raw_events 中 ocr_text_capture 数据保留可读
+_TOOL_ECHO_SOURCES = frozenset({"ax_text", "window", "idle", "knowledgec", "zsh_history"})
 _USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli"})
 _FLAGSHIP_EVENT_LIMIT = 40
 _FLAGSHIP_NOISE_MARKERS = (
@@ -982,6 +990,17 @@ def _load_rows_for_date(date_str: str) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda item: (str(item.get("ts_start") or ""), int(item.get("id") or 0)))
 
 
+def _core_watcher_emit_counts_for_date(date_str: str, rows: list[dict[str, Any]]) -> dict[str, int]:
+    since, until = local_day_bounds(date_str)
+    counts: dict[str, int] = {}
+    for source in WATCHER_TIERS:
+        try:
+            counts[source] = len(query_raw_events(source=source, since=since, until=until, limit=50000))
+        except Exception:
+            counts[source] = sum(1 for row in rows if str(row.get("source") or "") == source)
+    return counts
+
+
 def _filter_for_trigger(date_str: str, trigger: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     state = _read_state()
     dates = state.setdefault("dates", {})
@@ -1112,7 +1131,7 @@ def _infer_decisions_shipped(narrative: str) -> tuple[list[str], list[str]]:
     decisions: list[str] = []
     shipped: list[str] = []
     for sentence in sentences:
-        if _DECISION_RE.search(sentence):
+        if _DECISION_RE.search(sentence) or re.search(r"决定不|放弃.+转.+|从.+切到.+|选.+而不是.+|最终采用|回滚到|敲定|拍板", sentence):
             decisions.append(sentence)
         if _OUTPUT_RE.search(sentence):
             shipped.append(sentence)
@@ -1128,13 +1147,23 @@ def _run_anchor_for_clusters(
     date_str: str,
     today_clusters: list[dict[str, Any]],
     gateway: ModelGateway,
+    recorder: RunRecorder | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    week_str = _week_str_from_date(date_str)
-    weekly_anchors = load_weekly_anchors(week_str)
-    day = date_cls.fromisoformat(date_str)
-    if not weekly_anchors and date_cls(2026, 5, 4) <= day <= date_cls(2026, 5, 10):
-        weekly_anchors = seed_w19_anchors()
-        save_weekly_anchors(week_str, weekly_anchors)
+    if recorder is None:
+        week_str = _week_str_from_date(date_str)
+        weekly_anchors = load_weekly_anchors(week_str)
+        day = date_cls.fromisoformat(date_str)
+        if not weekly_anchors and date_cls(2026, 5, 4) <= day <= date_cls(2026, 5, 10):
+            weekly_anchors = seed_w19_anchors()
+            save_weekly_anchors(week_str, weekly_anchors)
+    else:
+        with recorder.stage("anchor_load", failure_reason="weekly_anchor_decode_failed"):
+            week_str = _week_str_from_date(date_str)
+            weekly_anchors = load_weekly_anchors(week_str)
+            day = date_cls.fromisoformat(date_str)
+            if not weekly_anchors and date_cls(2026, 5, 4) <= day <= date_cls(2026, 5, 10):
+                weekly_anchors = seed_w19_anchors()
+                save_weekly_anchors(week_str, weekly_anchors)
 
     assignment_result: dict[str, Any]
     try:
@@ -1155,10 +1184,16 @@ def _run_anchor_for_clusters(
             )
         else:
             _logger.warning("anchor_llm_failed date=%s reason=%s", date_str, exc, exc_info=True)
+        if recorder is not None:
+            recorder.set_degraded("anchor_call_failed", kind=classify_llm_error(exc).value)
+            recorder.mark_stage("anchor_call", "degraded", reason="anchor_call_failed", error_class=type(exc).__name__)
         assignment_result = {
             "assignments": {str(cluster.get("cluster_id") or ""): "unanchored" for cluster in today_clusters},
             "new_anchors": [],
         }
+    else:
+        if recorder is not None:
+            recorder.mark_stage("anchor_call", "ok")
 
     updated_anchors, final_mapping = update_anchors_with_assignments(
         weekly_anchors,
@@ -1257,25 +1292,39 @@ def _run_anchor_for_clusters(
 def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
     if trigger not in _TRIGGER_VALUES:
         raise ValueError(f"invalid trigger: {trigger}")
+    with RunRecorder(date_str=date_str, kind="daily", trigger=trigger) as recorder:
+        return _run_daily_recorded(date_str, trigger=trigger, recorder=recorder)
 
+
+def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -> DailySummary:
     run_started_at = datetime.now(timezone.utc)
-    rows = _load_rows_for_date(date_str)
-    scoped_rows = _filter_for_trigger(date_str, trigger, rows)
-    events = [_extract_event_payload(row) for row in scoped_rows]
+    with recorder.stage("load_rows"):
+        rows = _load_rows_for_date(date_str)
+        recorder.set_core_watcher_emit_counts(_core_watcher_emit_counts_for_date(date_str, rows))
+        scoped_rows = _filter_for_trigger(date_str, trigger, rows)
+        events = [_extract_event_payload(row) for row in scoped_rows]
+        recorder.set_input_count(len(events))
 
     if len(events) < 3:
-        daily_path = _daily_path(date_str)
-        body = render_daily_markdown(date=date_str, topics=[], events=[], topic_snapshot={})
-        atomic_write_text(daily_path, body)
-        summary_path = write_daily_summary(
-            date_str,
-            clusters=_ensure_summary_clusters(date_str, body, events),
-            misc=[str(event.get("id")) for event in events],
-            topic_snapshot={},
-            cost=_cost_snapshot(run_started_at),
-            topics=[],
-            unanchored=[],
-        )
+        recorder.set_output_quality("degraded", degraded_reason="low_event_count")
+        with recorder.stage("render"):
+            daily_path = _daily_path(date_str)
+            body = render_daily_markdown(date=date_str, topics=[], events=[], topic_snapshot={})
+        with recorder.stage("persist"):
+            write_artifact(recorder, daily_path, body, stage="persist_daily_markdown")
+            cost = _cost_snapshot(run_started_at)
+            summary_path = write_daily_summary(
+                date_str,
+                clusters=_ensure_summary_clusters(date_str, body, events),
+                misc=[str(event.get("id")) for event in events],
+                topic_snapshot={},
+                cost=cost,
+                topics=[],
+                unanchored=[],
+                recorder=recorder,
+                stage="persist_daily_summary",
+            )
+            recorder.set_cost(cost)
         _append_log(
             {
                 "ts": _now_iso(),
@@ -1305,7 +1354,9 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
 
     if tier == "flagship":
         strategy = FlagshipSingleStepStrategy()
-        flagship_events, events_capped = _cap_flagship_events_for_prompt(events)
+        with recorder.stage("cap_events"):
+            flagship_events, events_capped = _cap_flagship_events_for_prompt(events)
+            recorder.set_input_count(len(flagship_events))
         if events_capped:
             _logger.warning(
                 "daily_orchestrator events_capped count=%s capped=%s reason=token_guard",
@@ -1327,8 +1378,11 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
                 }
             )
         try:
-            result = strategy.generate(date_str=date_str, events=flagship_events, gateway=gateway)
+            with recorder.stage("flagship_call", failure_reason="flagship_failed"):
+                result = strategy.generate(date_str=date_str, events=flagship_events, gateway=gateway)
         except DailyStrategyError as exc:
+            llm_exc = exc.__cause__ if isinstance(exc.__cause__, BaseException) else exc
+            recorder.set_degraded("flagship_failed", kind=classify_llm_error(llm_exc).value)
             raise DailyOrchestratorError(str(exc)) from exc
 
         summary_clusters = _ensure_summary_clusters(date_str, result.markdown, events)
@@ -1337,19 +1391,20 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             date_str=date_str,
             today_clusters=today_clusters,
             gateway=gateway,
+            recorder=recorder,
         )
         topic_snapshot = build_topic_status_snapshot_from_narrative(date_str, result.markdown)
-        daily_markdown = render_daily_markdown(
-            date=date_str,
-            topics=topics,
-            events=summary_events,
-            unanchored=unanchored_events,
-            narrative_markdown=result.markdown,
-            topic_snapshot=topic_snapshot,
-            model_gateway=gateway,
-        )
-        daily_path = _daily_path(date_str)
-        atomic_write_text(daily_path, daily_markdown)
+        with recorder.stage("render"):
+            daily_markdown = render_daily_markdown(
+                date=date_str,
+                topics=topics,
+                events=summary_events,
+                unanchored=unanchored_events,
+                narrative_markdown=result.markdown,
+                topic_snapshot=topic_snapshot,
+                model_gateway=gateway,
+            )
+            daily_path = _daily_path(date_str)
         _append_log(
             {
                 "ts": _now_iso(),
@@ -1360,17 +1415,25 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
                 "strategy": strategy.name,
             }
         )
-        summary_path = write_daily_summary(
-            date_str,
-            clusters=summary_clusters,
-            misc=[str(event.get("cluster_id") or "") for event in unanchored_events if str(event.get("cluster_id") or "").strip()],
-            topic_snapshot=topic_snapshot,
-            cost=_cost_snapshot(run_started_at),
-            topics=topics,
-            events=summary_events,
-            unanchored=unanchored_events,
-            narrative_markdown=result.markdown,
-        )
+        with recorder.stage("persist"):
+            write_artifact(recorder, daily_path, daily_markdown, stage="persist_daily_markdown")
+            cost = _cost_snapshot(run_started_at)
+            summary_path = write_daily_summary(
+                date_str,
+                clusters=summary_clusters,
+                misc=[str(event.get("cluster_id") or "") for event in unanchored_events if str(event.get("cluster_id") or "").strip()],
+                topic_snapshot=topic_snapshot,
+                cost=cost,
+                topics=topics,
+                events=summary_events,
+                unanchored=unanchored_events,
+                narrative_markdown=result.markdown,
+                recorder=recorder,
+                stage="persist_daily_summary",
+            )
+            recorder.set_cost(cost)
+        if recorder.output_quality != "degraded":
+            recorder.set_output_quality("ok")
         _maybe_trigger_weekly_after_daily(date_str)
         return DailySummary(
             date=date_str,
@@ -1385,6 +1448,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
             skipped=False,
         )
 
+    recorder.mark_stage("cap_events", "ok")
     density_settings = Config.load().pipeline.value_density
     merge_cache: dict[str, Any] = {"pairs": []}
 
@@ -1433,8 +1497,11 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
     )
     strategy = BudgetTwoStepStrategy(deps)
     try:
-        result = strategy.generate(date_str=date_str, events=events, gateway=gateway)
+        with recorder.stage("flagship_call", failure_reason="flagship_failed"):
+            result = strategy.generate(date_str=date_str, events=events, gateway=gateway)
     except DailyStrategyError as exc:
+        llm_exc = exc.__cause__ if isinstance(exc.__cause__, BaseException) else exc
+        recorder.set_degraded("flagship_failed", kind=classify_llm_error(llm_exc).value)
         raise DailyOrchestratorError(str(exc)) from exc
 
     cluster_records = list(result.clusters)
@@ -1599,6 +1666,7 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         date_str=date_str,
         today_clusters=today_clusters,
         gateway=gateway,
+        recorder=recorder,
     )
 
     topic_snapshot = build_topic_status_snapshot_from_narrative(date_str, result.markdown) or {
@@ -1606,29 +1674,37 @@ def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:
         for slug, display in topics_touched
     }
 
-    daily_markdown = render_daily_markdown(
-        date=date_str,
-        topics=topics,
-        events=summary_events,
-        unanchored=unanchored_events,
-        narrative_markdown=result.markdown,
-        topic_snapshot=topic_snapshot,
-        model_gateway=gateway,
-    )
-    daily_path = _daily_path(date_str)
-    atomic_write_text(daily_path, daily_markdown)
+    with recorder.stage("render"):
+        daily_markdown = render_daily_markdown(
+            date=date_str,
+            topics=topics,
+            events=summary_events,
+            unanchored=unanchored_events,
+            narrative_markdown=result.markdown,
+            topic_snapshot=topic_snapshot,
+            model_gateway=gateway,
+        )
+        daily_path = _daily_path(date_str)
 
-    summary_path = write_daily_summary(
-        date_str,
-        clusters=summary_clusters,
-        misc=[str(event.get("cluster_id") or "") for event in unanchored_events if str(event.get("cluster_id") or "").strip()],
-        topic_snapshot=topic_snapshot,
-        cost=_cost_snapshot(run_started_at),
-        topics=topics,
-        events=summary_events,
-        unanchored=unanchored_events,
-        narrative_markdown=result.markdown,
-    )
+    with recorder.stage("persist"):
+        write_artifact(recorder, daily_path, daily_markdown, stage="persist_daily_markdown")
+        cost = _cost_snapshot(run_started_at)
+        summary_path = write_daily_summary(
+            date_str,
+            clusters=summary_clusters,
+            misc=[str(event.get("cluster_id") or "") for event in unanchored_events if str(event.get("cluster_id") or "").strip()],
+            topic_snapshot=topic_snapshot,
+            cost=cost,
+            topics=topics,
+            events=summary_events,
+            unanchored=unanchored_events,
+            narrative_markdown=result.markdown,
+            recorder=recorder,
+            stage="persist_daily_summary",
+        )
+        recorder.set_cost(cost)
+    if recorder.output_quality != "degraded":
+        recorder.set_output_quality("ok")
 
     _maybe_trigger_weekly_after_daily(date_str)
     return DailySummary(

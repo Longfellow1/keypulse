@@ -12,6 +12,7 @@ _COLLAB_CLAUDE_RE = re.compile(r"\bclaude\b", re.IGNORECASE)
 _COLLAB_CODEX_RE = re.compile(r"\bcodex\b", re.IGNORECASE)
 _COLLAB_CHATGPT_RE = re.compile(r"\bchatgpt\b|\bchat\s*gpt\b", re.IGNORECASE)
 _COLLAB_HUMAN_RE = re.compile(r"slack|微信|wechat|邮件|email|mail|会议|meeting|message", re.IGNORECASE)
+_OUTPUT_DECISION_RE = re.compile(r"commit|pr|merge", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -116,18 +117,18 @@ def _developer_outputs(daily_summaries: list[dict[str, Any]]) -> dict[str, int]:
 
 def _general_outputs(daily_summaries: list[dict[str, Any]]) -> dict[str, int]:
     count = 0
-    has_event_data = False
     for daily in daily_summaries:
-        events = daily.get("events")
-        if isinstance(events, list):
-            has_event_data = True
-            for event in events:
-                if not isinstance(event, dict):
+        topics = daily.get("topics")
+        if isinstance(topics, list):
+            for topic in topics:
+                if not isinstance(topic, dict):
                     continue
-                kind = str(event.get("type") or event.get("event_type") or "").strip().lower()
-                if kind in {"file_save", "save", "saved"}:
-                    count += 1
-    if has_event_data:
+                count += sum(1 for text in (topic.get("shipped") or []) if str(text).strip())
+                for text in topic.get("decisions") or []:
+                    if _OUTPUT_DECISION_RE.search(str(text or "")):
+                        count += 1
+
+    if count > 0:
         return {"saved_files": count}
 
     cluster_count = 0

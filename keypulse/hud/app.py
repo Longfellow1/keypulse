@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 import AppKit
 import objc
@@ -335,29 +336,23 @@ class KeyPulseHUDApp(AppKit.NSObject):
     def restartDaemon_(self, _sender):
         self.popover.performClose_(None)
         alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("重启 KeyPulse（daemon + HUD）？")
-        alert.setInformativeText_("会短暂中断采集，几秒后自动恢复")
-        alert.addButtonWithTitle_("重启")
+        alert.setMessageText_("启动一键自愈？")
+        alert.setInformativeText_("会自动清理锁、重测权限、重启后台并验证核心数据恢复")
+        alert.addButtonWithTitle_("开始自愈")
         alert.addButtonWithTitle_("取消")
         if alert.runModal() != AppKit.NSAlertFirstButtonReturn:
             return
-        target = f"gui/{os.getuid()}/{DAEMON_LAUNCHD_LABEL}"
-        try:
-            cfg = getattr(self, "cfg", None)
-            if cfg is not None:
-                _reset_transient_error_state(cfg)
-            subprocess.Popen(
-                ["launchctl", "kickstart", "-k", target],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            _restart_hud_process()
-        except Exception as exc:
-            err = AppKit.NSAlert.alloc().init()
-            err.setMessageText_("重启失败")
-            err.setInformativeText_(str(exc))
-            err.addButtonWithTitle_("OK")
-            err.runModal()
+        cfg = getattr(self, "cfg", None)
+        if cfg is not None:
+            _reset_transient_error_state(cfg)
+
+        def _run_heal() -> None:
+            from keypulse.health.self_heal import run_self_heal
+
+            run_self_heal(dry_run=False, source="hud")
+
+        thread = threading.Thread(target=_run_heal, daemon=True, name="hud-self-heal")
+        thread.start()
 
     @objc.IBAction
     def terminate_(self, _sender):
