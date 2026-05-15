@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from keypulse.sources.types import ContentShape
+
 
 @dataclass
 class CandidateSource:
@@ -12,6 +14,7 @@ class CandidateSource:
     path: str
     app_hint: str
     schema_signature: str
+    shape: str = ContentShape.TABULAR_ROWS.value
     hint_tables: list[str] = field(default_factory=list)
     hint_fields: list[str] = field(default_factory=list)
     confidence: str = "low"
@@ -21,11 +24,13 @@ def discover_all_candidates(*, exclude_paths: set[str]) -> dict[str, list[Candid
     from keypulse.sources.discoverers.json_files import discover_json_files_candidates
     from keypulse.sources.discoverers.jsonl import discover_jsonl_candidates
     from keypulse.sources.discoverers.leveldb import discover_leveldb_candidates
+    from keypulse.sources.discoverers.markdown_vault import discover_markdown_vault_candidates
     from keypulse.sources.discoverers.plist import discover_plist_candidates
     from keypulse.sources.discoverers.sqlite import discover_sqlite_candidates
 
     normalized = _normalize_paths(exclude_paths)
     return {
+        "markdown_vault": discover_markdown_vault_candidates(exclude_paths=normalized),
         "sqlite": discover_sqlite_candidates(exclude_paths=normalized),
         "leveldb": discover_leveldb_candidates(exclude_paths=normalized),
         "jsonl": discover_jsonl_candidates(exclude_paths=normalized),

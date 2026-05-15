@@ -8,10 +8,12 @@ from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from keypulse.app import _CAPTURE_FACT_CAPS, _CAPTURE_PROBE_CAPS, _LLM_FACT_CAPS
 from keypulse.capabilities.base import HealthState
 from keypulse.capabilities.registry import get_default_registry
 from keypulse.capabilities.store import load_states as load_capability_states
 from keypulse.config import Config
+from keypulse.health.product_delivery import evaluate_delivery_health
 from keypulse.hud.health import read_health
 from keypulse.hud.state import HUDState, read_hud_state
 from keypulse.pipeline.surface import build_surface_snapshot
@@ -100,8 +102,7 @@ def _companion_days(today_iso: str) -> int:
     return max((today - install_date).days + 1, 1)
 
 
-_CAPTURE_CAPS = {"appkit_runtime", "accessibility_permission", "clipboard_watcher"}
-_LLM_CAPS = {"llm_backend"}
+_LEGACY_CAPTURE_SIGNAL_CAPS = _CAPTURE_FACT_CAPS | _CAPTURE_PROBE_CAPS
 
 
 def _capability_states_from_health(payload: dict[str, Any] | None) -> dict[str, HealthState]:
@@ -136,7 +137,11 @@ def _legacy_signal(code: str, *, names: set[str], fallback_label: str, fallback_
     return (signal.level, signal.label, signal.hint or "", signal.action or "")
 
 
-def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[str, str, str, str]:
+def _probe_hint(label: str, hint: str, action: str) -> tuple[str, str, str, str]:
+    return ("warn", "采集建议", hint or label, action)
+
+
+def determine_service_status(*, capture_status: str) -> tuple[str, str, str, str]:
     """Returns (level, label, hint_message, hint_action). Level ∈ ok/warn/err/gray.
 
     hint_action carries the Capability.diagnose() action URL when available
@@ -144,11 +149,19 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
     1-click "打开设置" button in the hint bar. Empty string when no action.
 
     Priority (first hit wins):
-      1. paused              → gray
-      2. capture_error_code  → err  (specific hint per code)
-      3. health stale        → warn (体检员失联，但采集本身可能还活着)
-      4. llm_error_code      → warn
-      5. ok                  → ok
+      1. paused                         → gray
+      2. capability layer (runtime truth, 13 caps incl. health_freshness):
+         2a. capture fact failure       → err
+         2b. non-probe failure          → diagnose() level (warn/err)
+         2c. capture probe failure      → warn (permission/runtime hint)
+      3. legacy capture_error_code      → err  (灾备：capability state 完全缺失)
+      4. legacy llm_error_code          → warn (灾备：同上)
+      5. ok                             → ok
+
+    The health_freshness capability (step 2b) owns the "healthcheck alive"
+    judgement. We deliberately do NOT consult ``health.json.overall`` here —
+    it mixes runtime health with business alerts (e.g. SYNC_STALE) and
+    misreports unrelated warnings as "健康监测未在运行".
     """
     if capture_status == "paused":
         return ("gray", "已暂停", "", "")
@@ -157,26 +170,38 @@ def determine_service_status(*, capture_status: str, health_ok: bool) -> tuple[s
     if not capability_states:
         capability_states = _capability_states_from_health(read_health())
     if capability_states:
-        signal = get_default_registry().aggregate_signal(capability_states)
-        return (signal.level, signal.label, signal.hint or "", signal.action or "")
+        registry = get_default_registry()
+        capture_failure = registry.select_failure(capability_states, names=_CAPTURE_FACT_CAPS)
+        if capture_failure is not None:
+            signal = capture_failure.signal
+            return ("err", signal.label, signal.hint or "", signal.action or "")
+
+        non_probe_names = set(capability_states) - _CAPTURE_PROBE_CAPS
+        non_probe_failure = registry.select_failure(capability_states, names=non_probe_names)
+        if non_probe_failure is not None:
+            signal = non_probe_failure.signal
+            return (signal.level, signal.label, signal.hint or "", signal.action or "")
+
+        probe_failure = registry.select_failure(capability_states, names=_CAPTURE_PROBE_CAPS)
+        if probe_failure is not None:
+            signal = probe_failure.signal
+            return _probe_hint(signal.label, signal.hint or "", signal.action or "")
 
     capture_code = (get_state("capture_error_code") or "").strip()
     if capture_code:
-        return _legacy_signal(
+        _level, label, hint, action = _legacy_signal(
             capture_code,
-            names=_CAPTURE_CAPS,
+            names=_LEGACY_CAPTURE_SIGNAL_CAPS,
             fallback_label="采集异常",
             fallback_hint="采集组件异常，请重启 daemon",
         )
-
-    if not health_ok:
-        return ("warn", "体检失联", "健康监测未在运行，状态可能不准；请运行 make install 重挂体检", "")
+        return ("err", label, hint, action)
 
     llm_code = (get_state("llm_error_code") or "").strip()
     if llm_code:
         return _legacy_signal(
             llm_code,
-            names=_LLM_CAPS,
+            names=_LLM_FACT_CAPS,
             fallback_label="LLM 异常",
             fallback_hint="LLM 调用异常，请稍后重试",
         )
@@ -224,16 +249,14 @@ def _obsidian_open_url(vault_root: str, note_path: str, *, heading: str | None =
 
 
 _DAILY_GENERIC_TOPICS = {"碎片汇总", "其它", "其他", "杂项"}
-# things.py 当前写「今日概览」，narrative.py/skeleton.py 写「今日主线」，两条路径并存
-_DAILY_MAIN_SECTION_PREFIXES = ("## 今日概览", "## 今日主线")
+_DAILY_MAIN_SECTION_PREFIXES = ("## 今天做的事",)
 
 
 def _parse_daily_topics(daily_body: str) -> list[tuple[str, str]]:
-    """从 daily.md 的主线段（「## 今日概览」或「## 今日主线」）解析 H3 主题。
+    """从 daily.md 的「## 今天做的事」段解析 H3 主题。
 
     返回 [(主题名, 原始 H3 文本), ...]，按 daily 中出现顺序（早→晚）。
-    H3 格式：`### 凌晨访问pairdrop网站 · 5m（2026年5月5日 22:48–22:53）`
-    主题名 = ` · ` 之前那段；锚点 = 整个 H3 文本。过滤"碎片汇总"等泛词。
+    H3 可为 `### [[anchor-slug|display]]` 或普通标题；锚点 = 整个 H3 文本。
     """
     if not daily_body:
         return []
@@ -254,6 +277,11 @@ def _parse_daily_topics(daily_body: str) -> list[tuple[str, str]]:
         if stripped.startswith("### "):
             heading = stripped[4:].strip()
             topic = heading.split(" · ", 1)[0].strip()
+            wikilink = re.fullmatch(r"\[\[[^|\]]+\|([^\]]+)\]\]", topic)
+            if wikilink:
+                topic = wikilink.group(1).strip()
+            elif topic.startswith("[[") and topic.endswith("]]"):
+                topic = topic[2:-2].strip()
             if topic and topic not in _DAILY_GENERIC_TOPICS:
                 out.append((topic, heading))
     return out
@@ -268,7 +296,7 @@ def _build_top_signals(
     vault_root: str,
     date_str: str,
 ) -> list[dict[str, Any]]:
-    """HUD「今天最新」三条 = 日报「今日主线」的主题 H3。
+    """HUD「今天最新」三条 = 日报「今天做的事」的主题 H3。
 
     跳转走 obsidian:// + heading 锚点，直接落到 daily 那一段。
     主题不足 3 条时由 HUD 渲染层兜底（占位 / 兜底句）。
@@ -291,7 +319,7 @@ def _build_top_signals(
         candidates.append(
             {
                 "title": topic_name,
-                "source": "今日主线",
+                "source": "今天做的事",
                 "source_key": "daily_topic",
                 "reason": "新信息",
                 "score": 1.0,
@@ -458,13 +486,45 @@ def _weekly_echo_banner(
     return ("本周回声 →", url, week)
 
 
+def _self_heal_progress() -> str:
+    raw = str(get_state("self_heal_progress") or "").strip()
+    if not raw:
+        return ""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("message") or "").strip()
+
+
+def _choose_top_status(*, capture_status: str) -> tuple[str, str, str]:
+    if capture_status == "paused":
+        return ("gray", "已暂停", "")
+
+    if str(get_state("self_heal_running") or "").strip() == "1":
+        progress = _self_heal_progress() or "系统正在自愈，请稍候"
+        return ("warn", "自愈中", progress)
+
+    delivery = evaluate_delivery_health(watcher_window_hours=1)
+    critical = [item for item in delivery.alerts if item.level == "critical"]
+    if critical:
+        return ("err", "需要处理", critical[0].message)
+    warn = [item for item in delivery.alerts if item.level == "warn"]
+    if warn:
+        return ("warn", "轻度降级", warn[0].message)
+    if delivery.run_record_reason == "before_cutoff":
+        return ("ok", "进行中", "今天日报将在晚间自动生成")
+    return ("ok", "今天已就绪", "")
+
+
 def build_hud_snapshot(
     cfg: Config,
     *,
     date_str: str | None = None,
     hud_state_path: str | Path | None = None,
     capture_status: str = "running",
-    health_ok: bool = True,
     now_local: datetime | None = None,
 ) -> HUDSnapshot:
     init_db(cfg.db_path_expanded)
@@ -503,9 +563,12 @@ def build_hud_snapshot(
         HEALTH_LABELS["ax_text"]: bool(getattr(cfg.watchers, "ax_text", False)),
         HEALTH_LABELS["ocr"]: bool(getattr(cfg.watchers, "ocr", False)),
     }
-    service_level, status_label, hint_message, hint_action = determine_service_status(
-        capture_status=capture_status, health_ok=health_ok
-    )
+    service_level, status_label, hint_message = _choose_top_status(capture_status=capture_status)
+    hint_action = ""
+    cap_level, _cap_label, cap_hint, cap_action = determine_service_status(capture_status=capture_status)
+    if service_level == "ok" and cap_level in {"warn", "err"}:
+        hint_message = cap_hint or "采集能力有轻微异常，不影响今日交付"
+        hint_action = cap_action
     monthly_cost_usd = _monthly_cost_window(get_data_dir() / "cost.jsonl")
     monthly_budget_usd = float(getattr(cfg.llm, "monthly_budget_usd", 0.0) or 0.0)
     monthly_cost_level, monthly_cost_tooltip = _monthly_cost_state(monthly_cost_usd, monthly_budget_usd)

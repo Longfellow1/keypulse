@@ -21,10 +21,14 @@ from __future__ import annotations
 
 import abc
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from keypulse.pipeline.model import LLMCallError, ModelGateway
+from keypulse.utils.dates import local_timezone
 
 
 _INPUT_MARKER_BEGIN = "<<INPUT_JSON>>"
@@ -82,7 +86,11 @@ def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     full-day prompt within tokens budget while preserving signal density.
     """
     ts = str(event.get("ts_start") or "")
-    hhmm = ts[11:16] if len(ts) >= 16 and ts[10] == "T" else ts[:5]
+    try:
+        parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        hhmm = parsed.astimezone(local_timezone()).strftime("%H:%M")
+    except ValueError:
+        hhmm = ts[11:16] if len(ts) >= 16 and ts[10] == "T" else ts[:5]
     out: dict[str, Any] = {
         "t": hhmm,
         "s": str(event.get("source") or "ax_text"),
@@ -97,21 +105,129 @@ def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _daily_dir_from_config() -> Path:
+    """Resolve the configured Obsidian Daily directory."""
+    from keypulse.config import Config
+
+    cfg = Config.load()
+    vault = Path(cfg.obsidian.vault_path).expanduser()
+    return vault / "Daily"
+
+
+def _load_yesterday_anchor(date_str: str) -> str:
+    """Load yesterday's manually filled tomorrow anchor."""
+    try:
+        yesterday = (date.fromisoformat(date_str) - timedelta(days=1)).isoformat()
+        daily_path = _daily_dir_from_config() / f"{yesterday}.md"
+        if not daily_path.exists():
+            return ""
+        text = daily_path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return ""
+
+    heading = re.search(r"^## 明日的锚点\s*$", text, re.MULTILINE)
+    if heading is None:
+        return ""
+    next_heading = re.search(r"^## ", text[heading.end() :], re.MULTILINE)
+    section_end = heading.end() + next_heading.start() if next_heading else len(text)
+    section = text[heading.end() : section_end]
+
+    lines: list[str] = []
+    for raw_line in section.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped == ">":
+            continue
+        if stripped.startswith("> 明天我想：") or stripped.startswith("> _写一句话"):
+            continue
+        cleaned = re.sub(r"^>\s?", "", stripped).strip()
+        if cleaned:
+            lines.append(cleaned)
+    return " ".join(lines).strip()
+
+
+def _build_recent_topic_history(date_str: str, days: int = 7) -> list[dict[str, Any]]:
+    """Build recent topic history from prior Daily H3 anchors."""
+    try:
+        current_date = date.fromisoformat(date_str)
+        daily_dir = _daily_dir_from_config()
+    except (OSError, ValueError):
+        return []
+
+    topics: dict[str, dict[str, Any]] = {}
+    for offset in range(days, 0, -1):
+        active_date = current_date - timedelta(days=offset)
+        active_date_str = active_date.isoformat()
+        daily_path = daily_dir / f"{active_date_str}.md"
+        try:
+            if not daily_path.exists():
+                continue
+            text = daily_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        matches = list(re.finditer(r"^### \[\[(?P<anchor>[^|\]]+)\|(?P<display>[^\]]+)\]\]", text, re.MULTILINE))
+        for match in matches:
+            anchor = match.group("anchor").strip()
+            display = match.group("display").strip()
+            body_start = match.end()
+            next_match = re.search(r"^(?:### |## )", text[body_start:], re.MULTILINE)
+            body_end = body_start + next_match.start() if next_match else len(text)
+            summary = _topic_history_summary(text[body_start:body_end])
+            record = topics.setdefault(
+                anchor,
+                {
+                    "anchor": anchor,
+                    "display": display,
+                    "active_dates": [],
+                    "last_status": "new",
+                    "last_summary": "",
+                },
+            )
+            record["display"] = display
+            record["active_dates"] = [*record["active_dates"], active_date_str]
+            record["last_summary"] = summary
+
+    for record in topics.values():
+        active_dates = record["active_dates"]
+        record["last_status"] = _topic_history_status(active_dates)
+
+    return sorted(topics.values(), key=lambda item: item["active_dates"][-1], reverse=True)
+
+
+def _topic_history_summary(markdown: str) -> str:
+    """Extract a compact summary from a topic section body."""
+    plain = re.sub(r"^\s*[-*>#]+\s*", "", markdown, flags=re.MULTILINE)
+    plain = plain.strip()
+    if not plain:
+        return ""
+    parts = [part.strip() for part in re.split(r"[。.!?！？\n]+", plain) if part.strip()]
+    summary = " ".join(parts[:2]).strip() if parts else plain
+    return summary[:80].strip()
+
+
+def _topic_history_status(active_dates: list[str]) -> str:
+    """Classify recent topic continuity."""
+    if len(active_dates) <= 1:
+        return "new"
+    parsed_dates = [date.fromisoformat(item) for item in active_dates]
+    current_chain = 1
+    max_chain = 1
+    for previous, current in zip(parsed_dates, parsed_dates[1:]):
+        if (current - previous).days <= 1:
+            current_chain += 1
+            max_chain = max(max_chain, current_chain)
+        else:
+            current_chain = 1
+    if max_chain >= 2 and max_chain / len(parsed_dates) >= 0.5:
+        return "active"
+    return "reopens"
+
+
 def _payload_float(payload: Mapping[str, Any], key: str, default: float = 0.0) -> float:
     try:
         return float(payload.get(key) or default)
     except (TypeError, ValueError):
         return default
-
-
-def _payload_importance_score(payload: Mapping[str, Any]) -> float:
-    explicit = _payload_float(payload, "importance_score", -1.0)
-    if explicit >= 0.0:
-        return explicit
-    event_count = len(payload.get("event_ids") or [])
-    size_score = min(max(event_count, 0) / 5.0, 0.7)
-    peak_density = _payload_float(payload, "peak_event_density", 0.0)
-    return max(size_score, peak_density)
 
 
 def _payload_time_start(payload: Mapping[str, Any]) -> str:
@@ -155,7 +271,12 @@ class FlagshipSingleStepStrategy(DailyStrategy):
         from keypulse.prompts.loader import load_prompt
 
         compact = [to_compact_event(event) for event in events]
-        payload: dict[str, Any] = {"date": date_str, "events": compact}
+        payload: dict[str, Any] = {
+            "date": date_str,
+            "events": compact,
+            "yesterday_anchor": _load_yesterday_anchor(date_str),
+            "recent_topic_history": _build_recent_topic_history(date_str, days=7),
+        }
 
         try:
             spec = load_prompt(self.capability)
@@ -261,15 +382,10 @@ class BudgetTwoStepStrategy(DailyStrategy):
             decision = decisions.get(component_id, {"topic_action": "misc"})
             action = str(decision.get("topic_action") or "misc")
             peak_event_density = _payload_float(component_payload, "peak_event_density", 0.0)
-            high_density_threshold = _payload_float(component_payload, "high_density_threshold", 0.75)
 
             slug = str(decision.get("topic_slug") or "").strip() or None
             if action == "existing" and not slug:
                 action = "misc"
-
-            if action == "misc" and peak_event_density >= high_density_threshold:
-                action = "new"
-                misc_ids = [eid for eid in misc_ids if eid not in event_ids]
 
             if action == "misc":
                 for eid in event_ids:
@@ -306,7 +422,6 @@ class BudgetTwoStepStrategy(DailyStrategy):
                     "component_id": component_id,
                     "display_name": display_name,
                     "topic_action": action,
-                    "importance_score": round(_payload_importance_score(component_payload), 4),
                     "peak_event_density": peak_event_density,
                     "events": cluster_events_compact,
                 }
@@ -318,7 +433,7 @@ class BudgetTwoStepStrategy(DailyStrategy):
 
         l2_clusters.sort(
             key=lambda item: (
-                -float(item.get("importance_score") or 0.0),
+                -float(item.get("peak_event_density") or 0.0),
                 _payload_time_start(component_payloads_by_id.get(str(item.get("component_id") or ""), {})),
                 str(item.get("display_name") or ""),
             )

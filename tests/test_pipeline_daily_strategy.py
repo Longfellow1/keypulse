@@ -123,7 +123,7 @@ def test_budget_strategy_calls_l1_and_one_l2_and_tracks_misc():
     assert result.merge_candidates == (("c1", "c2"),)
 
 
-def test_budget_strategy_orders_l2_clusters_by_size_or_peak_density():
+def test_budget_strategy_orders_l2_clusters_by_peak_density_then_time():
     component_payloads = [
         {
             "component_id": "c1",
@@ -133,7 +133,6 @@ def test_budget_strategy_orders_l2_clusters_by_size_or_peak_density():
             "h2_contexts": [],
             "keywords": ["routine"],
             "peak_event_density": 0.2,
-            "importance_score": 0.6,
         },
         {
             "component_id": "c2",
@@ -143,7 +142,6 @@ def test_budget_strategy_orders_l2_clusters_by_size_or_peak_density():
             "h2_contexts": [],
             "keywords": ["decision"],
             "peak_event_density": 0.95,
-            "importance_score": 0.95,
         },
         {
             "component_id": "c3",
@@ -153,7 +151,6 @@ def test_budget_strategy_orders_l2_clusters_by_size_or_peak_density():
             "h2_contexts": [],
             "keywords": ["tool"],
             "peak_event_density": 0.25,
-            "importance_score": 0.25,
         },
     ]
     deps = BudgetStrategyDeps(
@@ -188,10 +185,10 @@ def test_budget_strategy_orders_l2_clusters_by_size_or_peak_density():
     BudgetTwoStepStrategy(deps).generate(date_str="2026-05-01", events=events, gateway=gateway)
 
     l2_input = gateway.calls[1][1]
-    assert [cluster["component_id"] for cluster in l2_input["clusters"]] == ["c2", "c1", "c3"]
+    assert [cluster["component_id"] for cluster in l2_input["clusters"]] == ["c2", "c3", "c1"]
 
 
-def test_budget_strategy_structurally_keeps_high_density_singletons_out_of_misc():
+def test_budget_strategy_keeps_single_event_misc_without_density_promotion():
     component_payloads = [
         {
             "component_id": "c1",
@@ -201,7 +198,6 @@ def test_budget_strategy_structurally_keeps_high_density_singletons_out_of_misc(
             "h2_contexts": [],
             "keywords": ["decision"],
             "peak_event_density": 0.9,
-            "importance_score": 0.9,
         }
     ]
     deps = BudgetStrategyDeps(
@@ -225,9 +221,9 @@ def test_budget_strategy_structurally_keeps_high_density_singletons_out_of_misc(
     result = BudgetTwoStepStrategy(deps).generate(date_str="2026-05-01", events=[_events()[0]], gateway=gateway)
 
     l2_input = gateway.calls[1][1]
-    assert l2_input["clusters"][0]["component_id"] == "c1"
-    assert l2_input["misc_events"] == []
-    assert result.misc_event_ids == ()
+    assert l2_input["clusters"] == []
+    assert len(l2_input["misc_events"]) == 1
+    assert result.misc_event_ids == ("1",)
 
 
 @pytest.mark.parametrize(

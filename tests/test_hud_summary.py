@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -83,36 +85,31 @@ def test_parse_daily_topics_extracts_h3_under_main_section():
     body = """# 2026-05-05
 
 ## 今日主线
+## 今天做的事
 
-> 主战场是 凌晨访问pairdrop网站。
+### [[pairdrop|凌晨访问pairdrop网站]]
 
-### 凌晨访问pairdrop网站 · 5m（22:48–22:53）
+正文...
 
-- 事件 1
-- 事件 2
+### [[weekly-plan|写周报方案]]
 
-### 写周报方案 · 30m（23:00–23:30）
+正文...
 
-- 事件 3
-
-### 碎片汇总 · 2m
+### 碎片汇总
 
 > 11 个零散片段
 
-## 今天涉及的主题
-
-- topic A
+## 今天的事件卡
 """
     topics = _parse_daily_topics(body)
 
     assert len(topics) == 2  # 碎片汇总 被过滤
     assert topics[0][0] == "凌晨访问pairdrop网站"
-    assert topics[0][1].startswith("凌晨访问pairdrop网站 · 5m")
+    assert topics[0][1] == "[[pairdrop|凌晨访问pairdrop网站]]"
     assert topics[1][0] == "写周报方案"
 
 
-def test_parse_daily_topics_extracts_h3_under_overview_section():
-    """things.py 当前主路径写的是「## 今日概览」，parser 必须兼容。"""
+def test_parse_daily_topics_ignores_legacy_overview_section():
     from keypulse.hud.summary import _parse_daily_topics
 
     body = """# 今日做的事
@@ -135,9 +132,7 @@ def test_parse_daily_topics_extracts_h3_under_overview_section():
 """
     topics = _parse_daily_topics(body)
 
-    assert len(topics) == 2
-    assert topics[0][0] == "修改KeyPulse HUD代码并提交"
-    assert topics[1][0] == "访问PairDrop文件传输网站"
+    assert topics == []
 
 
 def test_parse_daily_topics_returns_empty_when_no_main_section():

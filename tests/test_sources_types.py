@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from keypulse.sources.types import (
+    ContentShape,
     DataSource,
     DataSourceInstance,
     SemanticEvent,
@@ -93,7 +94,56 @@ def test_classify_fields_groups_keywords() -> None:
     assert classified["ai_dialog"] == ["role"]
 
 
+def test_classify_fields_accepts_camel_case_variants() -> None:
+    classified = classify_fields(["createdAt", "updated-at", "sessionId"])
+    assert "time" in classified
+    assert set(classified["time"]) == {"createdAt", "updated-at"}
+    assert "session" in classified
+    assert classified["session"] == ["sessionId"]
+
+
 def test_confidence_from_categories_mapping() -> None:
     assert confidence_from_categories(0) == "low"
     assert confidence_from_categories(1) == "medium"
     assert confidence_from_categories(3) == "high"
+
+
+def test_content_shape_kv_json_blob_to_event() -> None:
+    event = ContentShape.KV_JSON_BLOB.to_semantic_event(
+        {
+            "key": "chat:1",
+            "value": {
+                "timestamp": int(datetime(2026, 4, 28, 2, 0, tzinfo=timezone.utc).timestamp()),
+                "role": "assistant",
+                "text": "hello",
+            },
+            "artifact": "Cursor:cursorDiskKV:chat:1",
+            "raw_ref": "approved_sqlite:abc:cursorDiskKV:chat:1",
+        },
+        source="approved_sqlite",
+        privacy_tier="yellow",
+    )
+
+    assert event is not None
+    assert event.actor == "assistant"
+    assert event.intent == "hello"
+    assert event.metadata["shape"] == "kv_json_blob"
+
+
+def test_content_shape_document_file_to_event() -> None:
+    event = ContentShape.DOCUMENT_FILE.to_semantic_event(
+        {
+            "mtime": datetime(2026, 4, 28, 2, 0, tzinfo=timezone.utc),
+            "intent": "Daily",
+            "artifact": "Daily/2026-04-28.md",
+            "path": "/tmp/vault/Daily/2026-04-28.md",
+            "raw_ref": "markdown_vault:Knowledge:Daily/2026-04-28.md",
+        },
+        source="markdown_vault",
+        privacy_tier="yellow",
+    )
+
+    assert event is not None
+    assert event.actor == "user"
+    assert event.intent == "Daily"
+    assert event.metadata["shape"] == "document_file"

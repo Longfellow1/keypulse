@@ -112,51 +112,25 @@ def test_toggle_pause_keeps_popover_open(hud_app, monkeypatch):
     assert app.popover.close_count == 0
 
 
-def test_restart_daemon_without_hud_launchd_restarts_hud_cli_and_terminates(hud_app, monkeypatch, tmp_path):
-    popen_calls = []
+def test_restart_daemon_starts_self_heal_thread(hud_app, monkeypatch, tmp_path):
+    runs = []
     app = hud_app.KeyPulseHUDApp()
     app.popover = _FakePopover()
 
-    def fake_popen(args, **kwargs):
-        popen_calls.append((args, kwargs))
-        return object()
+    class _FakeThread:
+        def __init__(self, target=None, **kwargs):
+            self._target = target
 
-    monkeypatch.setattr(hud_app.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(hud_app.os, "getuid", lambda: 501)
-    monkeypatch.setattr(hud_app.sys, "argv", ["/usr/local/bin/keypulse"])
-    monkeypatch.setattr(hud_app, "_hud_launchd_plist_path", lambda: tmp_path / "com.keypulse.hud.plist")
+        def start(self):
+            if self._target is not None:
+                self._target()
+
+    monkeypatch.setattr(hud_app.threading, "Thread", _FakeThread)
+    monkeypatch.setitem(sys.modules, "keypulse.health.self_heal", types.SimpleNamespace(run_self_heal=lambda **kwargs: runs.append(kwargs)))
 
     app.restartDaemon_(None)
 
-    assert _FakeAlert.messages[0] == "重启 KeyPulse（daemon + HUD）？"
+    assert _FakeAlert.messages[0] == "启动一键自愈？"
     assert app.popover.close_count == 1
-    assert popen_calls[0][0] == ["launchctl", "kickstart", "-k", "gui/501/com.keypulse.daemon"]
-    assert popen_calls[1][0] == ["/usr/local/bin/keypulse", "hud"]
-    assert popen_calls[1][1]["start_new_session"] is True
-    assert popen_calls[1][1]["stdin"] is hud_app.subprocess.DEVNULL
-    assert popen_calls[1][1]["stdout"] is hud_app.subprocess.DEVNULL
-    assert popen_calls[1][1]["stderr"] is hud_app.subprocess.DEVNULL
-    assert _FakeNSApp.terminated == [None]
-
-
-def test_restart_daemon_with_hud_launchd_kickstarts_hud_job(hud_app, monkeypatch, tmp_path):
-    popen_calls = []
-    app = hud_app.KeyPulseHUDApp()
-    app.popover = _FakePopover()
-    hud_plist = tmp_path / "com.keypulse.hud.plist"
-    hud_plist.write_text("<plist/>")
-
-    def fake_popen(args, **kwargs):
-        popen_calls.append((args, kwargs))
-        return object()
-
-    monkeypatch.setattr(hud_app.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(hud_app.os, "getuid", lambda: 501)
-    monkeypatch.setattr(hud_app, "_hud_launchd_plist_path", lambda: hud_plist)
-
-    app.restartDaemon_(None)
-
-    assert popen_calls[0][0] == ["launchctl", "kickstart", "-k", "gui/501/com.keypulse.daemon"]
-    assert popen_calls[1][0] == ["launchctl", "kickstart", "-k", "gui/501/com.keypulse.hud"]
-    assert "start_new_session" not in popen_calls[1][1]
-    assert _FakeNSApp.terminated == []
+    assert runs and runs[0]["source"] == "hud"
+    assert runs[0]["dry_run"] is False

@@ -10,8 +10,7 @@ from keypulse.obsidian.exporter import (
     _render_tomorrow_plan_section,
     build_obsidian_bundle,
 )
-from keypulse.pipeline.model import ModelGateway
-from keypulse.pipeline.narrative import WorkBlock
+from keypulse.pipeline.model import ModelGateway, WorkBlock
 
 
 def test_read_tomorrow_plan_missing_file_returns_empty(tmp_path: Path):
@@ -96,7 +95,7 @@ def test_build_obsidian_bundle_renders_tomorrow_anchor_and_preserves_existing_pl
     )
 
     daily_body = bundle["daily"][0]["body"]
-    assert "## 明天的锚点" in daily_body
+    assert "## 明日的锚点" in daily_body
     assert "> 明天我想：把 KeyPulse M_Q 收尾" in daily_body
     assert "> 明天我想：______" not in daily_body
 
@@ -105,7 +104,7 @@ def test_build_obsidian_bundle_renders_tomorrow_anchor_placeholder_when_empty():
     bundle = build_obsidian_bundle([], vault_name="Harland Knowledge", date_str="2026-04-21")
 
     daily_body = bundle["daily"][0]["body"]
-    assert "## 明天的锚点" in daily_body
+    assert "## 明日的锚点" in daily_body
     assert "> 明天我想：______" in daily_body
 
 

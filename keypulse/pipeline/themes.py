@@ -28,7 +28,7 @@ def read_theme_profile(path: str | Path | None = None) -> ThemeProfile:
     if not state_path.exists():
         return ThemeProfile(theme_name="general", version=1, instructions=[])
     try:
-        payload = json.loads(state_path.read_text())
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:
         return ThemeProfile(theme_name="general", version=1, instructions=[])
     return ThemeProfile(
@@ -49,18 +49,7 @@ def write_theme_profile(
     profile = ThemeProfile(theme_name=theme_name, version=version, instructions=list(instructions))
     state_path = _path(path)
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(
-        json.dumps(
-            {
-                "theme_name": profile.theme_name,
-                "version": profile.version,
-                "instructions": profile.instructions,
-                "updated_at": profile.updated_at,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
+    state_path.write_text(json.dumps({"theme_name": profile.theme_name, "version": profile.version, "instructions": profile.instructions, "updated_at": profile.updated_at}, indent=2, ensure_ascii=False), encoding="utf-8")
     return profile
 
 
@@ -85,4 +74,3 @@ def theme_summary_patch(profile: ThemeProfile) -> str:
             *[f"instruction={item}" for item in recent],
         ]
     )
-

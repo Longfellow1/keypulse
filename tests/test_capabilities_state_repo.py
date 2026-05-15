@@ -14,6 +14,8 @@ import json
 import time
 from pathlib import Path
 
+import pytest
+
 from keypulse.capabilities.base import HealthState
 from keypulse.capabilities.registry import CapabilityRegistry
 from keypulse.capabilities.store import load_states, save_states
@@ -169,7 +171,7 @@ def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) 
     asserting the state-repo value wins."""
     _init_test_db(tmp_path)
     try:
-        # state repo: ax_denied (err)
+        # state repo: ax_denied probe hint
         save_states({
             "accessibility_permission": HealthState(
                 ok=False, code="ax_denied", last_checked=time.time(), detail="denied",
@@ -184,9 +186,9 @@ def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) 
         from keypulse.hud.summary import determine_service_status
 
         level, label, hint, action = determine_service_status(
-            capture_status="running", health_ok=True,
+            capture_status="running",
         )
-        assert level == "err"
+        assert level == "warn"
         assert "辅助功能" in (hint or "") or "ax" in (hint or "").lower()
         assert action.startswith("open://")
     finally:

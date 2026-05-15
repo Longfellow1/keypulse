@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from keypulse.app import _t3_tick, _spawn_t2_trigger
+from keypulse.app import _run_obsidian_sync_core, _t3_tick, _spawn_t2_trigger
 
 
 class TestT3Tick:
@@ -377,3 +377,24 @@ class TestT2Spawn:
         count = cursor.fetchone()[0]
         conn.close()
         assert count >= 1
+
+
+def test_app_obsidian_sync_core_runs_daily_orchestrator_after_export(tmp_path, monkeypatch):
+    cfg = MagicMock()
+    cfg.db_path_expanded = tmp_path / "keypulse.db"
+    cfg.obsidian.vault_name = "KeyPulse"
+    cfg.obsidian.humanize_titles = False
+
+    called: list[tuple[str, Path]] = []
+
+    monkeypatch.setattr("keypulse.integrations.resolve_active_sink", lambda *args, **kwargs: MagicMock(output_dir=tmp_path / "vault"))
+    monkeypatch.setattr("keypulse.pipeline.load_model_gateway", lambda cfg: object())
+    monkeypatch.setattr("keypulse.services.export.export_obsidian", lambda *args, **kwargs: [tmp_path / "event.md"])
+    monkeypatch.setattr(
+        "keypulse.app.run_daily_after_obsidian_sync",
+        lambda date_str, *, db_path: called.append((date_str, db_path)),
+    )
+
+    _run_obsidian_sync_core(cfg, date="2026-05-13")
+
+    assert called == [("2026-05-13", tmp_path / "keypulse.db")]

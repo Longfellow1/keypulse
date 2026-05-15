@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
+
+import sqlite3
 
 from keypulse.capture.manager import CaptureManager, _derive_speaker
 from keypulse.config import Config

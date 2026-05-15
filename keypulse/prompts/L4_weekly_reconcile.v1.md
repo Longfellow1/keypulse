@@ -31,3 +31,8 @@ temperature: 0.2
 3. `weekly_entries` 只能来自输入。
 4. 主题名使用输入中最清晰的 `name`。
 5. 不输出 markdown，不解释过程。
+
+**跨 slug 语义合并**：如果多个 topic 的 slug 或 anchor 名称都指向同一个产品/代码库/项目（例如都含 'keypulse'、'corpusflow'、'ragflow' 等产品名关键词），即使 slug 字面不同，必须合并为一个 topic。合并后：
+- name 用产品名（如 "KeyPulse 全栈整改"）
+- narrative 内用子段拆分原各 slug 的事实（每个子段以中文小标题开头：渲染器统一 / HUD 修复 / 提示词环境 ...）
+- daily_anchor.repo 或 anchor_text 含相同产品关键词时视为同一产品

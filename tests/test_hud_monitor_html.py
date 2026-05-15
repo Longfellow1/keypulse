@@ -55,7 +55,7 @@ def _snapshot(**overrides) -> HUDSnapshot:
 
 
 def test_monitor_html_v1_1_structure():
-    html = build_monitor_html(_snapshot(), capture_status="running", health_ok=True)
+    html = build_monitor_html(_snapshot(), capture_status="running")
 
     # Plan A 主要骨架
     assert '<div class="hud">' in html
@@ -77,7 +77,7 @@ def test_monitor_html_v1_1_structure():
 
 
 def test_monitor_html_uses_snapshot_values_and_delta_classes():
-    html = build_monitor_html(_snapshot(), capture_status="running", health_ok=True)
+    html = build_monitor_html(_snapshot(), capture_status="running")
 
     assert '<span class="brand">KeyPulse</span>' in html
     assert '<span class="dot"></span>' in html
@@ -105,7 +105,7 @@ def test_monitor_html_uses_snapshot_values_and_delta_classes():
 
 
 def test_monitor_html_emits_v1_1_action_links():
-    html = build_monitor_html(_snapshot(), capture_status="running", health_ok=True)
+    html = build_monitor_html(_snapshot(), capture_status="running")
 
     # today_focus 走 inline input，JS 拼 save-today-focus URL
     assert "keypulse://action/save-today-focus?v=" in html
@@ -117,7 +117,7 @@ def test_monitor_html_emits_v1_1_action_links():
 
 def test_monitor_html_today_input_has_value_when_filled():
     """已写过 today_focus 时 input 直接带 value（当主角），无独立 label。"""
-    html = build_monitor_html(_snapshot(today_focus="重做 HUD"), capture_status="running", health_ok=True)
+    html = build_monitor_html(_snapshot(today_focus="重做 HUD"), capture_status="running")
 
     assert 'value="重做 HUD"' in html
     assert "today-input filled" in html
@@ -126,14 +126,14 @@ def test_monitor_html_today_input_has_value_when_filled():
 
 def test_monitor_html_emits_close_popover_handler():
     """点击 HUD 非交互区域时关闭 popover —— JS 监听 click 发 close-popover。"""
-    html = build_monitor_html(_snapshot(), capture_status="running", health_ok=True)
+    html = build_monitor_html(_snapshot(), capture_status="running")
 
     assert "keypulse://action/close-popover" in html
 
 
 def test_monitor_html_pause_state_shows_resume_and_gray_dot():
     snap = _snapshot(service_status="gray", status_label="已暂停")
-    html = build_monitor_html(snap, capture_status="paused", health_ok=True)
+    html = build_monitor_html(snap, capture_status="paused")
 
     assert "▶ 恢复" in html
     assert '<span class="dot gray"></span>' in html
@@ -146,7 +146,7 @@ def test_monitor_html_warn_state_shows_hint_bar():
         status_label="LLM 异常",
         hint_message="LLM API key 失效或余额不足，请检查",
     )
-    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert '<span class="dot warn"></span>' in html
     assert '<span class="status-pill warn">LLM 异常</span>' in html
@@ -159,7 +159,7 @@ def test_monitor_html_warn_state_shows_hint_bar():
 
 def test_monitor_html_renders_weekly_notice_banner():
     snap = _snapshot(weekly_notice="本周数据不足，周报跳过")
-    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert "weekly-notice" in html
     assert "本周数据不足，周报跳过" in html
@@ -172,7 +172,7 @@ def test_monitor_html_renders_weekly_echo_and_notice_together():
         weekly_echo_url="obsidian://open?vault=KeyPulse&file=Weekly/2026-W19",
         weekly_echo_week="2026-W19",
     )
-    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert "💰" not in html
     assert "weekly-echo-banner" in html
@@ -187,7 +187,7 @@ def test_monitor_html_hint_bar_renders_action_button():
         hint_message="辅助功能权限未授权",
         hint_action="open://x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
     )
-    html = build_monitor_html(snap, capture_status="running", health_ok=False)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert "打开设置" in html
     assert "keypulse://action/open-url?u=" in html
@@ -201,7 +201,7 @@ def test_monitor_html_err_state_shows_red_dot():
         status_label="采集异常",
         hint_message="输入监控权限不足，请前往系统设置 → 隐私 → 输入监控",
     )
-    html = build_monitor_html(snap, capture_status="running", health_ok=False)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert '<span class="dot err"></span>' in html
     assert '<span class="status-pill err">采集异常</span>' in html
@@ -210,7 +210,7 @@ def test_monitor_html_err_state_shows_red_dot():
 
 def test_monitor_html_empty_today_focus_shows_placeholder():
     snap = _snapshot(today_focus="")
-    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert "今天最想完成的一件事" in html
     assert "today-input filled" not in html
@@ -233,7 +233,7 @@ def test_monitor_html_escapes_dynamic_text():
         ]
     )
 
-    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert '<script>alert("x")</script>' not in html
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in html
@@ -241,7 +241,7 @@ def test_monitor_html_escapes_dynamic_text():
 
 def test_monitor_html_signals_link_to_obsidian():
     """每条 signal 整行可点击，跳到 Obsidian 对应 note。"""
-    html = build_monitor_html(_snapshot(), capture_status="running", health_ok=True)
+    html = build_monitor_html(_snapshot(), capture_status="running")
 
     # 整行 <a> 包裹（不是 <div>）
     assert '<a class="sugg-item"' in html
@@ -257,7 +257,7 @@ def test_monitor_html_signals_link_to_obsidian():
 def test_monitor_html_pads_with_placeholders_when_signals_under_three():
     """少于 3 条 signals 时，剩余位置用占位行填满，保持版式稳定。"""
     snap = _snapshot()  # fixture 里只有 2 条
-    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+    html = build_monitor_html(snap, capture_status="running")
 
     # 两条真实 + 一条占位
     assert html.count('<a class="sugg-item"') == 2
@@ -267,7 +267,7 @@ def test_monitor_html_pads_with_placeholders_when_signals_under_three():
 def test_monitor_html_empty_signals_show_fallback_message():
     """0 条 signals 时显示笔友兜底句，而不是工程话术。"""
     snap = _snapshot(top_signals=[])
-    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert "今天还没记下什么，晚点回来看看" in html
     # 旧文案不应再出现
@@ -290,7 +290,7 @@ def test_monitor_html_three_signals_no_placeholder():
     }
     base = _snapshot()
     snap = _snapshot(top_signals=[*list(base.top_signals), third])
-    html = build_monitor_html(snap, capture_status="running", health_ok=True)
+    html = build_monitor_html(snap, capture_status="running")
 
     assert html.count('<a class="sugg-item"') == 3
     assert "sugg-item placeholder" not in html

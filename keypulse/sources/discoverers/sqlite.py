@@ -9,7 +9,7 @@ from typing import Iterator
 from keypulse.sources.discoverers import CandidateSource
 from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
 from keypulse.sources.cleaning.path_filter import is_excluded_path
-from keypulse.sources.types import classify_fields, confidence_from_categories
+from keypulse.sources.types import ContentShape, classify_fields, confidence_from_categories
 
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -103,6 +103,8 @@ def _candidate_for(path: Path, exclude_paths: set[str]) -> CandidateSource | Non
 
     hint_tables = sorted({name for name in tables if _is_hint_table(name)})
     table_columns = _read_table_columns(resolved, tables)
+    table_defs = _read_table_defs(resolved, tables)
+    kv_tables = _detect_kv_blob_tables(table_defs)
     field_categories = classify_fields(table_columns)
     hint_fields = sorted(
         {
@@ -112,18 +114,22 @@ def _candidate_for(path: Path, exclude_paths: set[str]) -> CandidateSource | Non
             for field in matches
         }
     )
-    if not hint_tables and not hint_fields:
+    shape = ContentShape.KV_JSON_BLOB.value if kv_tables else ContentShape.TABULAR_ROWS.value
+    if not kv_tables and not hint_tables and not hint_fields:
         return None
 
     table_confidence = "high" if len(hint_tables) >= 3 else ("medium" if hint_tables else "low")
     field_confidence = confidence_from_categories(len(field_categories))
-    confidence = _max_confidence(table_confidence, field_confidence)
+    shape_confidence = "high" if kv_tables and _infer_app_hint(resolved).lower() == "cursor" else ("medium" if kv_tables else "low")
+    confidence = _max_confidence(_max_confidence(table_confidence, field_confidence), shape_confidence)
+    hint_tables_result = sorted(set(hint_tables + kv_tables))
     return CandidateSource(
         discoverer="sqlite",
         path=str(resolved),
         app_hint=_infer_app_hint(resolved),
         schema_signature=",".join(sorted(tables)),
-        hint_tables=hint_tables,
+        shape=shape,
+        hint_tables=hint_tables_result,
         hint_fields=hint_fields,
         confidence=confidence,
     )
@@ -191,6 +197,52 @@ def _read_table_columns(path: Path, tables: list[str]) -> set[str]:
         if conn is not None:
             conn.close()
     return columns
+
+
+def _read_table_defs(path: Path, tables: list[str]) -> dict[str, list[tuple[str, str]]]:
+    conn: sqlite3.Connection | None = None
+    result: dict[str, list[tuple[str, str]]] = {}
+    try:
+        conn = sqlite3.connect(str(path), uri=False)
+        conn.execute("PRAGMA query_only=ON")
+        for table in tables:
+            rows = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+            pairs: list[tuple[str, str]] = []
+            for row in rows:
+                if len(row) < 3:
+                    continue
+                name = row[1]
+                col_type = row[2]
+                if isinstance(name, str) and name:
+                    pairs.append((name, str(col_type or "")))
+            if pairs:
+                result[table] = pairs
+    except Exception:
+        return {}
+    finally:
+        if conn is not None:
+            conn.close()
+    return result
+
+
+def _detect_kv_blob_tables(table_defs: dict[str, list[tuple[str, str]]]) -> list[str]:
+    kv_tables: list[str] = []
+    for table, pairs in table_defs.items():
+        if len(pairs) != 2:
+            continue
+        lower_names = {name.lower() for name, _ in pairs}
+        if lower_names != {"key", "value"}:
+            continue
+
+        typed = {name.lower(): col_type.lower() for name, col_type in pairs}
+        key_type = typed.get("key", "")
+        value_type = typed.get("value", "")
+        if "text" not in key_type and "char" not in key_type:
+            continue
+        if not any(token in value_type for token in ("blob", "text", "json")):
+            continue
+        kv_tables.append(table)
+    return sorted(kv_tables)
 
 
 def _is_hint_table(table_name: str) -> bool:

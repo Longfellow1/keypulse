@@ -29,7 +29,7 @@ from keypulse.capabilities.builtin.health_freshness import HealthFreshnessCapabi
 from keypulse.capabilities.builtin.llm_backend import LLMBackendCapability
 from keypulse.capabilities.builtin.obsidian_sync_freshness import ObsidianSyncFreshnessCapability
 from keypulse.capabilities.builtin.pause_state import PauseStateCapability
-from keypulse.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
+# from keypulse.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
 
 
 # Each entry is a zero-arg factory returning a Capability. Factories instead
@@ -38,7 +38,11 @@ _DEFAULT_CAPABILITY_FACTORIES: list[Callable[..., Capability]] = [
     PauseStateCapability,
     AppKitRuntimeCapability,
     AccessibilityPermissionCapability,
-    ScreenRecordingPermissionCapability,
+    # === OCR watcher 已下线 2026-05-14 ===
+    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+    # 历史 raw_events 中 ocr_text_capture 数据保留可读
+    # ScreenRecordingPermissionCapability,
     HealthFreshnessCapability,
     LLMBackendCapability,
     ObsidianSyncFreshnessCapability,

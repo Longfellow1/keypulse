@@ -23,6 +23,11 @@ ANTIPATTERNS: tuple[str, ...] = (
     "齐头并进",
     "赋能",
     "复盘",
+    # W19 本地版本暴露的模板化兜底文案
+    "进入可继续迭代阶段",
+    "本周没有可确认的关键决策",
+    "本周没有可确认的可见产出",
+    "整理成下周可复现的执行入口",
 )
 ANTIPATTERNS_FAILURE_NARRATIVE: tuple[str, ...] = (
     r"虽然.+但.+推进了",
@@ -451,3 +456,16 @@ def validate_dropped_ball(line: str, *, hud_input_dates: list[str]) -> list[Vali
         if found and not any(day in normalized for day in found):
             failures.append(ValidationFailure(field="coverage", rule="anchor_date_invalid", detail="没接住的球日期不在 HUD 输入范围"))
     return failures
+
+
+def quick_score(failures: list[ValidationFailure]) -> int:
+    """同 daily_validator.quick_score 口径：error -10, warn -3, 满分 100, 下限 0。
+
+    weekly ValidationFailure 没有 severity 字段，统一按 error 计算（除非 rule
+    带 _warn 后缀，目前未启用）。
+    """
+    score = 100
+    for f in failures:
+        weight = 3 if f.rule.endswith("_warn") else 10
+        score -= weight
+    return max(score, 0)

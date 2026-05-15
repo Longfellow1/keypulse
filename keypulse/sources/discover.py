@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from keypulse.config import Config
 from keypulse.sources.approval import ApprovalRecord, ApprovalStore
 from keypulse.sources.discoverers import CandidateSource, discover_all_candidates
 from keypulse.sources.registry import discover_all, get_source, list_sources, read_all
@@ -18,6 +19,7 @@ from keypulse.sources.wechat_probe import (
     probe,
     revoke_authorization,
 )
+from keypulse.store.db import init_db
 from keypulse.utils.dates import local_timezone
 
 
@@ -231,6 +233,8 @@ def read_command(source_name: str | None, since: str | None, until: str | None, 
     if until_dt < since_dt:
         raise click.ClickException("until must be >= since")
 
+    init_db(Config.load().db_path_expanded)
+
     for event in read_all(since_dt, until_dt, source=source_name):
         if as_json:
             click.echo(json.dumps(_event_to_json_dict(event), ensure_ascii=False))
@@ -287,7 +291,14 @@ def _flatten_candidates(candidates: dict[str, list[CandidateSource]]) -> list[Ca
     flat: list[CandidateSource] = []
     for values in candidates.values():
         flat.extend(values)
-    discoverer_order = {"leveldb": 0, "sqlite": 1, "json_files": 2, "jsonl": 3, "plist": 4}
+    discoverer_order = {
+        "leveldb": 0,
+        "sqlite": 1,
+        "markdown_vault": 2,
+        "json_files": 3,
+        "jsonl": 4,
+        "plist": 5,
+    }
     return sorted(flat, key=lambda candidate: (discoverer_order.get(candidate.discoverer, 99), candidate.path))
 
 
@@ -309,6 +320,8 @@ def _print_candidates(candidates: list[CandidateSource], *, store: ApprovalStore
             click.echo(f"    hint_tables: {', '.join(candidate.hint_tables)}")
         if candidate.hint_fields:
             click.echo(f"    hint_fields: {', '.join(candidate.hint_fields)}")
+        if candidate.shape:
+            click.echo(f"    shape: {candidate.shape}")
     click.echo(f"  共 {len(candidates)} 个候选")
 
 

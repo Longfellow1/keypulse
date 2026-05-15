@@ -87,6 +87,43 @@ def test_golden_exec_passes_validator() -> None:
     assert failures == []
 
 
+def test_w19_local_template_phrases_caught_as_antipatterns() -> None:
+    """W19 本地版暴露的 4 条模板兜底短语必须命中黑名单。"""
+    markdown = "\n".join([
+        "## TL;DR",
+        "本周主线工作推进顺利",
+        "",
+        "## 本周关键进展",
+        "### 主题 A",
+        "[[2026-05-04]] 做了 X",
+        "→ 这意味着: 这条主题的结果已经进入可继续迭代阶段。",
+        "→ 关键决策: 本周没有可确认的关键决策",
+        "→ 可见产出: 本周没有可确认的可见产出",
+        "",
+        "## 下周锚点",
+        "- 把主题 A 的结果整理成下周可复现的执行入口",
+    ])
+    from keypulse.pipeline.weekly_validator import _validate_antipattern
+    failures: list[ValidationFailure] = []
+    _validate_antipattern(markdown, failures)
+    hit_phrases = {f.detail.split(": ", 1)[-1] for f in failures if f.rule == "blacklist_hit"}
+    assert "进入可继续迭代阶段" in hit_phrases
+    assert "本周没有可确认的关键决策" in hit_phrases
+    assert "本周没有可确认的可见产出" in hit_phrases
+    assert "整理成下周可复现的执行入口" in hit_phrases
+
+
+def test_weekly_quick_score_satisfies_daily_contract() -> None:
+    """weekly.quick_score 同 daily 口径：error -10, warn -3 (rule 后缀 _warn)，下限 0。"""
+    from keypulse.pipeline.weekly_validator import quick_score
+    errors = [ValidationFailure(field="x", rule="y", detail="z") for _ in range(3)]
+    assert quick_score(errors) == 70
+    assert quick_score([]) == 100
+    warns = [ValidationFailure(field="x", rule="something_warn", detail="z") for _ in range(2)]
+    assert quick_score(warns) == 94
+    assert quick_score([ValidationFailure(field="x", rule="z", detail="w")] * 11) == 0  # 下限
+
+
 def test_empty_skeleton_fails_hard() -> None:
     markdown = "\n".join(
         [

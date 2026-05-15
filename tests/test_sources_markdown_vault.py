@@ -3,15 +3,26 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from keypulse.sources.approval import ApprovalStore
+from keypulse.sources.discoverers import CandidateSource
 from keypulse.sources.plugins.markdown_vault import MarkdownVaultSource
 from keypulse.sources.types import DataSourceInstance
 
 
-def test_markdown_vault_discover_and_read(monkeypatch, tmp_path: Path) -> None:
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+def _approve_markdown(store: ApprovalStore, path: Path) -> str:
+    candidate = CandidateSource(
+        discoverer="markdown_vault",
+        path=str(path.resolve()),
+        app_hint="Obsidian",
+        schema_signature="markdown:1",
+        shape="document_file",
+        confidence="high",
+    )
+    return store.approve(candidate, note="test").candidate_id
 
-    vault = home / "Go" / "Knowledge"
+
+def test_markdown_vault_discover_and_read(tmp_path: Path) -> None:
+    vault = tmp_path / "Knowledge"
     (vault / ".obsidian").mkdir(parents=True, exist_ok=True)
 
     note = vault / "Daily" / "2026-04-28.md"
@@ -20,10 +31,11 @@ def test_markdown_vault_discover_and_read(monkeypatch, tmp_path: Path) -> None:
         "---\ntags: [daily, keypulse]\n---\n# Sprint 1.5 progress\nBody should not be read\n",
         encoding="utf-8",
     )
-    hidden_note = vault / ".obsidian" / "internal.md"
-    hidden_note.write_text("# ignore", encoding="utf-8")
 
-    source = MarkdownVaultSource(roots=[vault])
+    store = ApprovalStore(path=tmp_path / "sources-approval.json")
+    _approve_markdown(store, vault)
+
+    source = MarkdownVaultSource(approval_store=store)
     instances = source.discover()
 
     assert len(instances) == 1
@@ -42,7 +54,8 @@ def test_markdown_vault_discover_and_read(monkeypatch, tmp_path: Path) -> None:
     assert event.intent == "Sprint 1.5 progress"
     assert event.artifact == "Daily/2026-04-28.md"
     assert event.raw_ref == "markdown_vault:Knowledge:Daily/2026-04-28.md"
-    assert event.metadata["frontmatter_tags"] == ["daily", "keypulse"]
+    assert event.privacy_tier == "yellow"
+    assert event.metadata["shape"] == "document_file"
 
 
 def test_markdown_vault_read_missing_returns_empty() -> None:
@@ -58,11 +71,8 @@ def test_markdown_vault_read_missing_returns_empty() -> None:
     assert events == []
 
 
-def test_markdown_vault_read_filters_by_time(monkeypatch, tmp_path: Path) -> None:
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
-
-    vault = home / "Notes" / "Vault"
+def test_markdown_vault_read_filters_by_time(tmp_path: Path) -> None:
+    vault = tmp_path / "Vault"
     (vault / ".obsidian").mkdir(parents=True, exist_ok=True)
     note = vault / "task.md"
     note.write_text("# recent note\n", encoding="utf-8")
@@ -74,3 +84,19 @@ def test_markdown_vault_read_filters_by_time(monkeypatch, tmp_path: Path) -> Non
 
     events = list(source.read(instance, past, before))
     assert events == []
+
+
+def test_markdown_vault_uses_filename_when_h1_missing(tmp_path: Path) -> None:
+    vault = tmp_path / "Notes"
+    note = vault / "misc.txt"
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text("plain text body\n", encoding="utf-8")
+
+    source = MarkdownVaultSource(roots=[vault])
+    instance = source.discover()[0]
+    now = datetime.now(timezone.utc)
+
+    events = list(source.read(instance, now - timedelta(days=1), now + timedelta(days=1)))
+    assert len(events) == 1
+    assert events[0].intent == "misc"
+    assert events[0].artifact == "misc.txt"

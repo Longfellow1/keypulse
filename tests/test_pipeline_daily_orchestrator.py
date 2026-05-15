@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from click.testing import CliRunner
 
 from keypulse.cli import main
 from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily
-from keypulse.pipeline.daily_orchestrator import _event_value_density
+from keypulse.pipeline.daily_orchestrator import (
+    _cap_flagship_events_for_prompt,
+    _component_time_range,
+    _event_value_density,
+    _fallback_summary_clusters_from_events,
+    maybe_run_daily_for_sync,
+    run_daily_after_obsidian_sync,
+)
 from keypulse.pipeline.model import ModelBackend
+from keypulse.pipeline.triggers import record_trigger
 from keypulse.store.db import close, init_db
 from keypulse.store.models import RawEvent
 from keypulse.store.repository import insert_raw_event
@@ -120,6 +130,10 @@ def _rows() -> list[dict[str, Any]]:
 
 def _patch_io(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: list[dict[str, Any]]) -> None:
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_topic_anchor._DEFAULT_PATH",
+        tmp_path / ".keypulse" / "weekly-anchor.json",
+    )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_rows_for_date", lambda _date: rows)
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._filter_for_trigger", lambda _date, _trigger, loaded: loaded)
     monkeypatch.setattr(
@@ -131,20 +145,33 @@ def _patch_io(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: list[dict[s
 def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="doubao-seed-1-6-250615")
     _patch_io(monkeypatch, tmp_path, _rows())
-    gateway = FakeGateway("doubao-seed-1-6-250615", {"daily_flagship": {"markdown": DAILY_MARKDOWN}})
+    gateway = FakeGateway(
+        "doubao-seed-1-6-250615",
+        {
+            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
 
     summary = run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["daily_flagship"]
+    assert gateway.calls == ["daily_flagship", "L0_anchor"]
     assert summary.cluster_count == 0
     assert summary.misc_event_ids == ()
-    assert Path(summary.daily_path).read_text(encoding="utf-8") == DAILY_MARKDOWN.strip()
+    daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
+    assert "## 今天做的事" in daily_body
+    assert "## 今日 raw events (unanchored)" not in daily_body
+    summary_payload = json.loads(Path(summary.summary_path).read_text(encoding="utf-8"))
+    assert len(summary_payload["events"]) >= 1
+    assert "topics" in summary_payload
+    assert (tmp_path / ".keypulse" / "weekly-anchor.json").exists()
     assert not (tmp_path / ".keypulse" / "hot.md").exists()
 
 
 def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="qwen2.5-7b")
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
     _patch_io(monkeypatch, tmp_path, _rows())
     gateway = FakeGateway(
         "qwen2.5-7b",
@@ -162,13 +189,17 @@ def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch
                 "display_name": "KeyPulse Daily Strategy",
                 "keywords": ["keypulse", "daily", "strategy", "tier", "budget"],
             },
+            "L0_anchor": {
+                "assignments": {"c1": "weekly-v3-rollout"},
+                "new_anchors": [],
+            },
         },
     )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
 
     summary = run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["L1_cluster_review", "L2_narrative", "L3_topic_naming"]
+    assert gateway.calls == ["L1_cluster_review", "L2_narrative", "L3_topic_naming", "L0_anchor"]
     assert summary.cluster_count == 1
     assert summary.misc_event_ids == ("3",)
     assert summary.topic_diffs == ("keypulse-daily-strategy:created",)
@@ -176,6 +207,123 @@ def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch
     l2_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L2_narrative")
     assert len(l2_input["clusters"]) == 1
     assert len(l2_input["misc_events"]) == 1
+    l1_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L1_cluster_review")
+    assert l1_input["components"][0]["time_range"] == ["09:00", "09:03"]
+    l3_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L3_topic_naming")
+    assert [event["timestamp"] for event in l3_input["events"]] == ["05-01 09:00", "05-01 09:03"]
+
+
+def test_daily_orchestrator_llm_time_exports_use_local_timezone(monkeypatch):
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
+    events = [
+        {"id": "1", "ts_start": "2026-05-12T03:11:00+00:00"},
+        {"id": "2", "ts_start": "2026-05-12T03:16:00+00:00"},
+    ]
+
+    assert _component_time_range(events) == ("11:11", "11:16")
+
+    low_volume = _fallback_summary_clusters_from_events("2026-05-12", events)
+    assert low_volume[0]["time_range"] == ["11:11", "11:16"]
+
+
+def test_maybe_run_daily_for_sync_skips_when_t1_gate_blocks(tmp_path, monkeypatch):
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "keypulse.pipeline.triggers.should_trigger",
+        lambda *args, **kwargs: (False, "T1:no_activity_5h"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.run_daily",
+        lambda date_str, trigger="18:00": calls.append((date_str, trigger)),
+    )
+
+    assert maybe_run_daily_for_sync(
+        "2026-05-13",
+        db_path=tmp_path / "keypulse.db",
+        now=datetime(2026, 5, 13, 4, 0, 0),
+    ) == (False, "skip:no_activity")
+    assert calls == []
+
+
+def test_maybe_run_daily_for_sync_skips_recent_success_dedupe(tmp_path, monkeypatch):
+    db_path = tmp_path / "keypulse.db"
+    now = datetime(2026, 5, 13, 4, 10, 0)
+    record_trigger(
+        "T2",
+        now=datetime(2026, 5, 13, 4, 0, 0),
+        db_path=db_path,
+        outcome="ran:ok",
+        note="daily_orchestrator:2026-05-13",
+    )
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "keypulse.pipeline.triggers.should_trigger",
+        lambda *args, **kwargs: (True, "T1:activity_ok"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.run_daily",
+        lambda date_str, trigger="18:00": calls.append((date_str, trigger)),
+    )
+
+    assert maybe_run_daily_for_sync("2026-05-13", db_path, now=now) == (False, "skip:dedupe_15min")
+    assert calls == []
+
+
+def test_maybe_run_daily_for_sync_runs_daily_when_gates_allow(tmp_path, monkeypatch):
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "keypulse.pipeline.triggers.should_trigger",
+        lambda *args, **kwargs: (True, "T1:activity_ok"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.run_daily",
+        lambda date_str, trigger="18:00": calls.append((date_str, trigger)),
+    )
+
+    ran, reason = maybe_run_daily_for_sync(
+        "2026-05-13",
+        db_path=tmp_path / "keypulse.db",
+        now=datetime(2026, 5, 13, 4, 0, 0),
+    )
+
+    assert ran is True
+    assert reason == "ran:ok"
+    assert calls == [("2026-05-13", "18:00")]
+
+
+def test_maybe_run_daily_for_sync_returns_error_without_raising(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "keypulse.pipeline.triggers.should_trigger",
+        lambda *args, **kwargs: (True, "T1:activity_ok"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.run_daily",
+        lambda date_str, trigger="18:00": (_ for _ in ()).throw(RuntimeError("llm down")),
+    )
+
+    ran, reason = maybe_run_daily_for_sync(
+        "2026-05-13",
+        db_path=tmp_path / "keypulse.db",
+        now=datetime(2026, 5, 13, 4, 0, 0),
+    )
+
+    assert ran is False
+    assert reason.startswith("error:RuntimeError:")
+    assert "llm down" in reason
+
+
+def test_run_daily_after_obsidian_sync_wraps_maybe_helper(tmp_path, monkeypatch):
+    calls: list[tuple[str, Path]] = []
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator.maybe_run_daily_for_sync",
+        lambda date_str, db_path, now=None: calls.append((date_str, db_path)) or (True, "ran:ok"),
+    )
+
+    assert run_daily_after_obsidian_sync(
+        "2026-05-13",
+        db_path=tmp_path / "keypulse.db",
+    ) is True
+    assert calls == [("2026-05-13", tmp_path / "keypulse.db")]
 
 
 def test_event_value_density_promotes_user_decisions_over_tool_echo():
@@ -198,12 +346,108 @@ def test_event_value_density_promotes_user_decisions_over_tool_echo():
 def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="deepseek-chat")
     _patch_io(monkeypatch, tmp_path, _rows())
-    gateway = FakeGateway("deepseek-chat", {"daily_flagship": {"markdown": DAILY_MARKDOWN}})
+    gateway = FakeGateway(
+        "deepseek-chat",
+        {
+            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
     monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
 
     run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["daily_flagship"]
+    assert gateway.calls == ["daily_flagship", "L0_anchor"]
+
+
+def test_flagship_path_caps_events_to_forty_and_keeps_high_value_user_signal(tmp_path, monkeypatch):
+    _write_config(tmp_path, cloud_model="deepseek-chat")
+    rows: list[dict[str, Any]] = []
+    for index in range(104):
+        rows.append(
+            {
+                "id": index + 1,
+                "source": "ax_text",
+                "speaker": "system",
+                "ts_start": f"2026-05-01T{index % 24:02d}:00:00+00:00",
+                "app_name": "Terminal",
+                "window_title": "export HTTPS_PROXY",
+                "content_text": "export https_proxy=http://127.0.0.1:7890 " * 8,
+                "metadata_json": json.dumps({"entities": {"session_id": f"noise-{index}"}}),
+            }
+        )
+    rows.append(
+        {
+            "id": 105,
+            "source": "clipboard",
+            "speaker": "user",
+            "ts_start": "2026-05-01T23:55:00+00:00",
+            "app_name": "Obsidian",
+            "window_title": "Daily decision",
+            "content_text": "用户拍板：今天选择规则化 events filter，根因是事件卡价值低，不再调用 LLM。",
+            "metadata_json": json.dumps({"entities": {"session_id": "decision"}}),
+        }
+    )
+    _patch_io(monkeypatch, tmp_path, rows)
+    gateway = FakeGateway(
+        "deepseek-chat",
+        {
+            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
+    log_records: list[dict[str, Any]] = []
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._append_log", log_records.append)
+
+    run_daily("2026-05-01", trigger="18:00")
+
+    flagship_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "daily_flagship")
+    compact_events = flagship_input["events"]
+    assert len(compact_events) == 40
+    assert any("用户拍板" in item["c"] for item in compact_events)
+    assert any(
+        record.get("decision") == "events_capped"
+        and record.get("event_count") == 105
+        and record.get("capped_count") == 40
+        and record.get("reason") == "token_guard"
+        for record in log_records
+    )
+
+
+def test_flagship_event_cap_keeps_hourly_coverage_before_score_fill():
+    rows: list[dict[str, Any]] = []
+    for index in range(5):
+        rows.append(
+            {
+                "id": str(index + 1),
+                "source": "clipboard",
+                "speaker": "user",
+                "ts_start": f"2026-05-01T01:{index:02d}:00+00:00",
+                "app_name": "Obsidian",
+                "window_title": "early dense work",
+                "content_text": "用户拍板：早上高价值决策 " * 8,
+                "metadata_json": "{}",
+            }
+        )
+    rows.append(
+        {
+            "id": "99",
+            "source": "manual",
+            "speaker": "user",
+            "ts_start": "2026-05-01T22:30:00+00:00",
+            "app_name": "Terminal",
+            "window_title": "late verification",
+            "content_text": "晚上完成真实数据重渲染验收。",
+            "metadata_json": "{}",
+        }
+    )
+
+    selected, capped = _cap_flagship_events_for_prompt(rows, limit=3)
+
+    assert capped is True
+    assert len(selected) == 3
+    assert any(str(event["ts_start"]).startswith("2026-05-01T22:") for event in selected)
 
 
 def test_tier_override_wins_over_model_card(tmp_path, monkeypatch):
@@ -226,7 +470,7 @@ def test_tier_override_wins_over_model_card(tmp_path, monkeypatch):
 
     run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["L1_cluster_review", "L2_narrative"]
+    assert gateway.calls == ["L1_cluster_review", "L2_narrative", "L0_anchor"]
 
 
 def test_daily_strategy_error_is_translated(tmp_path, monkeypatch):
@@ -248,7 +492,9 @@ def test_low_volume_skip_unchanged(tmp_path, monkeypatch):
     assert summary.skipped is True
     assert summary.cluster_count == 0
     assert summary.misc_event_ids == ("1", "2")
-    assert "事件不足 3 条" in Path(summary.daily_path).read_text(encoding="utf-8")
+    daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
+    assert "## 今日要点" in daily_body
+    assert "## 今天做的事" in daily_body
 
 
 def _insert_event(
@@ -281,8 +527,10 @@ def _seed_minimal_events() -> None:
     _insert_event(ts_start="2026-05-01T01:20:00+00:00", content="补 L2 narrative prompt", session_id="s2")
 
 
-def test_daily_cli_falls_back_to_things_when_mock_llm_keeps_failing(tmp_path, monkeypatch):
+def test_daily_cli_falls_back_to_unified_renderer_when_mock_llm_keeps_failing(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
     init_db(tmp_path / ".keypulse" / "keypulse.db")
     _seed_minimal_events()
     monkeypatch.setenv("MOCK_LLM_FAILS", "99")
@@ -290,10 +538,10 @@ def test_daily_cli_falls_back_to_things_when_mock_llm_keeps_failing(tmp_path, mo
 
     def fake_fallback(_cfg, _date_str, *, no_llm):
         fallback_target.parent.mkdir(parents=True, exist_ok=True)
-        fallback_target.write_text("# fallback\n\n## 今日概览\n\n- things fallback\n", encoding="utf-8")
+        fallback_target.write_text("# fallback\n\n## 今日要点\n\n- fallback\n", encoding="utf-8")
         return fallback_target
 
-    monkeypatch.setattr("keypulse.cli._render_daily_fallback_with_things", fake_fallback)
+    monkeypatch.setattr("keypulse.cli._render_daily_fallback", fake_fallback)
 
     result = CliRunner().invoke(
         main,

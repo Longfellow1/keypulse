@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 import AppKit
 import objc
@@ -16,6 +17,7 @@ from keypulse.config import Config
 from keypulse.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
 from keypulse.hud.monitor_html import build_monitor_html
 from keypulse.hud.state import dismiss_weekly_echo_for_week, set_today_focus
+from keypulse.hud.state_reset import _reset_transient_error_state
 from keypulse.hud.summary import build_hud_snapshot
 from keypulse.store.db import init_db
 from keypulse.store.repository import get_state, insert_raw_event, set_state
@@ -64,7 +66,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
             cfg,
             date_str="today",
             capture_status=self.capture_status,
-            health_ok=self._compute_health_ok(),
         )
 
         # 1. 状态栏 Item
@@ -116,12 +117,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
             alerts = ["No alert details were provided."]
         return ("Health: Alert", "\n".join(f"• {item}" for item in alerts))
 
-    def _compute_health_ok(self) -> bool:
-        return isinstance(self.health, dict) and health_status_emoji(self.health) == "🟢"
-
-    def _health_ok(self) -> bool:
-        return self._compute_health_ok()
-
     def refresh_status(self):
         self.health = read_health()
         self.capture_status = str(get_state("status") or "running")
@@ -131,7 +126,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
             self.cfg,
             date_str="today",
             capture_status=self.capture_status,
-            health_ok=self._compute_health_ok(),
         )
         if self.popover.isShown():
             self._measured_height = None
@@ -164,7 +158,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
         html = build_monitor_html(
             self.snapshot,
             capture_status=self.capture_status,
-            health_ok=self._health_ok(),
         )
         webview.loadHTMLString_baseURL_(html, None)
         self.webview = webview
@@ -343,26 +336,23 @@ class KeyPulseHUDApp(AppKit.NSObject):
     def restartDaemon_(self, _sender):
         self.popover.performClose_(None)
         alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("重启 KeyPulse（daemon + HUD）？")
-        alert.setInformativeText_("会短暂中断采集，几秒后自动恢复")
-        alert.addButtonWithTitle_("重启")
+        alert.setMessageText_("启动一键自愈？")
+        alert.setInformativeText_("会自动清理锁、重测权限、重启后台并验证核心数据恢复")
+        alert.addButtonWithTitle_("开始自愈")
         alert.addButtonWithTitle_("取消")
         if alert.runModal() != AppKit.NSAlertFirstButtonReturn:
             return
-        target = f"gui/{os.getuid()}/{DAEMON_LAUNCHD_LABEL}"
-        try:
-            subprocess.Popen(
-                ["launchctl", "kickstart", "-k", target],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            _restart_hud_process()
-        except Exception as exc:
-            err = AppKit.NSAlert.alloc().init()
-            err.setMessageText_("重启失败")
-            err.setInformativeText_(str(exc))
-            err.addButtonWithTitle_("OK")
-            err.runModal()
+        cfg = getattr(self, "cfg", None)
+        if cfg is not None:
+            _reset_transient_error_state(cfg)
+
+        def _run_heal() -> None:
+            from keypulse.health.self_heal import run_self_heal
+
+            run_self_heal(dry_run=False, source="hud")
+
+        thread = threading.Thread(target=_run_heal, daemon=True, name="hud-self-heal")
+        thread.start()
 
     @objc.IBAction
     def terminate_(self, _sender):

@@ -10,12 +10,12 @@ from keypulse.integrations.sinks import SinkTarget
 def write_sink_state(path: str | Path, target: SinkTarget) -> None:
     state_path = Path(path).expanduser()
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps(asdict(target), indent=2, default=str))
+    state_path.write_text(json.dumps(asdict(target), indent=2, default=str), encoding="utf-8")
 
 
 def read_sink_state(path: str | Path) -> SinkTarget:
     state_path = Path(path).expanduser()
-    data = json.loads(state_path.read_text())
+    data = json.loads(state_path.read_text(encoding="utf-8"))
     return SinkTarget(
         kind=data["kind"],
         output_dir=Path(data["output_dir"]).expanduser(),
