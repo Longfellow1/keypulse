@@ -24,6 +24,17 @@ class HUDState:
     today_focus: dict[str, str] = field(default_factory=dict)
     attention_items: list[str] = field(default_factory=list)
     weekly_echo_dismissed_weeks: list[str] = field(default_factory=list)
+    pending_count: int = 0
+
+
+def _normalize_pending_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(parsed, 0)
 
 
 def read_hud_state(path: str | Path | None = None) -> HUDState:
@@ -51,6 +62,7 @@ def read_hud_state(path: str | Path | None = None) -> HUDState:
             for item in list(payload.get("weekly_echo_dismissed_weeks") or [])
             if str(item).strip()
         ],
+        pending_count=_normalize_pending_count(payload.get("pending_count", 0)),
     )
 
 
@@ -68,6 +80,7 @@ def set_hud_mode(mode: HUDMode, path: str | Path | None = None) -> HUDState:
         today_focus=current.today_focus,
         attention_items=current.attention_items,
         weekly_echo_dismissed_weeks=current.weekly_echo_dismissed_weeks,
+        pending_count=current.pending_count,
     )
     return write_hud_state(updated, path)
 
@@ -85,6 +98,7 @@ def set_today_focus(text: str, *, date_str: str | None = None, path: str | Path 
         today_focus=today_focus,
         attention_items=current.attention_items,
         weekly_echo_dismissed_weeks=current.weekly_echo_dismissed_weeks,
+        pending_count=current.pending_count,
     )
     return write_hud_state(updated, path)
 
@@ -102,6 +116,7 @@ def add_attention_item(label: str, path: str | Path | None = None) -> HUDState:
         today_focus=current.today_focus,
         attention_items=items[:7],
         weekly_echo_dismissed_weeks=current.weekly_echo_dismissed_weeks,
+        pending_count=current.pending_count,
     )
     return write_hud_state(updated, path)
 
@@ -114,6 +129,7 @@ def remove_attention_item(label: str, path: str | Path | None = None) -> HUDStat
         today_focus=current.today_focus,
         attention_items=[item for item in current.attention_items if item != value],
         weekly_echo_dismissed_weeks=current.weekly_echo_dismissed_weeks,
+        pending_count=current.pending_count,
     )
     return write_hud_state(updated, path)
 
@@ -133,5 +149,19 @@ def dismiss_weekly_echo_for_week(week: str, path: str | Path | None = None) -> H
         today_focus=current.today_focus,
         attention_items=current.attention_items,
         weekly_echo_dismissed_weeks=trimmed,
+        pending_count=current.pending_count,
+    )
+    return write_hud_state(updated, path)
+
+
+def set_pending_count(count: int, path: str | Path | None = None) -> HUDState:
+    current = read_hud_state(path)
+    normalized = _normalize_pending_count(count)
+    updated = HUDState(
+        mode=current.mode,
+        today_focus=current.today_focus,
+        attention_items=current.attention_items,
+        weekly_echo_dismissed_weeks=current.weekly_echo_dismissed_weeks,
+        pending_count=normalized,
     )
     return write_hud_state(updated, path)

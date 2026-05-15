@@ -87,6 +87,11 @@ humanize_titles = false
 standalone_output_path = "~/Go/Knowledge"
 state_path = "~/.keypulse/sink-state.json"
 
+[sources.scheduler]
+enabled = true
+poll_interval_sec = 600
+debounce_sec = 300
+
 [model]
 active_profile = "local-first"
 state_path = "~/.keypulse/model-state.json"

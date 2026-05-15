@@ -96,6 +96,7 @@ class DataSource(ABC):
     name: str
     privacy_tier: str
     liveness: str
+    app_hints: tuple[str, ...] = ()
     description: str = ""
 
     @abstractmethod

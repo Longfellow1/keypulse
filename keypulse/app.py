@@ -16,6 +16,7 @@ from keypulse.utils.lock import SingleInstanceLock
 from keypulse.utils.logging import setup_logging, get_logger
 from keypulse.store.db import init_db
 from keypulse.pipeline.daily_orchestrator import run_daily_after_obsidian_sync
+from keypulse.sources.scheduler import SourcesScheduler
 
 logger = get_logger("app")
 _CAPTURE_FACT_CAPS = {
@@ -327,6 +328,12 @@ def run(config: Optional[Config] = None):
     registry = get_default_registry()
     _run_capability_self_check(registry)
     _spawn_self_check_supervisor(registry=registry)
+    scheduler_cfg = config.sources.scheduler
+    scheduler = SourcesScheduler(
+        enabled=scheduler_cfg.enabled,
+        poll_interval_sec=scheduler_cfg.poll_interval_sec,
+        debounce_sec=scheduler_cfg.debounce_sec,
+    )
 
     from keypulse.capture.manager import CaptureManager
 
@@ -334,6 +341,7 @@ def run(config: Optional[Config] = None):
     def _shutdown(signum, frame):
         logger.info(f"Signal {signum} received, shutting down")
         try:
+            scheduler.stop()
             manager.stop()
         except Exception as e:
             logger.error(f"Error during stop: {e}")
@@ -353,11 +361,20 @@ def run(config: Optional[Config] = None):
 
         # Spawn T3 (idle-based trigger) - 60s tick loop
         _spawn_t3_scheduler(config, manager._running)
+        scheduler.start()
 
         while True:
             time.sleep(1)
     except Exception as e:
         logger.error(f"Fatal error: {e}")
+        try:
+            scheduler.stop()
+        except Exception as stop_exc:
+            logger.error(f"Error stopping sources scheduler after fatal error: {stop_exc}")
+        try:
+            manager.stop()
+        except Exception as stop_exc:
+            logger.error(f"Error stopping capture manager after fatal error: {stop_exc}")
         lock.release()
         sys.exit(1)
 
