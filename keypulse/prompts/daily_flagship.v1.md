@@ -20,7 +20,7 @@ temperature: 0.3
 
 JSON 格式 `{"date": "YYYY-MM-DD", "events": [...]}`，每个事件字段：
 - `t`：本地时间 HH:MM
-- `s`：事件来源（ax_text=正在看的正文 / clipboard=剪贴板 / ocr_text=屏幕识别 / manual=手动记录）
+<!-- `s`：事件来源（ax_text=正在看的正文 / clipboard=剪贴板 / ocr_text=屏幕识别 / manual=手动记录） -->
 - `a`：应用名（Chrome / Obsidian / Terminal / iTerm / Codex 等）
 - `c`：事件内容
 - `sp`：speaker（user=用户主动行为 / ai=AI 回复 / system=系统）
@@ -94,6 +94,13 @@ JSON 格式 `{"date": "YYYY-MM-DD", "events": [...]}`，每个事件字段：
 - 产出（写完什么、跑通什么、确认什么、提交什么）
 - 转折（原计划 X，发现 Y，改为 Z）
 - 洞察（非显而易见的结论、架构判断、方法论升级）
+
+判定为"决策"的句式包括但不限于：
+- "决定 X"、"决定不 X"
+- "放弃 X 转 Y"、"从 X 切到 Y"
+- "选 X 而不是 Y"、"最终采用 X"、"回滚到 X"
+- "敲定 X"、"拍板 X"
+请抽取所有这类句子作为 decisions，不要因为没有"决定"两字就跳过。
 
 ❌ **不值得写**：
 - 纯操作流（点击按钮、保存文件、刷新页面）
