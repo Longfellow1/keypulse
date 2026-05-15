@@ -72,8 +72,12 @@ _EVENT_TYPE_MAPPING = {
     "window_focus": ("switch", 0.3),
     "window_focus_session": ("switch", 0.3),
     "window_title_changed": ("switch", 0.3),
-    "ocr_text_capture": ("view", 0.5),
-    "ocr": ("view", 0.5),
+    # === OCR watcher 已下线 2026-05-14 ===
+    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+    # 历史 raw_events 中 ocr_text_capture 数据保留可读
+    # "ocr_text_capture": ("view", 0.5),
+    # "ocr": ("view", 0.5),
 }
 
 

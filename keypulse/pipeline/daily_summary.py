@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import re
 import hashlib
-from datetime import date as date_cls
+from datetime import date as date_cls, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from keypulse.utils.paths import get_data_dir
+
+if TYPE_CHECKING:
+    from keypulse.pipeline.run_record import RunRecorder
 
 
 _TIME_TEXT = re.compile(r"^\d{2}:\d{2}$")
@@ -20,10 +23,21 @@ _CLUSTER_KEYS = {
     "merge_candidate_with",
 }
 _OPTIONAL_CLUSTER_KEYS = {"peak_event_density"}
+_EVENT_KEYS = {
+    "cluster_id",
+    "display_name",
+    "narrative_one_line",
+    "event_count",
+    "time_range",
+    "anchored_to",
+}
+_OPTIONAL_EVENT_KEYS = {"peak_event_density", "merge_candidate_with"}
+_TOPIC_KEYS = {"anchor", "anchor_state", "narrative", "decisions", "shipped", "events_ref"}
 _COST_KEYS = {"in_tokens", "out_tokens", "cost_usd"}
 _TOPIC_HEADING_RE = re.compile(r"^#{2,3}\s+(.+?)\s*$")
 _ASCII_WORD_RE = re.compile(r"[a-z0-9]+")
 _TIME_IN_TEXT_RE = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)\b")
+_EVENT_H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 
 
 def _slugify_narrative_topic(name: str) -> str:
@@ -277,6 +291,123 @@ def _validate_cluster(cluster: Any, index: int) -> dict[str, Any]:
     return result
 
 
+def _validate_event(event: Any, index: int) -> dict[str, Any]:
+    if not isinstance(event, dict):
+        raise ValueError(f"events[{index}] must be object")
+
+    keys = set(event.keys())
+    missing = sorted(_EVENT_KEYS - keys)
+    extra = sorted(keys - _EVENT_KEYS - _OPTIONAL_EVENT_KEYS)
+    if missing:
+        raise ValueError(f"events[{index}] missing fields: {', '.join(missing)}")
+    if extra:
+        raise ValueError(f"events[{index}] unexpected fields: {', '.join(extra)}")
+
+    cluster_id = str(event["cluster_id"])
+    display_name = str(event["display_name"])
+    narrative_one_line = str(event["narrative_one_line"])
+
+    event_count = event["event_count"]
+    if not isinstance(event_count, int) or isinstance(event_count, bool):
+        raise ValueError(f"events[{index}].event_count must be integer")
+
+    time_range = event["time_range"]
+    if not isinstance(time_range, list) or len(time_range) != 2:
+        raise ValueError(f"events[{index}].time_range must be [start, end]")
+    start = str(time_range[0])
+    end = str(time_range[1])
+    if _TIME_TEXT.fullmatch(start) is None or _TIME_TEXT.fullmatch(end) is None:
+        raise ValueError(f"events[{index}].time_range items must be HH:MM")
+
+    anchored_raw = event["anchored_to"]
+    if anchored_raw is None:
+        anchored_to = None
+    else:
+        anchored_to = str(anchored_raw).strip() or None
+
+    result = {
+        "cluster_id": cluster_id,
+        "display_name": display_name,
+        "narrative_one_line": narrative_one_line,
+        "event_count": event_count,
+        "time_range": [start, end],
+        "anchored_to": anchored_to,
+    }
+    if "merge_candidate_with" in event:
+        merge_with = event["merge_candidate_with"]
+        if not isinstance(merge_with, list):
+            raise ValueError(f"events[{index}].merge_candidate_with must be array")
+        result["merge_candidate_with"] = [str(item) for item in merge_with]
+    if "peak_event_density" in event:
+        result["peak_event_density"] = float(event["peak_event_density"] or 0.0)
+    return result
+
+
+def _validate_topic(topic: Any, index: int) -> dict[str, Any]:
+    if not isinstance(topic, dict):
+        raise ValueError(f"topics[{index}] must be object")
+    keys = set(topic.keys())
+    missing = sorted(_TOPIC_KEYS - keys)
+    if missing:
+        raise ValueError(f"topics[{index}] missing fields: {', '.join(missing)}")
+    extra = sorted(keys - _TOPIC_KEYS - {"display", "title"})
+    if extra:
+        raise ValueError(f"topics[{index}] unexpected fields: {', '.join(extra)}")
+
+    decisions_raw = topic["decisions"]
+    shipped_raw = topic["shipped"]
+    refs_raw = topic["events_ref"]
+    if not isinstance(decisions_raw, list):
+        raise ValueError(f"topics[{index}].decisions must be array")
+    if not isinstance(shipped_raw, list):
+        raise ValueError(f"topics[{index}].shipped must be array")
+    if not isinstance(refs_raw, list):
+        raise ValueError(f"topics[{index}].events_ref must be array")
+
+    normalized = {
+        "anchor": str(topic["anchor"]).strip(),
+        "anchor_state": str(topic["anchor_state"]).strip(),
+        "narrative": str(topic["narrative"]).strip(),
+        "decisions": [str(item) for item in decisions_raw if str(item).strip()],
+        "shipped": [str(item) for item in shipped_raw if str(item).strip()],
+        "events_ref": [str(item) for item in refs_raw if str(item).strip()],
+    }
+    if "display" in topic:
+        normalized["display"] = str(topic["display"]).strip()
+    if "title" in topic:
+        normalized["title"] = str(topic["title"]).strip()
+    return normalized
+
+
+def _legacy_cluster_to_event(cluster: dict[str, Any]) -> dict[str, Any]:
+    output = {
+        "cluster_id": str(cluster.get("slug") or "").strip(),
+        "display_name": str(cluster.get("display_name") or "").strip(),
+        "narrative_one_line": str(cluster.get("narrative_one_line") or "").strip(),
+        "event_count": int(cluster.get("event_count") or 0),
+        "time_range": list(cluster.get("time_range") or ["00:00", "23:59"]),
+        "anchored_to": None,
+        "merge_candidate_with": [str(item) for item in (cluster.get("merge_candidate_with") or [])],
+    }
+    if "peak_event_density" in cluster:
+        output["peak_event_density"] = float(cluster.get("peak_event_density") or 0.0)
+    return output
+
+
+def _event_to_legacy_cluster(event: dict[str, Any]) -> dict[str, Any]:
+    output = {
+        "slug": str(event.get("cluster_id") or "").strip(),
+        "display_name": str(event.get("display_name") or "").strip(),
+        "narrative_one_line": str(event.get("narrative_one_line") or "").strip(),
+        "event_count": int(event.get("event_count") or 0),
+        "time_range": list(event.get("time_range") or ["00:00", "23:59"]),
+        "merge_candidate_with": [str(item) for item in (event.get("merge_candidate_with") or [])],
+    }
+    if "peak_event_density" in event:
+        output["peak_event_density"] = float(event.get("peak_event_density") or 0.0)
+    return output
+
+
 def _validate_cost(cost: Any) -> dict[str, Any]:
     if not isinstance(cost, dict):
         raise ValueError("cost must be object")
@@ -311,56 +442,104 @@ def _validate_summary_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("daily summary must be object")
 
-    required = {"date", "clusters", "misc_event_ids", "topic_status_snapshot", "cost"}
-    keys = set(payload.keys())
-    missing = sorted(required - keys)
-    extra = sorted(keys - required)
-    if missing:
-        raise ValueError(f"daily summary missing fields: {', '.join(missing)}")
-    if extra:
-        raise ValueError(f"daily summary unexpected fields: {', '.join(extra)}")
-
     date_text = _validate_date(str(payload["date"]))
+    events_raw = payload.get("events")
+    clusters_raw = payload.get("clusters")
+    if events_raw is None and clusters_raw is None:
+        raise ValueError("daily summary missing fields: events/clusters")
 
-    clusters_raw = payload["clusters"]
-    if not isinstance(clusters_raw, list):
-        raise ValueError("clusters must be array")
-    clusters = [_validate_cluster(cluster, index) for index, cluster in enumerate(clusters_raw)]
+    events: list[dict[str, Any]]
+    if events_raw is not None:
+        if not isinstance(events_raw, list):
+            raise ValueError("events must be array")
+        events = [_validate_event(event, index) for index, event in enumerate(events_raw)]
+    else:
+        if not isinstance(clusters_raw, list):
+            raise ValueError("clusters must be array")
+        clusters = [_validate_cluster(cluster, index) for index, cluster in enumerate(clusters_raw)]
+        events = [_legacy_cluster_to_event(cluster) for cluster in clusters]
 
-    misc_raw = payload["misc_event_ids"]
+    topics_raw = payload.get("topics", [])
+    if not isinstance(topics_raw, list):
+        raise ValueError("topics must be array")
+    topics = [_validate_topic(topic, index) for index, topic in enumerate(topics_raw)]
+
+    unanchored_raw = payload.get("unanchored")
+    if unanchored_raw is None:
+        unanchored = [dict(event) for event in events if event.get("anchored_to") is None]
+    else:
+        if not isinstance(unanchored_raw, list):
+            raise ValueError("unanchored must be array")
+        unanchored = [_validate_event(event, index) for index, event in enumerate(unanchored_raw)]
+
+    misc_raw = payload.get("misc_event_ids", [])
     if not isinstance(misc_raw, list):
         raise ValueError("misc_event_ids must be array")
-    misc_event_ids = [str(item) for item in misc_raw]
+    misc_event_ids = [str(item) for item in misc_raw if str(item).strip()]
 
     topic_status_snapshot = payload["topic_status_snapshot"]
     if not isinstance(topic_status_snapshot, dict):
         raise ValueError("topic_status_snapshot must be object")
 
+    narrative_md_raw = payload.get("narrative_markdown", "")
+    if narrative_md_raw is None:
+        narrative_md = ""
+    elif isinstance(narrative_md_raw, str):
+        narrative_md = narrative_md_raw
+    else:
+        raise ValueError("narrative_markdown must be string")
+
     normalized = {
         "date": date_text,
-        "clusters": clusters,
+        "topics": topics,
+        "events": events,
+        "unanchored": unanchored,
+        "clusters": [_event_to_legacy_cluster(event) for event in events],
         "misc_event_ids": misc_event_ids,
         "topic_status_snapshot": topic_status_snapshot,
         "cost": _validate_cost(payload["cost"]),
+        "narrative_markdown": narrative_md,
     }
     return normalized
 
 
-def write_daily_summary(date: str, clusters, misc, topic_snapshot, cost) -> Path:
+def write_daily_summary(
+    date: str,
+    clusters=None,
+    misc=None,
+    topic_snapshot=None,
+    cost=None,
+    *,
+    topics=None,
+    events=None,
+    unanchored=None,
+    narrative_markdown: str | None = None,
+    recorder: "RunRecorder | None" = None,
+    stage: str = "persist_daily_summary",
+) -> Path:
     payload = {
         "date": date,
-        "clusters": clusters,
-        "misc_event_ids": misc,
-        "topic_status_snapshot": topic_snapshot,
-        "cost": cost,
+        "clusters": clusters if clusters is not None else [],
+        "events": events,
+        "topics": topics if topics is not None else [],
+        "unanchored": unanchored,
+        "misc_event_ids": misc if misc is not None else [],
+        "topic_status_snapshot": topic_snapshot if topic_snapshot is not None else {},
+        "cost": cost if cost is not None else {"in_tokens": 0, "out_tokens": 0, "cost_usd": 0.0},
+        "narrative_markdown": str(narrative_markdown) if narrative_markdown else "",
     }
     normalized = _validate_summary_payload(payload)
 
     target = _summary_dir() / f"{normalized['date']}.json"
-    tmp_path = target.with_name(f"{target.name}.tmp")
+    rendered = json.dumps(normalized, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    if recorder is not None:
+        from keypulse.pipeline.artifact_writer import write_artifact
 
+        write_artifact(recorder, target, rendered, stage=stage)
+        return target
+    tmp_path = target.with_name(f"{target.name}.tmp")
     try:
-        tmp_path.write_text(json.dumps(normalized, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        tmp_path.write_text(rendered, encoding="utf-8")
         tmp_path.replace(target)
     finally:
         if tmp_path.exists():
@@ -380,3 +559,280 @@ def read_daily_summary(date: str) -> dict[str, Any] | None:
         raise ValueError(f"invalid daily summary JSON: {target}") from exc
 
     return _validate_summary_payload(payload)
+
+
+def _anchor_link(anchor: str, display: str | None = None) -> str:
+    display_text = str(display or "").strip()
+    if display_text:
+        return f"[[{anchor}|{display_text}]]"
+    return f"[[{anchor}]]"
+
+
+def _daily_event_cards(date_text: str) -> list[tuple[str, str]]:
+    event_dir = get_data_dir() / "events" / date_text
+    if not event_dir.exists():
+        return []
+
+    cards: list[tuple[str, str]] = []
+    event_paths = sorted(
+        (path for path in event_dir.glob("*.md") if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in event_paths:
+        slug = path.stem
+        try:
+            markdown = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        match = _EVENT_H1_RE.search(markdown)
+        title = match.group(1).strip() if match else slug
+        cards.append((slug, title or slug))
+    return cards
+
+
+_EVENT_CARD_NOISE_PREFIXES = (
+    "export-",
+    "https-",
+    "http-",
+    "redacted-shell",
+    "uncategorized",
+    "obsidian-clipboard-copy",
+    "https-github-com-",
+    "https-mp-weixin-",
+)
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_ASCII_START_RE = re.compile(r"^[0-9A-Za-z]")
+
+
+def _event_card_score(slug: str, title: str) -> int:
+    slug_text = str(slug or "").strip().lower()
+    title_text = " ".join(str(title or "").split()).strip()
+    title_lower = title_text.lower()
+    if (
+        any(slug_text.startswith(prefix) or title_lower.startswith(prefix) for prefix in _EVENT_CARD_NOISE_PREFIXES)
+        or "users-harland-" in slug_text
+        or "/users/harland/" in title_lower
+        or " users/harland/" in title_lower
+    ):
+        return 0
+
+    score = 1
+    if _CJK_RE.search(title_text):
+        score += 3
+    if 8 <= len(title_text) <= 40:
+        score += 2
+    if title_text and _ASCII_START_RE.match(title_text) is None:
+        score += 1
+    return score
+
+
+def filter_daily_event_cards(
+    cards: list[tuple[str, str]],
+    *,
+    model_gateway: Any | None = None,
+    target_count: int = 6,
+) -> list[tuple[str, str]]:
+    if not cards:
+        return []
+
+    del model_gateway
+    limit = min(max(int(target_count or 6), 5), 8, len(cards))
+    ranked = sorted(
+        enumerate(cards),
+        key=lambda item: (-_event_card_score(item[1][0], item[1][1]), item[0]),
+    )
+    selected_indices = sorted(index for index, _card in ranked[:limit])
+    return [cards[index] for index in selected_indices]
+
+
+def _cross_day_continuations(
+    *,
+    date_text: str,
+    snapshot: dict[str, Any],
+    topic_lookup: dict[str, dict[str, Any]],
+) -> list[tuple[str, str]]:
+    previous_date = (date_cls.fromisoformat(date_text) - timedelta(days=1)).isoformat()
+    continuations: list[tuple[str, str]] = []
+    for slug, payload in snapshot.items():
+        if not isinstance(payload, dict):
+            continue
+        evidence_dates = {str(item) for item in (payload.get("evidence_dates") or []) if str(item).strip()}
+        last_seen = str(payload.get("last_seen_date") or "").strip()
+        if previous_date not in evidence_dates or date_text not in evidence_dates and last_seen != date_text:
+            continue
+        topic = topic_lookup.get(str(slug))
+        display = str(
+            (topic or {}).get("display")
+            or (topic or {}).get("title")
+            or payload.get("name")
+            or slug
+        ).strip() or str(slug)
+        anchor = str((topic or {}).get("anchor") or slug).strip() or str(slug)
+        continuations.append((anchor, display))
+    return continuations
+
+
+def render_daily_markdown(
+    *,
+    date: str,
+    clusters: list[dict[str, Any]] | None = None,
+    topics: list[dict[str, Any]] | None = None,
+    events: list[dict[str, Any]] | None = None,
+    unanchored: list[dict[str, Any]] | None = None,
+    previous_day_anchors: list[str] | None = None,
+    narrative_markdown: str | None = None,
+    topic_snapshot: dict[str, Any] | None = None,
+    model_gateway: Any | None = None,
+    event_cards: list[tuple[str, str]] | None = None,
+    previous_plan: str = "",
+    tomorrow_plan: str = "",
+) -> str:
+    date_text = _validate_date(date)
+    if topics is None and events is None:
+        legacy_clusters = [cluster for cluster in (clusters or []) if isinstance(cluster, dict)]
+        events = [_legacy_cluster_to_event(cluster) for cluster in legacy_clusters]
+        topics = [
+            {
+                "anchor": str(cluster.get("slug") or "").strip(),
+                "anchor_state": "continuing",
+                "narrative": str(cluster.get("narrative_one_line") or "").strip(),
+                "decisions": [],
+                "shipped": [],
+                "events_ref": [str(cluster.get("slug") or "").strip()],
+                "display": str(cluster.get("display_name") or cluster.get("slug") or "").strip(),
+            }
+            for cluster in legacy_clusters
+            if str(cluster.get("slug") or "").strip()
+        ]
+        unanchored = [event for event in (events or []) if event.get("anchored_to") is None]
+
+    topic_list = [topic for topic in (topics or []) if isinstance(topic, dict)]
+    event_list = [event for event in (events or []) if isinstance(event, dict)]
+    previous = [str(item) for item in (previous_day_anchors or []) if str(item).strip()]
+    snapshot = topic_snapshot if isinstance(topic_snapshot, dict) else {}
+
+    def _extract_section(source: str, heading: str) -> str:
+        if not source.strip():
+            return ""
+        lines = source.splitlines()
+        start = -1
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("## ") and heading in stripped[3:]:
+                start = idx + 1
+                break
+        if start < 0:
+            return ""
+        collected: list[str] = []
+        for line in lines[start:]:
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                break
+            collected.append(line)
+        return "\n".join(collected).strip()
+
+    def _extract_h3_section(source: str, candidates: list[str]) -> str:
+        if not source.strip():
+            return ""
+        targets = [c.strip() for c in candidates if c and c.strip()]
+        if not targets:
+            return ""
+        lines = source.splitlines()
+        in_section = False
+        collected: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                if in_section:
+                    break
+                continue
+            if stripped.startswith("### "):
+                if in_section:
+                    break
+                if any(t in stripped for t in targets):
+                    in_section = True
+                continue
+            if in_section:
+                collected.append(line)
+        return "\n".join(collected).strip()
+
+    source_markdown = str(narrative_markdown or "")
+    highlight_section = _extract_section(source_markdown, "今日要点")
+
+    lines = ["📍 Asia/Shanghai", "", f"# {date_text}"]
+    previous_plan_text = " ".join(str(previous_plan or "").split()).strip()
+    if previous_plan_text:
+        lines.extend(["", f"> 💭 昨天你说想：{previous_plan_text}"])
+    lines.extend(["", "## 今日要点", ""])
+    if highlight_section:
+        lines.append(highlight_section)
+    elif topic_list:
+        lines.append(str(topic_list[0].get("narrative") or "").strip() or "—")
+    else:
+        lines.append("—")
+
+    lines.extend(["", "## 今天做的事", ""])
+    event_lookup = {str(item.get("cluster_id") or ""): item for item in event_list}
+    for topic in topic_list:
+        anchor = str(topic.get("anchor") or "").strip()
+        display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
+        heading = _anchor_link(anchor, display) if anchor else display
+        lines.append(f"### {heading}")
+        lines.append("")
+        refs = [str(item) for item in (topic.get("events_ref") or []) if str(item).strip()]
+        h3_candidates = [display]
+        for ref in refs:
+            cluster_display = str((event_lookup.get(ref) or {}).get("display_name") or "").strip()
+            if cluster_display:
+                h3_candidates.append(cluster_display)
+        narrative = _extract_h3_section(source_markdown, h3_candidates)
+        if not narrative:
+            narrative = str(topic.get("narrative") or "").strip()
+        if not narrative and refs:
+            narrative = "；".join(
+                str((event_lookup.get(ref) or {}).get("narrative_one_line") or "").strip()
+                for ref in refs
+                if str((event_lookup.get(ref) or {}).get("narrative_one_line") or "").strip()
+            )
+        lines.append(narrative or "—")
+        lines.append("")
+    if not topic_list:
+        lines.extend(["—", ""])
+
+    raw_event_cards = event_cards if event_cards is not None else _daily_event_cards(date_text)
+    selected_event_cards = filter_daily_event_cards(raw_event_cards, model_gateway=model_gateway)
+    if selected_event_cards:
+        lines.extend(["## 今天的事件卡", ""])
+        for slug, title in selected_event_cards:
+            lines.append(f"- [[../.keypulse/events/{date_text}/{slug}|{title}]]")
+
+    cross_day_section = _extract_section(source_markdown, "跨日延续").strip()
+    if cross_day_section:
+        lines.extend(["", "## 跨日延续", "", cross_day_section])
+
+    stuck_section = _extract_section(source_markdown, "今天的卡壳").strip()
+    if stuck_section:
+        lines.extend(["", "## 今天的卡壳", "", stuck_section])
+
+    blocked_topics = [
+        topic
+        for topic in topic_list
+        if str(topic.get("anchor_state") or "").strip() == "blocked"
+    ]
+    if blocked_topics:
+        lines.extend(["", "## 今天的卡点", ""])
+        for topic in blocked_topics:
+            anchor = str(topic.get("anchor") or "").strip()
+            display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
+            narrative = str(topic.get("narrative") or "").strip()
+            suffix = f": {narrative}" if narrative else ""
+            lines.append(f"- {_anchor_link(anchor, display)}{suffix}")
+
+    tomorrow_plan_text = " ".join(str(tomorrow_plan or "").split()).strip() or "______"
+    lines.extend(["", "## 明日的锚点", "", f"> 明天我想：{tomorrow_plan_text}", ">", "> _写一句话留给明天的自己_"])
+
+    if event_list and not topic_list:
+        lines.extend(["", "<!-- events_count: {} -->".format(len(event_list))])
+    lines.append("")
+    return "\n".join(lines).strip()

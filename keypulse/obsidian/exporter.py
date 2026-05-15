@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 from collections import Counter, defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, TYPE_CHECKING
@@ -15,13 +16,11 @@ from keypulse.obsidian.layout import iso_date, render_note, slugify, time_token
 from keypulse.obsidian.model import NoteCard
 from keypulse.quality import StrategyRegistry, StrategyRunner
 from keypulse.quality.strategies import register_cluster_strategies
-from keypulse.pipeline.decisions import build_daily_decisions, render_daily_decisions
+from keypulse.pipeline.daily_summary import render_daily_markdown
 from keypulse.pipeline.fragments import filter_noisy_raw_events
-from keypulse.pipeline.narrative import aggregate_work_blocks, render_daily_narrative
-from keypulse.pipeline.skeleton import build_daily_skeleton_report
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.atomic_io import atomic_write_text
-from keypulse.utils.dates import local_city_label, local_day_bounds
+from keypulse.utils.dates import local_day_bounds
 
 if TYPE_CHECKING:
     from keypulse.pipeline.model import ModelGateway
@@ -80,6 +79,23 @@ _FILENAME_STOPWORDS = {
     "today",
     "yesterday",
 }
+
+
+@dataclass(frozen=True)
+class ExportWorkBlock:
+    theme: str
+    duration_sec: int
+    ts_start: str
+    ts_end: str
+    primary_app: str
+    event_count: int
+    key_candidates: list[dict[str, Any]]
+    continuity: str = "new"
+    user_candidates: list[dict[str, Any]] = field(default_factory=list)
+    system_candidates: list[dict[str, Any]] = field(default_factory=list)
+    subtopics: tuple[str, ...] = ()
+    session_id: str | None = None
+    fragment: bool = False
 
 
 def _is_placeholder_tomorrow_plan(text: str) -> bool:
@@ -264,27 +280,6 @@ def _query_events_by_date(db_path: Path, date_str: str, *, min_id_exclusive: int
     return [dict(row) for row in rows]
 
 
-def _query_sessions_by_date(db_path: Path, date_str: str, *, limit: int = 500) -> list[dict[str, Any]]:
-    if not db_path.exists():
-        return []
-
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            "SELECT * FROM sessions WHERE started_at LIKE ? ORDER BY started_at ASC LIMIT ?",
-            (f"{date_str}%", limit),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [dict(row) for row in rows]
-
-
-def _max_ts_start(rows: list[dict[str, Any]]) -> str | None:
-    timestamps = [str(row.get("ts_start") or "").strip() for row in rows if str(row.get("ts_start") or "").strip()]
-    return max(timestamps) if timestamps else None
-
-
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -419,20 +414,6 @@ def _append_unique_section_lines(
     if merged and merged[-1].strip():
         merged.append("")
     return _replace_section_body(text, heading, merged)
-
-
-def _replace_or_append_top_line(text: str, prefix: str, value: int) -> str:
-    lines = text.splitlines()
-    pattern = re.compile(rf"^{re.escape(prefix)}\s*\d+\s*$")
-    replaced = False
-    for index, line in enumerate(lines):
-        if pattern.match(line.strip()):
-            lines[index] = f"{prefix} {value}"
-            replaced = True
-            break
-    if not replaced:
-        return text
-    return "\n".join(lines).rstrip() + "\n"
 
 
 def _replace_first_matching_line(text: str, pattern: str, replacement: str) -> str:
@@ -719,166 +700,6 @@ def _render_db_only_narrative(db_path: Path, date_str: str) -> str:
             timeline,
         ]
     ).strip()
-
-
-def _render_daily_narrative_v2_or_legacy(
-    work_blocks: list[Any],
-    *,
-    model_gateway: "ModelGateway | None",
-    evidence_formatter: Callable[[dict[str, Any]], str] | None,
-    user_intent: str = "",
-    use_narrative_v2: bool = False,
-    use_narrative_skeleton: bool = False,
-    use_things_narrative: bool = False,
-    things_idle_threshold_minutes: int = 30,
-    db_path: str | Path | None = None,
-    date_str: str = "",
-) -> str:
-    logger.info(
-        "narrative gate: things=%s skeleton=%s v2=%s gateway=%s db=%s",
-        use_things_narrative,
-        use_narrative_skeleton,
-        use_narrative_v2,
-        model_gateway is not None,
-        db_path is not None,
-    )
-    if use_things_narrative and model_gateway is not None and date_str:
-        backend = model_gateway.select_backend("write") if hasattr(model_gateway, "select_backend") else None
-        kind = getattr(backend, "kind", "") if backend is not None else ""
-        url = getattr(backend, "base_url", "") if backend is not None else ""
-        model = getattr(backend, "model", "") if backend is not None else ""
-        available = backend is not None and kind and kind != "disabled" and model and url
-        if available:
-            try:
-                from keypulse.pipeline.things import build_things, render_things_report
-
-                day_since, day_until = local_day_bounds(date_str)
-                since_dt = datetime.fromisoformat(day_since)
-                until_dt = datetime.fromisoformat(day_until)
-                idle_threshold = max(int(things_idle_threshold_minutes), 1)
-                things = build_things(
-                    since=since_dt,
-                    until=until_dt,
-                    model_gateway=model_gateway,
-                    sources=None,
-                    idle_threshold_minutes=idle_threshold,
-                )
-                if things:
-                    body = render_things_report(things, model_gateway=model_gateway, title="今日做的事")
-                    return _strip_narrative_heading(body) or body
-                logger.warning("things narrative empty; falling back to skeleton/v2/legacy")
-            except Exception as exc:
-                logger.warning(
-                    "things narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
-                    kind,
-                    url,
-                    model,
-                    type(exc).__name__,
-                    exc,
-                )
-    if use_narrative_skeleton and model_gateway is not None and db_path is not None:
-        backend = model_gateway.select_backend("write") if hasattr(model_gateway, "select_backend") else None
-        kind = getattr(backend, "kind", "") if backend is not None else ""
-        url = getattr(backend, "base_url", "") if backend is not None else ""
-        model = getattr(backend, "model", "") if backend is not None else ""
-        available = backend is not None and kind and kind != "disabled" and model and url
-        if available:
-            try:
-                return build_daily_skeleton_report(Path(db_path), date_str, model_gateway)
-            except Exception as exc:
-                logger.warning(
-                    "skeleton narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
-                    kind,
-                    url,
-                    model,
-                    type(exc).__name__,
-                    exc,
-                )
-        if model_gateway is not None and db_path is not None:
-            # Skeleton fallback: try v2 if enabled, otherwise db-only
-            if use_narrative_v2:
-                logger.warning("skeleton narrative unavailable; falling back to v2")
-                from keypulse.pipeline.narrative_v2 import render_v2_narrative
-                try:
-                    v2_body = render_v2_narrative(
-                        work_blocks,
-                        model_gateway=model_gateway,
-                        db_path=db_path,
-                        date_str=date_str,
-                    )
-                    if v2_body:
-                        return v2_body
-                except Exception as exc:
-                    logger.warning(
-                        "skeleton v2 fallback failed backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
-                        kind,
-                        url,
-                        model,
-                        type(exc).__name__,
-                        exc,
-                    )
-            else:
-                logger.warning("skeleton narrative unavailable, v2 disabled; falling back to db-only")
-                db_only_body = _render_db_only_narrative(Path(db_path), date_str)
-                if db_only_body:
-                    return db_only_body
-    if use_narrative_v2 and model_gateway is not None and db_path is not None:
-        from keypulse.pipeline.narrative_v2 import render_v2_narrative
-        v2_body = render_v2_narrative(
-            work_blocks,
-            model_gateway=model_gateway,
-            db_path=db_path,
-            date_str=date_str,
-        )
-        if v2_body:
-            return v2_body
-        logger.warning("v2 narrative returned empty; falling back to legacy path")
-    return _render_daily_narrative_with_llm(
-        work_blocks,
-        model_gateway=model_gateway,
-        evidence_formatter=evidence_formatter,
-        user_intent=user_intent,
-    )
-
-
-def _render_daily_narrative_with_llm(
-    work_blocks: list[Any],
-    *,
-    model_gateway: "ModelGateway | None",
-    evidence_formatter: Callable[[dict[str, Any]], str] | None,
-    user_intent: str = "",
-) -> str:
-    if model_gateway is not None:
-        backend = model_gateway.select_backend("write") if hasattr(model_gateway, "select_backend") else None
-        kind = getattr(backend, "kind", "") if backend is not None else ""
-        url = getattr(backend, "base_url", "") if backend is not None else ""
-        model = getattr(backend, "model", "") if backend is not None else ""
-        available = backend is not None and kind and kind != "disabled" and model and url
-        if available and hasattr(model_gateway, "render_daily_narrative"):
-            try:
-                result = model_gateway.render_daily_narrative(list(work_blocks), user_intent=user_intent).strip()
-                if result:
-                    return result
-            except TypeError:
-                try:
-                    result = model_gateway.render_daily_narrative(list(work_blocks)).strip()
-                    if result:
-                        return result
-                except Exception as exc:
-                    logger.error(
-                        "obsidian_daily_narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
-                        kind, url, model, type(exc).__name__, exc,
-                    )
-            except Exception as exc:
-                logger.error(
-                    "obsidian_daily_narrative fallback backend_kind=%s url=%s model=%s exc_type=%s exc=%s",
-                    kind, url, model, type(exc).__name__, exc,
-                )
-    return render_daily_narrative(
-        list(work_blocks),
-        evidence_formatter=evidence_formatter,
-        include_heading=True,
-    )
 
 
 def _source_label(source: str | None) -> str:
@@ -1173,6 +994,132 @@ def _confidence(event: dict[str, Any]) -> float:
     return 0.5
 
 
+def _parse_item_datetime(value: str | None) -> datetime:
+    if not value:
+        return datetime.max.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return datetime.max.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _item_duration(events: list[dict[str, Any]]) -> int:
+    if len(events) < 2:
+        return 0
+    start = min((_parse_item_datetime(str(item.get("created_at") or "")) for item in events), default=datetime.max.replace(tzinfo=timezone.utc))
+    end = max((_parse_item_datetime(str(item.get("created_at") or "")) for item in events), default=datetime.max.replace(tzinfo=timezone.utc))
+    if start == datetime.max.replace(tzinfo=timezone.utc) or end <= start:
+        return 0
+    return int((end - start).total_seconds())
+
+
+def _aggregate_export_work_blocks(
+    items: list[dict[str, Any]] | None,
+    *,
+    sessions: list[dict[str, Any]] | None = None,
+    recent_topic_keys: set[str] | None = None,
+    previous_day_topic_keys: set[str] | None = None,
+) -> list[ExportWorkBlock]:
+    session_by_id = {str(session.get("id") or ""): session for session in (sessions or []) if str(session.get("id") or "").strip()}
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for index, item in enumerate(items or []):
+        topic_key = str(item.get("topic_key") or "uncategorized").strip() or "uncategorized"
+        session_id = str(item.get("session_id") or "").strip()
+        grouped[session_id or f"topic:{topic_key}:{index if topic_key == 'uncategorized' else ''}"].append(item)
+
+    blocks: list[ExportWorkBlock] = []
+    for group_items in grouped.values():
+        ordered = sorted(group_items, key=lambda item: _parse_item_datetime(str(item.get("created_at") or "")))
+        if not ordered:
+            continue
+        topic_counts = Counter(str(item.get("topic_key") or "uncategorized") for item in ordered)
+        theme = topic_counts.most_common(1)[0][0]
+        app_counts = Counter(str(item.get("app_name") or item.get("window_title") or "").strip() for item in ordered)
+        app_counts.pop("", None)
+        ts_start = str(ordered[0].get("created_at") or "")
+        ts_end = str(ordered[-1].get("created_at") or ts_start)
+        duration = _item_duration(ordered)
+        session_id = str(ordered[0].get("session_id") or "").strip()
+        if duration <= 0 and session_id in session_by_id:
+            try:
+                duration = max(int(session_by_id[session_id].get("duration_sec") or 0), 0)
+            except Exception:
+                duration = 0
+        user_candidates = [item for item in ordered if str(item.get("speaker") or "") == "user"][:3]
+        system_candidates = [item for item in ordered if str(item.get("speaker") or "") != "user"][:3]
+        blocks.append(
+            ExportWorkBlock(
+                theme=theme,
+                duration_sec=duration,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                primary_app=app_counts.most_common(1)[0][0] if app_counts else "",
+                event_count=len(ordered),
+                key_candidates=ordered[:3],
+                continuity=(
+                    "continued"
+                    if previous_day_topic_keys and theme in previous_day_topic_keys
+                    else "returned"
+                    if recent_topic_keys and theme in recent_topic_keys
+                    else "new"
+                ),
+                user_candidates=user_candidates,
+                system_candidates=system_candidates,
+                subtopics=tuple(dict.fromkeys(str(item.get("topic_key") or "uncategorized") for item in ordered)),
+                session_id=session_id or None,
+                fragment=duration < 300 or not user_candidates,
+            )
+        )
+    return sorted(blocks, key=lambda block: _parse_item_datetime(block.ts_start))
+
+
+def _summary_events_from_topics(topics: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    summary_events: list[dict[str, Any]] = []
+    for topic_key, topic_items in sorted(topics.items()):
+        ordered = sorted(topic_items, key=lambda item: str(item.get("created_at") or ""))
+        if not ordered:
+            continue
+        summary_events.append(
+            {
+                "cluster_id": topic_key,
+                "display_name": _topic_title(topic_key),
+                "narrative_one_line": "；".join(str(item.get("title") or "").strip() for item in ordered[:3] if str(item.get("title") or "").strip()),
+                "event_count": len(ordered),
+                "time_range": ["00:00", "23:59"],
+                "anchored_to": topic_key if topic_key != "uncategorized" else None,
+                "merge_candidate_with": [],
+            }
+        )
+    return summary_events
+
+
+def _summary_topics_from_blocks(blocks: list[ExportWorkBlock], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    event_by_id = {str(event.get("cluster_id") or ""): event for event in events}
+    topics: list[dict[str, Any]] = []
+    for block in blocks:
+        if block.fragment or not block.theme or block.theme == "uncategorized":
+            continue
+        event_payload = event_by_id.get(block.theme) or {}
+        narrative = str(event_payload.get("narrative_one_line") or "").strip()
+        if len(narrative) < 40:
+            narrative = f"{_topic_title(block.theme)} 在当天形成了 {block.event_count} 条事件记录，主要围绕 {block.primary_app or '当前工作'} 展开。"
+        topics.append(
+            {
+                "anchor": block.theme,
+                "anchor_state": "continuing",
+                "narrative": narrative,
+                "decisions": [],
+                "shipped": [narrative] if narrative else [],
+                "events_ref": [block.theme],
+                "display": _topic_title(block.theme),
+            }
+        )
+    return topics
+
+
 def _short_body_title(text: str, fallback: str = "event") -> str:
     for raw_line in str(text).splitlines():
         line = " ".join(raw_line.strip().lstrip("#*-").split())
@@ -1417,10 +1364,6 @@ def build_obsidian_bundle(
     model_gateway: "ModelGateway | None" = None,
     previous_plan: str = "",
     current_plan_existing: str = "",
-    use_narrative_v2: bool = False,
-    use_narrative_skeleton: bool = False,
-    use_things_narrative: bool = False,
-    things_idle_threshold_minutes: int = 30,
     db_path: str | Path | None = None,
     wiki_link_mode: str = "relative",
     humanize_titles: bool = False,
@@ -1430,7 +1373,7 @@ def build_obsidian_bundle(
     items = [item for item in items if not _is_loginwindow_render_item(item)]
     logger.info("hygiene_filter raw=%d kept=%d dropped=%d", raw_count, len(items), raw_count - len(items))
     normalized = [item for item in (_to_item(event) for event in items) if item is not None]
-    work_blocks = aggregate_work_blocks(
+    work_blocks = _aggregate_export_work_blocks(
         normalized,
         sessions=sessions,
         recent_topic_keys=recent_topic_keys,
@@ -1484,43 +1427,30 @@ def build_obsidian_bundle(
         topic_cards.append(topic_card)
         daily_topic_links.append(_obsidian_link(topic_card.path, _topic_title(topic_key), link_formatter=link_formatter))
 
-    daily_body = "\n".join(
-        [
-            f"📍 {local_city_label()}",
-            "",
-            f"# {date_str}",
-            "",
-            *_render_previous_plan_acknowledgment(previous_plan),
-            f"- 知识库：{vault_name}",
-            f"- 事件卡：{work_item_count}",
-            f"- 主题卡：{work_topic_count}",
-            "",
-            _render_daily_narrative_v2_or_legacy(
-                work_blocks,
-                model_gateway=model_gateway,
-                evidence_formatter=lambda item: _obsidian_link(
-                    evidence_paths.get(_event_identity(item), ""),
-                    item["title"],
-                    link_formatter=link_formatter,
-                )
-                if evidence_paths
-                else item["title"],
-                user_intent=previous_plan,
-                use_narrative_v2=use_narrative_v2,
-                use_narrative_skeleton=use_narrative_skeleton,
-                use_things_narrative=use_things_narrative,
-                things_idle_threshold_minutes=things_idle_threshold_minutes,
-                db_path=db_path,
-                date_str=date_str,
-            ),
-            "",
-            "## 今天的事件卡",
-            *_preview_links(daily_links, "事件卡"),
-            "",
-            "## 今天涉及的主题",
-            *_preview_links(daily_topic_links, "主题卡"),
-            *_render_tomorrow_plan_section(current_plan_existing),
-        ]
+    summary_events = _summary_events_from_topics(topics)
+    summary_topics = _summary_topics_from_blocks(work_blocks, summary_events)
+    daily_event_cards = [
+        (Path(card.path).stem, str(card.properties.get("title") or Path(card.path).stem))
+        for card in event_cards
+    ]
+    daily_body = render_daily_markdown(
+        date=date_str,
+        topics=summary_topics,
+        events=summary_events,
+        unanchored=[event for event in summary_events if event.get("anchored_to") is None],
+        topic_snapshot={
+            topic["anchor"]: {
+                "name": topic.get("display") or topic["anchor"],
+                "state": "in_progress",
+                "last_seen_date": date_str,
+                "evidence_dates": [date_str],
+            }
+            for topic in summary_topics
+        },
+        model_gateway=model_gateway,
+        event_cards=daily_event_cards,
+        previous_plan=previous_plan,
+        tomorrow_plan=current_plan_existing,
     )
 
     daily_card = _build_note_card(
@@ -1651,53 +1581,16 @@ def export_obsidian_incremental(
         keypulse_home=keypulse_home,
     )
 
-    daily_path = output_path / "Daily" / f"{date_str}.md"
-    previous_day = (datetime.fromisoformat(f"{date_str}T00:00:00+00:00") - timedelta(days=1)).date().isoformat()
-    previous_plan = _read_tomorrow_plan(output_path / "Daily" / f"{previous_day}.md")
-    current_plan_existing = _read_tomorrow_plan(daily_path)
-    existing_daily_text = _read_text(daily_path)
     if db_path_resolved.exists():
         window_raw_events = _query_events_by_date(db_path_resolved, date_str, min_id_exclusive=last_event_id)
-        full_day_raw_events = _query_events_by_date(db_path_resolved, date_str)
-        sessions = _query_sessions_by_date(db_path_resolved, date_str, limit=500)
     else:
         day_since, day_until = local_day_bounds(date_str)
-        full_day_raw_events = query_raw_events(since=day_since, until=day_until, limit=5000)
-        if any(row.get("id") is not None for row in full_day_raw_events):
-            window_raw_events = [row for row in full_day_raw_events if int(row.get("id") or 0) > last_event_id]
+        raw_events = query_raw_events(since=day_since, until=day_until, limit=5000)
+        if any(row.get("id") is not None for row in raw_events):
+            window_raw_events = [row for row in raw_events if int(row.get("id") or 0) > last_event_id]
         else:
-            window_raw_events = list(full_day_raw_events)
-        sessions = []
-        try:
-            from keypulse.store.repository import get_sessions
-
-            sessions = get_sessions(date_str=date_str, limit=500)
-        except Exception:
-            sessions = []
+            window_raw_events = list(raw_events)
     written: list[Path] = []
-
-    if not existing_daily_text:
-        bundle = build_obsidian_bundle(
-            full_day_raw_events,
-            vault_name=vault_name,
-            date_str=date_str,
-            sessions=sessions,
-            model_gateway=model_gateway,
-            previous_plan=previous_plan,
-            current_plan_existing=current_plan_existing,
-            wiki_link_mode=wiki_link_mode,
-            humanize_titles=humanize_titles,
-        )
-        written = write_obsidian_bundle(bundle, output_path)
-        max_new_id = max((int(row.get("id") or 0) for row in window_raw_events), default=last_event_id)
-        _write_cursor_state_atomic(
-            cursor_file,
-            {
-                "last_event_id": max(last_event_id, max_new_id),
-                "last_run_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-        return written
 
     event_items: list[dict[str, Any]] = []
     for raw_event in sorted(window_raw_events, key=lambda row: str(row.get("ts_start") or "")):
@@ -1705,10 +1598,7 @@ def export_obsidian_incremental(
         if item is not None:
             event_items.append(item)
 
-    existing_event_keys = _section_link_keys(existing_daily_text, "## 今天的事件卡", kind="event")
-    existing_topic_keys = _section_link_keys(existing_daily_text, "## 今天涉及的主题", kind="topic")
     topic_items_by_key: dict[str, list[tuple[dict[str, Any], str]]] = defaultdict(list)
-    daily_event_lines: list[str] = []
 
     for item in event_items:
         event_card = _build_event_card(
@@ -1719,21 +1609,14 @@ def export_obsidian_incremental(
             model_gateway=model_gateway,
             humanize_titles=humanize_titles,
         )
-        event_key = _event_link_key_from_target(event_card.path)
-        if event_key in existing_event_keys:
-            continue
-        existing_event_keys.add(event_key)
-        daily_event_lines.append(f"- {_obsidian_link(event_card.path, item['title'], link_formatter=link_formatter)}")
         topic_bucket = _existing_topic_alias(topics_dir, item) or item["topic_key"]
-        topic_items_by_key[topic_bucket].append((item, event_card.path))
         written_path = _write_note_if_missing(output_path, keypulse_home, event_card.as_dict())
         if written_path is not None:
+            topic_items_by_key[topic_bucket].append((item, event_card.path))
             written.append(written_path)
 
-    daily_topic_lines: list[str] = []
     for topic_key, topic_entries in sorted(topic_items_by_key.items()):
         topic_path = topics_dir / f"{topic_key}.md"
-        topic_link = _obsidian_link(f"Topics/{topic_key}.md", _topic_title(topic_key), link_formatter=link_formatter)
         if topic_path.exists():
             topic_text = _read_text(topic_path)
             existing_topic_event_keys = _section_link_keys(topic_text, "## 相关证据", kind="event")
@@ -1758,9 +1641,6 @@ def export_obsidian_incremental(
                 _write_text(topic_path, updated_text)
                 written.append(topic_path)
 
-            if topic_key not in existing_topic_keys:
-                daily_topic_lines.append(f"- {topic_link}")
-                existing_topic_keys.add(topic_key)
             continue
 
         if topic_key == "uncategorized" or len(topic_entries) < 2:
@@ -1777,18 +1657,6 @@ def export_obsidian_incremental(
         written_path = _write_note_if_missing(output_path, keypulse_home, topic_card.as_dict())
         if written_path is not None:
             written.append(written_path)
-        if topic_key not in existing_topic_keys:
-            daily_topic_lines.append(f"- {topic_link}")
-            existing_topic_keys.add(topic_key)
-
-    updated_daily = existing_daily_text
-    updated_daily = _replace_or_append_top_line(updated_daily, "- 事件卡：", len(existing_event_keys))
-    updated_daily = _replace_or_append_top_line(updated_daily, "- 主题卡：", len(existing_topic_keys))
-    updated_daily = _append_unique_section_lines(updated_daily, "## 今天的事件卡", daily_event_lines, kind="event")
-    updated_daily = _append_unique_section_lines(updated_daily, "## 今天涉及的主题", daily_topic_lines, kind="topic")
-    if updated_daily != existing_daily_text:
-        _write_text(daily_path, updated_daily)
-        written.append(daily_path)
 
     max_new_id = max((int(row.get("id") or 0) for row in window_raw_events), default=last_event_id)
     _write_cursor_state_atomic(
@@ -1835,10 +1703,6 @@ def export_obsidian(
     incremental: bool = False,
     db_path: str | Path | None = None,
     cursor_path: str | Path | None = None,
-    use_narrative_v2: bool = False,
-    use_narrative_skeleton: bool = False,
-    use_things_narrative: bool = False,
-    things_idle_threshold_minutes: int = 30,
     wiki_link_mode: str = "relative",
     humanize_titles: bool = False,
 ) -> list[Path]:
@@ -1882,10 +1746,10 @@ def export_obsidian(
     previous_day = (effective_dt - timedelta(days=1)).date().isoformat()
     recent_events = query_raw_events(since=f"{recent_since}T00:00:00+00:00", until=f"{previous_day}T23:59:59+00:00", limit=10000)
     previous_day_events = query_raw_events(since=f"{previous_day}T00:00:00+00:00", until=f"{previous_day}T23:59:59+00:00", limit=10000)
-    recent_blocks = aggregate_work_blocks([item for item in (_to_item(event) for event in recent_events) if item is not None])
+    recent_blocks = _aggregate_export_work_blocks([item for item in (_to_item(event) for event in recent_events) if item is not None])
     recent_topic_keys = {block.theme for block in recent_blocks if not block.fragment}
     recent_topic_counts = Counter(block.theme for block in recent_blocks if not block.fragment)
-    previous_blocks = aggregate_work_blocks([item for item in (_to_item(event) for event in previous_day_events) if item is not None])
+    previous_blocks = _aggregate_export_work_blocks([item for item in (_to_item(event) for event in previous_day_events) if item is not None])
     previous_day_topic_keys = {block.theme for block in previous_blocks if not block.fragment}
     previous_plan = _read_tomorrow_plan(output_path / "Daily" / f"{previous_day}.md")
     current_plan_existing = _read_tomorrow_plan(output_path / "Daily" / f"{effective_date}.md")
@@ -1901,10 +1765,6 @@ def export_obsidian(
         model_gateway=model_gateway,
         previous_plan=previous_plan,
         current_plan_existing=current_plan_existing,
-        use_narrative_v2=use_narrative_v2,
-        use_narrative_skeleton=use_narrative_skeleton,
-        use_things_narrative=use_things_narrative,
-        things_idle_threshold_minutes=things_idle_threshold_minutes,
         db_path=db_path,
         wiki_link_mode=normalized_wiki_link_mode,
         humanize_titles=humanize_titles,

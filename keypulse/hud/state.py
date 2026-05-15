@@ -31,7 +31,7 @@ def read_hud_state(path: str | Path | None = None) -> HUDState:
     if not state_path.exists():
         return HUDState()
     try:
-        payload = json.loads(state_path.read_text())
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:
         return HUDState()
     return HUDState(
@@ -57,7 +57,7 @@ def read_hud_state(path: str | Path | None = None) -> HUDState:
 def write_hud_state(state: HUDState, path: str | Path | None = None) -> HUDState:
     state_path = _state_path(path)
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps(asdict(state), ensure_ascii=False, indent=2))
+    state_path.write_text(json.dumps(asdict(state), ensure_ascii=False, indent=2), encoding="utf-8")
     return state
 
 

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
+pytest.skip("OCR watcher disabled 2026-05-14", allow_module_level=True)
+
 import json
 
 from keypulse.capture.provider import OCRRequest

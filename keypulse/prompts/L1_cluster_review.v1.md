@@ -19,8 +19,7 @@ temperature: 0.2
 结构信号：
 - `size_score` 来自事件数量。
 - `peak_event_density` 来自 cluster 内最高价值密度事件，按长度、source kind 和决策语气正则计算，已经由系统给出。
-- `importance_score = max(size_score, peak_event_density)`。
-- 单事件不等于噪声；当 `peak_event_density >= high_density_threshold` 时，除非内容明显跨域无关或不可读，不要仅因 `event_ids` 只有 1 条而标 misc。
+- 单事件不等于噪声；仅在明显离题或不可读时标 misc。
 
 硬规则：
 - 必须覆盖输入里的每个 `component_id`（一一对应）。

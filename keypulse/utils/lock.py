@@ -28,7 +28,7 @@ class SingleInstanceLock:
         except FileExistsError:
             # Lock file exists — check if owning process is still alive
             try:
-                pid = int(self.pid_path.read_text().strip())
+                pid = int(self.pid_path.read_text(encoding="utf-8").strip())
                 os.kill(pid, 0)  # signal 0: probe only, no actual signal sent
                 return False  # Process alive → already running
             except (ProcessLookupError, PermissionError):
@@ -43,7 +43,7 @@ class SingleInstanceLock:
     def release(self):
         if self.pid_path.exists():
             try:
-                pid = int(self.pid_path.read_text().strip())
+                pid = int(self.pid_path.read_text(encoding="utf-8").strip())
                 if pid == os.getpid():
                     self.pid_path.unlink()
             except (ValueError, OSError):
@@ -54,7 +54,7 @@ class SingleInstanceLock:
         if not self.pid_path.exists():
             return None
         try:
-            pid = int(self.pid_path.read_text().strip())
+            pid = int(self.pid_path.read_text(encoding="utf-8").strip())
             os.kill(pid, 0)
             return pid
         except (ProcessLookupError, ValueError, OSError):

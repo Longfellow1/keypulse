@@ -61,6 +61,36 @@ def _semantic_weight_for(source: str) -> float:
     return weights.get(source, 0.5)
 
 
+def normalize_keyboard_chunk_event(
+    text: str,
+    app_name: Optional[str] = None,
+    window_title: Optional[str] = None,
+    process_name: Optional[str] = None,
+    ts_start: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> RawEvent:
+    semantic_weight = 1.0 if str(app_name or "").strip() in {
+        "Claude",
+        "Codex",
+        "Cursor",
+        "Obsidian",
+        "Notion",
+        "Visual Studio Code",
+    } else 0.5
+    return RawEvent(
+        source="keyboard_chunk",
+        event_type="keyboard_chunk",
+        ts_start=ts_start or _now(),
+        app_name=app_name,
+        window_title=window_title,
+        process_name=process_name,
+        content_text=text,
+        content_hash=_hash(text),
+        metadata_json=json.dumps(metadata) if metadata else None,
+        semantic_weight=semantic_weight,
+    )
+
+
 def normalize_window_event(
     event_type: str,
     app_name: Optional[str],

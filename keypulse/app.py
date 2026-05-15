@@ -15,10 +15,32 @@ from keypulse.config import Config
 from keypulse.utils.lock import SingleInstanceLock
 from keypulse.utils.logging import setup_logging, get_logger
 from keypulse.store.db import init_db
+from keypulse.pipeline.daily_orchestrator import run_daily_after_obsidian_sync
 
 logger = get_logger("app")
-_COMPAT_CAPTURE_CAPS = {"appkit_runtime", "accessibility_permission", "clipboard_watcher"}
-_COMPAT_LLM_CAPS = {"llm_backend"}
+_CAPTURE_FACT_CAPS = {
+    "clipboard_watcher",
+    "ax_text_watcher",
+    "window_watcher",
+    "browser_watcher",
+    # === OCR watcher 已下线 2026-05-14 ===
+    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+    # 历史 raw_events 中 ocr_text_capture 数据保留可读
+    # "ocr_watcher",
+}
+_CAPTURE_PROBE_CAPS = {
+    "accessibility_permission",
+    # === OCR watcher 已下线 2026-05-14 ===
+    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+    # 历史 raw_events 中 ocr_text_capture 数据保留可读
+    # "screen_recording_permission",
+    "appkit_runtime",
+}
+_LLM_FACT_CAPS = {"llm_backend"}
+_COMPAT_CAPTURE_CAPS = _CAPTURE_FACT_CAPS
+_COMPAT_LLM_CAPS = _LLM_FACT_CAPS
 
 
 def daemonize(pid_path: Path):
@@ -65,8 +87,8 @@ def _run_capability_self_check(registry: CapabilityRegistry) -> None:
     states = registry.monitor_all()
     save_capability_states(states)
 
-    capture_failure = registry.select_failure(states, names=_COMPAT_CAPTURE_CAPS)
-    llm_failure = registry.select_failure(states, names=_COMPAT_LLM_CAPS)
+    capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS)
+    llm_failure = registry.select_failure(states, names=_LLM_FACT_CAPS)
     set_state("capture_error_code", "" if capture_failure is None else capture_failure.state.code)
     set_state("llm_error_code", "" if llm_failure is None else llm_failure.state.code)
 
@@ -117,7 +139,6 @@ def _run_obsidian_sync_core(cfg: Config, date: Optional[str] = None) -> None:
     target_vault = cfg.obsidian.vault_name
     gateway = load_model_gateway(cfg) if hasattr(cfg, "model") else None
 
-    pipeline_cfg = getattr(cfg, "pipeline", None)
     written = export_obsidian(
         target_output,
         date_str=date_str,
@@ -125,12 +146,14 @@ def _run_obsidian_sync_core(cfg: Config, date: Optional[str] = None) -> None:
         model_gateway=gateway,
         incremental=False,
         db_path=str(cfg.db_path_expanded),
-        use_narrative_v2=getattr(pipeline_cfg, "use_narrative_v2", False),
-        use_narrative_skeleton=getattr(pipeline_cfg, "use_narrative_skeleton", False),
-        use_things_narrative=getattr(pipeline_cfg, "use_things_narrative", True),
-        things_idle_threshold_minutes=getattr(pipeline_cfg, "things_idle_threshold_minutes", 30),
         humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
     )
+    try:
+        ran = run_daily_after_obsidian_sync(date_str, db_path=cfg.db_path_expanded)
+        if ran:
+            logger.info("daily_orchestrator ran via obsidian sync")
+    except Exception as exc:
+        logger.error(f"daily_orchestrator failed via obsidian sync: {exc}")
     logger.info(f"Obsidian sync completed: {len(written)} notes to {target_output}")
 
 

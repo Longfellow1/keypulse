@@ -15,7 +15,7 @@ from keypulse.capture.base import BaseWatcher
 from keypulse.capture.camera_monitor import CameraMonitor
 from keypulse.capture.fusion import CaptureFusionEngine
 from keypulse.capture.policy import PolicyEngine
-from keypulse.capture.provider import build_ocr_provider
+# from keypulse.capture.provider import build_ocr_provider
 from keypulse.capture.normalizer import (
     WINDOW_FOCUS_EVENT,
     WINDOW_TITLE_CHANGED_EVENT,
@@ -38,7 +38,8 @@ from keypulse.store.repository import (
 from keypulse.utils.logging import get_logger
 
 logger = get_logger("manager")
-_USER_SOURCES = frozenset({"clipboard", "manual", "browser", "ax_text", "ax_ime_commit", "ax_snapshot_fallback"})
+_USER_SOURCES = frozenset({"clipboard", "manual", "browser", "ax_text", "keyboard_chunk", "ax_ime_commit", "ax_snapshot_fallback"})
+_CHAT_STYLE_APPS = frozenset({"claude", "codex", "cursor", "obsidian", "notion", "visual studio code"})
 _TERMINAL_APPS = frozenset({"terminal", "iterm2", "warp", "alacritty", "kitty", "ghostty"})
 
 
@@ -92,6 +93,23 @@ def _sanitize_metadata_json(
         return json.dumps(sanitized, ensure_ascii=False)
     except Exception:
         return metadata_json if not extra_fields else json.dumps(extra_fields, ensure_ascii=False)
+
+
+def _sanitize_content_text(
+    text: str | None,
+    *,
+    redact_emails: bool,
+    redact_phones: bool,
+    redact_tokens: bool,
+) -> str | None:
+    if not text:
+        return text
+    return desensitize(
+        text,
+        redact_emails=redact_emails,
+        redact_phones=redact_phones,
+        redact_tokens=redact_tokens,
+    )
 
 
 def _browser_host_from_metadata(metadata_json: str | None) -> str | None:
@@ -241,22 +259,27 @@ class CaptureManager:
         ax_text_available: bool = False,
         content_signature: str | None = None,
     ):
-        ocr_watcher = self._watchers.get("ocr")
-        if ocr_watcher is None or not hasattr(ocr_watcher, "capture_once"):
-            return None
-        from keypulse.capture.watchers.ocr import OCRContext
-
-        return ocr_watcher.capture_once(
-            now=now,
-            image_ref=image_ref,
-            context=OCRContext(
-                app_name=app_name,
-                window_title=window_title,
-                process_name=process_name,
-                ax_text_available=ax_text_available,
-                content_signature=content_signature,
-            ),
-        )
+        # === OCR watcher 已下线 2026-05-14 ===
+        # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+        # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+        # 历史 raw_events 中 ocr_text_capture 数据保留可读
+        return None
+        # ocr_watcher = self._watchers.get("ocr")
+        # if ocr_watcher is None or not hasattr(ocr_watcher, "capture_once"):
+        #     return None
+        # from keypulse.capture.watchers.ocr import OCRContext
+        #
+        # return ocr_watcher.capture_once(
+        #     now=now,
+        #     image_ref=image_ref,
+        #     context=OCRContext(
+        #         app_name=app_name,
+        #         window_title=window_title,
+        #         process_name=process_name,
+        #         ax_text_available=ax_text_available,
+        #         content_signature=content_signature,
+        #     ),
+        # )
 
     def _init_watchers(self):
         cfg = self.config.watchers
@@ -281,6 +304,16 @@ class CaptureManager:
         if cfg.manual:
             from keypulse.capture.watchers.manual import ManualWatcher
             self._watchers["manual"] = ManualWatcher(self._queue)
+        if cfg.keyboard_chunk:
+            from keypulse.capture.watchers.keyboard_chunk import KeyboardChunkWatcher
+
+            keyboard_cfg = getattr(self.config, "keyboard_chunk", None)
+            self._watchers["keyboard_chunk"] = KeyboardChunkWatcher(
+                self._queue,
+                silence_sec=getattr(keyboard_cfg, "silence_sec", 2.0),
+                force_flush_sec=getattr(keyboard_cfg, "force_flush_sec", 2.0),
+                store_text=getattr(keyboard_cfg, "store_text", True),
+            )
         if cfg.ax_text:
             from keypulse.capture.watchers.ax_text import AXTextWatcher
 
@@ -296,32 +329,40 @@ class CaptureManager:
                 poll_interval_sec=self.config.browser.poll_interval_sec,
                 supported_browsers=self.config.browser.supported_browsers,
             )
-        if cfg.ocr:
-            from keypulse.capture.watchers.ocr import OCRTriggerGate, OCRWatcher
-
-            self._watchers["ocr"] = OCRWatcher(
-                self._queue,
-                provider=build_ocr_provider(self.config.ocr.provider),
-                trigger_gate=OCRTriggerGate(
-                    window_switch_delay_sec=self.config.ocr.window_switch_delay_sec,
-                    stable_interval_sec=self.config.ocr.stable_interval_sec,
-                    keyboard_quiet_sec=self.config.ocr.keyboard_quiet_sec,
-                ),
-            )
+        # === OCR watcher 已下线 2026-05-14 ===
+        # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+        # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+        # 历史 raw_events 中 ocr_text_capture 数据保留可读
+        # if cfg.ocr:
+        #     from keypulse.capture.watchers.ocr import OCRTriggerGate, OCRWatcher
+        #
+        #     self._watchers["ocr"] = OCRWatcher(
+        #         self._queue,
+        #         provider=build_ocr_provider(self.config.ocr.provider),
+        #         trigger_gate=OCRTriggerGate(
+        #             window_switch_delay_sec=self.config.ocr.window_switch_delay_sec,
+        #             stable_interval_sec=self.config.ocr.stable_interval_sec,
+        #             keyboard_quiet_sec=self.config.ocr.keyboard_quiet_sec,
+        #         ),
+        #     )
 
     def _start_camera_monitor(self) -> None:
         if not self.config.privacy.camera_scene_pause:
             return
-        watched_names = [name for name in ("ax_text", "ocr") if name in self._watchers]
+        # === OCR watcher 已下线 2026-05-14 ===
+        # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+        # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+        # 历史 raw_events 中 ocr_text_capture 数据保留可读
+        watched_names = [name for name in ("ax_text",) if name in self._watchers]
         if not watched_names:
             return
 
         def on_change(in_use: bool) -> None:
             if in_use:
-                logger.info("Camera in use, pausing ax_text/ocr")
+                logger.info("Camera in use, pausing ax_text")
                 self.pause_watchers(watched_names)
             else:
-                logger.info("Camera released, resuming ax_text/ocr")
+                logger.info("Camera released, resuming ax_text")
                 self.resume_watchers(watched_names)
 
         self._camera_monitor = CameraMonitor(on_change=on_change)
@@ -455,7 +496,7 @@ class CaptureManager:
                 if fusion.event is not None:
                     result = fusion.event
         elif result.content_text:
-            result.content_text = desensitize(
+            result.content_text = _sanitize_content_text(
                 result.content_text,
                 redact_emails=self.config.privacy.redact_emails,
                 redact_phones=self.config.privacy.redact_phones,
@@ -477,6 +518,17 @@ class CaptureManager:
                 redact_phones=self.config.privacy.redact_phones,
                 redact_tokens=self.config.privacy.redact_tokens,
             )
+        if result.source == "keyboard_chunk":
+            result.content_text = _sanitize_content_text(
+                result.content_text,
+                redact_emails=self.config.privacy.redact_emails,
+                redact_phones=self.config.privacy.redact_phones,
+                redact_tokens=self.config.privacy.redact_tokens,
+            )
+            if result.app_name and result.app_name.strip().lower() not in _CHAT_STYLE_APPS:
+                result.semantic_weight = 0.5
+            else:
+                result.semantic_weight = 1.0
 
         result.metadata_json = _sanitize_metadata_json(
             result.metadata_json,
@@ -525,20 +577,25 @@ class CaptureManager:
         set_state("last_flush", datetime.now(timezone.utc).isoformat())
 
     def _feed_light_capture_watchers(self, event: RawEvent) -> None:
-        ocr_watcher = self._watchers.get("ocr")
-        if ocr_watcher is None:
-            return
-        # window_focus and window_title_changed both mean the frontmost context moved.
-        if event.source == "window" and is_window_session_event_type(event.event_type) and hasattr(ocr_watcher, "note_window_change"):
-            ocr_watcher.note_window_change()
-            return
-        if event.source == "window" and event.event_type == "window_focus_session" and hasattr(ocr_watcher, "note_window_change"):
-            try:
-                metadata = json.loads(event.metadata_json or "{}")
-            except Exception:
-                metadata = {}
-            if metadata.get("reason") == "app_switch":
-                ocr_watcher.note_window_change()
+        # === OCR watcher 已下线 2026-05-14 ===
+        # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+        # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+        # 历史 raw_events 中 ocr_text_capture 数据保留可读
+        return
+        # ocr_watcher = self._watchers.get("ocr")
+        # if ocr_watcher is None:
+        #     return
+        # # window_focus and window_title_changed both mean the frontmost context moved.
+        # if event.source == "window" and is_window_session_event_type(event.event_type) and hasattr(ocr_watcher, "note_window_change"):
+        #     ocr_watcher.note_window_change()
+        #     return
+        # if event.source == "window" and event.event_type == "window_focus_session" and hasattr(ocr_watcher, "note_window_change"):
+        #     try:
+        #         metadata = json.loads(event.metadata_json or "{}")
+        #     except Exception:
+        #         metadata = {}
+        #     if metadata.get("reason") == "app_switch":
+        #         ocr_watcher.note_window_change()
 
     def _current_window_session_id(self) -> str | None:
         watcher = self._watchers.get("window")
@@ -577,11 +634,11 @@ class CaptureManager:
     def _runtime_snapshot(self) -> dict:
         multi_source_counts = {
             source: self._source_counts.get(source, 0)
-            for source in ("ax_text", "ocr_text", "clipboard", "manual")
+            for source in ("ax_text", "ocr_text", "clipboard", "manual", "keyboard_chunk")
         }
         last_seen = {
             source: self._source_last_event_at.get(source)
-            for source in ("ax_text", "ocr_text", "clipboard", "manual")
+            for source in ("ax_text", "ocr_text", "clipboard", "manual", "keyboard_chunk")
             if self._source_last_event_at.get(source)
         }
         return {
@@ -590,7 +647,10 @@ class CaptureManager:
             "host_executable": os.path.realpath(os.sys.executable),
             "running": self._running.is_set(),
             "paused": self._paused.is_set(),
-            "watchers": {name: watcher.health() for name, watcher in self._watchers.items()},
+            "watchers": {
+                name: watcher.health() | {"heartbeat_timeout_sec": watcher.HEARTBEAT_TIMEOUT_SEC}
+                for name, watcher in self._watchers.items()
+            },
             "queue_size": self._queue.qsize(),
             "multi_source_counts": multi_source_counts,
             "last_seen": last_seen,

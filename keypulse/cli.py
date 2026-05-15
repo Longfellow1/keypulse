@@ -50,13 +50,9 @@ from keypulse.capture.normalizer import normalize_manual_event
 from keypulse.utils.dates import local_day_bounds, resolve_local_date, local_timezone
 from keypulse.hud import run_hud
 from keypulse.pipeline import (
-    PipelineInputs,
-    build_daily_draft,
     append_feedback_event,
     read_feedback_events,
     FeedbackEvent,
-    build_pipeline_plan,
-    LLMMode,
     load_model_gateway,
     record_theme_feedback,
     current_theme_profile,
@@ -70,7 +66,8 @@ from keypulse.pipeline.model_keychain import (
     render_plist_advice,
     store_secret,
 )
-from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily
+from keypulse.pipeline.daily_orchestrator import DailyOrchestratorError, run_daily, run_daily_after_obsidian_sync
+from keypulse.pipeline.daily_summary import read_daily_summary, render_daily_markdown
 from keypulse.pipeline.onboarding import (
     OnboardingAnswers,
     QUESTIONS,
@@ -79,7 +76,6 @@ from keypulse.pipeline.onboarding import (
     write_profile,
 )
 from keypulse.pipeline.weekly_orchestrator import WeeklyOrchestratorError, run_weekly
-from keypulse.pipeline.things import build_things, render_things_report, things_as_json
 from keypulse.search.backends import resolve_search_backend
 
 
@@ -548,6 +544,8 @@ def status(plain):
         enabled.append("剪贴板")
     if cfg.watchers.manual:
         enabled.append("手动保存")
+    if getattr(cfg.watchers, "keyboard_chunk", False):
+        enabled.append("键盘分块")
     if cfg.watchers.browser:
         enabled.append("浏览器")
     if getattr(cfg.watchers, "ax_text", False):
@@ -589,6 +587,7 @@ def status(plain):
         table.add_row("数据库大小", f"{db_size_mb:.2f} MB")
         table.add_row("最近一次写入", last_flush)
         table.add_row("已启用采集源", "、".join(enabled) if enabled else "无")
+        table.add_row("键盘分块状态", "已启用" if getattr(cfg.watchers, "keyboard_chunk", False) else "未启用")
         table.add_row("正文采集状态", "已运行" if ax_running else "未见运行")
         table.add_row("屏幕识别状态", "已运行" if ocr_running else "未见运行")
         table.add_row("后台宿主 PID", str(runtime_pid))
@@ -660,7 +659,7 @@ def doctor(plain):
     db_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         test_file = db_path.parent / ".write_test"
-        test_file.write_text("test")
+        test_file.write_text("test", encoding="utf-8")
         test_file.unlink()
         checks["数据库目录可写"] = True
     except Exception:
@@ -673,6 +672,7 @@ def doctor(plain):
     runtime_watchers = runtime.get("watchers") or {}
     if runtime_watchers:
         checks["后台正文采集线程"] = bool((runtime_watchers.get("ax_text") or {}).get("running"))
+        checks["后台键盘分块线程"] = bool((runtime_watchers.get("keyboard_chunk") or {}).get("running"))
         checks["后台屏幕识别线程"] = bool((runtime_watchers.get("ocr") or {}).get("running"))
 
     if plain:
@@ -701,6 +701,20 @@ def healthcheck(config_path):
     result = run_healthcheck(config_path=config_path)
     click.echo(json.dumps(result, indent=2, ensure_ascii=False))
     if result["overall"] == "alert" and any(alert["severity"] == "error" for alert in result["alerts"]):
+        raise SystemExit(1)
+
+
+@main.command("self-heal")
+@click.option("--dry-run", is_flag=True, help="仅演练步骤，不真正重启 daemon")
+def self_heal_command(dry_run):
+    """Run product self-heal sequence for HUD/manual recovery."""
+    from keypulse.health.self_heal import run_self_heal
+
+    cfg = get_config()
+    require_db(cfg)
+    result = run_self_heal(dry_run=bool(dry_run), source="cli")
+    click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+    if result.get("status") == "failed":
         raise SystemExit(1)
 
 
@@ -1228,17 +1242,15 @@ def _sync_obsidian_bundle(
         model_gateway=gateway,
         incremental=incremental,
         db_path=str(cfg.db_path_expanded),
-        use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
-        use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
-        use_things_narrative=getattr(getattr(cfg, "pipeline", None), "use_things_narrative", True),
-        things_idle_threshold_minutes=getattr(
-            getattr(cfg, "pipeline", None),
-            "things_idle_threshold_minutes",
-            30,
-        ),
         wiki_link_mode=getattr(getattr(cfg, "obsidian", None), "wiki_link_mode", "relative"),
         humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
     )
+    try:
+        ran = run_daily_after_obsidian_sync(date_str, db_path=cfg.db_path_expanded)
+        if ran:
+            click.echo("[daily] orchestrator ran via obsidian sync")
+    except Exception as exc:
+        click.echo(f"[daily] orchestrator failed via obsidian sync: {exc}", err=True)
     return len(written), target_output, sink.kind
 
 
@@ -1259,19 +1271,17 @@ def _daily_note_output_path(cfg: Config, date_str: str) -> Path:
     return path
 
 
-def _render_daily_fallback_with_things(cfg: Config, date_str: str, *, no_llm: bool) -> Path:
-    since_utc, until_utc = local_day_bounds(date_str)
-    since_dt = datetime.fromisoformat(since_utc)
-    until_dt = datetime.fromisoformat(until_utc)
+def _render_daily_fallback(cfg: Config, date_str: str, *, no_llm: bool) -> Path:
+    payload = read_daily_summary(date_str) or {}
     gateway = None if no_llm else load_model_gateway(cfg)
-    thing_list = build_things(
-        since_dt,
-        until_dt,
+    report = render_daily_markdown(
+        date=date_str,
+        topics=payload.get("topics") if isinstance(payload, dict) else [],
+        events=payload.get("events") if isinstance(payload, dict) else [],
+        unanchored=payload.get("unanchored") if isinstance(payload, dict) else [],
+        topic_snapshot=payload.get("topic_status_snapshot") if isinstance(payload, dict) else {},
         model_gateway=gateway,
-        sources=None,
-        idle_threshold_minutes=getattr(getattr(cfg, "pipeline", None), "things_idle_threshold_minutes", 30),
     )
-    report = render_things_report(thing_list, model_gateway=gateway, title="今日做的事")
     target = _daily_note_output_path(cfg, date_str)
     atomic_write_text(target, report)
     return target
@@ -1285,6 +1295,13 @@ def daily_run(date_str, trigger, mock_llm):
     """Run PR2 daily orchestrator once."""
     cfg = get_config()
     require_db(cfg)
+
+    if trigger == "23:30":
+        click.echo(
+            "⚠️  --trigger 23:30 是增量模式：只消费 18:00 跑过之后新增的 events。"
+            "如要全量重跑该日，请使用 --trigger 18:00。",
+            err=True,
+        )
 
     previous_mock = os.environ.get("MOCK_LLM")
     if mock_llm:
@@ -1302,7 +1319,7 @@ def daily_run(date_str, trigger, mock_llm):
         if summary.topic_diffs:
             click.echo("topic_diffs=" + ",".join(summary.topic_diffs))
     except (DailyOrchestratorError, LLMCallError, ValueError, OSError) as exc:
-        fallback_path = _render_daily_fallback_with_things(cfg, date_str, no_llm=mock_llm)
+        fallback_path = _render_daily_fallback(cfg, date_str, no_llm=mock_llm)
         click.echo(f"daily_run=fallback date={date_str} trigger={trigger} reason={type(exc).__name__}:{exc}")
         click.echo(f"fallback_daily_path={fallback_path}")
     finally:
@@ -1311,6 +1328,130 @@ def daily_run(date_str, trigger, mock_llm):
                 os.environ.pop("MOCK_LLM", None)
             else:
                 os.environ["MOCK_LLM"] = previous_mock
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 13.3b EVAL — 把 validator 包成一行命令，列 fail case + 出 score
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def eval():
+    """Score daily/weekly outputs against validator + golden baselines."""
+    pass
+
+
+@eval.command("daily")
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 daily.md 路径")
+@click.option("--summary", "summary_path", type=click.Path(exists=True), default=None,
+              help="对应 daily-summary JSON 路径（可选，提供后会跑数据层断言）")
+@click.option("--fail-only", is_flag=True, default=False, help="只列 fail case 不打印 banner")
+def eval_daily(candidate, summary_path, fail_only):
+    """Score one daily.md and list all failing checks.
+
+    Examples:
+        keypulse eval daily --candidate ~/Go/Knowledge/Daily/2026-05-12.md
+        keypulse eval daily --candidate docs/golden-daily/2026-05-06.md
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    from keypulse.pipeline.daily_validator import quick_score, validate_daily_output
+
+    md = _Path(candidate).read_text(encoding="utf-8")
+    summary = None
+    if summary_path:
+        summary = _json.loads(_Path(summary_path).read_text(encoding="utf-8"))
+
+    failures = validate_daily_output(rendered_markdown=md, daily_summary=summary)
+    score = quick_score(failures)
+    errors = [f for f in failures if f.severity == "error"]
+    warns = [f for f in failures if f.severity == "warn"]
+
+    if not fail_only:
+        click.echo(f"=== eval daily: {candidate} ===")
+        click.echo(f"score={score}/100  errors={len(errors)}  warns={len(warns)}")
+        if summary_path:
+            click.echo(f"data layer: ON (summary={summary_path})")
+        else:
+            click.echo("data layer: OFF (only rendered markdown checks)")
+        click.echo("")
+
+    if not failures:
+        click.echo("✅ 全部通过，无 fail case")
+        return
+
+    for f in failures:
+        sev_tag = "❌" if f.severity == "error" else "⚠️"
+        click.echo(f"{sev_tag} [{f.rule}] {f.message}")
+        click.echo(f"   @ {f.location}")
+
+    if errors:
+        raise SystemExit(1)
+
+
+@eval.command("weekly")
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 weekly.md 路径")
+@click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="plain", show_default=True)
+@click.option("--dailies-dir", "dailies_dir", type=click.Path(exists=True), default=None,
+              help="本周 daily.md 所在目录，用于客观性溯源（可选）")
+@click.option("--fail-only", is_flag=True, default=False)
+def eval_weekly(candidate, style, dailies_dir, fail_only):
+    """Score one weekly.md and list all failing checks.
+
+    Examples:
+        keypulse eval weekly --candidate docs/golden-weekly/2026-W19-exec.md --style exec
+        keypulse eval weekly --candidate ~/Go/Knowledge/Weekly/2026-W19.md --style plain \\
+            --dailies-dir ~/Go/Knowledge/Daily
+    """
+    from pathlib import Path as _Path
+
+    from keypulse.pipeline.weekly_validator import quick_score, validate_weekly_output
+
+    md = _Path(candidate).read_text(encoding="utf-8")
+    dailies_corpus = ""
+    if dailies_dir:
+        for daily_file in sorted(_Path(dailies_dir).glob("2026-*.md")):
+            dailies_corpus += daily_file.read_text(encoding="utf-8") + "\n"
+
+    failures = validate_weekly_output(
+        style=style,
+        rendered_markdown=md,
+        dailies_corpus=dailies_corpus,
+        hud_input_dates=[],
+    )
+    if not dailies_dir:
+        # 没 corpus 时 validator 把每个数字都判 unverified，会淹没真实问题；CLI 层过滤。
+        failures = [f for f in failures if f.field != "objectivity"]
+    score = quick_score(failures)
+
+    if not fail_only:
+        click.echo(f"=== eval weekly: {candidate} (style={style}) ===")
+        click.echo(f"score={score}/100  failures={len(failures)}")
+        if dailies_dir:
+            click.echo(f"data layer: ON (dailies={dailies_dir})")
+        else:
+            click.echo("data layer: OFF (objectivity check 已跳过，传 --dailies-dir 启用)")
+        click.echo("")
+
+    if not failures:
+        click.echo("✅ 全部通过，无 fail case")
+        return
+
+    for f in failures:
+        click.echo(f"❌ [{f.field}/{f.rule}] {f.detail}")
+
+    raise SystemExit(1)
+
+
+@eval.command("skill")
+def eval_skill():
+    """[占位] skill propose eval — 等 V0 hello world 跑通才有数据，详见 docs/skill-v0-plan.md §14.3。"""
+    click.echo("skill propose eval 暂未实现。前置依赖：")
+    click.echo("  1. V0 hello world 跑通（docs/skill-v0-plan.md §5）")
+    click.echo("  2. 至少 2-3 个 skill 候选历史样本")
+    click.echo("  3. 候选独特性 / 历史冲突 / 用户保留率拟合三个评估维度的 baseline")
+    click.echo("解锁后此命令格式将是：keypulse eval skill --candidate <propose.md>")
+    raise SystemExit(2)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1504,96 +1645,26 @@ def pipeline_sync(date, yesterday, output, vault_name):
 @click.option("--yesterday", is_flag=True, default=False, help="Build yesterday's draft")
 @click.option("--output", default=None, help="Write the draft to a file instead of stdout")
 def pipeline_draft(date, yesterday, output):
-    """Build a deterministic daily draft from raw events."""
+    """Render a daily draft through the unified daily renderer."""
     cfg = get_config()
     require_db(cfg)
 
     date_str = _resolve_obsidian_date(date, yesterday)
-    since, until = local_day_bounds(date_str)
-    events = query_raw_events(since=since, until=until, limit=50000)
-    inputs = PipelineInputs(
-        event_count=len(events),
-        candidate_count=0,
-        topic_count=0,
-        active_days=1,
-    )
-    llm_mode = getattr(cfg.pipeline, "llm_mode", "off")
-    feedback_events = read_feedback_events(Path(cfg.pipeline.feedback_path).expanduser())
-    draft = build_daily_draft(
-        inputs,
-        events,
+    payload = read_daily_summary(date_str) or {}
+    body = render_daily_markdown(
+        date=date_str,
+        topics=payload.get("topics") if isinstance(payload, dict) else [],
+        events=payload.get("events") if isinstance(payload, dict) else [],
+        unanchored=payload.get("unanchored") if isinstance(payload, dict) else [],
+        topic_snapshot=payload.get("topic_status_snapshot") if isinstance(payload, dict) else {},
         model_gateway=load_model_gateway(cfg) if hasattr(cfg, "model") else None,
-        plan=build_pipeline_plan(LLMMode.OFF if llm_mode == "off" else LLMMode(llm_mode), inputs),
-        feedback_events=feedback_events,
-        use_narrative_v2=getattr(getattr(cfg, "pipeline", None), "use_narrative_v2", False),
-        use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
-        db_path=cfg.db_path_expanded,
-        date_str=date_str,
     )
 
     if output:
-        Path(output).write_text(draft.body)
+        Path(output).write_text(body, encoding="utf-8")
         console.print(f"[green]Draft written to {output}[/green]")
     else:
-        console.print(draft.body)
-
-
-def _parse_pipeline_bound(raw: str | None, *, is_since: bool) -> datetime:
-    local_tz = local_timezone()
-    now_local = datetime.now(local_tz)
-
-    if raw is None:
-        if is_since:
-            return datetime.combine(now_local.date(), datetime.min.time(), tzinfo=local_tz).astimezone(timezone.utc)
-        return now_local.astimezone(timezone.utc)
-
-    if len(raw) == 10:
-        day = datetime.fromisoformat(raw)
-        if is_since:
-            local_value = datetime.combine(day.date(), datetime.min.time(), tzinfo=local_tz)
-        else:
-            local_value = datetime.combine(day.date(), datetime.max.time(), tzinfo=local_tz)
-        return local_value.astimezone(timezone.utc)
-
-    parsed = datetime.fromisoformat(raw)
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        parsed = parsed.replace(tzinfo=local_tz)
-    return parsed.astimezone(timezone.utc)
-
-
-@pipeline.command("things")
-@click.option("--since", default=None)
-@click.option("--until", default=None)
-@click.option("--source", "sources", multiple=True, help="可多次指定限制源")
-@click.option("--no-llm", is_flag=True, default=False, help="不调 LLM，走 fallback")
-@click.option("--idle-threshold", default=30, type=int, show_default=True, help="session 空闲切分阈值（分钟）")
-@click.option("--json", "as_json", is_flag=True, default=False)
-def pipeline_things(since, until, sources, no_llm, idle_threshold, as_json):
-    """聚类 SemanticEvent 为'事情'并描述"""
-    cfg = get_config()
-    require_db(cfg)
-
-    since_dt = _parse_pipeline_bound(since, is_since=True)
-    until_dt = _parse_pipeline_bound(until, is_since=False)
-    if until_dt < since_dt:
-        raise click.UsageError("until must be >= since")
-
-    gateway = None
-    if not no_llm and hasattr(cfg, "model"):
-        gateway = load_model_gateway(cfg)
-
-    thing_list = build_things(
-        since_dt,
-        until_dt,
-        model_gateway=gateway,
-        sources=list(sources) if sources else None,
-        idle_threshold_minutes=idle_threshold,
-    )
-
-    if as_json:
-        print(things_as_json(thing_list))
-        return
-    print(render_things_report(thing_list, model_gateway=gateway))
+        console.print(body)
 
 
 @pipeline.group()
@@ -1700,13 +1771,6 @@ def export(format, days, date, output):
             date_str=date,
             vault_name=cfg.obsidian.vault_name,
             model_gateway=gateway,
-            use_narrative_skeleton=getattr(getattr(cfg, "pipeline", None), "use_narrative_skeleton", False),
-            use_things_narrative=getattr(getattr(cfg, "pipeline", None), "use_things_narrative", True),
-            things_idle_threshold_minutes=getattr(
-                getattr(cfg, "pipeline", None),
-                "things_idle_threshold_minutes",
-                30,
-            ),
             wiki_link_mode=getattr(getattr(cfg, "obsidian", None), "wiki_link_mode", "relative"),
             humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
         )
@@ -1717,7 +1781,7 @@ def export(format, days, date, output):
         sys.exit(1)
 
     if output:
-        Path(output).write_text(data)
+        Path(output).write_text(data, encoding="utf-8")
         console.print(f"[green]Exported to {output}[/green]")
     else:
         print(data)

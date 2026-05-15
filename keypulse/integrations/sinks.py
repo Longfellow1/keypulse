@@ -59,7 +59,7 @@ def _candidate_from_obsidian_runtime(home: Path, config: Config) -> SinkTarget |
     if not obsidian_state.exists():
         return None
     try:
-        payload = json.loads(obsidian_state.read_text())
+        payload = json.loads(obsidian_state.read_text(encoding="utf-8"))
     except Exception:
         return None
 

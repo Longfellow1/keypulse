@@ -84,10 +84,6 @@ def _dashboard_note(vault: Path) -> Path:
     return vault / "Dashboard" / "Today.md"
 
 
-def _event_links(text: str) -> list[str]:
-    return re.findall(r"\[\[\.\./\.keypulse/events/[^\]]+\]\]", text)
-
-
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -118,11 +114,12 @@ def test_full_sync_creates_complete_files(monkeypatch, tmp_path: Path):
     assert any((home / ".keypulse" / "events" / DATE).glob("*.md"))
     daily = _read(_daily_note(vault))
     assert "## 今天的事件卡" in daily
-    assert "## 今天涉及的主题" in daily
+    assert "## 今天做的事" in daily
+    assert "## 今天涉及的主题" not in daily
 
 
-def test_incremental_appends_three_new_events_without_rewriting_narrative(monkeypatch, tmp_path: Path):
-    _patch_home(monkeypatch, tmp_path)
+def test_incremental_writes_three_new_event_cards_without_rewriting_daily(monkeypatch, tmp_path: Path):
+    home = _patch_home(monkeypatch, tmp_path)
     vault = tmp_path / "vault"
     dataset = [
         _event("09:00:00", "修复 keypulse 安装问题", tags="keypulse,install"),
@@ -135,7 +132,9 @@ def test_incremental_appends_three_new_events_without_rewriting_narrative(monkey
 
     export_obsidian(vault, date_str=DATE)
     before = _read(_daily_note(vault))
-    narrative_before = _extract_section(before, "## 今日主线")
+    narrative_before = _extract_section(before, "## 今天做的事")
+    event_dir = home / ".keypulse" / "events" / DATE
+    before_event_files = set(event_dir.glob("*.md"))
 
     dataset.extend(
         [
@@ -147,8 +146,10 @@ def test_incremental_appends_three_new_events_without_rewriting_narrative(monkey
     export_obsidian(vault, date_str=DATE, incremental=True)
 
     after = _read(_daily_note(vault))
-    assert _extract_section(after, "## 今日主线") == narrative_before
-    assert len(_event_links(after)) == len(_event_links(before)) + 3
+    after_event_files = set(event_dir.glob("*.md"))
+    assert _extract_section(after, "## 今天做的事") == narrative_before
+    assert after == before
+    assert len(after_event_files - before_event_files) == 3
     assert "## 今天的事件卡" in after
 
 
@@ -164,17 +165,17 @@ def test_incremental_preserves_daily_protected_sections(monkeypatch, tmp_path: P
 
     export_obsidian(vault, date_str=DATE)
     before = _read(_daily_note(vault))
-    main_before = _extract_section(before, "## 今日主线")
+    main_before = _extract_section(before, "## 今天做的事")
     decide_before = _extract_section(before, "## 需要你决定")
-    tomorrow_before = _extract_section(before, "## 明天的锚点")
+    tomorrow_before = _extract_section(before, "## 明日的锚点")
 
     dataset.append(_event("11:00:00", "补充 hourly plist", tags="launchd,plist"))
     export_obsidian(vault, date_str=DATE, incremental=True)
 
     after = _read(_daily_note(vault))
-    assert _extract_section(after, "## 今日主线") == main_before
+    assert _extract_section(after, "## 今天做的事") == main_before
     assert _extract_section(after, "## 需要你决定") == decide_before
-    assert _extract_section(after, "## 明天的锚点") == tomorrow_before
+    assert _extract_section(after, "## 明日的锚点") == tomorrow_before
 
 
 def test_incremental_is_idempotent_for_same_batch(monkeypatch, tmp_path: Path):

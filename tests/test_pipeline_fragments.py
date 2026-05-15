@@ -1,7 +1,7 @@
+import pytest
+
 import json
 from datetime import datetime, timezone, timedelta
-
-import pytest
 
 from keypulse.pipeline.fragments import (
     SemanticFragment,
@@ -72,6 +72,7 @@ class TestExtractFragments:
         assert frags[0].verb == "type"
         assert frags[0].weight == 0.8
 
+    @pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
     def test_ocr_event(self, base_ts):
         rows = [
             {
@@ -627,6 +628,7 @@ class TestHygieneFilters:
         frags = extract_fragments([self._row(ts, "abcd")])
         assert len(frags) == 0
 
+    @pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
     def test_l1_view_verb_not_filtered(self, ts):
         # OCR short text: verb=view, L1 should not apply
         row = self._row(ts, "jx", event_type="ocr_text_capture")
@@ -835,6 +837,7 @@ class TestFilterNoisyRawEvents:
         result = filter_noisy_raw_events(rows)
         assert len(result) == 1, "window_focus type should not be subject to L1/L2 filters"
 
+    @pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
     def test_ocr_text_not_filtered(self, base_ts):
         rows = [
             self._row(base_ts, "ab", event_type="ocr_text_capture"),
