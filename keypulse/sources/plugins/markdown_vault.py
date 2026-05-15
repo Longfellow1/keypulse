@@ -4,63 +4,67 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
+from keypulse.sources.approval import ApprovalStore
+from keypulse.sources.types import ContentShape, DataSource, DataSourceInstance, SemanticEvent
 
 
 class MarkdownVaultSource(DataSource):
     name = "markdown_vault"
-    privacy_tier = "green"
+    privacy_tier = "yellow"
     liveness = "always"
-    description = "Obsidian/Logseq markdown vault metadata reader"
+    description = "读取用户已批准的 markdown vault/document 文件目录"
 
-    def __init__(self, *, roots: list[Path] | None = None) -> None:
-        # roots=None means "resolve at discover() time from config".
-        # Why: avoids reading config at import-time (tests, before config.load()).
+    def __init__(
+        self,
+        *,
+        roots: list[Path] | None = None,
+        approval_store: ApprovalStore | None = None,
+    ) -> None:
         self._explicit_roots = roots
-
-    def _resolved_roots(self) -> list[Path]:
-        if self._explicit_roots is not None:
-            return self._explicit_roots
-        roots: list[Path] = []
-        seen: set[str] = set()
-        try:
-            from keypulse.config import Config
-            cfg = Config.load()
-        except Exception:
-            return roots
-        candidates: list[str] = []
-        if cfg.obsidian.vault_path:
-            candidates.append(cfg.obsidian.vault_path)
-        candidates.extend(cfg.sources.markdown_vault.extra_roots)
-        for raw in candidates:
-            path = Path(raw).expanduser()
-            key = str(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            roots.append(path)
-        return roots
+        self._approval_store = approval_store or ApprovalStore()
 
     def discover(self) -> list[DataSourceInstance]:
         instances: dict[str, DataSourceInstance] = {}
-        for root in self._resolved_roots():
+
+        for root in self._approved_roots():
             if not root.exists() or not root.is_dir():
                 continue
-            for obsidian_dir in root.rglob(".obsidian"):
-                if not obsidian_dir.is_dir():
+            key = str(root.resolve(strict=False))
+            if key in instances:
+                continue
+            note_count = self._count_notes(root)
+            label = root.name or "vault"
+            instances[key] = DataSourceInstance(
+                plugin=self.name,
+                locator=key,
+                label=label,
+                metadata={
+                    "vault_name": label,
+                    "note_count": note_count,
+                    "shape": ContentShape.DOCUMENT_FILE.value,
+                },
+            )
+
+        if self._explicit_roots is not None:
+            for root in self._explicit_roots:
+                if not root.exists() or not root.is_dir():
                     continue
-                vault_root = obsidian_dir.parent.resolve()
-                key = str(vault_root)
+                key = str(root.resolve(strict=False))
                 if key in instances:
                     continue
-                note_count = self._count_notes(vault_root)
-                vault_name = vault_root.name or "vault"
+                note_count = self._count_notes(root)
+                label = root.name or "vault"
                 instances[key] = DataSourceInstance(
                     plugin=self.name,
                     locator=key,
-                    label=vault_name,
-                    metadata={"note_count": note_count, "vault_name": vault_name},
+                    label=label,
+                    metadata={
+                        "vault_name": label,
+                        "note_count": note_count,
+                        "shape": ContentShape.DOCUMENT_FILE.value,
+                    },
                 )
+
         return sorted(instances.values(), key=lambda item: item.locator)
 
     def read(
@@ -74,102 +78,108 @@ class MarkdownVaultSource(DataSource):
             return iter(())
 
         vault_name = str(instance.metadata.get("vault_name") or vault_root.name or "vault")
+        since_utc = since.astimezone(timezone.utc)
+        until_utc = until.astimezone(timezone.utc)
 
         def _iter_events() -> Iterator[SemanticEvent]:
-            for path in sorted(vault_root.rglob("*.md")):
-                if ".obsidian" in path.parts:
-                    continue
-                try:
-                    stat = path.stat()
-                except Exception:
-                    continue
-                event_time = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-                if event_time < since or event_time > until:
-                    continue
+            patterns = ("*.md", "*.txt")
+            for pattern in patterns:
+                for path in sorted(vault_root.rglob(pattern)):
+                    if ".obsidian" in path.parts:
+                        continue
+                    try:
+                        stat = path.stat()
+                    except Exception:
+                        continue
 
-                first_line, tags = _read_header_only(path)
-                if not first_line:
-                    continue
+                    event_time = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+                    if event_time < since_utc or event_time > until_utc:
+                        continue
 
-                try:
-                    rel_path = str(path.relative_to(vault_root))
-                except Exception:
-                    rel_path = path.name
+                    try:
+                        rel_path = str(path.relative_to(vault_root))
+                    except Exception:
+                        rel_path = path.name
 
-                intent = first_line.lstrip("# ").strip()[:200]
-                if not intent:
-                    continue
-                yield SemanticEvent(
-                    time=event_time,
-                    source=self.name,
-                    actor="user",
-                    intent=intent,
-                    artifact=rel_path,
-                    raw_ref=f"markdown_vault:{vault_name}:{rel_path}",
-                    privacy_tier=self.privacy_tier,
-                    metadata={
-                        "vault_name": vault_name,
-                        "frontmatter_tags": tags,
-                        "file_size": stat.st_size,
-                    },
-                )
+                    title = _extract_title(path)
+                    event = ContentShape.DOCUMENT_FILE.to_semantic_event(
+                        {
+                            "mtime": event_time,
+                            "actor": "user",
+                            "intent": title or path.stem,
+                            "artifact": rel_path,
+                            "path": str(path),
+                            "raw_ref": f"markdown_vault:{vault_name}:{rel_path}",
+                            "metadata": {
+                                "vault_name": vault_name,
+                                "file_size": stat.st_size,
+                                "shape": ContentShape.DOCUMENT_FILE.value,
+                            },
+                        },
+                        source=self.name,
+                        privacy_tier=self.privacy_tier,
+                    )
+                    if event is not None:
+                        yield event
 
         return _iter_events()
 
     def _count_notes(self, vault_root: Path) -> int:
         count = 0
-        for path in vault_root.rglob("*.md"):
-            if ".obsidian" in path.parts:
-                continue
-            count += 1
+        for pattern in ("*.md", "*.txt"):
+            for path in vault_root.rglob(pattern):
+                if ".obsidian" in path.parts:
+                    continue
+                count += 1
         return count
 
+    def _approved_roots(self) -> list[Path]:
+        try:
+            approved = self._approval_store.list_approved()
+        except Exception:
+            return []
 
-def _read_header_only(path: Path) -> tuple[str, list[str]]:
-    tags: list[str] = []
-    first_line = ""
+        roots: list[Path] = []
+        seen: set[str] = set()
+        for record in approved:
+            if record.metadata.get("discoverer") != "markdown_vault":
+                continue
+            shape = str(record.metadata.get("shape") or "").strip()
+            if shape and shape != ContentShape.DOCUMENT_FILE.value:
+                continue
+            raw_path = str(record.metadata.get("path") or "").strip()
+            if not raw_path:
+                continue
+            path = Path(raw_path).expanduser().resolve(strict=False)
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            roots.append(path)
+        return roots
+
+
+def _extract_title(path: Path) -> str:
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
-            lines = [handle.readline() for _ in range(80)]
+            in_frontmatter = False
+            seen_first = False
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if not seen_first and line == "---":
+                    in_frontmatter = True
+                    seen_first = True
+                    continue
+                seen_first = True
+                if in_frontmatter:
+                    if line == "---":
+                        in_frontmatter = False
+                    continue
+                if line.startswith("#"):
+                    return line.lstrip("#").strip()[:200]
+                return path.stem
     except Exception:
-        return "", tags
-
-    if lines and lines[0].strip() == "---":
-        end_idx = -1
-        for idx in range(1, len(lines)):
-            if lines[idx].strip() == "---":
-                end_idx = idx
-                break
-        if end_idx != -1:
-            tags = _parse_tags(lines[1:end_idx])
-            content_start = end_idx + 1
-            while content_start < len(lines) and not lines[content_start]:
-                content_start += 1
-            for line in lines[content_start:]:
-                stripped = line.strip()
-                if stripped:
-                    first_line = stripped
-                    break
-        else:
-            first_line = lines[0].strip()
-    else:
-        for line in lines:
-            stripped = line.strip()
-            if stripped:
-                first_line = stripped
-                break
-    return first_line, tags
-
-
-def _parse_tags(frontmatter_lines: list[str]) -> list[str]:
-    tags: list[str] = []
-    for line in frontmatter_lines:
-        stripped = line.strip()
-        if stripped.startswith("tags:"):
-            value = stripped.split(":", 1)[1].strip()
-            if value.startswith("[") and value.endswith("]"):
-                items = value[1:-1].split(",")
-                tags.extend(item.strip().strip("'\"") for item in items if item.strip())
-            elif value:
-                tags.append(value.strip().strip("'\""))
-    return [tag for tag in tags if tag]
+        return path.stem
+    return path.stem
