@@ -11,7 +11,11 @@ clipboard = true
 manual = true
 browser = false
 ax_text = false
-ocr = false
+# === OCR watcher 已下线 2026-05-14 ===
+# 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+# 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+# 历史 raw_events 中 ocr_text_capture 数据保留可读
+# ocr = false
 
 [idle]
 threshold_sec = 180
@@ -28,10 +32,14 @@ poll_interval_sec = 1.0
 supported_browsers = ["Safari", "Google Chrome", "Arc", "Brave Browser", "Microsoft Edge"]
 
 [ocr]
-provider = "vision_native"
-window_switch_delay_sec = 0.8
-stable_interval_sec = 10.0
-keyboard_quiet_sec = 2.0
+# === OCR watcher 已下线 2026-05-14 ===
+# 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+# 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+# 历史 raw_events 中 ocr_text_capture 数据保留可读
+# provider = "vision_native"
+# window_switch_delay_sec = 0.8
+# stable_interval_sec = 10.0
+# keyboard_quiet_sec = 2.0
 
 [privacy]
 redact_emails = true

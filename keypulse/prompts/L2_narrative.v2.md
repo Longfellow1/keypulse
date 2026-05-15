@@ -37,7 +37,7 @@ JSON 格式（已经做好了聚类，你专注叙事）：
 
 事件字段说明：
 - `t`：本地时间 HH:MM
-- `s`：事件来源（ax_text=正在看的正文 / clipboard=剪贴板 / ocr_text=屏幕识别 / manual=手动记录）
+<!-- `s`：事件来源（ax_text=正在看的正文 / clipboard=剪贴板 / ocr_text=屏幕识别 / manual=手动记录） -->
 - `a`：应用名
 - `c`：事件内容
 - `sp`：speaker（user=用户主动 / ai=AI 回复 / system=系统）

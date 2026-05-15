@@ -20,6 +20,7 @@ class WatchersConfig(BaseModel):
     idle: bool = True
     clipboard: bool = True
     manual: bool = True
+    keyboard_chunk: bool = True
     browser: bool = False
     ax_text: bool = False
     ocr: bool = False
@@ -38,6 +39,12 @@ class AXTextConfig(BaseModel):
     poll_interval_sec: float = 1.0
 
 
+class KeyboardChunkConfig(BaseModel):
+    silence_sec: float = 2.0
+    force_flush_sec: float = 2.0
+    store_text: bool = True
+
+
 class BrowserConfig(BaseModel):
     poll_interval_sec: float = 1.0
     supported_browsers: list[str] = Field(
@@ -53,9 +60,13 @@ class BrowserConfig(BaseModel):
 
 class OCRConfig(BaseModel):
     provider: Literal["vision_native"] = "vision_native"
-    window_switch_delay_sec: float = 0.8
-    stable_interval_sec: float = 10.0
-    keyboard_quiet_sec: float = 2.0
+    # === OCR watcher 已下线 2026-05-14 ===
+    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+    # 历史 raw_events 中 ocr_text_capture 数据保留可读
+    # window_switch_delay_sec: float = 0.8
+    # stable_interval_sec: float = 10.0
+    # keyboard_quiet_sec: float = 2.0
 
 
 class PrivacyConfig(BaseModel):
@@ -233,6 +244,7 @@ class Config(BaseModel):
     idle: IdleConfig = Field(default_factory=IdleConfig)
     clipboard: ClipboardConfig = Field(default_factory=ClipboardConfig)
     ax_text: AXTextConfig = Field(default_factory=AXTextConfig)
+    keyboard_chunk: KeyboardChunkConfig = Field(default_factory=KeyboardChunkConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     ocr: OCRConfig = Field(default_factory=OCRConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)

@@ -23,11 +23,19 @@ _CAPTURE_FACT_CAPS = {
     "ax_text_watcher",
     "window_watcher",
     "browser_watcher",
-    "ocr_watcher",
+    # === OCR watcher 已下线 2026-05-14 ===
+    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+    # 历史 raw_events 中 ocr_text_capture 数据保留可读
+    # "ocr_watcher",
 }
 _CAPTURE_PROBE_CAPS = {
     "accessibility_permission",
-    "screen_recording_permission",
+    # === OCR watcher 已下线 2026-05-14 ===
+    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+    # 历史 raw_events 中 ocr_text_capture 数据保留可读
+    # "screen_recording_permission",
     "appkit_runtime",
 }
 _LLM_FACT_CAPS = {"llm_backend"}

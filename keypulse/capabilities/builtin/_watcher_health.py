@@ -20,6 +20,7 @@ class WatcherHealthSpec:
     capability_name: str  # registry id (e.g. "watcher_browser")
     label_when_failed: str = "采集异常"
     hint: str = "采集线程异常，请重启 daemon；若持续失败请重装应用"
+    silent_timeout_sec: float | None = None
 
 
 def _runtime_payload() -> dict:
@@ -73,6 +74,14 @@ class WatcherHealthCapability(Capability):
                 code=f"{self._spec.watcher_name}_heartbeat_gave_up",
                 hint=self._spec.hint,
             )
+        timeout = self._spec.silent_timeout_sec
+        last_emit_age = health.get("last_emit_age_sec")
+        if timeout is not None and isinstance(last_emit_age, (int, float)) and last_emit_age > timeout:
+            return CheckResult(
+                ok=False,
+                code=f"{self._spec.watcher_name}_silent_timeout",
+                hint=self._spec.hint,
+            )
         return CheckResult(ok=True, code="ok")
 
     def precheck(self) -> CheckResult:
@@ -107,6 +116,12 @@ WATCHER_HEALTH_SPECS: list[WatcherHealthSpec] = [
         hint="浏览器标签采集线程异常，请重启 daemon",
     ),
     WatcherHealthSpec(
+        watcher_name="keyboard_chunk",
+        capability_name="keyboard_chunk_watcher",
+        hint="键盘分块采集线程异常，请重启 daemon；若持续失败请检查输入监控权限",
+        silent_timeout_sec=1800.0,
+    ),
+    WatcherHealthSpec(
         watcher_name="window",
         capability_name="window_watcher",
         hint="窗口焦点采集线程异常，请重启 daemon",
@@ -115,10 +130,16 @@ WATCHER_HEALTH_SPECS: list[WatcherHealthSpec] = [
         watcher_name="ax_text",
         capability_name="ax_text_watcher",
         hint="AX 文本采集线程异常，请重启 daemon；可能与辅助功能权限相关",
+        silent_timeout_sec=1800.0,
     ),
-    WatcherHealthSpec(
-        watcher_name="ocr",
-        capability_name="ocr_watcher",
-        hint="OCR 采集线程异常，请重启 daemon",
-    ),
+    # === OCR watcher 已下线 2026-05-14 ===
+    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+    # 历史 raw_events 中 ocr_text_capture 数据保留可读
+    # WatcherHealthSpec(
+    #     watcher_name="ocr",
+    #     capability_name="ocr_watcher",
+    #     hint="OCR 采集线程异常，请重启 daemon",
+    #     silent_timeout_sec=3600.0,
+    # ),
 ]
