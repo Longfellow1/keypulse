@@ -226,8 +226,15 @@ class MarkdownVaultSourceConfig(BaseModel):
     extra_roots: list[str] = Field(default_factory=list)
 
 
+class SourcesSchedulerConfig(BaseModel):
+    enabled: bool = True
+    poll_interval_sec: int = 600
+    debounce_sec: int = 300
+
+
 class SourcesConfig(BaseModel):
     markdown_vault: MarkdownVaultSourceConfig = Field(default_factory=MarkdownVaultSourceConfig)
+    scheduler: SourcesSchedulerConfig = Field(default_factory=SourcesSchedulerConfig)
 
 
 class PolicyConfig(BaseModel):
