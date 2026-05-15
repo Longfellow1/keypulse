@@ -544,6 +544,8 @@ def status(plain):
         enabled.append("剪贴板")
     if cfg.watchers.manual:
         enabled.append("手动保存")
+    if getattr(cfg.watchers, "keyboard_chunk", False):
+        enabled.append("键盘分块")
     if cfg.watchers.browser:
         enabled.append("浏览器")
     if getattr(cfg.watchers, "ax_text", False):
@@ -585,6 +587,7 @@ def status(plain):
         table.add_row("数据库大小", f"{db_size_mb:.2f} MB")
         table.add_row("最近一次写入", last_flush)
         table.add_row("已启用采集源", "、".join(enabled) if enabled else "无")
+        table.add_row("键盘分块状态", "已启用" if getattr(cfg.watchers, "keyboard_chunk", False) else "未启用")
         table.add_row("正文采集状态", "已运行" if ax_running else "未见运行")
         table.add_row("屏幕识别状态", "已运行" if ocr_running else "未见运行")
         table.add_row("后台宿主 PID", str(runtime_pid))
@@ -656,7 +659,7 @@ def doctor(plain):
     db_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         test_file = db_path.parent / ".write_test"
-        test_file.write_text("test")
+        test_file.write_text("test", encoding="utf-8")
         test_file.unlink()
         checks["数据库目录可写"] = True
     except Exception:
@@ -669,6 +672,7 @@ def doctor(plain):
     runtime_watchers = runtime.get("watchers") or {}
     if runtime_watchers:
         checks["后台正文采集线程"] = bool((runtime_watchers.get("ax_text") or {}).get("running"))
+        checks["后台键盘分块线程"] = bool((runtime_watchers.get("keyboard_chunk") or {}).get("running"))
         checks["后台屏幕识别线程"] = bool((runtime_watchers.get("ocr") or {}).get("running"))
 
     if plain:
@@ -697,6 +701,20 @@ def healthcheck(config_path):
     result = run_healthcheck(config_path=config_path)
     click.echo(json.dumps(result, indent=2, ensure_ascii=False))
     if result["overall"] == "alert" and any(alert["severity"] == "error" for alert in result["alerts"]):
+        raise SystemExit(1)
+
+
+@main.command("self-heal")
+@click.option("--dry-run", is_flag=True, help="仅演练步骤，不真正重启 daemon")
+def self_heal_command(dry_run):
+    """Run product self-heal sequence for HUD/manual recovery."""
+    from keypulse.health.self_heal import run_self_heal
+
+    cfg = get_config()
+    require_db(cfg)
+    result = run_self_heal(dry_run=bool(dry_run), source="cli")
+    click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+    if result.get("status") == "failed":
         raise SystemExit(1)
 
 
@@ -1643,7 +1661,7 @@ def pipeline_draft(date, yesterday, output):
     )
 
     if output:
-        Path(output).write_text(body)
+        Path(output).write_text(body, encoding="utf-8")
         console.print(f"[green]Draft written to {output}[/green]")
     else:
         console.print(body)
@@ -1763,7 +1781,7 @@ def export(format, days, date, output):
         sys.exit(1)
 
     if output:
-        Path(output).write_text(data)
+        Path(output).write_text(data, encoding="utf-8")
         console.print(f"[green]Exported to {output}[/green]")
     else:
         print(data)

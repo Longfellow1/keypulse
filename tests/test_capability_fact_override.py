@@ -51,7 +51,14 @@ def _mock_state(monkeypatch, *, capture_error_code: str = "", capture_runtime: d
 
 
 def _healthy_watcher() -> dict:
-    return {"running": True, "paused": False, "crashes": 0, "last_error": None, "gave_up": False}
+    return {
+        "running": True,
+        "paused": False,
+        "crashes": 0,
+        "last_error": None,
+        "gave_up": False,
+        "last_emit_age_sec": 30.0,
+    }
 
 
 # ---- accessibility_permission --------------------------------------------------
@@ -108,6 +115,34 @@ def test_accessibility_no_override_when_watcher_has_last_error(monkeypatch) -> N
     assert state.code == "ax_denied"
 
 
+def test_accessibility_no_override_when_ax_text_silent(monkeypatch) -> None:
+    """ax_text watcher 状态 healthy 但实际 0 emit（TCC 权限 silent fail），不能 override 成 ok。"""
+    _mock_probe_denied_ax(monkeypatch)
+    silent = _healthy_watcher() | {"last_emit_age_sec": 9999.0}
+    _mock_state(
+        monkeypatch,
+        capture_error_code="",
+        capture_runtime={"watchers": {"window": _healthy_watcher(), "ax_text": silent}},
+    )
+    state = AccessibilityPermissionCapability().monitor()
+    assert not state.ok
+    assert state.code == "ax_denied"
+
+
+def test_accessibility_no_override_when_ax_text_never_emitted(monkeypatch) -> None:
+    """ax_text last_emit_age_sec=None（从未 emit 过），不能 override。"""
+    _mock_probe_denied_ax(monkeypatch)
+    never_emitted = _healthy_watcher() | {"last_emit_age_sec": None}
+    _mock_state(
+        monkeypatch,
+        capture_error_code="",
+        capture_runtime={"watchers": {"window": _healthy_watcher(), "ax_text": never_emitted}},
+    )
+    state = AccessibilityPermissionCapability().monitor()
+    assert not state.ok
+    assert state.code == "ax_denied"
+
+
 def test_accessibility_no_override_when_runtime_missing(monkeypatch) -> None:
     _mock_probe_denied_ax(monkeypatch)
     _mock_state(monkeypatch, capture_error_code="", capture_runtime=None)
@@ -143,6 +178,7 @@ def test_accessibility_no_override_when_required_watcher_missing(monkeypatch) ->
 # ---- screen_recording_permission -----------------------------------------------
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_screen_recording_overrides_to_ok_when_ocr_watcher_healthy(monkeypatch) -> None:
     _mock_probe_denied_screen(monkeypatch)
     _mock_state(
@@ -155,6 +191,18 @@ def test_screen_recording_overrides_to_ok_when_ocr_watcher_healthy(monkeypatch) 
     assert "误报" in (state.detail or "")
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
+def test_screen_recording_no_override_when_ocr_silent(monkeypatch) -> None:
+    """ocr watcher 状态 healthy 但实际 0 emit（TCC 权限 silent fail），不能 override 成 ok。"""
+    _mock_probe_denied_screen(monkeypatch)
+    silent = _healthy_watcher() | {"last_emit_age_sec": 9999.0}
+    _mock_state(monkeypatch, capture_runtime={"watchers": {"ocr": silent}})
+    state = ScreenRecordingPermissionCapability().monitor()
+    assert not state.ok
+    assert state.code == "screen_capture_denied"
+
+
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_screen_recording_no_override_when_ocr_has_last_error(monkeypatch) -> None:
     _mock_probe_denied_screen(monkeypatch)
     bad = _healthy_watcher() | {"last_error": "denied"}
@@ -164,6 +212,7 @@ def test_screen_recording_no_override_when_ocr_has_last_error(monkeypatch) -> No
     assert state.code == "screen_capture_denied"
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_screen_recording_no_override_when_runtime_missing(monkeypatch) -> None:
     _mock_probe_denied_screen(monkeypatch)
     _mock_state(monkeypatch, capture_runtime=None)

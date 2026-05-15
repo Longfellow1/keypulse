@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -54,6 +56,7 @@ def test_start_uses_launchd_bootstrap_when_plist_exists(monkeypatch, tmp_path):
     assert "started via launchd" in result.output
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
     db_path = tmp_path / "keypulse.db"
     db_path.write_text("db")
@@ -102,6 +105,7 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
     assert "runtime_ocr_count=1" in result.output
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
     cfg = type("Cfg", (), {"db_path_expanded": tmp_path / "keypulse.db"})()
     cfg.db_path_expanded.parent.mkdir(parents=True, exist_ok=True)

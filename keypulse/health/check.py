@@ -11,13 +11,18 @@ from typing import Any
 from keypulse.capabilities.registry import get_default_registry
 from keypulse.capabilities.store import load_states, load_states_raw
 from keypulse.config import Config
+from keypulse.health.alerts import ProductAlert, write_alerts
+from keypulse.health.product_delivery import evaluate_delivery_health
 from keypulse.health.report import HEALTH_JSON_PATH, write_health_report
+from keypulse.store.repository import get_state, set_state
 from keypulse.store.db import get_conn, init_db
 
 
 HEALTH_SCHEMA_VERSION = 1
 DAEMON_LABEL = "com.keypulse.daemon"
 LOGGER = logging.getLogger(__name__)
+_HEALTH_DEGRADED_STREAK_KEY = "healthcheck_degraded_streak"
+_HEALTH_LAST_DEGRADED_AT_KEY = "healthcheck_last_degraded_at"
 
 
 def _utc_now() -> datetime:
@@ -242,11 +247,27 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
         )
 
     capabilities_snapshot, capture_error_code, llm_error_code, paused_flag = _capabilities_snapshot()
+    delivery = evaluate_delivery_health()
+    alerts_path = HEALTH_JSON_PATH.parent / "alerts.json"
+    try:
+        write_alerts(delivery.alerts, path=alerts_path)
+    except Exception:
+        LOGGER.exception("failed to write alerts.json")
+
+    normalized_alerts = list(alerts)
+    normalized_alerts.extend(_legacy_alerts_from_product_alerts(delivery.alerts))
+    degraded_streak = _update_degraded_streak(any(item["severity"] in {"warn", "error"} for item in normalized_alerts))
+
+    self_heal_triggered = False
+    self_heal_result: dict[str, Any] = {}
+    if degraded_streak >= 2:
+        self_heal_result = _trigger_self_heal()
+        self_heal_triggered = bool(self_heal_result.get("started"))
 
     result = {
         "schema_version": HEALTH_SCHEMA_VERSION,
         "checked_at": checked_at.isoformat(),
-        "overall": "ok" if not alerts else "alert",
+        "overall": "ok" if not normalized_alerts else "alert",
         "daemon": {
             "alive": alive,
             "pid": pid,
@@ -264,7 +285,16 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
             "last_daily_sync_at": sync_last_at,
             "last_daily_file_date": sync_last_date,
         },
-        "alerts": alerts,
+        "alerts": normalized_alerts,
+        "product_status": {
+            "run_record_ok": delivery.run_record_ok,
+            "run_record_reason": delivery.run_record_reason,
+            "watcher_emit_counts_24h": delivery.watcher_counts,
+            "alerts_path": str(alerts_path),
+            "degraded_streak": degraded_streak,
+            "self_heal_triggered": self_heal_triggered,
+        },
+        "self_heal": self_heal_result,
         "capabilities": capabilities_snapshot,
         "capture_error_code": capture_error_code,
         "llm_error_code": llm_error_code,
@@ -272,6 +302,63 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
     }
     write_health_report(HEALTH_JSON_PATH, result)
     return result
+
+
+def _legacy_alerts_from_product_alerts(alerts: list[ProductAlert]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for item in alerts:
+        if item.level == "info":
+            continue
+        out.append(
+            {
+                "severity": "error" if item.level == "critical" else "warn",
+                "code": f"PRODUCT_{item.source.upper().replace(':', '_')}",
+                "message": item.message,
+            }
+        )
+    return out
+
+
+def _update_degraded_streak(is_degraded: bool) -> int:
+    raw = (get_state(_HEALTH_DEGRADED_STREAK_KEY) or "").strip()
+    try:
+        previous = int(raw)
+    except ValueError:
+        previous = 0
+    if not is_degraded:
+        set_state(_HEALTH_LAST_DEGRADED_AT_KEY, "")
+        current = 0
+        set_state(_HEALTH_DEGRADED_STREAK_KEY, str(current))
+        return current
+
+    last_raw = (get_state(_HEALTH_LAST_DEGRADED_AT_KEY) or "").strip()
+    now = _utc_now()
+    last_dt = _datetime_from_iso(last_raw)
+    if previous <= 0 or last_dt is None:
+        current = 1
+    else:
+        elapsed = (now - last_dt).total_seconds()
+        current = previous + 1 if elapsed >= 600 else previous
+    set_state(_HEALTH_DEGRADED_STREAK_KEY, str(current))
+    set_state(_HEALTH_LAST_DEGRADED_AT_KEY, now.isoformat())
+    return current
+
+
+def _trigger_self_heal() -> dict[str, Any]:
+    try:
+        from keypulse.health.self_heal import run_self_heal
+    except Exception as exc:
+        return {"started": False, "reason": f"self_heal_import_failed:{type(exc).__name__}"}
+    try:
+        result = run_self_heal(dry_run=False, source="healthcheck")
+    except Exception as exc:
+        LOGGER.exception("healthcheck self-heal trigger failed")
+        return {"started": False, "reason": f"self_heal_failed:{type(exc).__name__}"}
+    return {
+        "started": bool(result.get("started")),
+        "status": str(result.get("status") or ""),
+        "failed_step": str(result.get("failed_step") or ""),
+    }
 
 
 def _capabilities_snapshot() -> tuple[dict[str, Any], str, str, bool]:

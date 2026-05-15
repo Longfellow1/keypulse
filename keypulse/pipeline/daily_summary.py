@@ -5,9 +5,12 @@ import re
 import hashlib
 from datetime import date as date_cls, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from keypulse.utils.paths import get_data_dir
+
+if TYPE_CHECKING:
+    from keypulse.pipeline.run_record import RunRecorder
 
 
 _TIME_TEXT = re.compile(r"^\d{2}:\d{2}$")
@@ -511,6 +514,8 @@ def write_daily_summary(
     events=None,
     unanchored=None,
     narrative_markdown: str | None = None,
+    recorder: "RunRecorder | None" = None,
+    stage: str = "persist_daily_summary",
 ) -> Path:
     payload = {
         "date": date,
@@ -526,10 +531,15 @@ def write_daily_summary(
     normalized = _validate_summary_payload(payload)
 
     target = _summary_dir() / f"{normalized['date']}.json"
-    tmp_path = target.with_name(f"{target.name}.tmp")
+    rendered = json.dumps(normalized, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    if recorder is not None:
+        from keypulse.pipeline.artifact_writer import write_artifact
 
+        write_artifact(recorder, target, rendered, stage=stage)
+        return target
+    tmp_path = target.with_name(f"{target.name}.tmp")
     try:
-        tmp_path.write_text(json.dumps(normalized, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        tmp_path.write_text(rendered, encoding="utf-8")
         tmp_path.replace(target)
     finally:
         if tmp_path.exists():

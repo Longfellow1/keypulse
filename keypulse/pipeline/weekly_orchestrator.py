@@ -20,11 +20,14 @@ from keypulse.pipeline.daily_summary import (
     merge_topic_status_snapshots,
     read_daily_summary,
 )
+from keypulse.pipeline.artifact_writer import write_artifact
 from keypulse.pipeline.dimension_stats import compute_five_dimensions, render_key_data_section
 from keypulse.pipeline.holiday_strategy import build_holiday_context
 from keypulse.pipeline.holiday_templates import build_holiday_system_injection
+from keypulse.pipeline.llm_errors import classify_llm_error
 from keypulse.pipeline.model import LLMCallError, ModelGateway, load_model_gateway
 from keypulse.pipeline.onboarding import read_profile
+from keypulse.pipeline.run_record import RunRecorder
 from keypulse.pipeline.topic_status import TopicStatusSnapshot, compute_topic_status
 from keypulse.pipeline.degraded_content import generate_degraded_topic
 from keypulse.pipeline.quality_score import QualityBreakdown, append_quality_log, compute_quality_score
@@ -79,6 +82,7 @@ class WeeklyLLMResult:
     source: str
     attempts: int
     reason: str = ""
+    error_kind: str = ""
 
 
 @dataclass
@@ -344,10 +348,11 @@ def _call_weekly_llm(
     if _WEEKLY_CIRCUIT.is_open():
         stats.degraded_calls += 1
         _append_weekly_cost_row(capability=capability, source="degraded", attempts=0, reason="circuit_open")
-        return WeeklyLLMResult(content=None, source="degraded", attempts=0, reason="circuit_open")
+        return WeeklyLLMResult(content=None, source="degraded", attempts=0, reason="circuit_open", error_kind="unknown")
 
     backoffs = [1.0, 2.0]
     last_error = ""
+    last_exc: Exception | None = None
     max_attempts = max(1, min(int(attempts or 1), 3))
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
@@ -369,6 +374,7 @@ def _call_weekly_llm(
             _append_weekly_cost_row(capability=capability, source="llm", attempts=attempt, reason="")
             return WeeklyLLMResult(content=output, source="llm", attempts=attempt)
         except (LLMCallError, OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+            last_exc = exc
             last_error = f"{type(exc).__name__}:{exc}"
             if attempt >= max_attempts or not _is_retryable_weekly_error(exc):
                 break
@@ -376,7 +382,14 @@ def _call_weekly_llm(
     _WEEKLY_CIRCUIT.record_failure()
     stats.degraded_calls += 1
     _append_weekly_cost_row(capability=capability, source="degraded", attempts=max_attempts, reason=last_error or "llm_failed")
-    return WeeklyLLMResult(content=None, source="degraded", attempts=max_attempts, reason=last_error or "llm_failed")
+    error_kind = classify_llm_error(last_exc).value if last_exc is not None else "unknown"
+    return WeeklyLLMResult(
+        content=None,
+        source="degraded",
+        attempts=max_attempts,
+        reason=last_error or "llm_failed",
+        error_kind=error_kind,
+    )
 
 
 def _build_prompt(spec_body: str, capability: str, payload: dict[str, Any]) -> str:
@@ -1175,6 +1188,52 @@ def _topic_evidence(topic: dict[str, Any], daily_summaries: list[dict[str, Any]]
     return result
 
 
+def _collect_daily_topic_signals(
+    topic: dict[str, Any], daily_summaries: list[dict[str, Any]]
+) -> dict[str, list[dict[str, str]]]:
+    """从 daily v3 topics[] 按 cluster.slug / display_name 反查决策/产出/状态。
+
+    daily topics[].events_ref 含 cluster.slug；display 与 cluster.display_name 一致。
+    返回三个数组（每条带 date），由调用方塞进 L5 input 作为权威事实。
+    """
+    cluster_slug = str(topic.get("slug") or "").strip()
+    display = str(topic.get("name") or topic.get("display_name") or "").strip()
+    decisions: list[dict[str, str]] = []
+    shipped: list[dict[str, str]] = []
+    anchor_states: list[dict[str, str]] = []
+    for daily in daily_summaries:
+        date_text = str(daily.get("date") or "").strip()
+        for entry in daily.get("topics") or []:
+            if not isinstance(entry, dict):
+                continue
+            refs = {str(x or "").strip() for x in (entry.get("events_ref") or [])}
+            entry_display = str(entry.get("display") or "").strip()
+            if cluster_slug and cluster_slug in refs:
+                matched = True
+            elif display and entry_display and display == entry_display:
+                matched = True
+            else:
+                matched = False
+            if not matched:
+                continue
+            for text in entry.get("decisions") or []:
+                text_str = str(text or "").strip()
+                if text_str:
+                    decisions.append({"date": date_text, "text": text_str[:300]})
+            for text in entry.get("shipped") or []:
+                text_str = str(text or "").strip()
+                if text_str:
+                    shipped.append({"date": date_text, "text": text_str[:300]})
+            state = str(entry.get("anchor_state") or "").strip()
+            if state:
+                anchor_states.append({"date": date_text, "state": state})
+    return {
+        "daily_decisions": decisions[:6],
+        "daily_shipped": shipped[:6],
+        "daily_anchor_states": anchor_states[:7],
+    }
+
+
 def _load_hud_inputs_for_week(week_str: str) -> list[dict[str, str]]:
     dates = set(_week_dates(week_str))
     state = read_hud_state()
@@ -1513,7 +1572,7 @@ def _render_exec_weekly_markdown(
             [
                 "",
                 "## 关键数据",
-                f"- 测试用例 / 代码改动 / commit / 实质活动主题 {len(top_topics)} 个 ({completed} 完成 · {in_progress} 推进中 · {started} 启动)",
+                f"- 实质活动主题: {len(top_topics)} 个 ({completed} 完成 · {in_progress} 推进中 · {started} 启动)",
                 f"- 已记录天数: {daily_count} / 7",
                 "",
             ]
@@ -1525,39 +1584,67 @@ def _render_exec_weekly_markdown(
         state = str(topic.get("state") or "in_progress")
         payload = by_slug.get(slug, {})
         narrative = str(payload.get("narrative") or "").strip() or f"本周{name}有记录，见 [[{str((topic.get('weekly_entries') or [{'date': start.isoformat()}])[0].get('date'))}]]。"
-        decisions = [str(item).strip() for item in (payload.get("decisions") or []) if str(item).strip()] or ["本周没有可确认的关键决策"]
-        outputs = [str(item).strip() for item in (payload.get("outputs") or []) if str(item).strip()] or ["本周没有可确认的可见产出"]
+        decisions = [str(item).strip() for item in (payload.get("decisions") or []) if str(item).strip()]
+        outputs = [str(item).strip() for item in (payload.get("outputs") or []) if str(item).strip()]
         blockers = [str(item).strip() for item in (payload.get("blockers") or []) if str(item).strip()]
-        lines.extend(
-            [
-                f"### {_exec_state_icon(state)} {name} | {_exec_state_label(state)}",
-                narrative,
-                "→ 这意味着: 这条主题的结果已经进入可继续迭代阶段。",
-                f"→ 关键决策: {'；'.join(decisions[:3])}",
-                f"→ 可见产出: {'；'.join(outputs[:3])}",
-            ]
-        )
+        meaning = str(payload.get("meaning") or "").strip()
+        lines.append(f"### {_exec_state_icon(state)} {name} | {_exec_state_label(state)}")
+        lines.append(narrative)
+        if meaning:
+            lines.append(f"→ 这意味着: {meaning}")
+        if decisions:
+            lines.append(f"→ 关键决策: {'；'.join(decisions[:3])}")
+        if outputs:
+            lines.append(f"→ 可见产出: {'；'.join(outputs[:3])}")
         if blockers:
             lines.append(f"→ ⚠️  卡点: {'；'.join(blockers[:3])}")
         lines.append("")
     risks = l6_output.get("risks") if isinstance(l6_output, dict) else []
-    lines.extend(["## 本周风险", "| # | 风险 | 影响 | 处理方向 |", "|---|---|---|---|"])
-    if isinstance(risks, list) and risks:
-        for idx, risk in enumerate(risks[:5], start=1):
+    valid_risks: list[tuple[str, str, str]] = []
+    if isinstance(risks, list):
+        for risk in risks[:5]:
             if isinstance(risk, dict):
-                lines.append(f"| {idx} | {risk.get('risk','')} | {risk.get('impact','')} | {risk.get('direction','')} |")
+                r = str(risk.get("risk") or risk.get("text") or risk.get("content") or "").strip()
+                i = str(risk.get("impact", "") or "").strip()
+                d = str(risk.get("direction", "") or "").strip()
+                if r:
+                    valid_risks.append((r, i, d))
             else:
-                lines.append(f"| {idx} | {risk} | 可能影响下周推进 | 明确归属和下一步 |")
+                text = str(risk or "").strip()
+                if text:
+                    valid_risks.append((text, "", ""))
+    lines.extend(["## 本周风险", "| # | 风险 | 影响 | 处理方向 |", "|---|---|---|---|"])
+    if valid_risks:
+        for idx, (r, i, d) in enumerate(valid_risks, start=1):
+            lines.append(f"| {idx} | {r} | {i or '—'} | {d or '—'} |")
     else:
-        lines.append("| 1 | 暂无明确风险 | 影响较低 | 保持记录 |")
+        lines.append("| — | （无） | — | — |")
     dropped = l6_output.get("dropped_balls") if isinstance(l6_output, dict) else []
     if not dropped:
         dropped = l6_output.get("missed_balls") if isinstance(l6_output, dict) else []
-    lines.extend(["", "## 没接住的球"])
-    if isinstance(dropped, list) and dropped:
+    valid_dropped: list[str] = []
+    if isinstance(dropped, list):
         for item in dropped[:5]:
             if isinstance(item, dict):
-                lines.append(f"- {item.get('anchor_link','')} {item.get('what','')}".strip())
+                anchor = str(item.get("anchor_link", "") or "").strip()
+                what = str(item.get("what", "") or "").strip()
+                content = str(item.get("content", "") or "").strip()
+                date = str(item.get("date", "") or "").strip()
+                if not anchor and date:
+                    anchor = f"[[{date}]]"
+                if not what and content:
+                    what = content
+                text = f"{anchor} {what}".strip()
+                if what or anchor:
+                    valid_dropped.append(text)
+            else:
+                text = str(item or "").strip()
+                if text:
+                    valid_dropped.append(text)
+    lines.extend(["", "## 没接住的球"])
+    if valid_dropped:
+        for line in valid_dropped:
+            lines.append(f"- {line}")
     else:
         lines.append("- （无）")
     observation = l6_output.get("observation") if isinstance(l6_output, dict) else {}
@@ -1566,7 +1653,7 @@ def _render_exec_weekly_markdown(
         text = str(observation.get("text") or "").strip()
         anchor = str(observation.get("anchor_link") or "").strip()
         quote = str(observation.get("anchor_quote") or "").strip()
-        lines.append(f"- {text}{(' ' + anchor) if anchor else ''}".strip())
+        lines.append(f"{text}{(' ' + anchor) if anchor else ''}".strip())
         if quote:
             lines.append(f"- 证据: {quote}")
     else:
@@ -1582,23 +1669,30 @@ def _render_exec_weekly_markdown(
     else:
         lines.append("- （本周无显式状态迁移）")
     anchors = _next_week_anchors(top_topics, l6_output)
-    lines.extend(["", "## 下周锚点", *[f"- {item}" for item in anchors], "", "---", *_generation_info_lines(stats, quality_breakdown, quality_history)])
+    anchor_lines = [f"- {item}" for item in anchors] if anchors else ["- （无）"]
+    lines.extend(["", "## 下周锚点", *anchor_lines, "", "---", *_generation_info_lines(stats, quality_breakdown, quality_history)])
     return lines
 
 
 def _next_week_anchors(top_topics: list[dict[str, Any]], l6_output: dict[str, Any]) -> list[str]:
+    explicit = []
+    if isinstance(l6_output, dict):
+        for item in l6_output.get("next_week_anchors") or l6_output.get("anchors") or []:
+            text = str(item.get("text") if isinstance(item, dict) else item or "").strip()
+            if text:
+                explicit.append(text)
+    if explicit:
+        return explicit[:5]
     anchors = []
     for topic in top_topics[:4]:
         name = str(topic.get("name") or topic.get("slug") or "主题")
         state = str(topic.get("state") or "")
         if state == "blocked":
-            anchors.append(f"拆解 {name} 的卡点并确认一个可完成动作")
-        elif state == "completed":
-            anchors.append(f"把 {name} 的结果整理成下周可复现的执行入口")
-        else:
-            anchors.append(f"推进 {name} 的下一条可验证记录")
-    while len(anchors) < 3:
-        anchors.append("补齐本周未覆盖主题的证据记录")
+            anchors.append(f"解卡 {name}")
+        elif state == "in_progress":
+            anchors.append(f"推进 {name}")
+        elif state == "started":
+            anchors.append(f"承接 {name}")
     return anchors[:5]
 
 
@@ -1968,11 +2062,24 @@ def _clear_weekly_notice() -> None:
 def run_weekly(week_str: str, *, style: str = "exec") -> str:
     if style not in {"plain", "exec"}:
         raise ValueError(f"invalid weekly style: {style}")
+    with RunRecorder(date_str=week_str, kind="weekly", trigger="manual") as recorder:
+        return _run_weekly_recorded(week_str, style=style, recorder=recorder)
+
+
+def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) -> str:
     run_started = datetime.now(timezone.utc)
     stats = WeeklyRunStats(l5_sources=[])
-    daily_summaries = _load_week_daily_summaries(week_str)
+
+    def _record_weekly_llm_degraded(result: WeeklyLLMResult) -> None:
+        if result.source == "degraded":
+            recorder.set_degraded("weekly_llm_degraded", kind=result.error_kind or "unknown")
+
+    with recorder.stage("load_rows"):
+        daily_summaries = _load_week_daily_summaries(week_str)
+        recorder.set_input_count(sum(int(item.get("event_count") or 0) for item in daily_summaries if isinstance(item, dict)))
 
     if len(daily_summaries) < _WEEKLY_MIN_DAILY_COUNT:
+        recorder.set_output_quality("degraded", degraded_reason="low_event_count")
         _set_weekly_notice(week_str, "本周数据不足，周报跳过")
         _append_log(
             {
@@ -2056,6 +2163,7 @@ def run_weekly(week_str: str, *, style: str = "exec") -> str:
         stats=stats,
         validator=_is_valid_l4_output,
     )
+    _record_weekly_llm_degraded(l4_result)
     stats.l4_source = l4_result.source
     candidate_topics = (
         _normalize_l4_output(l4_result.content, daily_summaries) if l4_result.content is not None else list(l4_fallback_topics)
@@ -2067,7 +2175,7 @@ def run_weekly(week_str: str, *, style: str = "exec") -> str:
             str(item.get("slug") or ""),
         )
     )
-    top_topics = candidate_topics[:4]
+    top_topics = candidate_topics[:8]
     if not cross_week_diff and top_topics:
         first_topic = top_topics[0]
         cross_week_diff = [
@@ -2148,6 +2256,7 @@ def run_weekly(week_str: str, *, style: str = "exec") -> str:
             topic_key_decisions = _signals_for_topic(key_decisions, topic, limit=3)
             topic_visible_outputs = _signals_for_topic(visible_outputs, topic, limit=3)
             topic_blockers = _signals_for_topic(tagged_blockers, topic, limit=3)
+            daily_signals = _collect_daily_topic_signals(topic, daily_summaries)
             l5_input = {
                 "scope_week": week_str,
                 "topic": topic,
@@ -2157,6 +2266,9 @@ def run_weekly(week_str: str, *, style: str = "exec") -> str:
                 "key_decisions": topic_key_decisions,
                 "visible_outputs": topic_visible_outputs,
                 "tagged_blockers": topic_blockers,
+                "daily_decisions": daily_signals["daily_decisions"],
+                "daily_shipped": daily_signals["daily_shipped"],
+                "daily_anchor_states": daily_signals["daily_anchor_states"],
             }
             l5_prompt = _build_prompt(l5_spec_body, "L5_weekly_main_narrative", l5_input)
             l5_key = _sha1_json(l5_input)
@@ -2179,6 +2291,7 @@ def run_weekly(week_str: str, *, style: str = "exec") -> str:
         for future in as_completed(futures):
             topic = futures[future]
             result = future.result()
+            _record_weekly_llm_degraded(result)
             if stats.l5_sources is not None:
                 stats.l5_sources.append(result.source)
             if result.content is None:
@@ -2213,6 +2326,7 @@ def run_weekly(week_str: str, *, style: str = "exec") -> str:
         stats=stats,
         validator=_is_valid_l6_output,
     )
+    _record_weekly_llm_degraded(l6_result)
     stats.l6_source = l6_result.source
     l6_output_dict = _normalize_l6_output(l6_result.content if l6_result.content is not None else _fallback_l6(l6_input, l6_result.reason))
     validator_attempts = 0
@@ -2265,6 +2379,7 @@ def run_weekly(week_str: str, *, style: str = "exec") -> str:
                 stats=stats,
                 validator=_is_valid_l6_output,
             )
+            _record_weekly_llm_degraded(retry_result)
             stats.l6_source = retry_result.source
             l6_output_dict = _normalize_l6_output(
                 retry_result.content if retry_result.content is not None else _fallback_l6(l6_input, retry_result.reason)
@@ -2311,22 +2426,26 @@ def run_weekly(week_str: str, *, style: str = "exec") -> str:
         ),
     )
 
-    rendered = _render_weekly_markdown(
-        week_str,
-        top_topics,
-        {},
-        l5_output_dict,
-        l6_output_dict,
-        cross_week_diff,
-        style=style,
-        daily_count=len(daily_summaries),
-        stats=stats,
-        quality_breakdown=quality_breakdown,
-        quality_history=quality_history,
-        key_data_section=key_data_section,
-    )
-    weekly_path = _weekly_path(week_str)
-    atomic_write_text(weekly_path, rendered)
+    with recorder.stage("render"):
+        rendered = _render_weekly_markdown(
+            week_str,
+            top_topics,
+            {},
+            l5_output_dict,
+            l6_output_dict,
+            cross_week_diff,
+            style=style,
+            daily_count=len(daily_summaries),
+            stats=stats,
+            quality_breakdown=quality_breakdown,
+            quality_history=quality_history,
+            key_data_section=key_data_section,
+        )
+        weekly_path = _weekly_path(week_str)
+    with recorder.stage("persist"):
+        write_artifact(recorder, weekly_path, rendered, stage="persist_weekly_markdown")
+        recorder.set_cost({"in_tokens": 0, "out_tokens": 0, "cost_usd": stats.cost_usd})
+    recorder.set_output_quality("degraded" if weekly_outcome == "partial" else "ok", degraded_reason="quality_gate_refused" if weekly_outcome == "partial" else "")
 
     _append_log(
         {

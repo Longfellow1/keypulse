@@ -1,3 +1,5 @@
+import pytest
+
 """Test migration v12: semantic_weight column and per-source defaults."""
 import sqlite3
 import tempfile

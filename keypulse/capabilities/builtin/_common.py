@@ -84,6 +84,24 @@ def watcher_healthy(name: str) -> bool:
     return True
 
 
+def watcher_has_recent_emit(name: str, max_age_sec: float) -> bool:
+    """True iff watcher has emitted within max_age_sec.
+
+    Returns False when watcher entry missing, when last_emit_age_sec is None
+    (never emitted), or when last_emit_age_sec exceeds the budget. Used by
+    permission overrides to distinguish "API probe false-positive" from
+    "watcher is healthy but actually 0 emit".
+    """
+    watchers = _watchers_payload()
+    entry = watchers.get(name)
+    if not isinstance(entry, dict):
+        return False
+    age = entry.get("last_emit_age_sec")
+    if not isinstance(age, (int, float)):
+        return False
+    return age <= max_age_sec
+
+
 def capture_pipeline_healthy(required_watchers: list[str]) -> bool:
     """True iff capture_error_code empty AND all required watchers are healthy."""
     code = _safe_get_state("capture_error_code").strip()

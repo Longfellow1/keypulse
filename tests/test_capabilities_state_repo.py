@@ -14,6 +14,8 @@ import json
 import time
 from pathlib import Path
 
+import pytest
+
 from keypulse.capabilities.base import HealthState
 from keypulse.capabilities.registry import CapabilityRegistry
 from keypulse.capabilities.store import load_states, save_states

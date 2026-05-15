@@ -76,7 +76,7 @@ def load_weekly_anchors(week_str: str, *, path: Path | None = None) -> list[Week
     if not p.exists():
         return []
     try:
-        payload = json.loads(p.read_text())
+        payload = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
     if payload.get("week") != week_str:
@@ -92,7 +92,7 @@ def save_weekly_anchors(
 ) -> None:
     p = path or _DEFAULT_PATH
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(_state_payload(week_str, anchors), ensure_ascii=False, indent=2))
+    p.write_text(json.dumps(_state_payload(week_str, anchors), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def anchor_today_clusters(

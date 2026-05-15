@@ -261,5 +261,10 @@ class WindowWatcher(BaseWatcher):
             event = self.capture_once()
             if event is not None:
                 self.emit(event)
+            else:
+                # No focus change this tick. NSWorkspace polling is alive —
+                # beat so heartbeat supervisor doesn't misread "quiet user"
+                # as "silently stuck thread" (0507–0513 false-revival bug).
+                self.beat()
 
             time.sleep(1)

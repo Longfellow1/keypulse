@@ -11,7 +11,11 @@ from keypulse.config import Config
 
 _CJK_RE = re.compile(r"[一-鿿]")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
-_TOOL_ECHO_SOURCES = frozenset({"ax_text", "ocr_text", "window", "idle", "knowledgec", "zsh_history"})
+# === OCR watcher 已下线 2026-05-14 ===
+# 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
+# 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
+# 历史 raw_events 中 ocr_text_capture 数据保留可读
+_TOOL_ECHO_SOURCES = frozenset({"ax_text", "window", "idle", "knowledgec", "zsh_history"})
 _USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli"})
 
 

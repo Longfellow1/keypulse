@@ -198,3 +198,25 @@ def test_window_watcher_emits_ten_session_events_for_thirty_minutes_of_stable_fo
 
     assert sum(1 for event in events if event and event.event_type == "window_focus_session") == 10
     assert sum(1 for event in events if event and event.event_type == "window_heartbeat") == 0
+
+
+def test_window_watcher_run_loop_beats_when_no_event() -> None:
+    """Regression for 0507–0513 heartbeat false-revival: session-based
+    watcher must beat() when capture_once() returns None, otherwise
+    `_last_emit_at_mono` stays stale and heartbeat supervisor wrongly
+    decides the (alive, quiet) thread is silently stuck."""
+    import time as _time
+
+    watcher = _make_watcher()
+    watcher._running.set()
+    watcher._started_at_mono = _time.monotonic()
+
+    with (
+        patch.object(watcher, "capture_once", return_value=None),
+        patch("keypulse.capture.watchers.window.time.sleep", lambda _s: watcher._running.clear()),
+    ):
+        watcher._run()
+
+    assert watcher._last_beat_at_mono is not None, "beat() must tick when capture_once returns None"
+    assert watcher._last_emit_at_mono is None, "beat() must NOT count as real emit (would mask silent fail)"
+    assert not watcher.is_heartbeat_dead(), "freshly-beaten watcher must not register as heartbeat-dead"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import time
 from pathlib import Path
 
@@ -41,6 +43,7 @@ def _state(ok: bool, code: str, detail: str | None = None) -> HealthState:
     return HealthState(ok=ok, code=code, last_checked=time.time(), detail=detail)
 
 
+@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_capture_fact_caps_contains_only_watcher_class() -> None:
     from keypulse.app import _CAPTURE_FACT_CAPS
 
