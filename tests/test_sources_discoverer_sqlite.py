@@ -42,12 +42,14 @@ def test_discover_sqlite_candidates_confidence_and_hints(monkeypatch, tmp_path: 
 
     high = by_path[str(high_db.resolve())]
     assert high.discoverer == "sqlite"
+    assert high.shape == "tabular_rows"
     assert high.confidence == "high"
     assert set(high.hint_tables) == {"messages", "chats", "events"}
     assert high.hint_fields == []
     assert high.schema_signature == "chats,events,messages,users"
 
     medium = by_path[str(medium_db.resolve())]
+    assert medium.shape == "tabular_rows"
     assert medium.confidence == "medium"
     assert medium.hint_tables == ["commands"]
     assert medium.hint_fields == []
@@ -71,6 +73,27 @@ def test_discover_sqlite_candidates_uses_column_heuristics(monkeypatch, tmp_path
     candidate = candidates[0]
     assert candidate.confidence == "high"
     assert set(candidate.hint_fields) >= {"role", "message", "path"}
+
+
+def test_discover_sqlite_candidates_detects_kv_json_blob(monkeypatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    db_path = home / "Library" / "Application Support" / "Cursor" / "state.vscdb"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("CREATE TABLE cursorDiskKV (key TEXT, value BLOB)")
+        conn.commit()
+    finally:
+        conn.close()
+
+    candidates = discover_sqlite_candidates(exclude_paths=set())
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.shape == "kv_json_blob"
+    assert candidate.confidence == "high"
+    assert candidate.hint_tables == ["cursorDiskKV"]
 
 
 def test_discover_sqlite_candidates_respects_excluded_paths(monkeypatch, tmp_path: Path) -> None:

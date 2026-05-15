@@ -18,6 +18,7 @@ def _candidate(path: str, *, app_hint: str = "App", confidence: str = "high") ->
         path=path,
         app_hint=app_hint,
         schema_signature="messages,events",
+        shape="tabular_rows",
         confidence=confidence,
     )
 
@@ -57,6 +58,7 @@ def test_store_approve_reject_unset_persists(tmp_path: Path) -> None:
     assert payload["approved"][approved.candidate_id]["discoverer"] == "sqlite"
     assert payload["approved"][approved.candidate_id]["path"] == "/tmp/persist.db"
     assert payload["approved"][approved.candidate_id]["app_hint"] == "Notion"
+    assert payload["approved"][approved.candidate_id]["shape"] == "tabular_rows"
     assert payload["approved"][approved.candidate_id]["user_note"] == "keep"
 
     rejected = store.reject(candidate, reason="user_choice")

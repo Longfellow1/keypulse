@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,13 +26,21 @@ def _make_db(path: Path, statements: list[tuple[str, tuple[object, ...] | None]]
         conn.close()
 
 
-def _approve_sqlite(store: ApprovalStore, path: Path, *, app_hint: str = "Cursor") -> str:
+def _approve_sqlite(
+    store: ApprovalStore,
+    path: Path,
+    *,
+    app_hint: str = "Cursor",
+    shape: str = "tabular_rows",
+    hint_tables: list[str] | None = None,
+) -> str:
     candidate = CandidateSource(
         discoverer="sqlite",
         path=str(path.resolve()),
         app_hint=app_hint,
         schema_signature="messages",
-        hint_tables=["messages"],
+        shape=shape,
+        hint_tables=hint_tables or ["messages"],
         confidence="high",
     )
     record = store.approve(candidate, note="test")
@@ -64,6 +73,7 @@ def test_discover_reads_approved_sqlite_instances(tmp_path: Path) -> None:
     assert instance.metadata["candidate_id"] == candidate_id
     assert instance.metadata["approved_candidate_id"] == candidate_id
     assert instance.metadata["app_hint"] == "Cursor"
+    assert instance.metadata["shape"] == "tabular_rows"
     assert "messages" in instance.metadata["hint_tables"]
 
 
@@ -102,6 +112,105 @@ def test_read_maps_rows_to_semantic_events(tmp_path: Path) -> None:
     assert event.raw_ref.startswith("approved_sqlite:")
     assert event.privacy_tier == "yellow"
     assert event.metadata["table"] == "messages"
+    assert event.metadata["shape"] == "tabular_rows"
+
+
+def test_read_dispatches_kv_json_blob_shape(tmp_path: Path) -> None:
+    ts = int(datetime(2026, 4, 28, 10, 0, tzinfo=timezone.utc).timestamp())
+    db_path = tmp_path / "cursor-state.vscdb"
+    blob = json.dumps(
+        {
+            "createdAt": ts,
+            "type": "assistant",
+            "text": "generated patch",
+        }
+    ).encode("utf-8")
+    _make_db(
+        db_path,
+        [
+            ("CREATE TABLE cursorDiskKV (key TEXT, value BLOB)", None),
+            ("INSERT INTO cursorDiskKV(key, value) VALUES (?, ?)", ("chat:1", blob)),
+            ("INSERT INTO cursorDiskKV(key, value) VALUES (?, ?)", ("bad", b"not-json")),
+        ],
+    )
+
+    store = ApprovalStore(path=tmp_path / "sources-approval.json")
+    _approve_sqlite(
+        store,
+        db_path,
+        app_hint="Cursor",
+        shape="kv_json_blob",
+        hint_tables=["cursorDiskKV"],
+    )
+
+    source = ApprovedSqliteSource(approval_store=store)
+    instance = source.discover()[0]
+    events = list(
+        source.read(
+            instance,
+            datetime(2026, 4, 28, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 28, 23, 59, tzinfo=timezone.utc),
+        )
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert event.actor == "assistant"
+    assert event.intent == "generated patch"
+    assert event.artifact == "Cursor:cursorDiskKV:chat:1"
+    assert event.metadata["shape"] == "kv_json_blob"
+
+
+def test_read_kv_json_blob_reads_all_kv_tables(tmp_path: Path) -> None:
+    ts = int(datetime(2026, 4, 28, 10, 0, tzinfo=timezone.utc).timestamp())
+    db_path = tmp_path / "cursor-state-multi.vscdb"
+    item_blob = json.dumps(
+        {
+            "createdAt": ts,
+            "text": "from item table",
+            "type": "assistant",
+        }
+    ).encode("utf-8")
+    bubble_blob = json.dumps(
+        {
+            "createdAt": ts,
+            "text": "from bubble table",
+            "type": "user",
+        }
+    ).encode("utf-8")
+    _make_db(
+        db_path,
+        [
+            ("CREATE TABLE ItemTable (key TEXT, value BLOB)", None),
+            ("CREATE TABLE cursorDiskKV (key TEXT, value BLOB)", None),
+            ("INSERT INTO ItemTable(key, value) VALUES (?, ?)", ("item:1", item_blob)),
+            ("INSERT INTO cursorDiskKV(key, value) VALUES (?, ?)", ("bubble:1", bubble_blob)),
+        ],
+    )
+
+    store = ApprovalStore(path=tmp_path / "sources-approval.json")
+    _approve_sqlite(
+        store,
+        db_path,
+        app_hint="Cursor",
+        shape="kv_json_blob",
+        hint_tables=["cursorDiskKV"],
+    )
+
+    source = ApprovedSqliteSource(approval_store=store)
+    instance = source.discover()[0]
+    events = list(
+        source.read(
+            instance,
+            datetime(2026, 4, 28, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 28, 23, 59, tzinfo=timezone.utc),
+        )
+    )
+
+    assert len(events) == 2
+    by_artifact = {event.artifact: event for event in events}
+    assert "Cursor:ItemTable:item:1" in by_artifact
+    assert "Cursor:cursorDiskKV:bubble:1" in by_artifact
 
 
 def test_read_uses_tempfile_copy2(monkeypatch, tmp_path: Path) -> None:

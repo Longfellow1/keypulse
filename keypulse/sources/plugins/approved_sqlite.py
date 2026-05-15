@@ -10,7 +10,7 @@ from typing import Any, Iterator
 
 from keypulse.sources.approval import ApprovalStore
 from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
-from keypulse.sources.types import FIELD_HEURISTICS, DataSource, DataSourceInstance, SemanticEvent
+from keypulse.sources.types import ContentShape, FIELD_HEURISTICS, DataSource, DataSourceInstance, SemanticEvent
 
 
 _EVENT_TABLE_KEYWORDS = ("messages", "chats", "history", "sessions", "conversations", "events")
@@ -60,6 +60,7 @@ class ApprovedSqliteSource(DataSource):
 
             app_hint = str(record.metadata.get("app_hint") or sqlite_path.parent.name or "sqlite")
             candidate_id = record.candidate_id
+            shape = _load_shape(record.metadata.get("shape"), hint_tables)
             instances.append(
                 DataSourceInstance(
                     plugin=self.name,
@@ -70,6 +71,7 @@ class ApprovedSqliteSource(DataSource):
                         "approved_candidate_id": candidate_id,
                         "hint_tables": hint_tables,
                         "app_hint": app_hint,
+                        "shape": shape,
                     },
                 )
             )
@@ -97,7 +99,40 @@ class ApprovedSqliteSource(DataSource):
         )
         hint_tables = _load_hint_tables(instance.metadata.get("hint_tables"))
         app_hint = str(instance.metadata.get("app_hint") or instance.label or "")
+        shape = _load_shape(instance.metadata.get("shape"), hint_tables)
 
+        if shape == ContentShape.KV_JSON_BLOB.value:
+            return self._read_kv_blob(
+                sqlite_path=sqlite_path,
+                since_utc=since_utc,
+                until_utc=until_utc,
+                candidate_id=candidate_id,
+                hint_tables=hint_tables,
+                app_hint=app_hint,
+                instance=instance,
+            )
+
+        return self._read_tabular(
+            sqlite_path=sqlite_path,
+            since_utc=since_utc,
+            until_utc=until_utc,
+            candidate_id=candidate_id,
+            hint_tables=hint_tables,
+            app_hint=app_hint,
+            instance=instance,
+        )
+
+    def _read_tabular(
+        self,
+        *,
+        sqlite_path: Path,
+        since_utc: datetime,
+        until_utc: datetime,
+        candidate_id: str,
+        hint_tables: list[str],
+        app_hint: str,
+        instance: DataSourceInstance,
+    ) -> Iterator[SemanticEvent]:
         def _iter_events() -> Iterator[SemanticEvent]:
             with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
                 try:
@@ -156,20 +191,102 @@ class ApprovedSqliteSource(DataSource):
                     raw_text = payload.get(text_col) if text_col else None
                     intent_text = str(raw_text or "").strip()
                     intent = intent_text[:200] if intent_text else f"{table} row {idx}"
-                    yield SemanticEvent(
-                        time=parsed_utc,
-                        source=self.name,
-                        actor="user",
-                        intent=intent,
-                        artifact=f"{instance.label}:{table}:{row_id_or_idx}",
-                        raw_ref=f"approved_sqlite:{candidate_id}:{table}:{row_id_or_idx}",
-                        privacy_tier=self.privacy_tier,
-                        metadata={
-                            "approved_candidate_id": candidate_id,
-                            "table": table,
-                            "app_hint": app_hint,
+                    event = ContentShape.TABULAR_ROWS.to_semantic_event(
+                        {
+                            "time": parsed_utc,
+                            "actor": "user",
+                            "intent": intent,
+                            "artifact": f"{instance.label}:{table}:{row_id_or_idx}",
+                            "raw_ref": f"approved_sqlite:{candidate_id}:{table}:{row_id_or_idx}",
+                            "metadata": {
+                                "approved_candidate_id": candidate_id,
+                                "table": table,
+                                "app_hint": app_hint,
+                                "shape": ContentShape.TABULAR_ROWS.value,
+                            },
                         },
+                        source=self.name,
+                        privacy_tier=self.privacy_tier,
                     )
+                    if event is not None:
+                        yield event
+
+        return _iter_events()
+
+    def _read_kv_blob(
+        self,
+        *,
+        sqlite_path: Path,
+        since_utc: datetime,
+        until_utc: datetime,
+        candidate_id: str,
+        hint_tables: list[str],
+        app_hint: str,
+        instance: DataSourceInstance,
+    ) -> Iterator[SemanticEvent]:
+        def _iter_events() -> Iterator[SemanticEvent]:
+            with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
+                try:
+                    shutil.copy2(sqlite_path, tmp.name)
+                except Exception:
+                    return
+
+                conn: sqlite3.Connection | None = None
+                table_rows: list[tuple[str, list[tuple[Any, Any]]]] = []
+                try:
+                    conn = sqlite3.connect(f"file:{tmp.name}?mode=ro", uri=True)
+                    conn.execute("PRAGMA query_only=ON")
+                    tables = choose_kv_tables(conn, hint_tables)
+                    if not tables:
+                        return
+                    for table in tables:
+                        key_col, value_col = choose_kv_columns(conn, table)
+                        if not key_col or not value_col:
+                            continue
+                        query = (
+                            f"SELECT {_quote_identifier(key_col)}, {_quote_identifier(value_col)} "
+                            f"FROM {_quote_identifier(table)} "
+                            f"LIMIT {_READ_LIMIT}"
+                        )
+                        rows = conn.execute(query).fetchall()
+                        table_rows.append((table, rows))
+                except Exception:
+                    return
+                finally:
+                    if conn is not None:
+                        conn.close()
+
+                if not table_rows:
+                    return
+
+                for table, rows in table_rows:
+                    for idx, row in enumerate(rows, start=1):
+                        if len(row) < 2:
+                            continue
+                        key, value = row[0], row[1]
+                        key_text = _row_identifier(key, idx)
+                        raw_ref = f"approved_sqlite:{candidate_id}:{table}:{key_text}"
+                        event = ContentShape.KV_JSON_BLOB.to_semantic_event(
+                            {
+                                "key": key,
+                                "value": value,
+                                "artifact": f"{instance.label}:{table}:{key_text}",
+                                "raw_ref": raw_ref,
+                                "metadata": {
+                                    "approved_candidate_id": candidate_id,
+                                    "table": table,
+                                    "app_hint": app_hint,
+                                    "shape": ContentShape.KV_JSON_BLOB.value,
+                                },
+                            },
+                            source=self.name,
+                            privacy_tier=self.privacy_tier,
+                        )
+                        if event is None:
+                            continue
+                        if event.time < since_utc or event.time > until_utc:
+                            continue
+                        yield event
 
         return _iter_events()
 
@@ -216,6 +333,46 @@ def choose_columns(conn: sqlite3.Connection, table: str) -> dict[str, str | None
     id_col = _pick_by_names(lowered, _ID_COLUMN_NAMES)
 
     return {"time": time_col, "text": text_col, "id": id_col}
+
+
+def choose_kv_tables(conn: sqlite3.Connection, hint_tables: list[str]) -> list[str]:
+    tables = _list_tables(conn)
+    hint_set = {name.lower() for name in hint_tables}
+    hinted: list[str] = []
+    fallback: list[str] = []
+
+    for table in tables:
+        key_col, value_col = choose_kv_columns(conn, table)
+        if not key_col or not value_col:
+            continue
+        if table.lower() in hint_set:
+            hinted.append(table)
+            continue
+        fallback.append(table)
+    return hinted + fallback
+
+
+def choose_kv_columns(conn: sqlite3.Connection, table: str) -> tuple[str | None, str | None]:
+    rows = conn.execute(f"PRAGMA table_info({_quote_identifier(table)})").fetchall()
+    key_col: str | None = None
+    value_col: str | None = None
+
+    for row in rows:
+        if len(row) < 3:
+            continue
+        col_name = row[1]
+        col_type = str(row[2] or "").lower()
+        if not isinstance(col_name, str):
+            continue
+        lowered = col_name.lower()
+        if lowered == "key" and ("text" in col_type or "char" in col_type or col_type == ""):
+            key_col = col_name
+        if lowered == "value" and any(token in col_type for token in ("blob", "text", "json")):
+            value_col = col_name
+
+    if key_col and value_col:
+        return key_col, value_col
+    return None, None
 
 
 def parse_time_value(value: Any) -> datetime | None:
@@ -391,3 +548,15 @@ def _row_identifier(value: Any, fallback_index: int) -> str:
 def _quote_identifier(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
+
+def _load_shape(value: Any, hint_tables: list[str]) -> str:
+    raw = str(value or "").strip()
+    if raw in {
+        ContentShape.TABULAR_ROWS.value,
+        ContentShape.KV_JSON_BLOB.value,
+        ContentShape.DOCUMENT_FILE.value,
+    }:
+        return raw
+    if any("kv" in table.lower() for table in hint_tables):
+        return ContentShape.KV_JSON_BLOB.value
+    return ContentShape.TABULAR_ROWS.value

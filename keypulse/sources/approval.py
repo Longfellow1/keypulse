@@ -15,7 +15,7 @@ from keypulse.sources.discoverers import CandidateSource
 class ApprovalRecord:
     candidate_id: str
     status: str
-    metadata: dict[str, str]
+    metadata: dict[str, Any]
     timestamp: datetime | None
     note: str = ""
 
@@ -53,6 +53,10 @@ class ApprovalStore:
             "discoverer": candidate.discoverer,
             "path": candidate.path,
             "app_hint": candidate.app_hint,
+            "shape": candidate.shape,
+            "schema_signature": candidate.schema_signature,
+            "hint_tables": candidate.hint_tables,
+            "hint_fields": candidate.hint_fields,
             "approved_at": now.isoformat(),
             "user_note": note,
         }
@@ -76,6 +80,10 @@ class ApprovalStore:
             "discoverer": candidate.discoverer,
             "path": candidate.path,
             "app_hint": candidate.app_hint,
+            "shape": candidate.shape,
+            "schema_signature": candidate.schema_signature,
+            "hint_tables": candidate.hint_tables,
+            "hint_fields": candidate.hint_fields,
             "rejected_at": now.isoformat(),
             "reason": reason,
         }
@@ -161,12 +169,19 @@ class ApprovalStore:
         tmp_path.replace(self.path)
 
 
-def _record_metadata(row: dict[str, Any]) -> dict[str, str]:
-    return {
+def _record_metadata(row: dict[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
         "discoverer": str(row.get("discoverer") or ""),
         "path": str(row.get("path") or ""),
         "app_hint": str(row.get("app_hint") or ""),
+        "shape": str(row.get("shape") or ""),
+        "schema_signature": str(row.get("schema_signature") or ""),
     }
+    hint_tables = row.get("hint_tables")
+    hint_fields = row.get("hint_fields")
+    metadata["hint_tables"] = hint_tables if isinstance(hint_tables, list) else []
+    metadata["hint_fields"] = hint_fields if isinstance(hint_fields, list) else []
+    return metadata
 
 
 def _parse_iso_datetime(value: Any) -> datetime | None:
