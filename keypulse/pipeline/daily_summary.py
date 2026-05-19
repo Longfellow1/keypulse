@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import re
 import hashlib
-from datetime import date as date_cls, timedelta
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from keypulse.obsidian.quality_gate import score_daily
+from keypulse.pipeline.event_intake import cap_events_by_source
+from keypulse.store.repository import query_raw_events
 from keypulse.utils.paths import get_data_dir
+from keypulse.utils.dates import local_day_bounds, local_timezone
 
 if TYPE_CHECKING:
     from keypulse.pipeline.run_record import RunRecorder
@@ -229,6 +233,253 @@ def merge_topic_status_snapshots(
                 "evidence_dates": merged_dates,
             }
     return result
+
+
+def _trace_parse_datetime(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _trace_local_time_label(value: str | None) -> str:
+    parsed = _trace_parse_datetime(value)
+    if parsed is None:
+        return "—"
+    return parsed.astimezone(local_timezone()).strftime("%H:%M")
+
+
+def _trace_local_date_label(value: str | None) -> str:
+    parsed = _trace_parse_datetime(value)
+    if parsed is None:
+        return ""
+    return parsed.astimezone(local_timezone()).date().isoformat()
+
+
+def _trace_read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    for line in lines:
+        raw = line.strip()
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return rows
+
+
+def _trace_orchestrator_rows(date_text: str) -> list[dict[str, Any]]:
+    rows = [
+        row
+        for row in _trace_read_jsonl(get_data_dir() / "log.md")
+        if str(row.get("capability") or "").strip() == "daily_orchestrator"
+        and str(row.get("date") or "").strip() == date_text
+    ]
+    return sorted(rows, key=lambda row: _trace_parse_datetime(str(row.get("ts") or "")) or datetime.min.replace(tzinfo=timezone.utc))
+
+
+def _trace_cost_rows(date_text: str, *, start_after: datetime | None = None) -> list[dict[str, Any]]:
+    rows = []
+    for row in _trace_read_jsonl(get_data_dir() / "cost.jsonl"):
+        if _trace_local_date_label(str(row.get("ts") or "")) != date_text:
+            continue
+        parsed = _trace_parse_datetime(str(row.get("ts") or ""))
+        if start_after is not None and parsed is not None and parsed < start_after:
+            continue
+        rows.append(row)
+    return sorted(rows, key=lambda row: _trace_parse_datetime(str(row.get("ts") or "")) or datetime.min.replace(tzinfo=timezone.utc))
+
+
+def _trace_select_row(rows: list[dict[str, Any]], **criteria: Any) -> dict[str, Any] | None:
+    filtered = rows
+    for key, expected in criteria.items():
+        if expected is None:
+            continue
+        if key == "tier":
+            filtered = [row for row in filtered if str(row.get(key) or "").strip() == str(expected)]
+        else:
+            filtered = [row for row in filtered if row.get(key) == expected]
+    if not filtered:
+        return None
+    return max(
+        filtered,
+        key=lambda row: _trace_parse_datetime(str(row.get("ts") or "")) or datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+
+def _trace_quality_gate_label(main_body: str) -> str:
+    score = score_daily(main_body)
+    if score.total_chars <= 0:
+        return "refused"
+    if score.template_density > 0.15 or score.unique_word_ratio < 0.4:
+        return "refused"
+    if score.thing_count < 3:
+        return "warn"
+    return "ok"
+
+
+def _trace_event_text(row: dict[str, Any]) -> str:
+    for key in ("content_text", "body", "title", "window_title", "app_name"):
+        value = str(row.get(key) or "").strip()
+        if value:
+            return " ".join(value.split())[:80]
+    return "—"
+
+
+def _trace_sample_events(raw_rows: list[dict[str, Any]], *, capped_limit: int | None = None) -> list[dict[str, Any]]:
+    if capped_limit is not None and raw_rows:
+        sample_rows, _ = cap_events_by_source([dict(row) for row in raw_rows], limit=max(int(capped_limit or 0), 1))
+        return sample_rows
+    return list(raw_rows)
+
+
+def _trace_path_label(
+    *,
+    orchestrator_rows: list[dict[str, Any]],
+    cost_rows: list[dict[str, Any]],
+    capped_row: dict[str, Any] | None,
+) -> tuple[str, int | None]:
+    budget_row = _trace_select_row(orchestrator_rows, tier="budget")
+    if budget_row is not None:
+        cluster_count = int(budget_row.get("cluster_count") or 0)
+        return "budget L1+L2+L3", cluster_count
+    if capped_row is not None or any(str(row.get("capability") or "").strip() == "daily_flagship" for row in cost_rows):
+        return "flagship 全量（绕过 cluster）", 0
+    return "其他", None
+
+
+def _render_algorithm_trace_section(
+    *,
+    date_text: str,
+    main_body: str,
+    topic_count: int,
+    event_card_count: int,
+    clusters_hint: int = 0,
+) -> list[str]:
+    orchestrator_rows = _trace_orchestrator_rows(date_text)
+    cost_rows = _trace_cost_rows(date_text)
+    capped_row = _trace_select_row(orchestrator_rows, decision="events_capped")
+    if not orchestrator_rows and not cost_rows and capped_row is None:
+        return []
+
+    try:
+        raw_rows = query_raw_events(since=local_day_bounds(date_text)[0], until=local_day_bounds(date_text)[1], limit=50000)
+    except Exception:
+        return []
+
+    capped_limit = None
+    raw_event_count: int | str = "—"
+    capped_display: str | int = "—"
+    trace_start = None
+    if capped_row is not None:
+        trace_start = _trace_parse_datetime(str(capped_row.get("ts") or ""))
+        raw_event_count = int(capped_row.get("count") or capped_row.get("event_count") or 0) or "—"
+        capped_limit = int(capped_row.get("capped_count") or capped_row.get("capped") or 0) or None
+        if capped_limit is not None:
+            reason = str(capped_row.get("reason") or "token_guard").strip() or "token_guard"
+            capped_display = f"{capped_limit} ({reason})"
+    elif orchestrator_rows:
+        raw_event_count = "—"
+
+    if trace_start is not None:
+        cost_rows = [row for row in cost_rows if (_trace_parse_datetime(str(row.get("ts") or "")) or datetime.min.replace(tzinfo=timezone.utc)) >= trace_start]
+        if raw_event_count == "—":
+            raw_event_count = len(raw_rows)
+    elif raw_event_count == "—":
+        raw_event_count = len(raw_rows)
+
+    raw_rows = sorted(
+        [dict(row) for row in raw_rows],
+        key=lambda row: (
+            _trace_parse_datetime(str(row.get("ts_start") or row.get("created_at") or "")) or datetime.min.replace(tzinfo=timezone.utc),
+            int(row.get("id") or 0) if str(row.get("id") or "").isdigit() else 0,
+        ),
+    )
+
+    path_label, inferred_clusters = _trace_path_label(
+        orchestrator_rows=orchestrator_rows,
+        cost_rows=cost_rows,
+        capped_row=capped_row,
+    )
+    cluster_count = int(clusters_hint or 0) if inferred_clusters is None else inferred_clusters
+    quality_gate = _trace_quality_gate_label(main_body)
+    trace_rows = _trace_sample_events(raw_rows, capped_limit=capped_limit)
+    sample_lines: list[str] = []
+    for index, row in enumerate(trace_rows[:5], start=1):
+        ts_label = _trace_local_time_label(str(row.get("ts_start") or row.get("created_at") or ""))
+        source = str(row.get("source") or "").strip() or "—"
+        text = _trace_event_text(row).replace('"', "'")
+        sample_lines.append(f"{index}. {ts_label} {source} · \"{text}\"")
+    if not sample_lines:
+        sample_lines = ["—"]
+
+    lines: list[str] = [
+        "",
+        "---",
+        "",
+        "## 🔬 算法 Trace（自检用）",
+        "",
+        "**数据**",
+        "| 项 | 值 |",
+        "|---|---|",
+        f"| raw events | {raw_event_count} |",
+        f"| capped | {capped_display} |",
+        f"| 时间窗 | {date_text} 00:00 ~ 23:59 {local_timezone()} |",
+        f"| clusters | {cluster_count} |",
+        f"| things | {topic_count} |",
+        f"| events 卡片 | {event_card_count} |",
+        f"| quality_gate | {quality_gate} |",
+        f"| 走的 path | {path_label} |",
+        "",
+    ]
+
+    if cost_rows:
+        lines.extend(
+            [
+                "**LLM 调用**",
+                "| stage | model | in→out tokens | 状态 |",
+                "|---|---|---|---|",
+            ]
+        )
+        for row in cost_rows:
+            stage = str(row.get("capability") or "").strip() or "—"
+            model = str(row.get("model") or "").strip() or "—"
+            model = model.split("/")[-1] if "/" in model else model
+            in_tokens = int(row.get("in_tokens") or 0)
+            out_tokens = int(row.get("out_tokens") or 0)
+            if bool(row.get("cache_hit")):
+                status = "cache"
+            elif out_tokens <= 0:
+                status = "failed: empty content"
+            else:
+                status = "ok"
+            lines.append(f"| {stage} | {model} | {in_tokens}→{out_tokens} | {status} |")
+        lines.append("")
+
+    lines.extend(
+        [
+            "**进 LLM 的 events sample**（capped 后头 5 条）",
+        ]
+    )
+    for line in sample_lines:
+        lines.append(line)
+    lines.append("")
+    return lines
 
 
 def _summary_dir() -> Path:
@@ -850,5 +1101,15 @@ def render_daily_markdown(
 
     if event_list and not topic_list:
         lines.extend(["", "<!-- events_count: {} -->".format(len(event_list))])
+    main_body = "\n".join(lines).strip()
+    trace_lines = _render_algorithm_trace_section(
+        date_text=date_text,
+        main_body=main_body,
+        topic_count=len(topic_list),
+        event_card_count=len(selected_event_cards),
+        clusters_hint=len(clusters or []),
+    )
+    if trace_lines:
+        lines.extend(trace_lines)
     lines.append("")
     return "\n".join(lines).strip()
