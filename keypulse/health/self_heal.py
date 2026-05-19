@@ -54,7 +54,10 @@ def run_self_heal(*, dry_run: bool = False, source: str = "hud") -> dict[str, An
         _ensure_ok(steps[-1], deadline)
 
         _publish_progress("自愈进行中：平滑重启后台服务")
-        kickstart_ts = datetime.now().isoformat()
+        # 必须用 UTC，因为 raw_events.ts_start 存的是 UTC ISO8601（见 store/models.py _now）。
+        # 之前 datetime.now() 是本地时间无 tz 字段，字符串比较时本地 19:xx > UTC 11:xx，导致 cutoff
+        # 永远比所有 ts_start 大，step_wait_core_emit 5 分钟超时失败 → self_heal 反复 SIGTERM daemon。
+        kickstart_ts = datetime.now(timezone.utc).isoformat()
         steps.append(step_restart_daemon(dry_run=dry_run))
         _ensure_ok(steps[-1], deadline)
 
