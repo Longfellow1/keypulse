@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 
 from keypulse.pipeline.daily_summary import (
@@ -353,6 +354,177 @@ def test_render_daily_markdown_phase_a_section_contract_and_event_cards(tmp_path
     )
     assert "## 跨日延续" not in body
     assert "- [[blocked-topic|被阻塞主题]]" in body
+
+
+def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    data_dir = tmp_path / ".keypulse"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "log.md").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-05-19T09:10:00Z",
+                        "capability": "daily_orchestrator",
+                        "date": "2026-05-19",
+                        "trigger": "18:00",
+                        "decision": "events_capped",
+                        "reason": "token_guard",
+                        "count": 7,
+                        "capped": 6,
+                        "event_count": 7,
+                        "capped_count": 6,
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-19T09:16:00Z",
+                        "capability": "daily_orchestrator",
+                        "date": "2026-05-19",
+                        "trigger": "18:00",
+                        "tier": "flagship",
+                        "strategy": "flagship",
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (data_dir / "cost.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-05-19T09:11:00Z",
+                        "capability": "daily_flagship",
+                        "model": "cloud/doubao-seed-1-6",
+                        "tier": "premium",
+                        "in_tokens": 22041,
+                        "out_tokens": 2055,
+                        "cost_usd": 0.03125,
+                        "cache_hit": False,
+                        "prompt_version": "daily_flagship.v2",
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-19T09:12:00Z",
+                        "capability": "L0_anchor",
+                        "model": "cloud/doubao-seed-1-6",
+                        "tier": "premium",
+                        "in_tokens": 14591,
+                        "out_tokens": 2306,
+                        "cost_usd": 0.021,
+                        "cache_hit": False,
+                        "prompt_version": "L0_anchor.v1",
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    raw_rows = [
+        {
+            "id": 1,
+            "ts_start": "2026-05-19T01:55:00+00:00",
+            "source": "keyboard_chunk",
+            "content_text": "改 self_heal 时区，修复 kickstart 反复 SIGTERM",
+        },
+        {
+            "id": 2,
+            "ts_start": "2026-05-19T01:58:00+00:00",
+            "source": "keyboard_chunk",
+            "content_text": "接 browser_url 到 daily orchestrator",
+        },
+        {
+            "id": 3,
+            "ts_start": "2026-05-19T02:01:00+00:00",
+            "source": "keyboard_chunk",
+            "content_text": "browser 自动发现去 hardcode 白名单",
+        },
+        {
+            "id": 4,
+            "ts_start": "2026-05-19T02:04:00+00:00",
+            "source": "keyboard_chunk",
+            "content_text": "日报底部补算法 Trace",
+        },
+        {
+            "id": 5,
+            "ts_start": "2026-05-19T02:07:00+00:00",
+            "source": "keyboard_chunk",
+            "content_text": "token_guard 砍到 60 条",
+        },
+        {
+            "id": 6,
+            "ts_start": "2026-05-19T02:10:00+00:00",
+            "source": "keyboard_chunk",
+            "content_text": "整理 LLM stage 调用明细",
+        },
+        {
+            "id": 7,
+            "ts_start": "2026-05-19T02:13:00+00:00",
+            "source": "keyboard_chunk",
+            "content_text": "补 sample events",
+        },
+    ]
+    monkeypatch.setattr("keypulse.pipeline.daily_summary.query_raw_events", lambda **_kwargs: raw_rows)
+
+    body = render_daily_markdown(
+        date="2026-05-19",
+        topics=[
+            {
+                "anchor": "self-heal-fix",
+                "anchor_state": "continuing",
+                "narrative": "修 self_heal / browser_url / 自动发现。",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": [],
+                "display": "self_heal 修复",
+            },
+            {
+                "anchor": "trace-debug",
+                "anchor_state": "continuing",
+                "narrative": "补算法 Trace 方便肉眼 debug。",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": [],
+                "display": "算法 Trace",
+            },
+        ],
+        events=[],
+        unanchored=[],
+        event_cards=[
+            ("event-01", "事件卡 1"),
+            ("event-02", "事件卡 2"),
+            ("event-03", "事件卡 3"),
+            ("event-04", "事件卡 4"),
+            ("event-05", "事件卡 5"),
+            ("event-06", "事件卡 6"),
+        ],
+        topic_snapshot={},
+    )
+
+    assert "\n---\n\n## 🔬 算法 Trace（自检用）" in body
+    assert "| raw events | 7 |" in body
+    assert "| capped | 6 (token_guard) |" in body
+    assert "| clusters | 0 |" in body
+    assert "| things | 2 |" in body
+    assert "| events 卡片 | 6 |" in body
+    assert "| quality_gate | warn |" in body
+    assert "| 走的 path | flagship 全量（绕过 cluster） |" in body
+    assert "| daily_flagship | doubao-seed-1-6 | 22041→2055 | ok |" in body
+    assert "| L0_anchor | doubao-seed-1-6 | 14591→2306 | ok |" in body
+    assert "09:55 keyboard_chunk ·" in body
+    assert "改 self_heal 时区" in body
 
 
 def test_render_daily_markdown_includes_cross_day_section_from_narrative(tmp_path, monkeypatch):
