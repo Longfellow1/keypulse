@@ -65,6 +65,61 @@ def test_browser_url_watcher_marks_denied_and_disables_browser():
     mark_denied.assert_called_once_with("Google Chrome")
 
 
+def test_browser_url_watcher_auto_discovers_supported_browsers():
+    with (
+        patch(
+            "keypulse.capture.watchers.browser_url.discover_http_handler_apps",
+            return_value=("ChatGPT Atlas", "Safari"),
+        ) as discover,
+    ):
+        watcher = BrowserUrlWatcher(
+            queue.Queue(),
+            poll_interval_sec=0.1,
+            supported_browsers="auto",
+            emit_on_url_change_only=True,
+        )
+
+    with (
+        patch("keypulse.capture.watchers.browser_url._get_frontmost_app_name", return_value="ChatGPT Atlas"),
+        patch("keypulse.capture.watchers.browser_url.subprocess.run") as run,
+    ):
+        run.return_value = _completed(stdout="https://example.com/a|||Page A")
+        event = watcher.capture_once()
+
+    discover.assert_called_once()
+    assert watcher._supported_browsers == ("ChatGPT Atlas", "Safari")
+    assert event is not None
+    assert event.app_name == "ChatGPT Atlas"
+    assert event.content_text == "Page A"
+    assert event.window_title == "Page A - ChatGPT Atlas"
+    run.assert_called_once()
+
+
+def test_browser_url_watcher_disables_unsupported_dialect_without_marking_denied():
+    watcher = BrowserUrlWatcher(
+        queue.Queue(),
+        poll_interval_sec=0.1,
+        supported_browsers="auto",
+        emit_on_url_change_only=True,
+    )
+    with (
+        patch("keypulse.capture.watchers.browser_url._get_frontmost_app_name", return_value="ChatGPT Atlas"),
+        patch("keypulse.capture.watchers.browser_url.subprocess.run") as run,
+        patch("keypulse.capture.watchers.browser_url.mark_browser_automation_denied") as mark_denied,
+    ):
+        run.return_value = _completed(
+            stderr="ChatGPT Atlas got an error: Can't get active tab of front window. (-1728)",
+            returncode=1,
+        )
+        first = watcher.capture_once()
+        second = watcher.capture_once()
+
+    assert first is None
+    assert second is None
+    assert run.call_count == 1
+    mark_denied.assert_not_called()
+
+
 def test_browser_url_watcher_skips_unsupported_frontmost_app():
     watcher = _watcher()
     with (

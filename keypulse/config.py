@@ -61,14 +61,8 @@ class BrowserConfig(BaseModel):
 
 class BrowserURLConfig(BaseModel):
     poll_interval_sec: float = 3.0
-    supported_browsers: list[str] = Field(
-        default_factory=lambda: [
-            "Safari",
-            "Google Chrome",
-            "Arc",
-            "Microsoft Edge",
-            "Brave Browser",
-        ]
+    supported_browsers: Literal["auto"] | list[str] | tuple[str, ...] = Field(
+        default="auto"
     )
     emit_on_url_change_only: bool = True
 

@@ -11,25 +11,10 @@ from keypulse.capabilities.builtin.browser_automation import (
 from keypulse.capture.base import BaseWatcher
 from keypulse.capture.normalizer import normalize_browser_url_event
 from keypulse.capture.watchers.browser import _get_frontmost_app_name
+from keypulse.capture.watchers.browser_discovery import discover_http_handler_apps
 from keypulse.utils.logging import get_logger
 
 logger = get_logger("watcher.browser_url")
-
-
-DEFAULT_SUPPORTED_BROWSERS = (
-    "Safari",
-    "Google Chrome",
-    "Arc",
-    "Microsoft Edge",
-    "Brave Browser",
-)
-
-_CHROME_DIALECT_BROWSERS = {
-    "Google Chrome",
-    "Arc",
-    "Microsoft Edge",
-    "Brave Browser",
-}
 
 
 def _build_applescript(browser_name: str) -> str:
@@ -44,8 +29,7 @@ tell application "Safari"
 end tell
 '''
 
-    if browser_name in _CHROME_DIALECT_BROWSERS:
-        return f'''
+    return f'''
 tell application "{browser_name}"
     if (count of windows) > 0 then
         set theURL to URL of active tab of front window
@@ -54,7 +38,46 @@ tell application "{browser_name}"
     end if
 end tell
 '''
-    return ""
+
+
+def _normalize_supported_browsers(
+    supported_browsers: list[str] | tuple[str, ...] | str | None,
+) -> tuple[str, ...]:
+    if supported_browsers is None:
+        return discover_http_handler_apps()
+    if isinstance(supported_browsers, str):
+        if supported_browsers.strip().lower() == "auto":
+            return discover_http_handler_apps()
+        supported_browsers = (supported_browsers,)
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for browser_name in supported_browsers:
+        name = str(browser_name or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        normalized.append(name)
+    return tuple(normalized)
+
+
+def _is_unsupported_browser_dialect(stderr: str, returncode: int) -> bool:
+    if returncode == 0:
+        return False
+    lowered = (stderr or "").lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "doesn't understand",
+            "doesnt understand",
+            "can't get active tab",
+            "can't get current tab",
+            "can't get front window",
+            "unknown command",
+            "unknown handler",
+            "unknown message",
+        )
+    )
 
 
 def _parse_browser_output(stdout: str) -> tuple[str, str] | None:
@@ -83,12 +106,12 @@ class BrowserUrlWatcher(BaseWatcher):
         event_queue: queue.Queue,
         *,
         poll_interval_sec: float = 3.0,
-        supported_browsers: list[str] | tuple[str, ...] | None = None,
+        supported_browsers: list[str] | tuple[str, ...] | str | None = None,
         emit_on_url_change_only: bool = True,
     ) -> None:
         super().__init__(event_queue)
         self._poll_interval = max(float(poll_interval_sec), 0.1)
-        self._supported_browsers = tuple(supported_browsers or DEFAULT_SUPPORTED_BROWSERS)
+        self._supported_browsers = _normalize_supported_browsers(supported_browsers)
         self._emit_on_url_change_only = bool(emit_on_url_change_only)
         self._last_url_by_browser: dict[str, str] = {}
         self._disabled_browsers: set[str] = set()
@@ -134,8 +157,14 @@ class BrowserUrlWatcher(BaseWatcher):
             return None
 
         stderr = (result.stderr or "").strip()
+        if _is_unsupported_browser_dialect(stderr, result.returncode):
+            self._disable_browser(browser_name, f"unsupported: {stderr or f'exit={result.returncode}'}")
+            return None
         if is_browser_automation_denied(stderr, result.returncode):
-            self._disable_browser(browser_name, stderr or f"exit={result.returncode}")
+            self._disable_browser(
+                browser_name,
+                f"automation_denied: {stderr or f'exit={result.returncode}'}",
+            )
             return None
         if result.returncode != 0:
             return None
@@ -145,9 +174,10 @@ class BrowserUrlWatcher(BaseWatcher):
         if browser_name in self._disabled_browsers:
             return
         self._disabled_browsers.add(browser_name)
-        mark_browser_automation_denied(browser_name)
+        if not reason.startswith("unsupported:"):
+            mark_browser_automation_denied(browser_name)
         logger.warning(
-            "BrowserUrlWatcher: disabling %s after AppleEvents failure: %s",
+            "BrowserUrlWatcher: disabling %s after %s",
             browser_name,
             reason,
         )

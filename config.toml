@@ -34,7 +34,7 @@ supported_browsers = ["Safari", "Google Chrome", "Arc", "Brave Browser", "Micros
 
 [browser_url]
 poll_interval_sec = 3.0
-supported_browsers = ["Safari", "Google Chrome", "Arc", "Microsoft Edge", "Brave Browser"]
+supported_browsers = "auto"
 emit_on_url_change_only = true
 
 [browser_history]
