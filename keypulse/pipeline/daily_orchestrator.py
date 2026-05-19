@@ -37,6 +37,7 @@ from keypulse.pipeline.daily_summary import (
 from keypulse.pipeline.daily_validator import _DECISION_RE, _OUTPUT_RE
 from keypulse.pipeline.anchor_gateway import AnchorGateway, AnchorGatewayError
 from keypulse.pipeline.artifact_writer import write_artifact
+from keypulse.pipeline.event_intake import cap_events_by_source
 from keypulse.pipeline.llm_errors import classify_llm_error
 from keypulse.pipeline.weekly_topic_anchor import (
     anchor_today_clusters,
@@ -67,20 +68,10 @@ _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
 # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
 # 历史 raw_events 中 ocr_text_capture 数据保留可读
-_TOOL_ECHO_SOURCES = frozenset({"ax_text", "window", "idle", "knowledgec", "zsh_history"})
-_USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli"})
-_FLAGSHIP_EVENT_LIMIT = 40
-_FLAGSHIP_NOISE_MARKERS = (
-    "export ",
-    "export-",
-    "http://",
-    "https://",
-    "redacted-shell",
-    "uncategorized",
-    "obsidian-clipboard-copy",
-    "users-harland-",
-    "/users/harland/",
-)
+_TOOL_ECHO_SOURCES = frozenset({"idle", "knowledgec", "zsh_history"})
+_CONTEXT_SOURCES = frozenset({"window", "ax_text"})
+_USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli", "keyboard_chunk"})
+_FLAGSHIP_EVENT_LIMIT = 60
 
 _logger = logging.getLogger(__name__)
 
@@ -158,16 +149,27 @@ def _extract_event_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     content_text = str(row.get("content_text") or "").strip()
     window_title = str(row.get("window_title") or metadata.get("window_title") or "").strip()
 
-    return {
-        "id": event_id,
-        "ts_start": ts_start,
-        "source": str(row["source"] or "").strip(),
-        "speaker": str(row["speaker"] or "").strip(),
-        "app_name": app_name,
-        "window_title": window_title,
-        "content_text": content_text,
-        "metadata_json": json.dumps({**metadata, "entities": entities}, ensure_ascii=False),
-    }
+    payload = dict(row)
+    payload.update(
+        {
+            "id": event_id,
+            "ts_start": ts_start,
+            "source": str(row["source"] or "").strip(),
+            "event_type": str(row.get("event_type") or "").strip(),
+            "speaker": str(row["speaker"] or "").strip(),
+            "app_name": app_name,
+            "window_title": window_title,
+            "process_name": str(row.get("process_name") or "").strip(),
+            "content_text": content_text,
+            "ts_end": row.get("ts_end"),
+            "content_hash": row.get("content_hash"),
+            "session_id": str(row.get("session_id") or entities.get("session_id") or "").strip(),
+            "semantic_weight": row.get("semantic_weight"),
+            "user_present": row.get("user_present"),
+            "metadata_json": json.dumps({**metadata, "entities": entities}, ensure_ascii=False),
+        }
+    )
+    return payload
 
 
 def _build_prompt(spec_body: str, capability: str, payload: Mapping[str, Any]) -> str:
@@ -224,10 +226,12 @@ def _source_kind(event: Mapping[str, Any]) -> str:
     source = str(event.get("source") or "").strip().lower()
     if speaker in {"ai", "assistant"}:
         return "assistant_msg"
-    if source in _TOOL_ECHO_SOURCES or speaker == "system":
-        return "tool_echo"
+    if source in _CONTEXT_SOURCES:
+        return "context"
     if speaker == "user" or source in _USER_MESSAGE_SOURCES:
         return "user_msg"
+    if source in _TOOL_ECHO_SOURCES or speaker == "system":
+        return "tool_echo"
     return "default"
 
 
@@ -244,7 +248,9 @@ def _event_value_density(event: Mapping[str, Any], settings: Any | None = None) 
     token_target = max(int(getattr(cfg, "token_target", 80) or 80), 1)
     base = min(_estimate_token_count(text) / token_target, 1.0)
     weights = getattr(cfg, "source_weights", {}) or {}
-    weight = float(weights.get(_source_kind(event), weights.get("default", 0.6)) or 0.0)
+    kind = _source_kind(event)
+    fallback_weight = 0.85 if kind == "context" else weights.get("default", 0.6)
+    weight = float(weights.get(kind, fallback_weight) or 0.0)
     score = base * max(weight, 0.0)
 
     decision_regex = str(getattr(cfg, "decision_regex", "") or "").strip()
@@ -278,17 +284,15 @@ def _flagship_event_score(event: Mapping[str, Any]) -> float:
         for part in (event.get("content_text"), event.get("window_title"), event.get("app_name"))
         if str(part or "").strip()
     )
-    lowered = text.lower()
-    if any(marker in lowered for marker in _FLAGSHIP_NOISE_MARKERS):
-        return 0.0
-
     score = _event_value_density(event)
     if _CJK_RE.search(text):
         score += 0.3
     if 12 <= len(str(event.get("content_text") or "").strip()) <= 260:
         score += 0.15
-    if _source_kind(event) == "user_msg":
-        score += 0.25
+    if _source_kind(event) == "context":
+        win = str(event.get("window_title") or "")
+        if win and (" - " in win or " — " in win or " – " in win):
+            score += 0.4
     return round(score, 4)
 
 
@@ -304,39 +308,12 @@ def _cap_flagship_events_for_prompt(
     *,
     limit: int = _FLAGSHIP_EVENT_LIMIT,
 ) -> tuple[list[dict[str, Any]], bool]:
-    if limit <= 0 or len(events) <= limit:
-        return events, False
-
-    ranked = sorted(
-        enumerate(events),
-        key=lambda item: (_flagship_event_score(item[1]), item[0]),
-        reverse=True,
-    )
-    indices_by_hour: dict[str, list[int]] = {}
-    for index, event in enumerate(events):
-        hour = _event_hour_key(event)
-        if hour:
-            indices_by_hour.setdefault(hour, []).append(index)
-
-    keep: set[int] = set()
-    hourly_representatives: list[tuple[float, int]] = []
-    for indices in indices_by_hour.values():
-        best_index = max(indices, key=lambda index: (_flagship_event_score(events[index]), -index))
-        best_score = _flagship_event_score(events[best_index])
-        if best_score > 0:
-            hourly_representatives.append((best_score, best_index))
-
-    if len(hourly_representatives) > limit:
-        hourly_representatives = sorted(hourly_representatives, key=lambda item: (item[0], item[1]), reverse=True)[:limit]
-    keep.update(index for _score, index in hourly_representatives)
-
-    for index, _event in ranked:
-        if len(keep) >= limit:
-            break
-        keep.add(index)
-
-    keep_indices = sorted(keep)
-    return [events[index] for index in keep_indices], True
+    scored_events: list[dict[str, Any]] = []
+    for event in events:
+        normalized = dict(event)
+        normalized["_flagship_score"] = _flagship_event_score(event)
+        scored_events.append(normalized)
+    return cap_events_by_source(scored_events, limit=limit)
 
 
 def _slugify_topic(text: str, *, fallback: str) -> str:
@@ -789,6 +766,87 @@ def _component_time_range(component_events: list[dict[str, Any]]) -> tuple[str, 
     start = times[0].strftime("%H:%M")
     end = times[-1].strftime("%H:%M")
     return start, end
+
+
+def _component_activity_metadata(component_events: list[dict[str, Any]]) -> dict[str, Any]:
+    event_times: list[datetime] = []
+    app_windows: dict[str, list[datetime]] = {}
+    app_names: set[str] = set()
+    key_excerpts: list[str] = []
+
+    for event in component_events:
+        parsed = _to_local_datetime(str(event.get("ts_start") or ""))
+        app = str(event.get("app_name") or "").strip()
+        window = str(event.get("window_title") or "").strip()
+        if parsed is not None:
+            event_times.append(parsed)
+            if app or window:
+                app_windows.setdefault(f"{app}\n{window}", []).append(parsed)
+        if app:
+            app_names.add(app)
+        excerpt = " ".join(str(event.get("content_text") or "").split()).strip()
+        if excerpt and len(key_excerpts) < 3:
+            key_excerpts.append(excerpt[:80])
+
+    dwell_minutes = 0.0
+    if event_times:
+        dwell_minutes = round((max(event_times) - min(event_times)).total_seconds() / 60, 2)
+
+    revisit_count = 0
+    for times in app_windows.values():
+        ordered = sorted(times)
+        revisit_count += sum(
+            1
+            for previous, current in zip(ordered, ordered[1:])
+            if (current - previous).total_seconds() >= 600
+        )
+
+    return {
+        "dwell_minutes": dwell_minutes,
+        "revisit_count": revisit_count,
+        "cross_app_count": len(app_names),
+        "key_excerpts": key_excerpts,
+    }
+
+
+def _cluster_component_payloads(
+    scoped_events: list[dict[str, Any]],
+    density_settings: Any | None,
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    graph = build_evidence_graph(scoped_events)
+    components = connected_components(graph)
+    feature_index = build_feature_index(scoped_events)
+    raw_merge_candidates = detect_merge_candidates(components, 0.2, feature_index=feature_index)
+    component_ids = [f"c{index+1}" for index in range(len(components))]
+    signature_to_component_id = {
+        ",".join(sorted(component)): component_ids[index] for index, component in enumerate(components)
+    }
+    merge_pairs = [
+        (signature_to_component_id[left], signature_to_component_id[right])
+        for left, right in raw_merge_candidates
+        if left in signature_to_component_id and right in signature_to_component_id
+    ]
+
+    payloads: list[dict[str, Any]] = []
+    for component_id, component in zip(component_ids, components, strict=False):
+        event_ids = sorted(list(component))
+        event_id_set = set(event_ids)
+        component_events = [event for event in scoped_events if str(event.get("id")) in event_id_set]
+        feature = component_features(event_id_set, feature_index)
+        payloads.append(
+            {
+                "component_id": component_id,
+                "event_ids": event_ids,
+                "event_count": len(event_ids),
+                "time_range": list(_component_time_range(component_events)),
+                "h1_entities": sorted(feature["entities"]),
+                "h2_contexts": [],
+                "keywords": sorted(feature["keywords"])[:20],
+                **_component_density_metadata(component_events, density_settings),
+                **_component_activity_metadata(component_events),
+            }
+        )
+    return payloads, merge_pairs
 
 
 def _topic_display_name(topic_slug: str, topics_index: list[dict[str, Any]]) -> str:
@@ -1260,6 +1318,9 @@ def _run_anchor_for_clusters(
                 "anchored_to": target,
                 "merge_candidate_with": [str(v) for v in (cluster.get("merge_candidate_with") or []) if str(v).strip()],
                 "peak_event_density": float(cluster.get("peak_event_density") or 0.0),
+                "dwell_minutes": float(cluster.get("dwell_minutes") or 0.0),
+                "revisit_count": int(cluster.get("revisit_count") or 0),
+                "cross_app_count": int(cluster.get("cross_app_count") or 0),
             }
         )
     summary_events.sort(
@@ -1284,6 +1345,9 @@ def _run_anchor_for_clusters(
                 "anchored_to": None,
                 "merge_candidate_with": [str(v) for v in (item.get("merge_candidate_with") or []) if str(v).strip()],
                 "peak_event_density": float(item.get("peak_event_density") or 0.0),
+                "dwell_minutes": float(item.get("dwell_minutes") or 0.0),
+                "revisit_count": int(item.get("revisit_count") or 0),
+                "cross_app_count": int(item.get("cross_app_count") or 0),
             }
         )
     return topics, summary_events, unanchored_events
@@ -1351,9 +1415,12 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
 
     gateway = _load_gateway()
     tier = _resolve_daily_tier(gateway)
+    density_settings = Config.load().pipeline.value_density
 
     if tier == "flagship":
-        strategy = FlagshipSingleStepStrategy()
+        strategy = FlagshipSingleStepStrategy(
+            cluster_components=lambda scoped_events: _cluster_component_payloads(scoped_events, density_settings)[0]
+        )
         with recorder.stage("cap_events"):
             flagship_events, events_capped = _cap_flagship_events_for_prompt(events)
             recorder.set_input_count(len(flagship_events))
@@ -1449,42 +1516,11 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
         )
 
     recorder.mark_stage("cap_events", "ok")
-    density_settings = Config.load().pipeline.value_density
     merge_cache: dict[str, Any] = {"pairs": []}
 
     def cluster_components(scoped_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        graph = build_evidence_graph(scoped_events)
-        components = connected_components(graph)
-        feature_index = build_feature_index(scoped_events)
-        raw_merge_candidates = detect_merge_candidates(components, 0.2, feature_index=feature_index)
-        component_ids = [f"c{index+1}" for index in range(len(components))]
-        signature_to_component_id = {
-            ",".join(sorted(component)): component_ids[index] for index, component in enumerate(components)
-        }
-        merge_cache["pairs"] = [
-            (signature_to_component_id[left], signature_to_component_id[right])
-            for left, right in raw_merge_candidates
-            if left in signature_to_component_id and right in signature_to_component_id
-        ]
-
-        payloads: list[dict[str, Any]] = []
-        for component_id, component in zip(component_ids, components, strict=False):
-            event_ids = sorted(list(component))
-            event_id_set = set(event_ids)
-            component_events = [event for event in scoped_events if str(event.get("id")) in event_id_set]
-            feature = component_features(event_id_set, feature_index)
-            density_metadata = _component_density_metadata(component_events, density_settings)
-            payloads.append(
-                {
-                    "component_id": component_id,
-                    "event_ids": event_ids,
-                    "time_range": list(_component_time_range(component_events)),
-                    "h1_entities": sorted(feature["entities"]),
-                    "h2_contexts": [],
-                    "keywords": sorted(feature["keywords"])[:20],
-                    **density_metadata,
-                }
-            )
+        payloads, merge_pairs = _cluster_component_payloads(scoped_events, density_settings)
+        merge_cache["pairs"] = merge_pairs
         return payloads
 
     deps = BudgetStrategyDeps(
@@ -1648,6 +1684,9 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
                 "time_range": [start, end],
                 "merge_candidate_with": merge_map.get(cluster.component_id, []),
                 "peak_event_density": cluster.peak_event_density,
+                "dwell_minutes": cluster.dwell_minutes,
+                "revisit_count": cluster.revisit_count,
+                "cross_app_count": cluster.cross_app_count,
             }
         )
         today_clusters.append(
@@ -1659,6 +1698,9 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
                 "time_range": [start, end],
                 "merge_candidate_with": merge_map.get(cluster.component_id, []),
                 "peak_event_density": cluster.peak_event_density,
+                "dwell_minutes": cluster.dwell_minutes,
+                "revisit_count": cluster.revisit_count,
+                "cross_app_count": cluster.cross_app_count,
             }
         )
 

@@ -84,6 +84,42 @@ def test_l2_output_schema_accepts_markdown_object_and_rejects_plain_string():
         validate(invalid, _schema("L2_output.json"))
 
 
+def test_daily_flagship_input_schema_accepts_scene_fingerprint_and_clusters():
+    payload = {
+        "date": "2026-05-18",
+        "events": [
+            {
+                "t": "09:00",
+                "s": "codex_cli",
+                "a": "Codex",
+                "c": "补日报现场指纹",
+                "sp": "user",
+                "eid": "e1",
+                "sid": "s1",
+                "win": "KeyPulse",
+                "wu": "daily_strategy",
+                "fp": ["/Users/Harland/Go/keypulse/keypulse/pipeline/daily_strategy.py"],
+                "url": "https://github.com/example/keypulse",
+            }
+        ],
+        "clusters": [
+            {
+                "display_name": "KeyPulse Daily P1",
+                "dwell_minutes": 42.0,
+                "revisit_count": 2,
+                "cross_app_count": 3,
+                "event_count": 5,
+                "time_range": ["09:00", "09:42"],
+                "key_excerpts": ["补日报现场指纹", "把 session_id 接到 prompt"],
+            }
+        ],
+        "yesterday_anchor": "",
+        "recent_topic_history": [],
+    }
+
+    validate(payload, _schema("daily_flagship_input.json"))
+
+
 def test_l3_output_schema_valid_and_invalid_keywords_count():
     valid = {
         "slug": "keypulse-daily-orchestrator",

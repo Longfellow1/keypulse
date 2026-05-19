@@ -16,10 +16,12 @@ from keypulse.pipeline.daily_orchestrator import (
     _cap_flagship_events_for_prompt,
     _component_time_range,
     _event_value_density,
+    _extract_event_payload,
     _fallback_summary_clusters_from_events,
     maybe_run_daily_for_sync,
     run_daily_after_obsidian_sync,
 )
+from keypulse.pipeline.event_intake import is_input_fragment
 from keypulse.pipeline.model import ModelBackend
 from keypulse.pipeline.triggers import record_trigger
 from keypulse.store.db import close, init_db
@@ -100,30 +102,48 @@ def _rows() -> list[dict[str, Any]]:
             "source": "ax_text",
             "speaker": "user",
             "ts_start": "2026-05-01T01:00:00+00:00",
+            "ts_end": "2026-05-01T01:01:00+00:00",
             "app_name": "Codex",
             "window_title": "KeyPulse",
+            "process_name": "Codex Helper",
             "content_text": "KeyPulse daily strategy refactor model tier routing",
+            "content_hash": "hash-1",
             "metadata_json": json.dumps({"entities": {"session_id": "s1", "named_entities": ["KeyPulse"]}}),
+            "session_id": "s1",
+            "semantic_weight": 0.8,
+            "user_present": 1,
         },
         {
             "id": 2,
             "source": "ax_text",
             "speaker": "ai",
             "ts_start": "2026-05-01T01:03:00+00:00",
+            "ts_end": "2026-05-01T01:04:00+00:00",
             "app_name": "Codex",
             "window_title": "KeyPulse",
+            "process_name": "Codex Helper",
             "content_text": "Budget path should call L1 then one L2 narrative",
+            "content_hash": "hash-2",
             "metadata_json": json.dumps({"entities": {"session_id": "s1", "named_entities": ["KeyPulse"]}}),
+            "session_id": "s1",
+            "semantic_weight": 0.7,
+            "user_present": 1,
         },
         {
             "id": 3,
             "source": "clipboard",
             "speaker": "user",
             "ts_start": "2026-05-01T03:00:00+00:00",
+            "ts_end": None,
             "app_name": "Chrome",
             "window_title": "Misc",
+            "process_name": "Google Chrome",
             "content_text": "misc unrelated browsing",
+            "content_hash": "hash-3",
             "metadata_json": json.dumps({"entities": {"session_id": "s2"}}),
+            "session_id": "s2",
+            "semantic_weight": 0.3,
+            "user_present": 1,
         },
     ]
 
@@ -167,6 +187,10 @@ def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
     assert "topics" in summary_payload
     assert (tmp_path / ".keypulse" / "weekly-anchor.json").exists()
     assert not (tmp_path / ".keypulse" / "hot.md").exists()
+    flagship_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "daily_flagship")
+    assert "clusters" in flagship_input
+    assert flagship_input["clusters"][0]["dwell_minutes"] == 3.0
+    assert flagship_input["clusters"][0]["cross_app_count"] == 1
 
 
 def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch):
@@ -209,8 +233,50 @@ def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch
     assert len(l2_input["misc_events"]) == 1
     l1_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L1_cluster_review")
     assert l1_input["components"][0]["time_range"] == ["09:00", "09:03"]
+    assert l1_input["components"][0]["dwell_minutes"] == 3.0
+    assert l1_input["components"][0]["revisit_count"] == 0
+    assert l1_input["components"][0]["cross_app_count"] == 1
     l3_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L3_topic_naming")
     assert [event["timestamp"] for event in l3_input["events"]] == ["05-01 09:00", "05-01 09:03"]
+    summary_payload = json.loads(Path(summary.summary_path).read_text(encoding="utf-8"))
+    assert summary_payload["events"][0]["dwell_minutes"] == 3.0
+    assert summary_payload["events"][0]["revisit_count"] == 0
+    assert summary_payload["events"][0]["cross_app_count"] == 1
+
+
+def test_extract_event_payload_preserves_raw_event_scene_columns():
+    payload = _extract_event_payload(
+        {
+            "id": 10,
+            "source": "ax_text",
+            "event_type": "window_heartbeat",
+            "speaker": "user",
+            "ts_start": "2026-05-01T01:00:00+00:00",
+            "ts_end": "2026-05-01T01:05:00+00:00",
+            "app_name": "Codex",
+            "window_title": "KeyPulse",
+            "process_name": "Codex Helper",
+            "content_text": "daily pipeline",
+            "content_hash": "abc",
+            "metadata_json": json.dumps({"entities": {"session_id": "metadata-sid"}}),
+            "sensitivity_level": 0,
+            "skipped_reason": None,
+            "session_id": "top-sid",
+            "semantic_weight": 0.9,
+            "user_present": 1,
+            "created_at": "2026-05-01T01:00:01+00:00",
+        }
+    )
+
+    assert payload["id"] == "10"
+    assert payload["session_id"] == "top-sid"
+    assert payload["window_title"] == "KeyPulse"
+    assert payload["process_name"] == "Codex Helper"
+    assert payload["ts_end"] == "2026-05-01T01:05:00+00:00"
+    assert payload["content_hash"] == "abc"
+    assert payload["semantic_weight"] == 0.9
+    assert payload["user_present"] == 1
+    assert json.loads(payload["metadata_json"])["entities"]["session_id"] == "metadata-sid"
 
 
 def test_daily_orchestrator_llm_time_exports_use_local_timezone(monkeypatch):
@@ -335,12 +401,18 @@ def test_event_value_density_promotes_user_decisions_over_tool_echo():
     }
     tool_echo_event = {
         "id": "echo",
-        "source": "ax_text",
+        "source": "zsh_history",
         "speaker": "system",
         "content_text": "When using Powerlevel10k with instant prompt, console output during zsh initialization may indicate issues. " * 20,
     }
 
     assert _event_value_density(decision_event) > _event_value_density(tool_echo_event)
+
+
+def test_input_fragment_filter_distinguishes_raw_pinyin_from_real_text_and_urls():
+    assert is_input_fragment("vpinggzhepiafenAgentcehuaan,") is True
+    assert is_input_fragment("https://x.com/feed") is False
+    assert is_input_fragment("Agent系统") is False
 
 
 def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):
@@ -360,7 +432,7 @@ def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):
     assert gateway.calls == ["daily_flagship", "L0_anchor"]
 
 
-def test_flagship_path_caps_events_to_forty_and_keeps_high_value_user_signal(tmp_path, monkeypatch):
+def test_flagship_path_caps_events_to_sixty_and_keeps_high_value_user_signal(tmp_path, monkeypatch):
     _write_config(tmp_path, cloud_model="deepseek-chat")
     rows: list[dict[str, Any]] = []
     for index in range(104):
@@ -404,12 +476,13 @@ def test_flagship_path_caps_events_to_forty_and_keeps_high_value_user_signal(tmp
 
     flagship_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "daily_flagship")
     compact_events = flagship_input["events"]
-    assert len(compact_events) == 40
+    assert len(compact_events) <= 60
     assert any("用户拍板" in item["c"] for item in compact_events)
+    assert not any("export https_proxy" in item["c"] for item in compact_events)
     assert any(
         record.get("decision") == "events_capped"
         and record.get("event_count") == 105
-        and record.get("capped_count") == 40
+        and record.get("capped_count") == len(compact_events)
         and record.get("reason") == "token_guard"
         for record in log_records
     )
@@ -446,7 +519,8 @@ def test_flagship_event_cap_keeps_hourly_coverage_before_score_fill():
     selected, capped = _cap_flagship_events_for_prompt(rows, limit=3)
 
     assert capped is True
-    assert len(selected) == 3
+    assert len(selected) <= 3
+    assert any(str(event["ts_start"]).startswith("2026-05-01T01:") for event in selected)
     assert any(str(event["ts_start"]).startswith("2026-05-01T22:") for event in selected)
 
 
