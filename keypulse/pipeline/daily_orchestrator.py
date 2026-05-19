@@ -70,7 +70,7 @@ _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 # 历史 raw_events 中 ocr_text_capture 数据保留可读
 _TOOL_ECHO_SOURCES = frozenset({"idle", "knowledgec", "zsh_history"})
 _CONTEXT_SOURCES = frozenset({"window", "ax_text"})
-_USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli", "keyboard_chunk"})
+_USER_MESSAGE_SOURCES = frozenset({"clipboard", "manual", "markdown_vault", "claude_code", "codex_cli", "keyboard_chunk", "browser_url"})
 _FLAGSHIP_EVENT_LIMIT = 60
 
 _logger = logging.getLogger(__name__)
