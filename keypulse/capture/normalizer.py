@@ -52,6 +52,8 @@ def _semantic_weight_for(source: str) -> float:
         "clipboard": 0.9,
         "manual": 1.0,
         "browser": 0.85,
+        "browser_url": 1.0,
+        "browser_history": 0.9,
         "ax_text": 0.8,
         "ax_ime_commit": 0.9,
         "ax_snapshot_fallback": 0.5,
@@ -234,4 +236,34 @@ def normalize_browser_tab_event(
         content_hash=tab_hash,
         metadata_json=json.dumps(event_metadata) if event_metadata else None,
         semantic_weight=_semantic_weight_for("browser"),
+    )
+
+
+def normalize_browser_url_event(
+    url: str,
+    title: Optional[str] = None,
+    browser_name: Optional[str] = None,
+    ts_start: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> RawEvent:
+    normalized_url = str(url or "").strip()
+    normalized_title = str(title or "").strip()
+    metadata_entities = {"urls": [normalized_url]} if normalized_url else {"urls": []}
+    event_metadata = {
+        "entities": metadata_entities,
+        "browser": str(browser_name or "").strip().lower(),
+        "url": normalized_url,
+    }
+    if metadata:
+        event_metadata.update(metadata)
+    return RawEvent(
+        source="browser_url",
+        event_type="browser_url_capture",
+        ts_start=ts_start or _now(),
+        app_name=browser_name,
+        window_title=f"{normalized_title} - {browser_name}" if normalized_title and browser_name else normalized_title or browser_name,
+        content_text=normalized_title or normalized_url or None,
+        content_hash=_hash(normalized_url) if normalized_url else (_hash(normalized_title) if normalized_title else None),
+        metadata_json=json.dumps(event_metadata, ensure_ascii=False),
+        semantic_weight=_semantic_weight_for("browser_url"),
     )

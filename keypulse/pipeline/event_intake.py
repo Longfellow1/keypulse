@@ -15,6 +15,7 @@ SOURCE_INTAKE_WEIGHTS: dict[str, float] = {
     "codex_cli": 0.95,
     "ax_text": 0.85,
     "window": 0.85,
+    "browser_url": 1.0,
     "keyboard_chunk": 0.7,
     "knowledgec": 0.6,
     "zsh_history": 0.6,

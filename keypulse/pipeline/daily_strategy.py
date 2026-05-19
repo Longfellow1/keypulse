@@ -170,9 +170,10 @@ def extract_work_unit(event: Mapping[str, Any]) -> str:
 
         try:
             parsed = urlsplit(url)
-            if parsed.netloc:
-                segment = (parsed.path or "/").strip("/").split("/")[0]
-                return f"{parsed.netloc}/{segment}" if segment else parsed.netloc
+            host = (parsed.hostname or parsed.netloc or "").strip().lower()
+            if host:
+                segment = next((part for part in (parsed.path or "/").strip("/").split("/") if part), "")
+                return f"{host}/{segment}" if segment else host
         except ValueError:
             pass
 
