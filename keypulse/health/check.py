@@ -97,7 +97,7 @@ def _json_iso(value: datetime | None) -> str | None:
 
 def _watcher_names(cfg: Config) -> list[str]:
     names: list[str] = []
-    for field_name in ("window", "clipboard", "idle", "manual", "browser", "ax_text", "ocr"):
+    for field_name in ("window", "clipboard", "idle", "manual", "browser", "browser_url", "ax_text", "ocr"):
         if bool(getattr(cfg.watchers, field_name, False)):
             names.append(field_name)
     return names
@@ -129,7 +129,7 @@ def _speaker_mislabel_ratio(checked_at: datetime) -> float:
             COUNT(*) AS total,
             SUM(CASE WHEN speaker='system' THEN 1 ELSE 0 END) AS system_count
         FROM raw_events
-        WHERE source IN ('clipboard', 'manual', 'browser')
+        WHERE source IN ('clipboard', 'manual', 'browser', 'browser_url')
           AND ts_start > ?
         """,
         (cutoff,),
@@ -195,14 +195,9 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
                 {
                     "severity": "warn",
                     "code": "STALE_EVENT_STREAM",
-                    "message": "最近 10 分钟没有事件流进来，疑似 daemon 假死",
+                    "message": "最近 10 分钟没有事件流进来，疑似采集异常（仅告警，不再自动重启 daemon）",
                 }
             )
-            try:
-                os.kill(pid, 9)
-                LOGGER.warning("Healthcheck killed stale daemon pid=%s", pid)
-            except Exception:
-                LOGGER.exception("Failed to kill stale daemon pid=%s", pid)
 
     schema_row = conn.execute("SELECT MAX(version) AS version FROM _schema_version").fetchone()
     schema_version = int(schema_row["version"] or 0) if schema_row else 0
@@ -261,8 +256,11 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
     self_heal_triggered = False
     self_heal_result: dict[str, Any] = {}
     if degraded_streak >= 2:
-        self_heal_result = _trigger_self_heal()
-        self_heal_triggered = bool(self_heal_result.get("started"))
+        self_heal_result = {
+            "started": False,
+            "status": "disabled",
+            "reason": "degraded_streak_detected_no_daemon_kill",
+        }
 
     result = {
         "schema_version": HEALTH_SCHEMA_VERSION,

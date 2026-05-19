@@ -128,6 +128,8 @@ def read_frontmost_ax_text(
 
 class AXTextWatcher(BaseWatcher):
     name = "ax_text"
+    MIN_POLL_INTERVAL_SEC = 1.0
+    MAX_READS_PER_SEC = 1.0
 
     # Polls the foreground app every 1s. If macOS revokes Accessibility
     # permission silently, no exception is raised — the watcher keeps
@@ -139,10 +141,14 @@ class AXTextWatcher(BaseWatcher):
         self,
         event_queue: queue.Queue,
         poll_interval_sec: float = 1.0,
+        min_poll_interval_sec: float = MIN_POLL_INTERVAL_SEC,
+        max_reads_per_sec: float = MAX_READS_PER_SEC,
         text_reader: Callable[[], AXTextPayload | None] | None = None,
     ):
         super().__init__(event_queue)
         self._poll_interval = poll_interval_sec
+        self._min_poll_interval = max(0.01, float(min_poll_interval_sec))
+        self._max_reads_per_sec = max(0.1, float(max_reads_per_sec))
         self._text_reader = text_reader or read_frontmost_ax_text
         self._last_hash: str | None = None
 
@@ -166,14 +172,21 @@ class AXTextWatcher(BaseWatcher):
 
     def _run(self):
         while self._running.is_set():
+            cycle_started_at = time.monotonic()
             if self._paused.is_set():
-                time.sleep(self._poll_interval)
-                continue
-            event = self.capture_once()
-            if event is not None:
-                self.emit(event)
-            else:
-                # Same-content polls dedupe to None — beat so heartbeat
-                # supervision can tell "alive but no new text" from "stuck".
                 self.beat()
-            time.sleep(self._poll_interval)
+            else:
+                event = self.capture_once()
+                if event is not None:
+                    self.emit(event)
+                else:
+                    # Same-content polls dedupe to None — beat so heartbeat
+                    # supervision can tell "alive but no new text" from "stuck".
+                    self.beat()
+
+            max_rate_interval = 1.0 / self._max_reads_per_sec
+            sleep_interval = max(self._poll_interval, self._min_poll_interval, max_rate_interval)
+            elapsed = time.monotonic() - cycle_started_at
+            remaining = sleep_interval - elapsed
+            if remaining > 0:
+                time.sleep(remaining)

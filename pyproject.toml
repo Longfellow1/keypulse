@@ -12,12 +12,14 @@ dependencies = [
     "rich>=13.7",
     "pydantic>=2.5",
     "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 macos = [
     # AppKit ships inside pyobjc-framework-Cocoa — there is no separate AppKit wheel.
     "pyobjc-framework-Cocoa",
+    "pyobjc-framework-WebKit",
     "pyobjc-framework-ApplicationServices",
     "pyobjc-framework-Quartz",
     "pyobjc-framework-Vision",

@@ -35,7 +35,7 @@ _TOMORROW_PLAN_HEADER = "## 明天的锚点"
 _TOMORROW_PLAN_PLACEHOLDER = "______"
 _TOMORROW_PLAN_LINE_PREFIX = "> 明天我想："
 _TOMORROW_PLAN_HINT = "> _写一句话留给明天的自己_"
-_USER_SOURCES_FOR_ITEM = frozenset({"clipboard", "manual", "browser"})
+_USER_SOURCES_FOR_ITEM = frozenset({"clipboard", "manual", "browser", "browser_url"})
 _SYNC_CURSOR_FILENAME = "sync-cursor.json"
 _WIKI_LINK_RE = re.compile(r"\[\[(?P<target>[^\]|]+)(?:\|[^\]]+)?\]\]")
 _EVENT_HASH_SUFFIX_RE = re.compile(r"-[0-9a-f]{8}$")
@@ -1534,12 +1534,21 @@ def write_obsidian_bundle(bundle: dict[str, list[dict[str, Any]]], output_dir: s
                 target = keypulse_home / _keypulse_relative_path_for_note(relative.as_posix())
             new_text = render_note(note["properties"], note["body"])
             if section == "daily":
-                from keypulse.obsidian.quality_gate import should_write_daily
+                from keypulse.obsidian.quality_gate import (
+                    build_quality_gate_placeholder,
+                    should_write_daily,
+                )
 
-                ok, reason, _new_score, _old_score = should_write_daily(new_text, target)
+                ok, reason, new_score, _old_score = should_write_daily(new_text, target)
                 if not ok:
-                    logger.warning("daily write skipped (%s): %s", target.name, reason)
-                    continue
+                    date_str = target.stem
+                    placeholder_body = build_quality_gate_placeholder(
+                        date_str=date_str,
+                        score=new_score,
+                        reason=reason,
+                    )
+                    new_text = render_note(note["properties"], placeholder_body)
+                    logger.warning("daily write replaced with placeholder (%s): %s", target.name, reason)
             atomic_write_text(target, new_text)
             written.append(target)
     return written

@@ -37,6 +37,7 @@ SOURCE_LABELS = {
     "ax_text": "当前看到的正文",
     "ocr_text": "屏幕识别补充",
     "browser_tab": "浏览器标签页",
+    "browser_url": "浏览器 URL",
 }
 
 HEALTH_LABELS = {

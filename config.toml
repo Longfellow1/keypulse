@@ -10,6 +10,7 @@ idle = true
 clipboard = true
 manual = true
 browser = false
+browser_url = true
 ax_text = false
 # === OCR watcher 已下线 2026-05-14 ===
 # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
@@ -30,6 +31,17 @@ poll_interval_sec = 1.0
 [browser]
 poll_interval_sec = 1.0
 supported_browsers = ["Safari", "Google Chrome", "Arc", "Brave Browser", "Microsoft Edge"]
+
+[browser_url]
+poll_interval_sec = 3.0
+supported_browsers = ["Safari", "Google Chrome", "Arc", "Microsoft Edge", "Brave Browser"]
+emit_on_url_change_only = true
+
+[browser_history]
+enabled = false
+poll_interval_sec = 300
+copy_to_cache = true
+browsers = ["Safari", "Google Chrome", "Arc", "Microsoft Edge", "Brave Browser", "Firefox"]
 
 [ocr]
 # === OCR watcher 已下线 2026-05-14 ===

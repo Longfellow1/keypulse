@@ -63,7 +63,7 @@ def test_capture_fact_caps_contains_only_watcher_class() -> None:
     }
 
 
-def test_probe_failure_does_not_pollute_capture_error_code(tmp_path) -> None:
+def test_ax_denied_forces_capture_error_code_for_ax_dependent_watchers(tmp_path) -> None:
     from keypulse.app import _run_capability_self_check
 
     _init_test_db(tmp_path)
@@ -73,11 +73,12 @@ def test_probe_failure_does_not_pollute_capture_error_code(tmp_path) -> None:
             _StaticCapability("accessibility_permission", _state(False, "ax_denied"))
         )
         registry.register(_StaticCapability("ax_text_watcher", _state(True, "ok")))
+        registry.register(_StaticCapability("keyboard_chunk_watcher", _state(True, "ok")))
         registry.register(_StaticCapability("clipboard_watcher", _state(True, "ok")))
 
         _run_capability_self_check(registry)
 
-        assert get_state("capture_error_code") == ""
+        assert get_state("capture_error_code") == "ax_denied"
     finally:
         close()
 

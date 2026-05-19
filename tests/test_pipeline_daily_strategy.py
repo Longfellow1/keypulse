@@ -9,6 +9,8 @@ from keypulse.pipeline.daily_strategy import (
     BudgetTwoStepStrategy,
     DailyStrategyError,
     FlagshipSingleStepStrategy,
+    extract_work_unit,
+    to_compact_event,
 )
 from keypulse.pipeline.model import LLMCallError
 
@@ -95,6 +97,66 @@ def test_flagship_strategy_calls_daily_flagship_once_and_returns_markdown():
     assert gateway.calls[0][1]["events"][1]["sp"] == "ai"
     assert result.markdown == MARKDOWN.strip()
     assert result.clusters == ()
+
+
+def test_to_compact_event_keeps_scene_fingerprint_fields():
+    compact = to_compact_event(
+        {
+            "id": "evt-1",
+            "session_id": "top-session",
+            "ts_start": "2026-05-01T01:00:00+00:00",
+            "source": "codex_cli",
+            "speaker": "user",
+            "app_name": "Codex",
+            "window_title": "KeyPulse P1 daily pipeline现场指纹扩展" * 4,
+            "content_text": "x" * 400,
+            "metadata_json": {
+                "entities": {
+                    "session_id": "metadata-session",
+                    "file_paths": [
+                        "/Users/Harland/Go/keypulse/keypulse/pipeline/daily_strategy.py",
+                        "/Users/Harland/Go/keypulse/docs/raw-events-metadata-schema.md",
+                        "/Users/Harland/Go/keypulse/tests/test_pipeline_daily_strategy.py",
+                        "/Users/Harland/Go/keypulse/extra.py",
+                    ],
+                    "urls": ["https://github.com/example/keypulse"],
+                }
+            },
+        }
+    )
+
+    assert compact["eid"] == "evt-1"
+    assert compact["sid"] == "top-session"
+    assert compact["win"] == ("KeyPulse P1 daily pipeline现场指纹扩展" * 4)[:80]
+    assert compact["wu"] == "daily_strategy"
+    assert compact["fp"] == [
+        "/Users/Harland/Go/keypulse/keypulse/pipeline/daily_strategy.py"[:60],
+        "/Users/Harland/Go/keypulse/docs/raw-events-metadata-schema.md"[:60],
+        "/Users/Harland/Go/keypulse/tests/test_pipeline_daily_strategy"[:60],
+    ]
+    assert compact["url"] == "https://github.com/example/keypulse"
+    assert len(compact["c"]) == 320
+
+
+def test_extract_work_unit_prefers_window_title_and_decodes_claude_project_paths():
+    assert (
+        extract_work_unit({"window_title": "Agent系统的真正瓶颈：分层、标准化与评测 - Claude"})
+        == "Agent系统的真正瓶颈：分层、标准化与评测"
+    )
+    assert (
+        extract_work_unit(
+            {
+                "metadata": {
+                    "entities": {
+                        "file_paths": [
+                            "/Users/Harland/.claude/projects/-Users-Harland-Go-Chat-CHAT-0410/sess.jsonl"
+                        ]
+                    }
+                }
+            }
+        )
+        == "CHAT-0410"
+    )
 
 
 def test_budget_strategy_calls_l1_and_one_l2_and_tracks_misc():

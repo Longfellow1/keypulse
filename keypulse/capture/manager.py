@@ -38,7 +38,19 @@ from keypulse.store.repository import (
 from keypulse.utils.logging import get_logger
 
 logger = get_logger("manager")
-_USER_SOURCES = frozenset({"clipboard", "manual", "browser", "ax_text", "keyboard_chunk", "ax_ime_commit", "ax_snapshot_fallback"})
+_USER_SOURCES = frozenset(
+    {
+        "clipboard",
+        "manual",
+        "browser",
+        "browser_url",
+        "browser_history",
+        "ax_text",
+        "keyboard_chunk",
+        "ax_ime_commit",
+        "ax_snapshot_fallback",
+    }
+)
 _CHAT_STYLE_APPS = frozenset({"claude", "codex", "cursor", "obsidian", "notion", "visual studio code"})
 _TERMINAL_APPS = frozenset({"terminal", "iterm2", "warp", "alacritty", "kitty", "ghostty"})
 
@@ -329,6 +341,25 @@ class CaptureManager:
                 poll_interval_sec=self.config.browser.poll_interval_sec,
                 supported_browsers=self.config.browser.supported_browsers,
             )
+        if cfg.browser_url:
+            from keypulse.capture.watchers.browser_url import BrowserUrlWatcher
+
+            self._watchers["browser_url"] = BrowserUrlWatcher(
+                self._queue,
+                poll_interval_sec=self.config.browser_url.poll_interval_sec,
+                supported_browsers=self.config.browser_url.supported_browsers,
+                emit_on_url_change_only=self.config.browser_url.emit_on_url_change_only,
+            )
+        if self.config.browser_history.enabled:
+            from keypulse.capture.watchers.browser_history import BrowserHistoryWatcher
+
+            self._watchers["browser_history"] = BrowserHistoryWatcher(
+                self._queue,
+                poll_interval_sec=self.config.browser_history.poll_interval_sec,
+                enabled=self.config.browser_history.enabled,
+                copy_to_cache=self.config.browser_history.copy_to_cache,
+                browsers=self.config.browser_history.browsers,
+            )
         # === OCR watcher 已下线 2026-05-14 ===
         # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
         # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
@@ -530,12 +561,13 @@ class CaptureManager:
             else:
                 result.semantic_weight = 1.0
 
+        preserve_raw_browser_url = result.source == "browser_url"
         result.metadata_json = _sanitize_metadata_json(
             result.metadata_json,
             extra_fields={"text_dropped": text_dropped_reason} if text_dropped_reason else None,
-            redact_emails=self.config.privacy.redact_emails,
-            redact_phones=self.config.privacy.redact_phones,
-            redact_tokens=self.config.privacy.redact_tokens,
+            redact_emails=False if preserve_raw_browser_url else self.config.privacy.redact_emails,
+            redact_phones=False if preserve_raw_browser_url else self.config.privacy.redact_phones,
+            redact_tokens=False if preserve_raw_browser_url else self.config.privacy.redact_tokens,
         )
 
         if result.session_id is None and result.event_type not in {"idle_start", "idle_end"}:

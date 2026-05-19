@@ -51,6 +51,7 @@ OPTIONS = {
         "Quartz",
         "Foundation",
         "ApplicationServices",
+        "WebKit",
         "objc",
     ],
     "includes": [

@@ -22,7 +22,7 @@ from __future__ import annotations
 import abc
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -54,6 +54,9 @@ class ClusterRecord:
     keywords: tuple[str, ...]
     narrative_one_line: str  # for daily-summary index, NOT the full daily.md text
     peak_event_density: float = 0.0
+    dwell_minutes: float = 0.0
+    revisit_count: int = 0
+    cross_app_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -79,10 +82,137 @@ def build_prompt(spec_body: str, capability: str, payload: Mapping[str, Any]) ->
     )
 
 
+def _metadata_dict(event: Mapping[str, Any]) -> dict[str, Any]:
+    metadata = event.get("metadata")
+    if isinstance(metadata, dict):
+        return dict(metadata)
+    raw = event.get("metadata_json")
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _metadata_entities(event: Mapping[str, Any]) -> dict[str, Any]:
+    entities = _metadata_dict(event).get("entities")
+    return dict(entities) if isinstance(entities, dict) else {}
+
+
+def _list_of_strings(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+_WIN_TITLE_SEP_RE = re.compile(r"\s+[—–-]\s+")
+_DASH_ENCODED_PATH_RE = re.compile(r"^-Users-[A-Za-z0-9]+-")
+_DASH_ENCODED_LEAF_RE = re.compile(r"([A-Z][A-Z0-9]+-\d[\w-]*)$")
+
+
+def _decode_dash_path(value: str) -> str:
+    text = str(value or "").strip()
+    if _DASH_ENCODED_PATH_RE.match(text):
+        return "/" + text.lstrip("-").replace("-", "/")
+    return text
+
+
+def _basename_no_ext(path: str) -> str:
+    name = str(path or "").rstrip("/").rsplit("/", 1)[-1]
+    if "." in name:
+        name = name.rsplit(".", 1)[0]
+    return name
+
+
+def _work_unit_from_file_path(path: str) -> str:
+    parts = [part for part in re.split(r"[\\/]+", str(path or "")) if part]
+    for part in parts:
+        if _DASH_ENCODED_PATH_RE.match(part):
+            leaf = _DASH_ENCODED_LEAF_RE.search(part)
+            if leaf:
+                return leaf.group(1)
+            return _basename_no_ext(_decode_dash_path(part))
+    return _basename_no_ext(path)
+
+
+def extract_work_unit(event: Mapping[str, Any]) -> str:
+    """Identify the user's active document, conversation, page, or app."""
+    window_title = str(event.get("window_title") or "").strip()
+    if window_title:
+        parts = _WIN_TITLE_SEP_RE.split(window_title)
+        if len(parts) >= 2:
+            title = parts[0].strip()
+            if title and len(title) <= 80:
+                return title
+        elif len(window_title) <= 80:
+            return window_title
+
+    metadata = _metadata_dict(event)
+    code_symbols = _list_of_strings(metadata.get("code_symbols"))
+    if code_symbols:
+        return code_symbols[0]
+
+    entities = _metadata_entities(event)
+    file_paths = _list_of_strings(entities.get("file_paths"))
+    if file_paths:
+        work_unit = _work_unit_from_file_path(file_paths[0])
+        if work_unit:
+            return work_unit
+
+    urls = _list_of_strings(entities.get("urls"))
+    url = urls[0] if urls else str(metadata.get("url") or "").strip()
+    if url:
+        from urllib.parse import urlsplit
+
+        try:
+            parsed = urlsplit(url)
+            host = (parsed.hostname or parsed.netloc or "").strip().lower()
+            if host:
+                segment = next((part for part in (parsed.path or "/").strip("/").split("/") if part), "")
+                return f"{host}/{segment}" if segment else host
+        except ValueError:
+            pass
+
+    app_name = str(event.get("app_name") or "").strip()
+    if app_name and app_name.lower() != "unknown":
+        return app_name
+
+    content = str(event.get("content_text") or "").strip()
+    if content:
+        snippet = re.sub(r"\s+", " ", content)[:20].strip()
+        if snippet:
+            return snippet
+
+    source = str(event.get("source") or "").strip()
+    return source or "unknown"
+
+
+def _flagship_cluster_payload(component: Mapping[str, Any]) -> dict[str, Any]:
+    event_ids = [str(item) for item in (component.get("event_ids") or []) if str(item).strip()]
+    payload: dict[str, Any] = {
+        "display_name": str(component.get("display_name") or component.get("component_id") or "").strip(),
+        "dwell_minutes": _payload_float(component, "dwell_minutes", 0.0),
+        "revisit_count": int(_payload_float(component, "revisit_count", 0.0)),
+        "cross_app_count": int(_payload_float(component, "cross_app_count", 0.0)),
+        "event_count": int(component.get("event_count") or len(event_ids)),
+        "time_range": list(component.get("time_range") or []),
+        "key_excerpts": [
+            str(item)[:80]
+            for item in (component.get("key_excerpts") or [])
+            if str(item).strip()
+        ][:3],
+    }
+    return {key: value for key, value in payload.items() if value not in ("", [], None)}
+
+
 def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     """Orchestrator payload → flagship/budget L2 compact form `{t, s, a, c, sp}`.
 
-    Truncates content to 240 chars (matches /tmp eval extractor) — keeps the
+    Truncates content to 320 chars — keeps the
     full-day prompt within tokens budget while preserving signal density.
     """
     ts = str(event.get("ts_start") or "")
@@ -94,8 +224,30 @@ def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {
         "t": hhmm,
         "s": str(event.get("source") or "ax_text"),
-        "c": (str(event.get("content_text") or "").strip())[:240],
+        "c": (str(event.get("content_text") or "").strip())[:320],
     }
+    event_id = str(event.get("id") or event.get("event_id") or "").strip()
+    if event_id:
+        out["eid"] = event_id
+    entities = _metadata_entities(event)
+    session_id = str(event.get("session_id") or entities.get("session_id") or "").strip()
+    if session_id:
+        out["sid"] = session_id
+    window_title = str(event.get("window_title") or "").strip()
+    if window_title:
+        out["win"] = window_title[:80]
+    work_unit = extract_work_unit(event)
+    if work_unit and work_unit != "unknown":
+        out["wu"] = work_unit
+    file_paths = _list_of_strings(entities.get("file_paths"))
+    if file_paths:
+        out["fp"] = [path[:60] for path in file_paths[:3]]
+    urls = _list_of_strings(entities.get("urls"))
+    if urls:
+        out["url"] = urls[0]
+    code_symbols = _list_of_strings(_metadata_dict(event).get("code_symbols"))
+    if code_symbols:
+        out["code_symbols"] = code_symbols[:5]
     app = str(event.get("app_name") or "").strip()
     if app:
         out["a"] = app
@@ -261,6 +413,9 @@ class FlagshipSingleStepStrategy(DailyStrategy):
     name = "flagship"
     capability = "daily_flagship"
 
+    def __init__(self, cluster_components: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None) -> None:
+        self._cluster_components = cluster_components
+
     def generate(
         self,
         *,
@@ -277,6 +432,9 @@ class FlagshipSingleStepStrategy(DailyStrategy):
             "yesterday_anchor": _load_yesterday_anchor(date_str),
             "recent_topic_history": _build_recent_topic_history(date_str, days=7),
         }
+        if self._cluster_components is not None:
+            clusters = [_flagship_cluster_payload(component) for component in self._cluster_components(events)]
+            payload["clusters"] = [cluster for cluster in clusters if cluster]
 
         try:
             spec = load_prompt(self.capability)
@@ -415,6 +573,9 @@ class BudgetTwoStepStrategy(DailyStrategy):
                     keywords=keywords,
                     narrative_one_line="",  # populated by orchestrator from L2 output
                     peak_event_density=peak_event_density,
+                    dwell_minutes=_payload_float(component_payload, "dwell_minutes", 0.0),
+                    revisit_count=int(_payload_float(component_payload, "revisit_count", 0.0)),
+                    cross_app_count=int(_payload_float(component_payload, "cross_app_count", 0.0)),
                 )
             )
             l2_clusters.append(
@@ -423,6 +584,14 @@ class BudgetTwoStepStrategy(DailyStrategy):
                     "display_name": display_name,
                     "topic_action": action,
                     "peak_event_density": peak_event_density,
+                    "dwell_minutes": _payload_float(component_payload, "dwell_minutes", 0.0),
+                    "revisit_count": int(_payload_float(component_payload, "revisit_count", 0.0)),
+                    "cross_app_count": int(_payload_float(component_payload, "cross_app_count", 0.0)),
+                    "key_excerpts": [
+                        str(item)[:80]
+                        for item in (component_payload.get("key_excerpts") or [])
+                        if str(item).strip()
+                    ][:3],
                     "events": cluster_events_compact,
                 }
             )

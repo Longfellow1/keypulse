@@ -22,6 +22,7 @@ class WatchersConfig(BaseModel):
     manual: bool = True
     keyboard_chunk: bool = True
     browser: bool = False
+    browser_url: bool = False
     ax_text: bool = False
     ocr: bool = False
 
@@ -54,6 +55,36 @@ class BrowserConfig(BaseModel):
             "Arc",
             "Brave Browser",
             "Microsoft Edge",
+        ]
+    )
+
+
+class BrowserURLConfig(BaseModel):
+    poll_interval_sec: float = 3.0
+    supported_browsers: list[str] = Field(
+        default_factory=lambda: [
+            "Safari",
+            "Google Chrome",
+            "Arc",
+            "Microsoft Edge",
+            "Brave Browser",
+        ]
+    )
+    emit_on_url_change_only: bool = True
+
+
+class BrowserHistoryConfig(BaseModel):
+    enabled: bool = False
+    poll_interval_sec: float = 300.0
+    copy_to_cache: bool = True
+    browsers: list[str] = Field(
+        default_factory=lambda: [
+            "Safari",
+            "Google Chrome",
+            "Arc",
+            "Microsoft Edge",
+            "Brave Browser",
+            "Firefox",
         ]
     )
 
@@ -253,6 +284,8 @@ class Config(BaseModel):
     ax_text: AXTextConfig = Field(default_factory=AXTextConfig)
     keyboard_chunk: KeyboardChunkConfig = Field(default_factory=KeyboardChunkConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
+    browser_url: BrowserURLConfig = Field(default_factory=BrowserURLConfig)
+    browser_history: BrowserHistoryConfig = Field(default_factory=BrowserHistoryConfig)
     ocr: OCRConfig = Field(default_factory=OCRConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)

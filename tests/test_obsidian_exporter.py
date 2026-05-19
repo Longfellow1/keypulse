@@ -487,6 +487,54 @@ def test_write_obsidian_bundle_keeps_historical_event_files_untouched(tmp_path: 
     assert historical_file.exists()
 
 
+def test_write_obsidian_bundle_writes_placeholder_when_quality_gate_refuses(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("KEYPULSE_HOME", str(tmp_path / ".keypulse"))
+    daily_dir = tmp_path / "Daily"
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    daily_path = daily_dir / "2026-04-18.md"
+    daily_path.write_text(
+        "\n".join(
+            [
+                "# 2026-04-18",
+                "",
+                "### 事项1",
+                "a b c d e f g h i j",
+                "",
+                "### 事项2",
+                "a b c d e f g h i j",
+                "",
+                "### 事项3",
+                "a b c d e f g h i j",
+                "",
+                "### 事项4",
+                "a b c d e f g h i j",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    bundle = build_obsidian_bundle(
+        [
+            _make_item(
+                app_name="loginwindow",
+                window_title="loginwindow",
+                title="loginwindow",
+                body="loginwindow",
+                session_id="session-loginwindow",
+            )
+        ],
+        vault_name="Harland Knowledge",
+        date_str="2026-04-18",
+    )
+
+    written = write_obsidian_bundle(bundle, tmp_path)
+
+    assert daily_path in written
+    content = daily_path.read_text(encoding="utf-8")
+    assert "采集异常" in content
+    assert "quality_gate REFUSED" in content
+
+
 def test_build_obsidian_bundle_derives_manual_title_from_body_when_missing():
     bundle = build_obsidian_bundle(
         [

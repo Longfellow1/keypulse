@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -97,3 +98,27 @@ def should_write_daily(new_text: str, existing_path: Path) -> tuple[bool, str, Q
             baseline,
         )
     return ok, reason, new_score, baseline
+
+
+def build_quality_gate_placeholder(
+    *,
+    date_str: str,
+    score: QualityScore,
+    reason: str,
+    generated_at: datetime | None = None,
+) -> str:
+    """Render a placeholder daily body when quality gate refuses new content."""
+    now = generated_at or datetime.now(timezone.utc)
+    ts = now.isoformat().replace("+00:00", "Z")
+    return "\n".join(
+        [
+            f"# {date_str} (采集异常)",
+            "",
+            f"quality_gate REFUSED: thing_count={score.thing_count}, reason={reason}",
+            "",
+            f"- generated_at: {ts}",
+            "- trigger_path: capture -> daily_orchestrator -> quality_gate -> placeholder",
+            "- 说明：这一天是采集链路异常，不代表你没有工作记录。",
+            "",
+        ]
+    )
