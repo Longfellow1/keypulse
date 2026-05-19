@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.obsidian.quality_gate import QualityScore, evaluate, score_daily, should_write_daily
+from keypulse.obsidian.quality_gate import (
+    QualityScore,
+    build_quality_gate_placeholder,
+    evaluate,
+    score_daily,
+    should_write_daily,
+)
 
 
 def _healthy_daily(thing_count: int = 12, words_per_thing: int = 120) -> str:
@@ -145,3 +152,15 @@ def test_should_write_daily_old_better_new_short(tmp_path: Path) -> None:
     assert ok is False
     assert reason.startswith("total_chars=")
     assert new_score.total_chars < int(old_score.total_chars * 0.6)  # type: ignore[union-attr]
+
+
+def test_build_quality_gate_placeholder_contains_refusal_context() -> None:
+    text = build_quality_gate_placeholder(
+        date_str="2026-05-18",
+        score=QualityScore(thing_count=0, total_chars=0, template_density=0.0, unique_word_ratio=0.0),
+        reason="thing_count=0<3",
+        generated_at=datetime(2026, 5, 18, 9, 30, tzinfo=timezone.utc),
+    )
+    assert "# 2026-05-18 (采集异常)" in text
+    assert "quality_gate REFUSED: thing_count=0, reason=thing_count=0<3" in text
+    assert "trigger_path: capture -> daily_orchestrator -> quality_gate -> placeholder" in text

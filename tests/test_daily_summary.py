@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from keypulse.pipeline.daily_summary import (
     build_cluster_stubs_from_narrative,
@@ -42,6 +41,40 @@ def test_write_then_read_daily_summary(tmp_path, monkeypatch):
     assert loaded["misc_event_ids"] == ["evt-1"]
     assert loaded["topic_status_snapshot"] == {"keypulse-hud-fix": "active"}
     assert loaded["cost"] == {"in_tokens": 4700, "out_tokens": 1500, "cost_usd": 0.0035}
+
+
+def test_daily_summary_preserves_cluster_scene_metrics(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    write_daily_summary(
+        date="2026-05-09",
+        clusters=[
+            {
+                "slug": "keypulse-daily",
+                "display_name": "KeyPulse Daily",
+                "narrative_one_line": "补现场指纹传递。",
+                "event_count": 4,
+                "time_range": ["09:00", "10:00"],
+                "merge_candidate_with": [],
+                "dwell_minutes": 60.0,
+                "revisit_count": 2,
+                "cross_app_count": 3,
+            }
+        ],
+        misc=[],
+        topic_snapshot={},
+        cost={"in_tokens": 1, "out_tokens": 2, "cost_usd": 0.0},
+    )
+
+    payload = read_daily_summary("2026-05-09")
+
+    assert payload is not None
+    assert payload["events"][0]["dwell_minutes"] == 60.0
+    assert payload["events"][0]["revisit_count"] == 2
+    assert payload["events"][0]["cross_app_count"] == 3
+    assert payload["clusters"][0]["dwell_minutes"] == 60.0
+    assert payload["clusters"][0]["revisit_count"] == 2
+    assert payload["clusters"][0]["cross_app_count"] == 3
 
 
 def test_read_daily_summary_returns_none_for_missing_date(tmp_path, monkeypatch):

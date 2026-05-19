@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
@@ -14,10 +15,11 @@ from WebKit import WKNavigationActionPolicyAllow, WKNavigationActionPolicyCancel
 
 # 内部模块依赖 (保持原样)
 from keypulse.capture.normalizer import normalize_manual_event
+from keypulse.capabilities.store import load_states as load_capability_states
 from keypulse.config import Config
 from keypulse.hud.approval_window import ApprovalWindowController, safe_pending_candidate_count
 from keypulse.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
-from keypulse.hud.monitor_html import build_monitor_html
+from keypulse.hud.monitor_html import build_monitor_data, build_monitor_html
 from keypulse.hud.state import dismiss_weekly_echo_for_week, read_hud_state, set_pending_count, set_today_focus
 from keypulse.hud.state_reset import _reset_transient_error_state
 from keypulse.hud.summary import build_hud_snapshot
@@ -87,15 +89,34 @@ class KeyPulseHUDApp(AppKit.NSObject):
                 self.status_item.button().sendActionOn_(events)
         self._setup_status_menu()
         self._refresh_approval_menu_item()
+        self._maybe_prompt_browser_automation_guide()
         
         # 2. Popover 初始化
         self.popover = AppKit.NSPopover.alloc().init()
         self.popover.setBehavior_(AppKit.NSPopoverBehaviorTransient)
         self.popover_vc = AppKit.NSViewController.alloc().init()
         self.popover.setContentViewController_(self.popover_vc)
+        self.popover_vc.setView_(self._build_full_home_view())
         self.refresh_status()
         
         return self
+
+    def _maybe_prompt_browser_automation_guide(self) -> None:
+        if str(get_state("browser_automation_guide_shown") or "").strip() == "1":
+            return
+        states = load_capability_states()
+        state = states.get("browser_automation")
+        if state is None or state.ok or state.code != "browser_automation_denied":
+            return
+
+        alert = AppKit.NSAlert.alloc().init()
+        alert.setMessageText_("请开启浏览器自动化权限")
+        alert.setInformativeText_(
+            "请前往系统设置 → 隐私与安全性 → 自动化，勾选 KeyPulse 对 Safari / Google Chrome / Arc / Microsoft Edge / Brave Browser 的控制权限。"
+        )
+        alert.addButtonWithTitle_("知道了")
+        alert.runModal()
+        set_state("browser_automation_guide_shown", "1")
 
     def _install_status_icon(self) -> None:
         """状态栏 icon：本本 + 笔（SF Symbol，模板图标，自动适配深浅色）。"""
@@ -151,10 +172,9 @@ class KeyPulseHUDApp(AppKit.NSObject):
             date_str="today",
             capture_status=self.capture_status,
         )
+        self._update_webview_data()
         if self.popover.isShown():
-            self._measured_height = None
-            view = self._build_full_home_view()
-            self.popover_vc.setView_(view)
+            self._measure_and_resize()
 
     # --- 核心 UI 模块 ---
 
@@ -163,6 +183,8 @@ class KeyPulseHUDApp(AppKit.NSObject):
         return AppKit.NSMakeSize(HUD_CONTENT_WIDTH, float(height))
 
     def _build_full_home_view(self):
+        if hasattr(self, "webview") and self.webview is not None:
+            return self.webview
         height = getattr(self, "_measured_height", None) or HUD_CONTENT_HEIGHT_FALLBACK
         frame = AppKit.NSMakeRect(0.0, 0.0, HUD_CONTENT_WIDTH, float(height))
         config = WKWebViewConfiguration.alloc().init()
@@ -186,6 +208,20 @@ class KeyPulseHUDApp(AppKit.NSObject):
         webview.loadHTMLString_baseURL_(html, None)
         self.webview = webview
         return webview
+
+    def _update_webview_data(self) -> None:
+        if not hasattr(self, "webview") or self.webview is None:
+            return
+        data = build_monitor_data(
+            self.snapshot,
+            capture_status=self.capture_status,
+        )
+        script = f"window.updateHud({json.dumps(data, ensure_ascii=False)});"
+        try:
+            self.webview.evaluateJavaScript_completionHandler_(script, None)
+        except Exception:
+            # WebView may not be ready yet; first full page load will apply initial data.
+            pass
 
     def webView_didFinishNavigation_(self, webview, _navigation):
         # First measurement after the HTML has rendered.
@@ -475,6 +511,10 @@ class KeyPulseHUDApp(AppKit.NSObject):
         self._pending_count_last_sync = 0.0
         self.refresh_status()
 
+    def pollSignals_(self, _timer):
+        self.refresh_status()
+        self._refresh_content()
+
 # --- 启动器 (彻底解决 Ctrl+C 不响应问题) ---
 
 def run_hud(cfg: Config | None = None) -> None:
@@ -494,13 +534,8 @@ def run_hud(cfg: Config | None = None) -> None:
     signal.signal(signal.SIGINT, _force_shutdown)
     signal.signal(signal.SIGTERM, _force_shutdown)
 
-    # 10 秒自动刷新，仅在 popover 可见时真正拉取最新数据
-    def _poll_signals(_timer):
-        delegate.refresh_status()
-        if delegate.popover.isShown():
-            delegate._refresh_content()
     NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-        10.0, delegate, objc.selector(_poll_signals, signature=b"v@:@"), None, True
+        10.0, delegate, objc.selector(delegate.pollSignals_, signature=b"v@:@"), None, True
     )
 
     print("✅ KeyPulse HUD 启动。状态、指标、模式一键直达。")

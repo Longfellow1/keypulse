@@ -20,7 +20,7 @@ from keypulse.capabilities.base import HealthState
 from keypulse.capabilities.registry import CapabilityRegistry
 from keypulse.capabilities.store import load_states, save_states
 from keypulse.store.db import close, init_db
-from keypulse.store.repository import set_state
+from keypulse.store.repository import get_state, set_state
 
 
 def _init_test_db(tmp_path: Path) -> Path:
@@ -191,5 +191,42 @@ def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) 
         assert level == "warn"
         assert "辅助功能" in (hint or "") or "ax" in (hint or "").lower()
         assert action.startswith("open://")
+    finally:
+        close()
+
+
+def test_ax_denied_forces_ax_dependent_watcher_facts_false(tmp_path) -> None:
+    _init_test_db(tmp_path)
+    try:
+        from keypulse.app import _run_capability_self_check
+
+        class _FakeRegistry:
+            def monitor_all(self):
+                now = time.time()
+                return {
+                    "accessibility_permission": HealthState(ok=False, code="ax_denied", last_checked=now, detail="denied"),
+                    "ax_text_watcher": HealthState(ok=True, code="ok", last_checked=now, detail=None),
+                    "keyboard_chunk_watcher": HealthState(ok=True, code="ok", last_checked=now, detail=None),
+                }
+
+            def select_failure(self, states, names=None):
+                selected = {
+                    name: state
+                    for name, state in states.items()
+                    if state.ok is False and (names is None or name in names)
+                }
+                if not selected:
+                    return None
+                name = sorted(selected.keys())[0]
+                return type("Failure", (), {"state": selected[name]})()
+
+        _run_capability_self_check(_FakeRegistry())
+
+        states = load_states()
+        assert states["ax_text_watcher"].ok is False
+        assert states["ax_text_watcher"].code == "ax_denied"
+        assert states["keyboard_chunk_watcher"].ok is False
+        assert states["keyboard_chunk_watcher"].code == "ax_denied"
+        assert get_state("capture_error_code") == "ax_denied"
     finally:
         close()

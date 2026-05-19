@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from html import escape
 from urllib.parse import quote
 
@@ -183,12 +184,42 @@ def _weekly_notice_banner(snapshot: HUDSnapshot) -> str:
     return f'<div class="weekly-notice">{escape(notice)}</div>'
 
 
-def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
+def build_monitor_data(snapshot: HUDSnapshot, *, capture_status: str) -> dict[str, object]:
     is_running = capture_status != "paused"
-    pause_label = "⏸ 暂停" if is_running else "▶ 恢复"
-    suggestions = _render_signals(list(snapshot.top_signals))
-    dot_cls = _dot_class(snapshot.service_status)
-    pill_cls = _status_pill_class(snapshot.service_status)
+    return {
+        "dotClass": _dot_class(snapshot.service_status),
+        "statusPillClass": _status_pill_class(snapshot.service_status),
+        "statusLabel": str(snapshot.status_label or ""),
+        "weeklyEchoHtml": _weekly_echo_top_banner(snapshot),
+        "hintHtml": _hint_bar(snapshot.hint_message, snapshot.hint_action),
+        "weeklyNoticeHtml": _weekly_notice_banner(snapshot),
+        "todayFocus": str(snapshot.today_focus or ""),
+        "todayInputClass": "today-input filled" if snapshot.today_focus else "today-input",
+        "statsHtml": (
+            _stat_cell("记下来", snapshot.effective_count, snapshot.effective_count_delta_vs_yesterday)
+            + _stat_cell("丢掉了", snapshot.filtered_count, snapshot.filtered_count_delta_vs_yesterday)
+        ),
+        "suggestionsHtml": _render_signals(list(snapshot.top_signals)),
+        "pauseLabel": "⏸ 暂停" if is_running else "▶ 恢复",
+        "companionText": f"和你一起记录的第 {snapshot.companion_days} 天",
+    }
+
+
+def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
+    data = build_monitor_data(snapshot, capture_status=capture_status)
+    initial_data = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    dot_class = escape(str(data["dotClass"]))
+    status_pill_class = escape(str(data["statusPillClass"]))
+    status_label = escape(str(data["statusLabel"]))
+    weekly_echo_html = str(data["weeklyEchoHtml"])
+    hint_html = str(data["hintHtml"])
+    weekly_notice_html = str(data["weeklyNoticeHtml"])
+    today_focus = str(data["todayFocus"])
+    today_input_class = escape(str(data["todayInputClass"]))
+    stats_html = str(data["statsHtml"])
+    suggestions_html = str(data["suggestionsHtml"])
+    pause_label = escape(str(data["pauseLabel"]))
+    companion_text = escape(str(data["companionText"]))
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -496,45 +527,104 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
   <div class="hud">
     <div class="hdr">
       <div class="hdr-left">
-        <span class="{dot_cls}"></span>
+        <span class="{dot_class}"></span>
         <span class="brand">KeyPulse</span>
       </div>
       <div class="hdr-right">
-        {_weekly_echo_top_banner(snapshot)}
-        <span class="{pill_cls}">{escape(snapshot.status_label)}</span>
+        <span id="weeklyEchoSlot">{weekly_echo_html}</span>
+        <span class="{status_pill_class}">{status_label}</span>
       </div>
     </div>
 
-    {_hint_bar(snapshot.hint_message, snapshot.hint_action)}
-    {_weekly_notice_banner(snapshot)}
+    <div id="hintSlot">{hint_html}</div>
+    <div id="weeklyNoticeSlot">{weekly_notice_html}</div>
 
-    {_today_card(snapshot.today_focus)}
+    <div class="today-card">
+      <span class="today-mark">✦</span>
+      <input
+        id="todayFocus"
+        class="{today_input_class}"
+        type="text"
+        placeholder="今天最想完成的一件事，回车保存"
+        autocomplete="off"
+        spellcheck="false"
+        {f'value="{escape(today_focus, quote=True)}"' if today_focus else ""}
+      />
+    </div>
 
     <div class="stats">
-      {_stat_cell("记下来", snapshot.effective_count, snapshot.effective_count_delta_vs_yesterday)}
-      {_stat_cell("丢掉了", snapshot.filtered_count, snapshot.filtered_count_delta_vs_yesterday)}
+      <div id="statsGrid">{stats_html}</div>
     </div>
 
     <div class="suggestions">
       <div class="sugg-header">今天最新</div>
-      {suggestions}
+      <div id="suggestionsSlot">{suggestions_html}</div>
     </div>
 
     <div class="ftr">
-      <span class="companion">和你一起记录的第 {snapshot.companion_days} 天</span>
+      <span id="companionText" class="companion">{companion_text}</span>
       <div class="ftr-actions">
         {_action_link("↻", "restart-daemon", "btn icon-btn", title="重启 daemon")}
-        {_action_link(pause_label, "toggle-pause", "btn")}
+        <a id="togglePauseBtn" class="btn" href="keypulse://action/toggle-pause">{pause_label}</a>
         {_action_link("⏻", "quit", "btn icon-btn quit-btn", title="退出 KeyPulse")}
       </div>
     </div>
   </div>
   <script>
     (function() {{
+      var lastSaved = '';
+      function safeText(v) {{
+        return typeof v === 'string' ? v : '';
+      }}
+      window.updateHud = function(data) {{
+        if (!data || typeof data !== 'object') return;
+
+        var dot = document.querySelector('.dot');
+        if (dot) dot.className = safeText(data.dotClass) || 'dot';
+
+        var weeklyEchoSlot = document.getElementById('weeklyEchoSlot');
+        if (weeklyEchoSlot) weeklyEchoSlot.innerHTML = safeText(data.weeklyEchoHtml);
+
+        var statusPill = document.querySelector('.status-pill');
+        if (statusPill) {{
+          statusPill.className = safeText(data.statusPillClass) || 'status-pill';
+          statusPill.textContent = safeText(data.statusLabel);
+        }}
+
+        var hintSlot = document.getElementById('hintSlot');
+        if (hintSlot) hintSlot.innerHTML = safeText(data.hintHtml);
+
+        var weeklyNoticeSlot = document.getElementById('weeklyNoticeSlot');
+        if (weeklyNoticeSlot) weeklyNoticeSlot.innerHTML = safeText(data.weeklyNoticeHtml);
+
+        var input = document.getElementById('todayFocus');
+        if (input) {{
+          var focusVal = safeText(data.todayFocus);
+          if (document.activeElement !== input) {{
+            input.value = focusVal;
+          }}
+          input.className = safeText(data.todayInputClass) || 'today-input';
+          lastSaved = focusVal;
+        }}
+
+        var statsGrid = document.getElementById('statsGrid');
+        if (statsGrid) statsGrid.innerHTML = safeText(data.statsHtml);
+
+        var suggestions = document.getElementById('suggestionsSlot');
+        if (suggestions) suggestions.innerHTML = safeText(data.suggestionsHtml);
+
+        var pauseBtn = document.getElementById('togglePauseBtn');
+        if (pauseBtn) pauseBtn.textContent = safeText(data.pauseLabel);
+
+        var companion = document.getElementById('companionText');
+        if (companion) companion.textContent = safeText(data.companionText);
+
+        setTimeout(reportHeight, 0);
+      }};
+
       // Inline input: 回车 / 失焦保存 today_focus
       var input = document.getElementById('todayFocus');
       if (input) {{
-        var lastSaved = input.value || '';
         function save() {{
           var v = input.value.trim();
           if (v === lastSaved) return;
@@ -587,6 +677,8 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
       if (typeof ResizeObserver !== 'undefined') {{
         new ResizeObserver(reportHeight).observe(document.body);
       }}
+      var INITIAL_HUD_DATA = {initial_data};
+      window.updateHud(INITIAL_HUD_DATA);
       window.addEventListener('load', reportHeight);
     }})();
   </script>

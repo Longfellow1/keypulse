@@ -22,7 +22,8 @@ _CLUSTER_KEYS = {
     "time_range",
     "merge_candidate_with",
 }
-_OPTIONAL_CLUSTER_KEYS = {"peak_event_density"}
+_SCENE_METRIC_KEYS = {"dwell_minutes", "revisit_count", "cross_app_count"}
+_OPTIONAL_CLUSTER_KEYS = {"peak_event_density", *_SCENE_METRIC_KEYS}
 _EVENT_KEYS = {
     "cluster_id",
     "display_name",
@@ -31,7 +32,7 @@ _EVENT_KEYS = {
     "time_range",
     "anchored_to",
 }
-_OPTIONAL_EVENT_KEYS = {"peak_event_density", "merge_candidate_with"}
+_OPTIONAL_EVENT_KEYS = {"peak_event_density", "merge_candidate_with", *_SCENE_METRIC_KEYS}
 _TOPIC_KEYS = {"anchor", "anchor_state", "narrative", "decisions", "shipped", "events_ref"}
 _COST_KEYS = {"in_tokens", "out_tokens", "cost_usd"}
 _TOPIC_HEADING_RE = re.compile(r"^#{2,3}\s+(.+?)\s*$")
@@ -288,6 +289,12 @@ def _validate_cluster(cluster: Any, index: int) -> dict[str, Any]:
     }
     if "peak_event_density" in cluster:
         result["peak_event_density"] = float(cluster["peak_event_density"] or 0.0)
+    if "dwell_minutes" in cluster:
+        result["dwell_minutes"] = float(cluster["dwell_minutes"] or 0.0)
+    if "revisit_count" in cluster:
+        result["revisit_count"] = int(cluster["revisit_count"] or 0)
+    if "cross_app_count" in cluster:
+        result["cross_app_count"] = int(cluster["cross_app_count"] or 0)
     return result
 
 
@@ -340,6 +347,12 @@ def _validate_event(event: Any, index: int) -> dict[str, Any]:
         result["merge_candidate_with"] = [str(item) for item in merge_with]
     if "peak_event_density" in event:
         result["peak_event_density"] = float(event["peak_event_density"] or 0.0)
+    if "dwell_minutes" in event:
+        result["dwell_minutes"] = float(event["dwell_minutes"] or 0.0)
+    if "revisit_count" in event:
+        result["revisit_count"] = int(event["revisit_count"] or 0)
+    if "cross_app_count" in event:
+        result["cross_app_count"] = int(event["cross_app_count"] or 0)
     return result
 
 
@@ -391,6 +404,9 @@ def _legacy_cluster_to_event(cluster: dict[str, Any]) -> dict[str, Any]:
     }
     if "peak_event_density" in cluster:
         output["peak_event_density"] = float(cluster.get("peak_event_density") or 0.0)
+    for key in _SCENE_METRIC_KEYS:
+        if key in cluster:
+            output[key] = int(cluster.get(key) or 0) if key.endswith("_count") else float(cluster.get(key) or 0.0)
     return output
 
 
@@ -405,6 +421,9 @@ def _event_to_legacy_cluster(event: dict[str, Any]) -> dict[str, Any]:
     }
     if "peak_event_density" in event:
         output["peak_event_density"] = float(event.get("peak_event_density") or 0.0)
+    for key in _SCENE_METRIC_KEYS:
+        if key in event:
+            output[key] = int(event.get(key) or 0) if key.endswith("_count") else float(event.get(key) or 0.0)
     return output
 
 
@@ -705,12 +724,9 @@ def render_daily_markdown(
             for cluster in legacy_clusters
             if str(cluster.get("slug") or "").strip()
         ]
-        unanchored = [event for event in (events or []) if event.get("anchored_to") is None]
 
     topic_list = [topic for topic in (topics or []) if isinstance(topic, dict)]
     event_list = [event for event in (events or []) if isinstance(event, dict)]
-    previous = [str(item) for item in (previous_day_anchors or []) if str(item).strip()]
-    snapshot = topic_snapshot if isinstance(topic_snapshot, dict) else {}
 
     def _extract_section(source: str, heading: str) -> str:
         if not source.strip():

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import queue
+import time
+
+from keypulse.capture.watchers.ax_text import AXTextWatcher
 from keypulse.capture.watchers.ax_text import read_frontmost_ax_text
 
 
@@ -136,3 +140,34 @@ def test_read_frontmost_ax_text_skips_loginwindow():
         "window_title": None,
         "process_name": None,
     }
+
+
+def test_ax_text_watcher_throttles_ax_reads_on_tight_poll_interval():
+    calls = 0
+
+    def _reader():
+        nonlocal calls
+        calls += 1
+        return {
+            "text": "",
+            "selected_text": None,
+            "value_text": None,
+            "title_text": None,
+            "app_name": "Notes",
+            "window_title": "window title",
+            "process_name": "com.apple.Notes",
+        }
+
+    watcher = AXTextWatcher(
+        queue.Queue(),
+        poll_interval_sec=0.0,
+        min_poll_interval_sec=1.0,
+        max_reads_per_sec=1000.0,
+        text_reader=_reader,
+    )
+    watcher.start()
+    time.sleep(0.1)
+    watcher.stop()
+
+    # 100ms 内不应疯狂调用 AX API，至少受 1s 最小轮询间隔约束。
+    assert calls <= 2

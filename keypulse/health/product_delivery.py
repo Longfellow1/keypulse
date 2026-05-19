@@ -50,7 +50,7 @@ def _run_record_alert(
 ) -> tuple[ProductAlert | None, bool, str]:
     if (now_local.hour, now_local.minute) < (18, 30):
         return (None, True, "before_cutoff")
-    today = resolve_local_date("today")
+    today = resolve_local_date(now=now_local)
     payload = _load_run_record(today, records_dir=records_dir)
     if payload is None:
         return (

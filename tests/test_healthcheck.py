@@ -114,7 +114,7 @@ def test_healthcheck_marks_dead_daemon_when_launchctl_pid_missing(monkeypatch, t
     assert any(alert["code"] == "DAEMON_DEAD" for alert in result["alerts"])
 
 
-def test_healthcheck_detects_stale_stream_and_kills_daemon(monkeypatch, tmp_path):
+def test_healthcheck_detects_stale_stream_without_killing_daemon(monkeypatch, tmp_path):
     db_path = tmp_path / "keypulse.db"
     vault_path = tmp_path / "vault"
     daily_dir = vault_path / "Daily"
@@ -144,7 +144,7 @@ def test_healthcheck_detects_stale_stream_and_kills_daemon(monkeypatch, tmp_path
     assert result["daemon"]["events_last_10min"] == 0
     assert result["daemon"]["age_sec_since_last_event"] >= 660
     assert any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
-    assert kills == [(11111, 0), (11111, 9)]
+    assert kills == [(11111, 0)]
 
 
 def test_healthcheck_skips_kill_when_user_currently_idle(monkeypatch, tmp_path):
@@ -180,9 +180,9 @@ def test_healthcheck_skips_kill_when_user_currently_idle(monkeypatch, tmp_path):
     assert (22222, 9) not in kills
 
 
-def test_healthcheck_kills_when_idle_ended_but_stream_silent(monkeypatch, tmp_path):
+def test_healthcheck_alerts_when_idle_ended_but_stream_silent(monkeypatch, tmp_path):
     """User came back from idle (idle_end is the last idle event) but no events
-    have flowed for 11 min: daemon really is hung -> kill."""
+    have flowed for 11 min: emit warning only, no daemon kill."""
     db_path = tmp_path / "keypulse.db"
     vault_path = tmp_path / "vault"
     daily_dir = vault_path / "Daily"
@@ -209,7 +209,7 @@ def test_healthcheck_kills_when_idle_ended_but_stream_silent(monkeypatch, tmp_pa
     result = __import__("keypulse.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
     assert any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
-    assert (33333, 9) in kills
+    assert (33333, 9) not in kills
 
 
 def test_healthcheck_ignores_stale_stream_when_idle_recent(monkeypatch, tmp_path):
@@ -389,7 +389,7 @@ def test_healthcheck_cli_exit_policy(monkeypatch, tmp_path):
     assert result.exit_code == 1
 
 
-def test_healthcheck_triggers_self_heal_after_two_degraded_checks(monkeypatch, tmp_path):
+def test_healthcheck_does_not_trigger_self_heal_after_two_degraded_checks(monkeypatch, tmp_path):
     db_path = tmp_path / "keypulse.db"
     vault_path = tmp_path / "vault"
     config = _make_config(db_path, vault_path, window=True)
@@ -416,8 +416,13 @@ def test_healthcheck_triggers_self_heal_after_two_degraded_checks(monkeypatch, t
         ),
     )
     monkeypatch.setattr("keypulse.health.check._update_degraded_streak", lambda is_degraded: 2)
-    monkeypatch.setattr("keypulse.health.check._trigger_self_heal", lambda: {"started": True, "status": "ok"})
+    monkeypatch.setattr(
+        "keypulse.health.check._trigger_self_heal",
+        lambda: (_ for _ in ()).throw(AssertionError("_trigger_self_heal should not be called")),
+    )
 
     result = __import__("keypulse.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
-    assert result["product_status"]["self_heal_triggered"] is True
+    assert result["product_status"]["self_heal_triggered"] is False
+    assert result["self_heal"]["status"] == "disabled"
+    assert result["self_heal"]["reason"] == "degraded_streak_detected_no_daemon_kill"

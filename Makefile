@@ -1,6 +1,7 @@
-.PHONY: app app-clean app-alias install reload preflight install-plists
+.PHONY: bootstrap app app-clean app-alias install reload preflight install-plists
 
 PYTHON := /Users/Harland/Go/keypulse/.venv/bin/python
+BOOTSTRAP_PYTHON := python3
 ROOT := /Users/Harland/Go/keypulse
 APP_DEST := /Applications/KeyPulse.app
 PLIST_SRC := $(ROOT)/integrations/launchd
@@ -10,6 +11,12 @@ LAUNCH_AGENTS := \
 	$(PLIST_DST)/com.keypulse.healthcheck.plist \
 	$(PLIST_DST)/com.keypulse.obsidian-sync.plist \
 	$(PLIST_DST)/com.keypulse.obsidian-sync-hourly.plist
+
+bootstrap:
+	rm -rf $(ROOT)/.venv
+	$(BOOTSTRAP_PYTHON) -m venv $(ROOT)/.venv
+	$(PYTHON) -m pip install --no-user --upgrade pip
+	$(PYTHON) -m pip install --no-user -e '.[macos,build]'
 
 app-alias:
 	cd /tmp && $(PYTHON) $(ROOT)/setup_app.py py2app -A -d $(ROOT)/dist -b $(ROOT)/build
@@ -40,9 +47,13 @@ install-plists:
 	done
 
 # install: build .app, preflight, copy to /Applications, sync plists, reload all agents.
+# Always cleans dist/KeyPulse.app at the end — leaving it would create a duplicate
+# entry in System Settings → Accessibility (same bundle id, different path) and
+# users grant permission to the wrong binary. See docs/incident-2026-05-17-selfheal-loop.md.
 install: app preflight
 	rm -rf $(APP_DEST)
 	cp -R $(ROOT)/dist/KeyPulse.app $(APP_DEST)
+	rm -rf $(ROOT)/dist/KeyPulse.app
 	$(MAKE) install-plists
 	$(MAKE) reload
 

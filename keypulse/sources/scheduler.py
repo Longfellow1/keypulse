@@ -165,11 +165,19 @@ class _NSWorkspaceEventSource:
             self._ready.set()
 
             run_loop = NSRunLoop.currentRunLoop()
+            # NSDistributedNotificationCenter observers do not register as
+            # input sources, so runMode_beforeDate_ returns immediately
+            # instead of blocking until the deadline. Without an explicit
+            # sleep this loop spins (one thread pinned at 100% GIL),
+            # eating ~60% of total daemon CPU. The wait both throttles the
+            # pump rate and wakes promptly on shutdown.
             while not self._stop_event.is_set():
                 run_loop.runMode_beforeDate_(
                     NSDefaultRunLoopMode,
                     NSDate.dateWithTimeIntervalSinceNow_(0.2),
                 )
+                if self._stop_event.wait(0.2):
+                    break
         except Exception as exc:  # pragma: no cover - defensive runtime guard
             self._start_error = exc
             LOGGER.exception("NSWorkspace event source crashed")

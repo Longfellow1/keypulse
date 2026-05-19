@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Callable, Any
 
+from keypulse.capabilities.base import HealthState
 from keypulse.capabilities.registry import CapabilityRegistry, get_default_registry
 from keypulse.capabilities.store import save_states as save_capability_states
 from keypulse.config import Config
@@ -32,6 +33,7 @@ _CAPTURE_FACT_CAPS = {
 }
 _CAPTURE_PROBE_CAPS = {
     "accessibility_permission",
+    "browser_automation",
     # === OCR watcher 已下线 2026-05-14 ===
     # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
     # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
@@ -42,6 +44,10 @@ _CAPTURE_PROBE_CAPS = {
 _LLM_FACT_CAPS = {"llm_backend"}
 _COMPAT_CAPTURE_CAPS = _CAPTURE_FACT_CAPS
 _COMPAT_LLM_CAPS = _LLM_FACT_CAPS
+_AX_DEPENDENT_FACT_CAPS = {
+    "ax_text_watcher",
+    "keyboard_chunk_watcher",
+}
 
 
 def daemonize(pid_path: Path):
@@ -86,12 +92,33 @@ def _run_capability_self_check(registry: CapabilityRegistry) -> None:
     from keypulse.store.repository import set_state
 
     states = registry.monitor_all()
+    states = _apply_ax_denied_fact_overrides(states)
     save_capability_states(states)
 
     capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS)
     llm_failure = registry.select_failure(states, names=_LLM_FACT_CAPS)
     set_state("capture_error_code", "" if capture_failure is None else capture_failure.state.code)
     set_state("llm_error_code", "" if llm_failure is None else llm_failure.state.code)
+
+
+def _apply_ax_denied_fact_overrides(states: dict[str, HealthState]) -> dict[str, HealthState]:
+    """Force AX-dependent watcher facts false when accessibility is denied."""
+    accessibility_state = states.get("accessibility_permission")
+    if accessibility_state is None or accessibility_state.ok or accessibility_state.code != "ax_denied":
+        return states
+
+    now = time.time()
+    overridden = dict(states)
+    for capability_name in _AX_DEPENDENT_FACT_CAPS:
+        if capability_name not in overridden:
+            continue
+        overridden[capability_name] = HealthState(
+            ok=False,
+            code="ax_denied",
+            last_checked=now,
+            detail="forced by accessibility_permission=ax_denied",
+        )
+    return overridden
 
 
 _self_check_supervisor_started = False

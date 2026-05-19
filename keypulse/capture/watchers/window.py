@@ -21,21 +21,39 @@ logger = get_logger("watcher.window")
 TITLE_STABLE_FLUSH_INTERVAL = 180  # seconds
 
 
+# TTL cache: _get_frontmost_app is called from CGEventTap on every keystroke.
+# Each call does 2 synchronous AX mach_msg roundtrips — at typing speed that's
+# 100+ AX calls/sec and 60%+ CPU. 200ms TTL caps it to ~5 calls/sec while keeping
+# focus-change latency imperceptible for the window watcher's 1s poll.
+_FRONTMOST_CACHE_TTL_SEC = 0.2
+_frontmost_cache_lock = threading.Lock()
+_frontmost_cache: dict = {"at": 0.0, "value": (None, None, None)}
+
+
 def _get_frontmost_app() -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Returns (app_name, window_title, process_name). Requires Accessibility permission."""
+    now = time.monotonic()
+    with _frontmost_cache_lock:
+        if now - _frontmost_cache["at"] < _FRONTMOST_CACHE_TTL_SEC:
+            return _frontmost_cache["value"]
     try:
         from AppKit import NSWorkspace
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
         if not app:
-            return None, None, None
-        app_name = app.localizedName()
-        process_name = app.bundleIdentifier() or app_name
-        pid = app.processIdentifier()
-        window_title = _get_window_title(pid)
-        return app_name, window_title, process_name
+            value = (None, None, None)
+        else:
+            app_name = app.localizedName()
+            process_name = app.bundleIdentifier() or app_name
+            pid = app.processIdentifier()
+            window_title = _get_window_title(pid)
+            value = (app_name, window_title, process_name)
     except Exception as e:
         logger.debug(f"get_frontmost_app error: {e}")
-        return None, None, None
+        value = (None, None, None)
+    with _frontmost_cache_lock:
+        _frontmost_cache["at"] = now
+        _frontmost_cache["value"] = value
+    return value
 
 
 def _get_window_title(pid: int) -> Optional[str]:
