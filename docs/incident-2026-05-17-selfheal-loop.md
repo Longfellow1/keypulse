@@ -163,3 +163,56 @@ cat ~/.keypulse/health.json | python3 -c "import json,sys; d=json.load(sys.stdin
 **自愈策略的反模式**：当 detection layer（capability fact/probe）不可靠时，action layer（SIGTERM daemon）会把局部故障放大成全局故障。**自愈的前提是 detection 准；detection 不准时，不自愈 > 乱自愈。**
 
 建议落进 memory：`feedback_no_blind_self_heal` —— 自愈动作必须基于稳定可信的 detection 信号，不准就别动手。重启完确认完整改造方向后再写入。
+
+---
+
+## 九、2026-05-19 复发与修复
+
+### 9.1 触发场景
+
+P2.1/P2.2 浏览器 URL watcher land 后 `make install` 重打 .app + launchctl reload。HUD 启动后状态卡在"自愈中"3+ 分钟未结束，daemon 每 ~3-4 分钟被 launchctl `kickstart -k` SIGTERM 一次再被拉起，循环。
+
+### 9.2 这一轮真根因
+
+`keypulse/health/self_heal.py:57` 时区 bug：
+
+```python
+kickstart_ts = datetime.now().isoformat()   # ← 本地时间 无 tz：2026-05-19T19:43:12
+```
+
+但 `raw_events.ts_start` 存的是 UTC ISO8601（见 `store/models.py::_now`）：`2026-05-19T11:43:30+00:00`。
+
+`step_wait_core_emit` 调 `_core_emit_count_since(kickstart_ts)` 做 SQL `ts_start >= ?` 字符串比较：本地 `19:xx` lex > UTC `11:xx`，cutoff 永远比所有 raw_events 大 → COUNT 永远 0 → 5 分钟超时失败 → self_heal 判定恢复失败。
+
+但 `step3_restart_daemon`（L139-140 `launchctl kickstart -k`）已经在 step5 失败前 SIGTERM 了 daemon。每触发一次 self_heal = 一次 daemon SIGTERM = 用户看到 HUD"自愈中"+ daemon pid 跳动。
+
+### 9.3 修复
+
+| 项 | 内容 |
+|---|---|
+| Commit | `d638f68 fix(self-heal): kickstart_ts 必须用 UTC，否则反复 SIGTERM daemon` |
+| 改动 | `keypulse/health/self_heal.py:60` 改 `datetime.now()` → `datetime.now(timezone.utc)` |
+| 回归测试 | `tests/test_self_heal.py::test_kickstart_ts_uses_utc_so_core_emit_count_finds_new_rows` 不 mock `step_wait_core_emit`，验证 cutoff 跟实际 `ts_start` 兼容 |
+| 部署 | `make install` 重打 .app + launchctl reload 新 daemon 加载 |
+
+### 9.4 副作用：.app 重打包让 macOS 权限失效
+
+`make install` 走 `rm -rf /Applications/KeyPulse.app + cp` 替换 bundle。bundle id 不变但 codesign hash 变了，macOS 静默撤销之前授予的 **Accessibility**（可能也包括 Input Monitoring / Screen Recording）。
+
+观察证据：
+- `capability_status.json` 报 `accessibility_permission.ok=true`（浅检测：仅 `AXIsProcessTrusted()` 返回值）
+- 但 `raw_events` 里 ax_text 最近 100 条事件 0 条
+- daemon 内部 `_apply_ax_denied_fact_overrides` (`app.py:104-121`) 把 fact 强制覆盖为 `accessibility_permission=ax_denied`（5/17 改的兜底）
+- HUD 拿到这个 fact 显示"前往系统设置 → 自动化"
+
+**用户修复路径**：系统设置 → 隐私与安全性 → 辅助功能 → 找 KeyPulse → 取消勾选 → 重新勾选（或删除条目让 KeyPulse 重新弹询问）。同样查 Input Monitoring。
+
+### 9.5 这次没做（待后续）
+
+- **5/17 incident Step 1 的 A/B/C 改造（self_heal 彻底砍 / 严格限缩 / 单点重启 watcher）** —— 这次只修了"时区 bug 导致永远失败"这一层，self_heal 动作层（SIGTERM daemon）依旧危险；下次有时间按 Step 1 推完整改造
+- **HUD 文案错误**（`hud/app.py:115`）：accessibility denied 时不应提示"前往自动化"，应提示"前往辅助功能"——是另一个 product bug，留做单独 task
+- **`make install` 后自动重新授权引导**：bundle 重打必然让 macOS 撤权限，install 流程应在最后给出用户引导（"请去系统设置确认 KeyPulse 在辅助功能 + 输入监控里仍勾选"）
+
+### 9.6 新增 memory
+
+记到 `feedback_app_repack_voids_permissions`（待写入）—— .app 重打包必然让 macOS 撤销 Accessibility / Input Monitoring / Screen Recording 权限，install 流程后必须提示用户重新授权。
