@@ -63,7 +63,6 @@ _SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{2,40}$")
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
-_H3_HEADING_RE = re.compile(r"^###\s+", re.MULTILINE)
 _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 # === OCR watcher 已下线 2026-05-14 ===
 # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
@@ -1014,10 +1013,6 @@ def _extract_narrative_one_line(markdown: str, display_name: str) -> str:
     return " ".join(collected)[:120]
 
 
-def _count_h3_headings(markdown: str) -> int:
-    return len(_H3_HEADING_RE.findall(str(markdown or "")))
-
-
 def _build_flagship_repair_hint(*, before_things: int, component_count: int, minimum_things: int = 3) -> str:
     lines = [
         f"上一次输出仅有 {before_things} 个 `###` 主题段，低于最低要求 {minimum_things}。",
@@ -1468,7 +1463,17 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
             recorder.set_degraded("flagship_failed", kind=classify_llm_error(llm_exc).value)
             raise DailyOrchestratorError(str(exc)) from exc
 
-        before_things = _count_h3_headings(result.markdown)
+        summary_clusters = _ensure_summary_clusters(date_str, result.markdown, events)
+        today_clusters = _summary_clusters_to_anchor_clusters(summary_clusters)
+        topics, summary_events, unanchored_events = _run_anchor_for_clusters(
+            date_str=date_str,
+            today_clusters=today_clusters,
+            gateway=gateway,
+            recorder=recorder,
+        )
+        topic_snapshot = build_topic_status_snapshot_from_narrative(date_str, result.markdown)
+
+        before_things = len(topics)
         repair_triggered = before_things < 3
         repair_things: int | None = None
         repair_failure_reason = ""
@@ -1498,8 +1503,17 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
                 )
                 repair_failure_reason = f"{type(llm_exc).__name__}:{llm_exc}"
             else:
-                repair_things = _count_h3_headings(repaired_result.markdown)
                 result = repaired_result
+                summary_clusters = _ensure_summary_clusters(date_str, result.markdown, events)
+                today_clusters = _summary_clusters_to_anchor_clusters(summary_clusters)
+                topics, summary_events, unanchored_events = _run_anchor_for_clusters(
+                    date_str=date_str,
+                    today_clusters=today_clusters,
+                    gateway=gateway,
+                    recorder=recorder,
+                )
+                topic_snapshot = build_topic_status_snapshot_from_narrative(date_str, result.markdown)
+                repair_things = len(topics)
                 if repair_things < 3:
                     recorder.set_output_quality("degraded", degraded_reason="flagship_repair_things_lt_3")
                     recorder.mark_stage(
@@ -1509,7 +1523,7 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
                     )
                     repair_failure_reason = f"repair_things_lt_3:{repair_things}"
 
-        final_things = _count_h3_headings(result.markdown)
+        final_things = len(topics)
         if repair_triggered:
             _append_log(
                 {
@@ -1526,16 +1540,6 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
                     "status": "degraded" if repair_failure_reason else "ok",
                 }
             )
-
-        summary_clusters = _ensure_summary_clusters(date_str, result.markdown, events)
-        today_clusters = _summary_clusters_to_anchor_clusters(summary_clusters)
-        topics, summary_events, unanchored_events = _run_anchor_for_clusters(
-            date_str=date_str,
-            today_clusters=today_clusters,
-            gateway=gateway,
-            recorder=recorder,
-        )
-        topic_snapshot = build_topic_status_snapshot_from_narrative(date_str, result.markdown)
         with recorder.stage("render"):
             daily_markdown = render_daily_markdown(
                 date=date_str,

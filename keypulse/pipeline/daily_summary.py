@@ -255,13 +255,6 @@ def _trace_local_time_label(value: str | None) -> str:
     return parsed.astimezone(local_timezone()).strftime("%H:%M")
 
 
-def _trace_local_date_label(value: str | None) -> str:
-    parsed = _trace_parse_datetime(value)
-    if parsed is None:
-        return ""
-    return parsed.astimezone(local_timezone()).date().isoformat()
-
-
 def _trace_read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -293,13 +286,28 @@ def _trace_orchestrator_rows(date_text: str) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: _trace_parse_datetime(str(row.get("ts") or "")) or datetime.min.replace(tzinfo=timezone.utc))
 
 
-def _trace_cost_rows(date_text: str, *, start_after: datetime | None = None) -> list[dict[str, Any]]:
+def _trace_orchestrator_window(rows: list[dict[str, Any]]) -> tuple[datetime | None, datetime | None]:
+    ts_values = [
+        parsed
+        for parsed in (_trace_parse_datetime(str(row.get("ts") or "")) for row in rows)
+        if parsed is not None
+    ]
+    if not ts_values:
+        return None, None
+    window_start = min(ts_values)
+    window_end = max(ts_values) + timedelta(seconds=60)
+    return window_start, window_end
+
+
+def _trace_cost_rows(*, window_start: datetime | None, window_end: datetime | None) -> list[dict[str, Any]]:
+    if window_start is None or window_end is None:
+        return []
     rows = []
     for row in _trace_read_jsonl(get_data_dir() / "cost.jsonl"):
-        if _trace_local_date_label(str(row.get("ts") or "")) != date_text:
-            continue
         parsed = _trace_parse_datetime(str(row.get("ts") or ""))
-        if start_after is not None and parsed is not None and parsed < start_after:
+        if parsed is None:
+            continue
+        if parsed < window_start or parsed > window_end:
             continue
         rows.append(row)
     return sorted(rows, key=lambda row: _trace_parse_datetime(str(row.get("ts") or "")) or datetime.min.replace(tzinfo=timezone.utc))
@@ -348,6 +356,72 @@ def _trace_sample_events(raw_rows: list[dict[str, Any]], *, capped_limit: int | 
     return list(raw_rows)
 
 
+def _trace_source_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    aggregates: dict[str, dict[str, Any]] = {}
+    for row in raw_rows:
+        source = str(row.get("source") or "").strip() or "unknown"
+        parsed = _trace_parse_datetime(str(row.get("ts_start") or row.get("created_at") or ""))
+        bucket = aggregates.setdefault(
+            source,
+            {
+                "source": source,
+                "events": 0,
+                "earliest": None,
+                "latest": None,
+            },
+        )
+        bucket["events"] = int(bucket.get("events") or 0) + 1
+        if parsed is None:
+            continue
+        earliest = bucket.get("earliest")
+        latest = bucket.get("latest")
+        if earliest is None or parsed < earliest:
+            bucket["earliest"] = parsed
+        if latest is None or parsed > latest:
+            bucket["latest"] = parsed
+
+    def _has_matching_source(expected: str, present_sources: set[str]) -> bool:
+        return any(
+            source == expected
+            or source.startswith(f"{expected}_")
+            or expected.startswith(f"{source}_")
+            for source in present_sources
+        )
+
+    try:
+        from keypulse.config import Config
+
+        cfg = Config.load()
+        enabled_watchers = {
+            str(name)
+            for name, enabled in (cfg.watchers.model_dump() if hasattr(cfg.watchers, "model_dump") else {}).items()
+            if bool(enabled)
+        }
+        if bool(getattr(getattr(cfg, "sources", None), "scheduler", None) and getattr(cfg.sources.scheduler, "enabled", False)):
+            enabled_watchers.add("markdown_vault")
+        if bool(getattr(cfg, "browser_history", None) and getattr(cfg.browser_history, "enabled", False)):
+            enabled_watchers.add("browser_history")
+    except Exception:
+        enabled_watchers = set()
+
+    present_sources = set(aggregates.keys())
+    for source in sorted(enabled_watchers):
+        if _has_matching_source(source, present_sources):
+            continue
+        aggregates[source] = {
+            "source": source,
+            "events": 0,
+            "earliest": None,
+            "latest": None,
+        }
+
+    rows = sorted(
+        aggregates.values(),
+        key=lambda item: (-int(item.get("events") or 0), str(item.get("source") or "")),
+    )
+    return rows
+
+
 def _trace_path_label(
     *,
     orchestrator_rows: list[dict[str, Any]],
@@ -372,11 +446,12 @@ def _render_algorithm_trace_section(
     clusters_hint: int = 0,
 ) -> list[str]:
     orchestrator_rows = _trace_orchestrator_rows(date_text)
-    cost_rows = _trace_cost_rows(date_text)
+    if not orchestrator_rows:
+        return []
+    window_start, window_end = _trace_orchestrator_window(orchestrator_rows)
+    cost_rows = _trace_cost_rows(window_start=window_start, window_end=window_end)
     capped_row = _trace_select_row(orchestrator_rows, decision="events_capped")
     repair_row = _trace_select_row(orchestrator_rows, decision="flagship_repair")
-    if not orchestrator_rows and not cost_rows and capped_row is None:
-        return []
 
     try:
         raw_rows = query_raw_events(since=local_day_bounds(date_text)[0], until=local_day_bounds(date_text)[1], limit=50000)
@@ -411,6 +486,7 @@ def _render_algorithm_trace_section(
             int(row.get("id") or 0) if str(row.get("id") or "").isdigit() else 0,
         ),
     )
+    source_rows = _trace_source_rows(raw_rows)
 
     path_label, inferred_clusters = _trace_path_label(
         orchestrator_rows=orchestrator_rows,
@@ -448,6 +524,24 @@ def _render_algorithm_trace_section(
         f"| 走的 path | {path_label} |",
         "",
     ]
+
+    if source_rows:
+        lines.extend(
+            [
+                "**数据采集源**（当日 raw events 按 source 聚合）",
+                "| source | events | 最早 | 最晚 | 状态 |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        for item in source_rows:
+            events_count = int(item.get("events") or 0)
+            earliest = item.get("earliest")
+            latest = item.get("latest")
+            earliest_label = earliest.astimezone(local_timezone()).strftime("%H:%M") if isinstance(earliest, datetime) else "—"
+            latest_label = latest.astimezone(local_timezone()).strftime("%H:%M") if isinstance(latest, datetime) else "—"
+            status = "ok" if events_count >= 1 else "⚠ silent"
+            lines.append(f"| {item.get('source')} | {events_count} | {earliest_label} | {latest_label} | {status} |")
+        lines.append("")
 
     if repair_row is not None:
         before_things = int(repair_row.get("before_things") or 0)

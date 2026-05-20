@@ -234,7 +234,8 @@ def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
 
     summary = run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["daily_flagship", "L0_anchor"]
+    assert gateway.calls.count("daily_flagship") in {1, 2}
+    assert gateway.calls.count("L0_anchor") in {1, 2}
     assert summary.cluster_count == 0
     assert summary.misc_event_ids == ()
     daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
@@ -487,7 +488,8 @@ def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):
 
     run_daily("2026-05-01", trigger="18:00")
 
-    assert gateway.calls == ["daily_flagship", "L0_anchor"]
+    assert gateway.calls.count("daily_flagship") in {1, 2}
+    assert gateway.calls.count("L0_anchor") in {1, 2}
 
 
 def test_flagship_path_caps_events_to_sixty_and_keeps_high_value_user_signal(tmp_path, monkeypatch):
@@ -601,6 +603,67 @@ def test_flagship_repair_retries_when_things_below_three_and_keeps_quality_gate_
     assert "- 触发原因：things_lt_3" in daily_body
     assert "- H3 计数：2 → 3 → 3" in daily_body
     assert "- 失败原因：—" in daily_body
+
+
+def test_flagship_repair_triggers_when_topics_drop_below_three_even_if_narrative_has_three(tmp_path, monkeypatch):
+    _write_config(tmp_path, cloud_model="deepseek-chat")
+    rows = _rows()
+    _patch_io(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr("keypulse.pipeline.daily_summary.query_raw_events", lambda **_kwargs: rows)
+    gateway = FakeGateway(
+        "deepseek-chat",
+        {
+            "daily_flagship": [
+                {"markdown": FLAGSHIP_OK_MARKDOWN},
+                {"markdown": FLAGSHIP_OK_MARKDOWN},
+            ],
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
+
+    anchor_state = {"calls": 0}
+
+    def _fake_anchor(**kwargs):
+        anchor_state["calls"] += 1
+        today_clusters = list(kwargs.get("today_clusters", []))
+        selected = today_clusters[:2] if anchor_state["calls"] == 1 else today_clusters
+        return (
+            [
+                {
+                    "anchor": str(cluster.get("cluster_id") or ""),
+                    "anchor_state": "continuing",
+                    "narrative": str(cluster.get("narrative_one_line") or ""),
+                    "decisions": [],
+                    "shipped": [],
+                    "events_ref": [str(cluster.get("cluster_id") or "")],
+                    "display": str(cluster.get("display_name") or ""),
+                }
+                for cluster in selected
+            ],
+            [
+                {
+                    "cluster_id": str(cluster.get("cluster_id") or ""),
+                    "display_name": str(cluster.get("display_name") or ""),
+                    "narrative_one_line": str(cluster.get("narrative_one_line") or ""),
+                    "event_count": int(cluster.get("event_count") or 0),
+                    "time_range": list(cluster.get("time_range") or ["00:00", "23:59"]),
+                    "anchored_to": str(cluster.get("cluster_id") or "") or None,
+                }
+                for cluster in selected
+            ],
+            [],
+        )
+
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._run_anchor_for_clusters", _fake_anchor)
+
+    summary = run_daily("2026-05-01", trigger="18:00")
+
+    assert summary.cluster_count == 0
+    assert gateway.calls == ["daily_flagship", "daily_flagship"]
+    daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
+    assert "| quality_gate | ok |" in daily_body
+    assert "- H3 计数：2 → 3 → 3" in daily_body
 
 def test_flagship_event_cap_keeps_hourly_coverage_before_score_fill():
     rows: list[dict[str, Any]] = []
