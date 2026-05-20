@@ -366,7 +366,7 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
             [
                 json.dumps(
                     {
-                        "ts": "2026-05-19T09:10:00Z",
+                        "ts": "2026-05-20T09:10:00Z",
                         "capability": "daily_orchestrator",
                         "date": "2026-05-19",
                         "trigger": "18:00",
@@ -381,7 +381,7 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
                 ),
                 json.dumps(
                     {
-                        "ts": "2026-05-19T09:16:00Z",
+                        "ts": "2026-05-20T09:16:00Z",
                         "capability": "daily_orchestrator",
                         "date": "2026-05-19",
                         "trigger": "18:00",
@@ -397,7 +397,7 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
                 ),
                 json.dumps(
                     {
-                        "ts": "2026-05-19T09:17:00Z",
+                        "ts": "2026-05-20T09:17:00Z",
                         "capability": "daily_orchestrator",
                         "date": "2026-05-19",
                         "trigger": "18:00",
@@ -416,7 +416,7 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
             [
                 json.dumps(
                     {
-                        "ts": "2026-05-19T09:11:00Z",
+                        "ts": "2026-05-20T09:11:00Z",
                         "capability": "daily_flagship",
                         "model": "cloud/doubao-seed-1-6",
                         "tier": "premium",
@@ -430,7 +430,7 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
                 ),
                 json.dumps(
                     {
-                        "ts": "2026-05-19T09:12:00Z",
+                        "ts": "2026-05-20T09:12:00Z",
                         "capability": "L0_anchor",
                         "model": "cloud/doubao-seed-1-6",
                         "tier": "premium",
@@ -537,6 +537,9 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
     assert "| events 卡片 | 6 |" in body
     assert "| quality_gate | warn |" in body
     assert "| 走的 path | flagship 全量（绕过 cluster） |" in body
+    assert "**数据采集源**（当日 raw events 按 source 聚合）" in body
+    assert "| keyboard_chunk | 7 | 09:55 | 10:13 | ok |" in body
+    assert "| window | 0 | — | — | ⚠ silent |" in body
     assert "**repair 自检**" in body
     assert "- 触发原因：things_lt_3" in body
     assert "- H3 计数：2 → 2 → 2" in body
