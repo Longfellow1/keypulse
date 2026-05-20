@@ -5,6 +5,7 @@ import os
 import re
 
 from keypulse.pipeline.daily_summary import (
+    _render_text_table_block,
     build_cluster_stubs_from_narrative,
     build_topic_status_snapshot_from_narrative,
     filter_daily_event_cards,
@@ -567,6 +568,22 @@ def test_render_daily_markdown_includes_cross_day_section_from_narrative(tmp_pat
     )
 
     assert "## 跨日延续\n\n昨天的主线今天继续推进。" in body
+
+
+def test_trace_text_table_pads_silent_dash_cells_to_column_max_width():
+    block = _render_text_table_block(
+        headers=["source", "events", "最早", "最晚", "状态"],
+        rows=[
+            ["spotlight", "4", "11:35", "20:38", "ok"],
+            ["ax_text", "2", "17:59", "19:21", "ok"],
+            ["manual", "0", "—", "—", "⚠ silent"],
+            ["ocr", "0", "—", "—", "⚠ silent"],
+        ],
+        align_right_cols={1},
+    )
+
+    assert "manual          0  —      —      ⚠ silent" in block
+    assert "ocr             0  —      —      ⚠ silent" in block
 
 
 def test_render_daily_markdown_omits_event_cards_when_no_files(tmp_path, monkeypatch):
