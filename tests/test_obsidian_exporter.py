@@ -392,15 +392,15 @@ def test_build_obsidian_bundle_creates_daily_and_event_cards_for_single_item():
     assert bundle["daily"][0]["properties"]["type"] == "daily"
     assert bundle["events"][0]["properties"]["type"] == "event"
     assert "修复 keypulse 安装问题" in bundle["events"][0]["body"]
-    assert "## 今天的事件卡" in bundle["daily"][0]["body"]
-    assert "[[../.keypulse/events/" in bundle["daily"][0]["body"]
+    assert "## 今天的事件卡" not in bundle["daily"][0]["body"]
+    assert "[[../.keypulse/events/" not in bundle["daily"][0]["body"]
     assert bundle["topics"] == []
 
 
 def test_build_obsidian_bundle_renders_relative_keypulse_links_by_default():
     bundle = build_obsidian_bundle([_sample_item()], vault_name="Harland Knowledge", date_str="2026-04-18")
     daily_body = bundle["daily"][0]["body"]
-    assert "[[../.keypulse/events/" in daily_body
+    assert "[[../.keypulse/events/" not in daily_body
     assert "file:///" not in daily_body
 
 
@@ -416,7 +416,7 @@ def test_build_obsidian_bundle_daily_contract_keeps_relative_event_links(monkeyp
         wiki_link_mode="absolute_md",
     )
     daily_body = bundle["daily"][0]["body"]
-    assert "[[../.keypulse/events/" in daily_body
+    assert "[[../.keypulse/events/" not in daily_body
     assert "(file://" not in daily_body
 
 
@@ -456,7 +456,7 @@ def test_write_obsidian_bundle_writes_markdown_notes(tmp_path: Path, monkeypatch
     assert "source: keypulse" in content
 
 
-def test_write_obsidian_bundle_replaces_stale_event_files_for_same_day(tmp_path: Path, monkeypatch):
+def test_write_obsidian_bundle_keeps_stale_event_files_for_same_day(tmp_path: Path, monkeypatch):
     keypulse_home = tmp_path / ".keypulse"
     monkeypatch.setenv("KEYPULSE_HOME", str(keypulse_home))
     stale_dir = keypulse_home / "events" / "2026-04-18"
@@ -469,8 +469,8 @@ def test_write_obsidian_bundle_replaces_stale_event_files_for_same_day(tmp_path:
     written = write_obsidian_bundle(bundle, tmp_path)
 
     assert written
-    assert not stale_file.exists()
-    assert any(path.parent == stale_dir for path in written)
+    assert stale_file.exists()
+    assert all(path.parent != stale_dir for path in written)
 
 
 def test_write_obsidian_bundle_keeps_historical_event_files_untouched(tmp_path: Path, monkeypatch):

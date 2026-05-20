@@ -1239,12 +1239,9 @@ def render_daily_markdown(
     if not topic_list:
         lines.extend(["—", ""])
 
-    raw_event_cards = event_cards if event_cards is not None else _daily_event_cards(date_text)
-    selected_event_cards = filter_daily_event_cards(raw_event_cards, model_gateway=model_gateway)
-    if selected_event_cards:
-        lines.extend(["## 今天的事件卡", ""])
-        for slug, title in selected_event_cards:
-            lines.append(f"- [[../.keypulse/events/{date_text}/{slug}|{title}]]")
+    # TODO(M4): 整段删除（legacy events/ 事件卡区块下线）
+    # NOTE: 这里不再渲染“今天的事件卡”，避免继续依赖 ~/.keypulse/events 目录。
+    selected_event_cards: list[tuple[str, str]] = []
 
     cross_day_section = _extract_section(source_markdown, "跨日延续").strip()
     if cross_day_section:

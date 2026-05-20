@@ -347,13 +347,10 @@ def test_render_daily_markdown_phase_a_section_contract_and_event_cards(tmp_path
     assert headings == [
         "## 今日要点",
         "## 今天做的事",
-        "## 今天的事件卡",
         "## 今天的卡点",
         "## 明日的锚点",
     ]
-    assert body.index("[[../.keypulse/events/2026-05-09/1000-without-title|1000-without-title]]") < body.index(
-        "[[../.keypulse/events/2026-05-09/0900-with-title|有标题事件]]"
-    )
+    assert "## 今天的事件卡" not in body
     assert "## 跨日延续" not in body
     assert "- [[blocked-topic|被阻塞主题]]" in body
 
@@ -537,7 +534,7 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
     assert re.search(r"capped\s+:\s+6 \(token_guard\)", body)
     assert re.search(r"聚类策略\s+:\s+flagship 一步法（LLM 直接产 things）", body)
     assert re.search(r"things\s+:\s+2", body)
-    assert re.search(r"events 卡片\s+:\s+6", body)
+    assert re.search(r"events 卡片\s+:\s+0", body)
     assert re.search(r"quality_gate\s+:\s+warn", body)
     assert "clusters |" not in body
     assert "走的 path" not in body

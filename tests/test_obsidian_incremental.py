@@ -53,7 +53,7 @@ def _replace_section_body(text: str, heading: str, body_lines: list[str]) -> str
     return re.sub(rf"(?ms)^{re.escape(heading)}\n.*?(?=^## |\Z)", replacement, text)
 
 
-def test_incremental_writes_event_cards_without_touching_daily(tmp_path: Path, monkeypatch):
+def test_incremental_keeps_daily_stable_and_does_not_write_legacy_event_cards(tmp_path: Path, monkeypatch):
     keypulse_home = tmp_path / "kp-home"
     monkeypatch.setenv("KEYPULSE_HOME", str(keypulse_home))
     db_path = tmp_path / "keypulse.db"
@@ -74,7 +74,7 @@ def test_incremental_writes_event_cards_without_touching_daily(tmp_path: Path, m
     after_daily = _read(_daily_path(vault_path))
     after_event_files = set(event_dir.glob("*.md"))
     assert after_daily == before_daily
-    assert len(after_event_files - before_event_files) == 2
+    assert len(after_event_files - before_event_files) == 0
 
 
 def test_incremental_dedupes(tmp_path: Path, monkeypatch):
@@ -180,7 +180,7 @@ def test_cursor_first_run(tmp_path: Path, monkeypatch):
     export_obsidian_incremental(db_path, vault_path, cursor_path, DATE)
 
     assert not _daily_path(vault_path).exists()
-    assert any((keypulse_home / "events" / DATE).glob("*.md"))
+    assert not any((keypulse_home / "events" / DATE).glob("*.md"))
     assert cursor_path.exists()
     cursor_payload = json.loads(cursor_path.read_text(encoding="utf-8"))
     assert cursor_payload["last_event_id"] == newest_id
