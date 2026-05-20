@@ -360,7 +360,9 @@ def _trace_sample_events(raw_rows: list[dict[str, Any]], *, capped_limit: int | 
 def _display_width(text: str) -> int:
     width = 0
     for char in str(text or ""):
-        width += 2 if unicodedata.east_asian_width(char) in {"F", "W", "A"} else 1
+        # Obsidian/source-mode monospace rendering treats Ambiguous(A) glyphs
+        # like EM DASH as single-column in this environment.
+        width += 2 if unicodedata.east_asian_width(char) in {"F", "W"} else 1
     return width
 
 
