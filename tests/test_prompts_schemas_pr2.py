@@ -8,6 +8,7 @@ from jsonschema import ValidationError, validate
 
 
 _SCHEMA_DIR = Path(__file__).resolve().parents[1] / "keypulse" / "prompts" / "schemas"
+_PROMPTS_DIR = Path(__file__).resolve().parents[1] / "keypulse" / "prompts"
 
 
 def _schema(name: str) -> dict:
@@ -135,3 +136,11 @@ def test_l3_output_schema_valid_and_invalid_keywords_count():
     }
     with pytest.raises(ValidationError):
         validate(invalid, _schema("L3_output.json"))
+
+
+def test_daily_flagship_v2_prompt_has_repair_hard_constraints():
+    prompt_body = (_PROMPTS_DIR / "daily_flagship.v2.md").read_text(encoding="utf-8")
+
+    assert "components_count >= 3" in prompt_body
+    assert "必须输出 **至少 3 个 `###` 主题段**" in prompt_body
+    assert "REPAIR MODE 必重写" in prompt_body

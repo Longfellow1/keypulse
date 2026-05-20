@@ -399,6 +399,7 @@ class DailyStrategy(abc.ABC):
         date_str: str,
         events: list[dict[str, Any]],
         gateway: ModelGateway,
+        repair_hint: str = "",
     ) -> DailyGenerationResult:
         """Turn full-day events into a daily.md markdown + structural metadata.
 
@@ -422,6 +423,7 @@ class FlagshipSingleStepStrategy(DailyStrategy):
         date_str: str,
         events: list[dict[str, Any]],
         gateway: ModelGateway,
+        repair_hint: str = "",
     ) -> DailyGenerationResult:
         from keypulse.prompts.loader import load_prompt
 
@@ -438,7 +440,11 @@ class FlagshipSingleStepStrategy(DailyStrategy):
 
         try:
             spec = load_prompt(self.capability)
-            prompt = build_prompt(spec.body, self.capability, payload)
+            prompt_body = spec.body
+            hint = str(repair_hint or "").strip()
+            if hint:
+                prompt_body = "\n".join(["REPAIR MODE", hint, "", prompt_body])
+            prompt = build_prompt(prompt_body, self.capability, payload)
             output = gateway.call(self.capability, prompt, input_data=payload)
         except (LLMCallError, ValueError, KeyError, OSError) as exc:
             raise DailyStrategyError(f"flagship LLM call failed: {exc}") from exc
@@ -487,8 +493,10 @@ class BudgetTwoStepStrategy(DailyStrategy):
         date_str: str,
         events: list[dict[str, Any]],
         gateway: ModelGateway,
+        repair_hint: str = "",
     ) -> DailyGenerationResult:
         from keypulse.prompts.loader import load_prompt
+        del repair_hint
 
         component_payloads = self._deps.cluster_components(events)
         merge_candidates = self._deps.detect_merges(component_payloads)
