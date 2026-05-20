@@ -5,6 +5,7 @@ import os
 import re
 import hashlib
 import time
+import tomllib
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
@@ -31,6 +32,11 @@ from keypulse.pipeline.run_record import RunRecorder
 from keypulse.pipeline.topic_status import TopicStatusSnapshot, compute_topic_status
 from keypulse.pipeline.degraded_content import generate_degraded_topic
 from keypulse.pipeline.quality_score import QualityBreakdown, append_quality_log, compute_quality_score
+from keypulse.pipeline.weekly_topic_anchor import (
+    load_weekly_anchors,
+    save_weekly_anchors,
+    write_anchor_note,
+)
 from keypulse.pipeline.weekly_validator import ValidationFailure, validate_weekly_output
 from keypulse.prompts.loader import load_prompt
 from keypulse.store.repository import set_state
@@ -54,6 +60,7 @@ _BRACKET_TAG_RE = re.compile(r"\[(DECISION|SHIPPED|BLOCKED|KEY)\s*:\s*(.+?)\]", 
 _STRONG_DECISION_MARKERS = ("决定", "拍板", "敲定", "确定", "定了")
 _STRONG_OUTPUT_MARKERS = ("落地", "上线", "发布", "提交", "合并", "完成", "跑通", "修复")
 _STRONG_BLOCKED_MARKERS = ("卡点", "阻塞", "失败", "报错", "无法", "问题")
+_WIKILINK_RE = re.compile(r"\[\[[^\]]+\]\]")
 
 _STATUS_PRIORITY = {
     "new": 0,
@@ -361,7 +368,7 @@ def _call_weekly_llm(
             output = gateway.call(capability, prompt, input_data=input_data)
             if output in (None, "", [], {}):
                 raise ValueError("empty JSON output")
-            if isinstance(output, str) and capability in {"L4_weekly_reconcile", "L5_weekly_main_narrative", "L6_explorer"}:
+            if isinstance(output, str) and capability in {"L4_weekly_reconcile", "L5_weekly_main_narrative", "L6_explorer", "L7_anchor_derivation"}:
                 repaired = _parse_llm_json_robust(output)
                 output = repaired if repaired is not None else output
             if capability == "L6_explorer":
@@ -1803,6 +1810,18 @@ def _mock_l6_output(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _mock_l7_output(payload: dict[str, Any]) -> dict[str, Any]:
+    candidates = [item for item in (payload.get("candidates") or []) if isinstance(item, dict)]
+    if not candidates:
+        return {"derived_from": None, "confidence": 0.0, "reason": "no_candidates"}
+    target = candidates[0]
+    return {
+        "derived_from": str(target.get("slug") or ""),
+        "confidence": 0.86,
+        "reason": "mock_high_confidence",
+    }
+
+
 def _legacy_template_fallback(topic: dict[str, Any], reason: str) -> dict[str, Any]:
     slug = str(topic.get("slug") or "").strip()
     name = str(topic.get("name") or slug).strip()
@@ -2027,6 +2046,8 @@ def _install_mock_backend(gateway: ModelGateway) -> None:
                 body = json.dumps(mocked, ensure_ascii=False)
             else:
                 body = json.dumps(_mock_l6_output(payload), ensure_ascii=False)
+        elif capability == "L7_anchor_derivation":
+            body = json.dumps(_mock_l7_output(payload), ensure_ascii=False)
         else:
             body = json.dumps({"ok": True}, ensure_ascii=False)
         return {"text": body, "in_tokens": 120, "out_tokens": 40, "cost_usd": 0.0}
@@ -2057,6 +2078,182 @@ def _set_weekly_notice(week_str: str, message: str) -> None:
 
 def _clear_weekly_notice() -> None:
     set_state("weekly_notice", "")
+
+
+def _parse_iso_date(value: str) -> date_cls | None:
+    try:
+        return date_cls.fromisoformat(str(value or "").strip())
+    except ValueError:
+        return None
+
+
+def _is_valid_l7_output(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    derived = value.get("derived_from")
+    confidence = value.get("confidence")
+    if derived is not None and not isinstance(derived, str):
+        return False
+    if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+        return False
+    return True
+
+
+def _home_obsidian_vault_path() -> Path:
+    home_cfg = Path.home() / ".keypulse" / "config.toml"
+    if home_cfg.exists():
+        try:
+            with home_cfg.open("rb") as handle:
+                payload = tomllib.load(handle)
+            obsidian_cfg = payload.get("obsidian") if isinstance(payload, dict) else {}
+            if isinstance(obsidian_cfg, dict):
+                configured = str(obsidian_cfg.get("vault_path") or "").strip()
+                if configured:
+                    return Path(configured).expanduser()
+        except (OSError, tomllib.TOMLDecodeError):
+            pass
+    return Path.home() / "Go" / "Knowledge"
+
+
+def _replace_anchor_display_mentions(summary: str, *, self_slug: str, candidates: list[tuple[str, str]]) -> str:
+    ranked = sorted(
+        [(str(display), str(slug)) for display, slug in candidates if str(display).strip() and str(slug).strip()],
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+
+    def _replace_plain(text: str) -> str:
+        replaced = text
+        for display, slug in ranked:
+            if slug == self_slug:
+                continue
+            if not display or display not in replaced:
+                continue
+            replaced = replaced.replace(display, f"[[{slug}]]")
+        return replaced
+
+    source = str(summary or "")
+    parts: list[str] = []
+    cursor = 0
+    for match in _WIKILINK_RE.finditer(source):
+        parts.append(_replace_plain(source[cursor : match.start()]))
+        parts.append(match.group(0))
+        cursor = match.end()
+    parts.append(_replace_plain(source[cursor:]))
+    return "".join(parts)
+
+
+def _postprocess_anchor_graph(week_str: str, *, gateway: ModelGateway, stats: WeeklyRunStats) -> dict[str, int]:
+    anchors = load_weekly_anchors(week_str)
+    if not anchors:
+        return {"derived_updates": 0, "wikilink_updates": 0}
+
+    week_start = _week_start(week_str)
+    week_end = week_start + timedelta(days=6)
+    known_slugs = {str(anchor.slug).strip() for anchor in anchors if str(anchor.slug).strip()}
+
+    new_anchors = []
+    old_anchors = []
+    for anchor in anchors:
+        started = _parse_iso_date(str(anchor.started))
+        if started is None:
+            continue
+        if week_start <= started <= week_end:
+            new_anchors.append(anchor)
+        elif started < week_start:
+            old_anchors.append(anchor)
+
+    derived_updates = 0
+    for child in new_anchors:
+        if str(child.derived_from or "").strip():
+            continue
+        if not old_anchors:
+            break
+        candidates = [
+            {
+                "slug": str(parent.slug),
+                "display": str(parent.display or parent.slug),
+                "started": str(parent.started or ""),
+                "latest_summary": str((parent.timeline_entries or [{}])[-1].get("summary") or ""),
+            }
+            for parent in old_anchors
+        ]
+        l7_input = {
+            "week": week_str,
+            "child": {
+                "slug": str(child.slug),
+                "display": str(child.display or child.slug),
+                "started": str(child.started or ""),
+                "timeline": [dict(item) for item in (child.timeline_entries or []) if isinstance(item, dict)][-5:],
+            },
+            "candidates": candidates,
+        }
+        l7_prompt = _build_prompt(
+            "你要判断新主题是否由某个旧主题派生。只输出 JSON："
+            '{"derived_from": "<slug 或 null>", "confidence": <0-1>, "reason": "<一句话>"}。'
+            "如果不确定，derived_from=null 且 confidence<0.8。",
+            "L7_anchor_derivation",
+            l7_input,
+        )
+        l7_result = _call_weekly_llm(
+            gateway=gateway,
+            week_str=week_str,
+            level="L7",
+            capability="L7_anchor_derivation",
+            prompt=l7_prompt,
+            input_data=l7_input,
+            cache_key=_sha1_json(l7_input),
+            attempts=2,
+            stats=stats,
+            validator=_is_valid_l7_output,
+        )
+        if not isinstance(l7_result.content, dict):
+            continue
+        derived_slug = str(l7_result.content.get("derived_from") or "").strip()
+        confidence = float(l7_result.content.get("confidence") or 0.0)
+        if confidence < 0.8:
+            continue
+        if not derived_slug or derived_slug not in known_slugs or derived_slug == str(child.slug):
+            continue
+        child.derived_from = derived_slug
+        derived_updates += 1
+
+    display_candidates: list[tuple[str, str]] = []
+    for anchor in anchors:
+        display = str(anchor.display or "").strip()
+        slug = str(anchor.slug or "").strip()
+        if not display or not slug:
+            continue
+        display_candidates.append((display, slug))
+    display_candidates.sort(key=lambda item: len(item[0]), reverse=True)
+
+    wikilink_updates = 0
+    for anchor in anchors:
+        timeline_entries = [dict(item) for item in (anchor.timeline_entries or []) if isinstance(item, dict)]
+        next_rows: list[dict[str, Any]] = []
+        for row in timeline_entries:
+            before = str(row.get("summary") or "")
+            after = _replace_anchor_display_mentions(before, self_slug=str(anchor.slug), candidates=display_candidates)
+            if after != before:
+                wikilink_updates += 1
+            row["summary"] = after
+            next_rows.append(row)
+        anchor.timeline_entries = next_rows
+
+    if derived_updates > 0 or wikilink_updates > 0:
+        save_weekly_anchors(week_str, anchors)
+
+    vault_path = _home_obsidian_vault_path()
+    for anchor in anchors:
+        try:
+            write_anchor_note(anchor, vault_path=vault_path)
+        except OSError:
+            continue
+
+    return {
+        "derived_updates": derived_updates,
+        "wikilink_updates": wikilink_updates,
+    }
 
 
 def run_weekly(week_str: str, *, style: str = "exec") -> str:
@@ -2457,5 +2654,17 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
             "weekly_path": str(weekly_path),
         }
     )
+    anchor_graph_updates = _postprocess_anchor_graph(week_str, gateway=gateway, stats=stats)
+    if anchor_graph_updates["derived_updates"] or anchor_graph_updates["wikilink_updates"]:
+        _append_log(
+            {
+                "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                "capability": "weekly_orchestrator",
+                "week": week_str,
+                "decision": "anchor_graph_updated",
+                "derived_updates": int(anchor_graph_updates["derived_updates"]),
+                "wikilink_updates": int(anchor_graph_updates["wikilink_updates"]),
+            }
+        )
 
     return str(weekly_path)
