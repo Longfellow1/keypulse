@@ -1,12 +1,37 @@
-# KeyPulse·笔友
+# KeyPulse
 
-> **一个陪你日常输入的笔友 —— 关注你敲下的每一个碎片，但从不记住任何秘密，每天晚上在 Obsidian 给你留一张小纸条。**
+> **A local-first Mac companion that turns your daily work traces into private reflective notes.**
+
+KeyPulse quietly observes your work surface — apps, windows, clipboard boundaries, manual notes — forgets sensitive content before it is stored, and writes daily reflection notes into your own Obsidian vault.
+
+Not a productivity dashboard.
+Not a screen-time tracker.
+Not a cloud surveillance assistant.
+
+A private thinking mirror for knowledge workers.
+
+[English](README.en.md) · [Quick start](#快速开始) · [Obsidian workflow](docs/obsidian-workflow.md) · [Privacy](#隐私一览) · [Roadmap](#当前状态)
+
+---
+
+## Why star this repo?
+
+Star KeyPulse if you care about:
+
+- local-first personal AI
+- privacy-preserving activity intelligence
+- Obsidian-native daily reflection
+- AI tools that help you think instead of replacing thought
+
+---
+
+## 中文介绍
+
+> **KeyPulse·笔友：一个陪你日常输入的笔友 —— 关注你敲下的每一个碎片，但从不记住任何秘密，每天晚上在 Obsidian 给你留一张小纸条。**
 
 KeyPulse 是一个本地优先的 macOS 同行者。它静静地看着你工作的那层表面 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉，然后每天在你自己的 Obsidian 库里，给你写一页今天的小结。不给你打分，也不替你做事。它陪你做的只有三件：**记录、整理、进步** —— 让日子不至于流过去就不见了，让底下那些模式，慢慢浮上来。
 
 一句话愿景：*一个安静的伙伴，看见细节，不留秘密，帮你每天更清楚一点。*
-
-*[English → README.en.md](README.en.md)*
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
@@ -95,6 +120,15 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 
 ### 📝 Obsidian 作为阅读面
 日报、事件卡、主题卡。反馈以 checkbox 内嵌（`- [ ] 确认 [ ] 否掉 [ ] 拆分`），watcher 同步回反馈库 —— 零切换，**报告本身就是反馈表**。
+
+KeyPulse 不想替代你的 PKM 系统。它只把每天的工作痕迹写回你已经在用的知识系统：
+
+- 生成纯 Markdown，写入 `Daily/`、`Events/`、`Topics/`、`Anchors/`
+- 使用 YAML frontmatter，方便 Obsidian Properties / Bases / Dataview 读取
+- 保留双链、标签和 checkbox 反馈，让日报继续长成图谱
+- 不需要云同步；如果你使用 Obsidian Sync / iCloud / Git，那是你自己的选择
+
+完整工作流见 [docs/obsidian-workflow.md](docs/obsidian-workflow.md)。
 
 ### 🧪 质量保障
 一套**黄金集**（Golden Set）标注日记录，作为叙事 pipeline 的回归基线，防止调阈值时静默退化。800+ 个测试全绿 —— 包括那次把 2341 条用户事件错标成系统事件的迁移事故的回归覆盖，以及 capability 框架的架构不变量测试。
