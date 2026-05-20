@@ -63,6 +63,7 @@ _SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{2,40}$")
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
+_H3_HEADING_RE = re.compile(r"^###\s+", re.MULTILINE)
 _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 # === OCR watcher 已下线 2026-05-14 ===
 # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
@@ -1013,6 +1014,21 @@ def _extract_narrative_one_line(markdown: str, display_name: str) -> str:
     return " ".join(collected)[:120]
 
 
+def _count_h3_headings(markdown: str) -> int:
+    return len(_H3_HEADING_RE.findall(str(markdown or "")))
+
+
+def _build_flagship_repair_hint(*, before_things: int, component_count: int, minimum_things: int = 3) -> str:
+    lines = [
+        f"上一次输出仅有 {before_things} 个 `###` 主题段，低于最低要求 {minimum_things}。",
+        f"本次输入 components_count={component_count}。",
+        "请重写整篇 `markdown`（不要局部补丁），保持事实准确且保留明日锚点占位符。",
+        "硬约束：若 components_count >= 3，必须输出至少 3 个 `###` 主题段。",
+        "若你收到 `REPAIR MODE`，必须把本次输出视为重写任务而不是增量修补。",
+    ]
+    return "\n".join(lines)
+
+
 def _cost_snapshot(run_started_at: datetime) -> dict[str, Any]:
     path = get_data_dir() / "cost.jsonl"
     if not path.exists():
@@ -1451,6 +1467,65 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
             llm_exc = exc.__cause__ if isinstance(exc.__cause__, BaseException) else exc
             recorder.set_degraded("flagship_failed", kind=classify_llm_error(llm_exc).value)
             raise DailyOrchestratorError(str(exc)) from exc
+
+        before_things = _count_h3_headings(result.markdown)
+        repair_triggered = before_things < 3
+        repair_things: int | None = None
+        repair_failure_reason = ""
+        if repair_triggered:
+            component_count = len(_cluster_component_payloads(flagship_events, density_settings)[0])
+            repair_hint = _build_flagship_repair_hint(
+                before_things=before_things,
+                component_count=component_count,
+                minimum_things=3,
+            )
+            try:
+                with recorder.stage("flagship_repair_call", failure_reason="flagship_repair_failed"):
+                    repaired_result = strategy.generate(
+                        date_str=date_str,
+                        events=flagship_events,
+                        gateway=gateway,
+                        repair_hint=repair_hint,
+                    )
+            except DailyStrategyError as exc:
+                llm_exc = exc.__cause__ if isinstance(exc.__cause__, BaseException) else exc
+                recorder.set_degraded("flagship_repair_failed", kind=classify_llm_error(llm_exc).value)
+                recorder.mark_stage(
+                    "flagship_repair_call",
+                    "degraded",
+                    reason="flagship_repair_failed",
+                    error_class=type(llm_exc).__name__,
+                )
+                repair_failure_reason = f"{type(llm_exc).__name__}:{llm_exc}"
+            else:
+                repair_things = _count_h3_headings(repaired_result.markdown)
+                result = repaired_result
+                if repair_things < 3:
+                    recorder.set_output_quality("degraded", degraded_reason="flagship_repair_things_lt_3")
+                    recorder.mark_stage(
+                        "flagship_repair_call",
+                        "degraded",
+                        reason="flagship_repair_things_lt_3",
+                    )
+                    repair_failure_reason = f"repair_things_lt_3:{repair_things}"
+
+        final_things = _count_h3_headings(result.markdown)
+        if repair_triggered:
+            _append_log(
+                {
+                    "ts": _now_iso(),
+                    "capability": "daily_orchestrator",
+                    "date": date_str,
+                    "trigger": trigger,
+                    "decision": "flagship_repair",
+                    "reason": "things_lt_3",
+                    "before_things": before_things,
+                    "repair_things": repair_things,
+                    "final_things": final_things,
+                    "failure_reason": repair_failure_reason,
+                    "status": "degraded" if repair_failure_reason else "ok",
+                }
+            )
 
         summary_clusters = _ensure_summary_clusters(date_str, result.markdown, events)
         today_clusters = _summary_clusters_to_anchor_clusters(summary_clusters)

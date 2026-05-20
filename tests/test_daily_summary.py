@@ -385,6 +385,22 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
                         "capability": "daily_orchestrator",
                         "date": "2026-05-19",
                         "trigger": "18:00",
+                        "decision": "flagship_repair",
+                        "reason": "things_lt_3",
+                        "before_things": 2,
+                        "repair_things": 2,
+                        "final_things": 2,
+                        "failure_reason": "repair_things_lt_3:2",
+                        "status": "degraded",
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-19T09:17:00Z",
+                        "capability": "daily_orchestrator",
+                        "date": "2026-05-19",
+                        "trigger": "18:00",
                         "tier": "flagship",
                         "strategy": "flagship",
                     },
@@ -521,6 +537,10 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
     assert "| events 卡片 | 6 |" in body
     assert "| quality_gate | warn |" in body
     assert "| 走的 path | flagship 全量（绕过 cluster） |" in body
+    assert "**repair 自检**" in body
+    assert "- 触发原因：things_lt_3" in body
+    assert "- H3 计数：2 → 2 → 2" in body
+    assert "- 失败原因：repair_things_lt_3:2" in body
     assert "| daily_flagship | doubao-seed-1-6 | 22041→2055 | ok |" in body
     assert "| L0_anchor | doubao-seed-1-6 | 14591→2306 | ok |" in body
     assert "09:55 keyboard_chunk ·" in body

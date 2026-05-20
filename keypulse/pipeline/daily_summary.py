@@ -374,6 +374,7 @@ def _render_algorithm_trace_section(
     orchestrator_rows = _trace_orchestrator_rows(date_text)
     cost_rows = _trace_cost_rows(date_text)
     capped_row = _trace_select_row(orchestrator_rows, decision="events_capped")
+    repair_row = _trace_select_row(orchestrator_rows, decision="flagship_repair")
     if not orchestrator_rows and not cost_rows and capped_row is None:
         return []
 
@@ -447,6 +448,23 @@ def _render_algorithm_trace_section(
         f"| 走的 path | {path_label} |",
         "",
     ]
+
+    if repair_row is not None:
+        before_things = int(repair_row.get("before_things") or 0)
+        repair_raw = repair_row.get("repair_things")
+        repair_things = "—" if repair_raw is None else str(int(repair_raw or 0))
+        final_things = int(repair_row.get("final_things") or 0)
+        trigger_reason = str(repair_row.get("reason") or "things_lt_3").strip() or "things_lt_3"
+        failure_reason = str(repair_row.get("failure_reason") or "").strip() or "—"
+        lines.extend(
+            [
+                "**repair 自检**",
+                f"- 触发原因：{trigger_reason}",
+                f"- H3 计数：{before_things} → {repair_things} → {final_things}",
+                f"- 失败原因：{failure_reason}",
+                "",
+            ]
+        )
 
     if cost_rows:
         lines.extend(

@@ -41,9 +41,11 @@ class FakeGateway:
     def __init__(self, responses: dict[str, Any]):
         self.responses = responses
         self.calls: list[tuple[str, Any]] = []
+        self.prompts: list[str] = []
 
     def call(self, capability: str, prompt: str, *, input_data: Any = None, **_kwargs) -> Any:
         self.calls.append((capability, input_data))
+        self.prompts.append(prompt)
         response = self.responses[capability]
         if isinstance(response, BaseException):
             raise response
@@ -97,6 +99,22 @@ def test_flagship_strategy_calls_daily_flagship_once_and_returns_markdown():
     assert gateway.calls[0][1]["events"][1]["sp"] == "ai"
     assert result.markdown == MARKDOWN.strip()
     assert result.clusters == ()
+
+
+def test_flagship_strategy_prepends_repair_hint_before_prompt_body():
+    gateway = FakeGateway({"daily_flagship": {"markdown": MARKDOWN}})
+
+    FlagshipSingleStepStrategy().generate(
+        date_str="2026-05-01",
+        events=_events(),
+        gateway=gateway,
+        repair_hint="things<3，请重写到至少3个H3",
+    )
+
+    prompt = gateway.prompts[0]
+    assert "REPAIR MODE" in prompt
+    assert "things<3，请重写到至少3个H3" in prompt
+    assert prompt.index("REPAIR MODE") < prompt.index("<<INPUT_JSON>>")
 
 
 def test_to_compact_event_keeps_scene_fingerprint_fields():

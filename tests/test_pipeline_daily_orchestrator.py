@@ -50,6 +50,60 @@ DAILY_MARKDOWN = """📍 Asia/Shanghai
 > _写一句话留给明天的自己_
 """
 
+FLAGSHIP_OK_MARKDOWN = """📍 Asia/Shanghai
+
+# 2026-05-01
+
+## 今日要点
+
+你今天把 daily 生成链路收敛到旗舰单次生成主线，并补上了 things 数不足时的修复兜底，保证输出质量门槛不会被漏过。
+
+## 今天做的事
+
+### KeyPulse Daily Strategy
+
+你确认旗舰路径继续保留，不回退到 budget 或 cluster 分支，并把修复逻辑限定在同一 capability 内完成。
+
+### Daily Orchestrator Repair
+
+你在旗舰首轮输出后增加 H3 数检查，遇到 `things<3` 时触发 `REPAIR MODE` 二次重写，避免日报主体只剩 1-2 个主题段。
+
+### Prompt Hard Constraints
+
+你把 prompt 明确改成 `components_count >= 3` 时必须输出至少 3 个 H3，并要求看到 `REPAIR MODE` 必须整篇重写。
+
+## 明日的锚点
+
+> 明天我想：______
+>
+> _写一句话留给明天的自己_
+"""
+
+FLAGSHIP_REPAIR_SOURCE_MARKDOWN = """📍 Asia/Shanghai
+
+# 2026-05-01
+
+## 今日要点
+
+你今天聚焦在 daily 编排和提示词修复两条线，先确认了根因，再准备补 repair 兜底。
+
+## 今天做的事
+
+### Daily 编排
+
+你调整了旗舰编排主路径，保证不回退到 budget。
+
+### 提示词修复
+
+你把输出结构约束提炼成明确规则。
+
+## 明日的锚点
+
+> 明天我想：______
+>
+> _写一句话留给明天的自己_
+"""
+
 
 class FakeGateway:
     def __init__(self, model: str, responses: dict[str, Any]):
@@ -65,6 +119,10 @@ class FakeGateway:
         self.calls.append(capability)
         self.inputs.append({"capability": capability, "input_data": input_data, "prompt": prompt})
         response = self.responses[capability]
+        if isinstance(response, list):
+            if not response:
+                raise AssertionError(f"no mock response left for capability={capability}")
+            response = response.pop(0)
         if isinstance(response, BaseException):
             raise response
         return response
@@ -168,7 +226,7 @@ def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
     gateway = FakeGateway(
         "doubao-seed-1-6-250615",
         {
-            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "daily_flagship": {"markdown": FLAGSHIP_OK_MARKDOWN},
             "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
         },
     )
@@ -421,7 +479,7 @@ def test_tier_auto_recognizes_flagship_model(tmp_path, monkeypatch):
     gateway = FakeGateway(
         "deepseek-chat",
         {
-            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "daily_flagship": {"markdown": FLAGSHIP_OK_MARKDOWN},
             "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
         },
     )
@@ -464,7 +522,7 @@ def test_flagship_path_caps_events_to_sixty_and_keeps_high_value_user_signal(tmp
     gateway = FakeGateway(
         "deepseek-chat",
         {
-            "daily_flagship": {"markdown": DAILY_MARKDOWN},
+            "daily_flagship": {"markdown": FLAGSHIP_OK_MARKDOWN},
             "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
         },
     )
@@ -487,6 +545,62 @@ def test_flagship_path_caps_events_to_sixty_and_keeps_high_value_user_signal(tmp
         for record in log_records
     )
 
+
+def test_flagship_repair_retries_when_things_below_three_and_keeps_quality_gate_ok(tmp_path, monkeypatch):
+    _write_config(tmp_path, cloud_model="deepseek-chat")
+    rows = _rows()
+    _patch_io(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr("keypulse.pipeline.daily_summary.query_raw_events", lambda **_kwargs: rows)
+    gateway = FakeGateway(
+        "deepseek-chat",
+        {
+            "daily_flagship": [
+                {"markdown": FLAGSHIP_REPAIR_SOURCE_MARKDOWN},
+                {"markdown": FLAGSHIP_OK_MARKDOWN},
+            ],
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator._run_anchor_for_clusters",
+        lambda **kwargs: (
+            [
+                {
+                    "anchor": str(cluster.get("cluster_id") or ""),
+                    "anchor_state": "continuing",
+                    "narrative": str(cluster.get("narrative_one_line") or ""),
+                    "decisions": [],
+                    "shipped": [],
+                    "events_ref": [str(cluster.get("cluster_id") or "")],
+                    "display": str(cluster.get("display_name") or ""),
+                }
+                for cluster in kwargs.get("today_clusters", [])
+            ],
+            [
+                {
+                    "cluster_id": str(cluster.get("cluster_id") or ""),
+                    "display_name": str(cluster.get("display_name") or ""),
+                    "narrative_one_line": str(cluster.get("narrative_one_line") or ""),
+                    "event_count": int(cluster.get("event_count") or 0),
+                    "time_range": list(cluster.get("time_range") or ["00:00", "23:59"]),
+                    "anchored_to": str(cluster.get("cluster_id") or "") or None,
+                }
+                for cluster in kwargs.get("today_clusters", [])
+            ],
+            [],
+        ),
+    )
+
+    summary = run_daily("2026-05-01", trigger="18:00")
+
+    assert gateway.calls == ["daily_flagship", "daily_flagship"]
+    daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
+    assert "| quality_gate | ok |" in daily_body
+    assert "**repair 自检**" in daily_body
+    assert "- 触发原因：things_lt_3" in daily_body
+    assert "- H3 计数：2 → 3 → 3" in daily_body
+    assert "- 失败原因：—" in daily_body
 
 def test_flagship_event_cap_keeps_hourly_coverage_before_score_fill():
     rows: list[dict[str, Any]] = []
