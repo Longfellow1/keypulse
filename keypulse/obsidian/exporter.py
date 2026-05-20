@@ -1482,6 +1482,7 @@ def _build_event_card(
     model_gateway: "ModelGateway | None" = None,
     humanize_titles: bool = False,
 ) -> NoteCard:
+    # TODO(M4): 整段删除（legacy events/ 卡片渲染路径下线）
     event_path = (
         f"Events/{date_str}/"
         f"{_event_filename(item, date_str, topic_key, model_gateway=model_gateway, humanize_titles=humanize_titles)}"
@@ -1513,25 +1514,13 @@ def _build_event_card(
 
 def write_obsidian_bundle(bundle: dict[str, list[dict[str, Any]]], output_dir: str | Path) -> list[Path]:
     output_path = Path(output_dir).expanduser()
-    keypulse_home = _keypulse_home()
     written: list[Path] = []
-    event_dates = {
-        Path(note["path"]).parts[1]
-        for note in bundle.get("events", [])
-        if len(Path(note["path"]).parts) >= 3
-    }
-    for date_str in event_dates:
-        event_dir = keypulse_home / "events" / date_str
-        if event_dir.exists():
-            for stale in event_dir.glob("*.md"):
-                stale.unlink()
-    for section in ("daily", "events", "topics"):
+    # TODO(M4): 整段删除（legacy events/topics 写盘路径下线）
+    # NOTE: 先只写 daily，停止新增 ~/.keypulse/events 与 ~/.keypulse/topics。
+    for section in ("daily",):
         for note in bundle.get(section, []):
             relative = Path(note["path"])
-            if section == "daily":
-                target = output_path / relative
-            else:
-                target = keypulse_home / _keypulse_relative_path_for_note(relative.as_posix())
+            target = output_path / relative
             new_text = render_note(note["properties"], note["body"])
             if section == "daily":
                 from keypulse.obsidian.quality_gate import (
@@ -1557,7 +1546,8 @@ def write_obsidian_bundle(bundle: dict[str, list[dict[str, Any]]], output_dir: s
 def _write_note_if_missing(output_path: Path, keypulse_home: Path, note: dict[str, Any]) -> Path | None:
     relative = Path(note["path"])
     if relative.parts and relative.parts[0].lower() in {"events", "topics"}:
-        target = keypulse_home / _keypulse_relative_path_for_note(relative.as_posix())
+        # TODO(M4): 整段删除（legacy events/topics 写盘路径下线）
+        return None
     else:
         target = output_path / relative
     if target.exists():

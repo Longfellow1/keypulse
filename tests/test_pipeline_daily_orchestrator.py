@@ -105,6 +105,48 @@ FLAGSHIP_REPAIR_SOURCE_MARKDOWN = """📍 Asia/Shanghai
 > _写一句话留给明天的自己_
 """
 
+FLAGSHIP_RERUN_MARKDOWN_V1 = """📍 Asia/Shanghai
+
+# 2026-05-01
+
+## 今日要点
+
+你今天围绕周报 v3 主线推进。
+
+## 今天做的事
+
+### 周报 v3 设计与落地
+
+第一版摘要。后续还有修订。
+
+## 明日的锚点
+
+> 明天我想：______
+>
+> _写一句话留给明天的自己_
+"""
+
+FLAGSHIP_RERUN_MARKDOWN_V2 = """📍 Asia/Shanghai
+
+# 2026-05-01
+
+## 今日要点
+
+你今天围绕周报 v3 主线推进并完成修订。
+
+## 今天做的事
+
+### 周报 v3 设计与落地
+
+第二版摘要。已经覆盖第一版。
+
+## 明日的锚点
+
+> 明天我想：______
+>
+> _写一句话留给明天的自己_
+"""
+
 
 class FakeGateway:
     def __init__(self, model: str, responses: dict[str, Any]):
@@ -286,8 +328,8 @@ def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch
     assert gateway.calls == ["L1_cluster_review", "L2_narrative", "L3_topic_naming", "L0_anchor"]
     assert summary.cluster_count == 1
     assert summary.misc_event_ids == ("3",)
-    assert summary.topic_diffs == ("keypulse-daily-strategy:created",)
-    assert (tmp_path / ".keypulse" / "hot.md").read_text(encoding="utf-8").count("keypulse-daily-strategy") == 1
+    assert summary.topic_diffs == ("keypulse-daily-strategy:disabled",)
+    assert not (tmp_path / ".keypulse" / "hot.md").exists()
     l2_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L2_narrative")
     assert len(l2_input["clusters"]) == 1
     assert len(l2_input["misc_events"]) == 1
@@ -337,6 +379,42 @@ def test_extract_event_payload_preserves_raw_event_scene_columns():
     assert payload["semantic_weight"] == 0.9
     assert payload["user_present"] == 1
     assert json.loads(payload["metadata_json"])["entities"]["session_id"] == "metadata-sid"
+
+
+def test_anchor_note_same_date_is_overwritten_on_rerun(tmp_path, monkeypatch):
+    _write_config(tmp_path, cloud_model="doubao-seed-1-6-250615")
+    _patch_io(monkeypatch, tmp_path, _rows())
+    gateway = FakeGateway(
+        "doubao-seed-1-6-250615",
+        {
+            "daily_flagship": [
+                {"markdown": FLAGSHIP_RERUN_MARKDOWN_V1},
+                {"markdown": FLAGSHIP_RERUN_MARKDOWN_V2},
+                {"markdown": FLAGSHIP_RERUN_MARKDOWN_V2},
+                {"markdown": FLAGSHIP_RERUN_MARKDOWN_V2},
+            ],
+            "L0_anchor": {
+                "assignments": {"topic-bb1be75b5c": "new_anchor:weekly-v3-rollout"},
+                "new_anchors": [
+                    {
+                        "slug": "weekly-v3-rollout",
+                        "display": "周报 v3 设计与落地",
+                        "started": "2026-05-01",
+                        "why": "同一主线延续",
+                    }
+                ],
+            },
+        },
+    )
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
+
+    run_daily("2026-05-01", trigger="18:00")
+    run_daily("2026-05-01", trigger="18:00")
+
+    anchor_note = tmp_path / "Go" / "Knowledge" / "anchors" / "weekly-v3-rollout.md"
+    note_body = anchor_note.read_text(encoding="utf-8")
+    assert note_body.count("- 2026-05-01 ") == 1
+    assert "第二版摘要" in note_body
 
 
 def test_daily_orchestrator_llm_time_exports_use_local_timezone(monkeypatch):

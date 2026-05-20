@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sqlite3
+import tomllib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import date as date_cls, datetime, timedelta, timezone
@@ -45,7 +46,9 @@ from keypulse.pipeline.weekly_topic_anchor import (
     seed_w19_anchors,
     save_weekly_anchors,
     split_topics_and_unanchored,
+    upsert_anchor_timeline_entry,
     update_anchors_with_assignments,
+    write_anchor_note,
 )
 from keypulse.pipeline.model import LLMCallError, ModelGateway, load_model_gateway
 from keypulse.pipeline.model_card import resolve_tier
@@ -64,6 +67,7 @@ _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
 _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
+_ANCHOR_TIMELINE_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 # === OCR watcher 已下线 2026-05-14 ===
 # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
 # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
@@ -872,6 +876,10 @@ def _upsert_topic(
     narrative: str,
     event_ids: list[str],
 ) -> str:
+    # TODO(M4): 整段删除（legacy topics/ 写盘路径下线）
+    return "disabled"
+
+    # NOTE: 保留旧实现供 M4 一刀切前回滚；当前逻辑不会执行。
     topics_dir = get_data_dir() / "topics"
     topics_dir.mkdir(parents=True, exist_ok=True)
     path = topics_dir / f"{slug}.md"
@@ -942,6 +950,10 @@ def _upsert_topic(
 
 
 def _refresh_hot(topics_touched: list[tuple[str, str]], date_str: str) -> None:
+    # TODO(M4): 整段删除（legacy hot/topics 写盘路径下线）
+    return
+
+    # NOTE: 保留旧实现供 M4 一刀切前回滚；当前逻辑不会执行。
     hot_path = get_data_dir() / "hot.md"
     existing: dict[str, str] = {}
     if hot_path.exists():
@@ -1211,6 +1223,69 @@ def _infer_decisions_shipped(narrative: str) -> tuple[list[str], list[str]]:
     return decisions, shipped
 
 
+def _timeline_summary_from_topic(topic: dict[str, Any]) -> str:
+    narrative = str(topic.get("narrative") or "").strip()
+    for sentence in _ANCHOR_TIMELINE_SENTENCE_SPLIT_RE.split(narrative):
+        text = sentence.strip()
+        if text:
+            return text
+    display = str(topic.get("display") or topic.get("anchor") or "").strip()
+    return display
+
+
+def _sync_anchor_notes(
+    *,
+    date_str: str,
+    anchors: list[Any],
+    topics: list[dict[str, Any]],
+) -> None:
+    topic_by_anchor: dict[str, dict[str, Any]] = {}
+    for topic in topics:
+        slug = str(topic.get("anchor") or "").strip()
+        if slug:
+            topic_by_anchor[slug] = topic
+
+    for anchor in anchors:
+        if str(getattr(anchor, "state", "")).strip() not in {"active", "candidate"}:
+            continue
+        topic = topic_by_anchor.get(str(getattr(anchor, "slug", "")).strip())
+        if topic is None:
+            continue
+        summary = _timeline_summary_from_topic(topic)
+        if not summary:
+            continue
+        upsert_anchor_timeline_entry(
+            anchor,
+            date_str=date_str,
+            summary=summary,
+            daily_ref=f"[[{date_str}]]",
+        )
+
+    home_cfg = Path.home() / ".keypulse" / "config.toml"
+    vault_path = Path.home() / "Go" / "Knowledge"
+    if home_cfg.exists():
+        try:
+            with home_cfg.open("rb") as handle:
+                payload = tomllib.load(handle)
+            obsidian_cfg = payload.get("obsidian") if isinstance(payload, dict) else {}
+            if isinstance(obsidian_cfg, dict):
+                configured = str(obsidian_cfg.get("vault_path") or "").strip()
+                if configured:
+                    vault_path = Path(configured).expanduser()
+        except (OSError, tomllib.TOMLDecodeError):
+            _logger.warning("anchor_notes_read_config_failed path=%s", home_cfg)
+    else:
+        vault_path = Path(Config().obsidian.vault_path).expanduser()
+
+    for anchor in anchors:
+        if str(getattr(anchor, "state", "")).strip() not in {"active", "candidate"}:
+            continue
+        try:
+            write_anchor_note(anchor, vault_path=vault_path)
+        except OSError as exc:
+            _logger.warning("anchor_note_write_failed slug=%s path=%s err=%s", getattr(anchor, "slug", ""), vault_path, exc)
+
+
 def _run_anchor_for_clusters(
     *,
     date_str: str,
@@ -1270,7 +1345,6 @@ def _run_anchor_for_clusters(
         today_clusters,
         date_str,
     )
-    save_weekly_anchors(week_str, updated_anchors)
     split_topics, unanchored = split_topics_and_unanchored(today_clusters, final_mapping, updated_anchors)
     cluster_narratives = {
         str(cluster.get("cluster_id") or ""): str(cluster.get("narrative_one_line") or "").strip()
@@ -1312,6 +1386,8 @@ def _run_anchor_for_clusters(
             }
         )
     topics.sort(key=lambda item: str(item.get("anchor") or ""))
+    _sync_anchor_notes(date_str=date_str, anchors=updated_anchors, topics=topics)
+    save_weekly_anchors(week_str, updated_anchors)
 
     summary_events: list[dict[str, Any]] = []
     for cluster in today_clusters:

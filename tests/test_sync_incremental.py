@@ -111,14 +111,14 @@ def test_full_sync_creates_complete_files(monkeypatch, tmp_path: Path):
     assert written
     assert _daily_note(vault).exists()
     assert not _dashboard_note(vault).exists()
-    assert any((home / ".keypulse" / "events" / DATE).glob("*.md"))
+    assert not any((home / ".keypulse" / "events" / DATE).glob("*.md"))
     daily = _read(_daily_note(vault))
-    assert "## 今天的事件卡" in daily
+    assert "## 今天的事件卡" not in daily
     assert "## 今天做的事" in daily
     assert "## 今天涉及的主题" not in daily
 
 
-def test_incremental_writes_three_new_event_cards_without_rewriting_daily(monkeypatch, tmp_path: Path):
+def test_incremental_writes_no_legacy_event_cards_and_keeps_daily_stable(monkeypatch, tmp_path: Path):
     home = _patch_home(monkeypatch, tmp_path)
     vault = tmp_path / "vault"
     dataset = [
@@ -149,8 +149,8 @@ def test_incremental_writes_three_new_event_cards_without_rewriting_daily(monkey
     after_event_files = set(event_dir.glob("*.md"))
     assert _extract_section(after, "## 今天做的事") == narrative_before
     assert after == before
-    assert len(after_event_files - before_event_files) == 3
-    assert "## 今天的事件卡" in after
+    assert len(after_event_files - before_event_files) == 0
+    assert "## 今天的事件卡" not in after
 
 
 def test_incremental_preserves_daily_protected_sections(monkeypatch, tmp_path: Path):
@@ -239,7 +239,7 @@ def test_incremental_falls_back_when_cursor_is_missing_or_corrupt(monkeypatch, t
     assert after == before
 
 
-def test_incremental_appends_topic_evidence_without_duplicates(monkeypatch, tmp_path: Path):
+def test_incremental_does_not_touch_legacy_topic_evidence(monkeypatch, tmp_path: Path):
     home = _patch_home(monkeypatch, tmp_path)
     vault = tmp_path / "vault"
     dataset = [
@@ -250,9 +250,6 @@ def test_incremental_appends_topic_evidence_without_duplicates(monkeypatch, tmp_
 
     export_obsidian(vault, date_str=DATE)
 
-    event_dir = home / ".keypulse" / "events" / DATE
-    first_event = sorted(event_dir.glob("*.md"))[0]
-    first_event_target = f"../.keypulse/{first_event.relative_to(home / '.keypulse').with_suffix('').as_posix()}"
     topic_path = home / ".keypulse" / "topics" / "project-alpha.md"
     _write(
         topic_path,
@@ -271,15 +268,15 @@ def test_incremental_appends_topic_evidence_without_duplicates(monkeypatch, tmp_
                 "- 关联片段：1",
                 "",
                 "## 相关证据",
-                f"- [[{first_event_target}|project alpha 里整理 launchd]] - project alpha 里整理 launchd",
+                "- [[../.keypulse/events/2026-04-22/0900-old|project alpha 里整理 launchd]] - project alpha 里整理 launchd",
                 "",
             ]
         ),
     )
+    before = topic_path.read_text(encoding="utf-8")
 
     dataset.append(_event("11:00:00", "project alpha 里补增量证据", tags="project,alpha"))
     export_obsidian(vault, date_str=DATE, incremental=True)
 
-    evidence_after = _get_topic_evidence_section(topic_path)
-    assert evidence_after.count("[[../.keypulse/events/") == 2
-    assert "project alpha 里补增量证据" in evidence_after
+    after = topic_path.read_text(encoding="utf-8")
+    assert after == before
