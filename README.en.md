@@ -1,12 +1,35 @@
 # KeyPulse·笔友
 
-> **A pen-pal for the way you work — it notices the small inputs of your day, forgets the secrets before they land, and each evening leaves you a note in Obsidian.**
+> **A local-first Mac companion that turns your daily work traces into private reflective notes.**
+
+KeyPulse quietly observes your work surface — apps, windows, clipboard boundaries, manual notes — forgets sensitive content before it is stored, and writes daily reflection notes into your own Obsidian vault.
+
+Not a productivity dashboard.
+Not a screen-time tracker.
+Not a cloud surveillance assistant.
+
+A private thinking mirror for knowledge workers.
+
+[中文版](README.md) · [Quick start](#quick-start) · [Obsidian workflow](docs/obsidian-workflow.md) · [Privacy](#privacy-summary) · [Roadmap](#status)
+
+---
+
+## Why star this repo?
+
+Star KeyPulse if you care about:
+
+- local-first personal AI
+- privacy-preserving activity intelligence
+- Obsidian-native daily reflection
+- AI tools that help you think instead of replacing thought
+
+---
+
+## Longer introduction
 
 KeyPulse is a local-first companion for macOS. It watches the quiet surface of your work — the apps you switch between, the lines you paste, the windows you keep returning to — and once a day writes back to you inside your own Obsidian vault. Not to score you, not to do your work for you. To accompany you in **recording, organizing, and growing** — so the days don't disappear into the stream, and the patterns underneath them slowly come into view.
 
 The vision in one line: *a quiet partner that watches the details, keeps none of the secrets, and helps you become a little sharper every day.*
-
-*[中文版 → README.md](README.md)*
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
@@ -93,6 +116,15 @@ Background tools die. Permissions get revoked. APIs expire. KeyPulse assumes thi
 
 ### 📝 Obsidian as the reading surface
 Daily notes, event cards, topic cards. Checkbox-based feedback (`- [ ] 确认 [ ] 否掉 [ ] 拆分`) flows back to the pipeline — zero context switch, the report *is* the feedback form.
+
+KeyPulse is not trying to replace your PKM system. It writes back into the knowledge system you already use:
+
+- plain Markdown under `Daily/`, `Events/`, `Topics/`, and `Anchors/`
+- YAML frontmatter for Obsidian Properties / Bases / Dataview
+- wikilinks, tags, and checkbox feedback that keep the graph editable
+- no cloud sync requirement; Obsidian Sync, iCloud, or Git are user choices
+
+See [docs/obsidian-workflow.md](docs/obsidian-workflow.md) for the full workflow.
 
 ### 🧪 Quality framework
 A **Golden Set** of labeled days keeps the narrative pipeline from silently drifting as we tune thresholds. 800+ tests passing, including regression coverage for the migration that once mislabeled 2,341 user events as system events, plus architectural invariants for the capability framework.

@@ -2,11 +2,14 @@
 
 This folder documents the local bridge between KeyPulse and an Obsidian vault.
 
+For product-level workflow guidance, see [docs/obsidian-workflow.md](../../docs/obsidian-workflow.md).
+
 ## How it works
 
 1. KeyPulse captures activity into SQLite.
-2. `keypulse export --format obsidian --output <vault-path>` writes markdown notes.
-3. Obsidian indexes the notes through `Properties`, `Backlinks`, and `Bases`.
+2. Privacy filters run before sensitive content is persisted.
+3. `keypulse obsidian sync` writes markdown notes.
+4. Obsidian indexes the notes through Properties, backlinks, Bases, or Dataview.
 
 ## Automation
 
@@ -16,9 +19,11 @@ This folder documents the local bridge between KeyPulse and an Obsidian vault.
 
 ## Vault contract
 
-- Generated notes are written to `Daily/`, `Events/`, and `Topics/`.
+- Generated notes are written to `Daily/`, `Events/`, `Topics/`, and `Anchors/`.
 - Notes are local markdown files with YAML frontmatter.
 - No cloud sync is required for the bridge itself.
+- Generated notes should remain readable even if KeyPulse is not running.
+- User-authored sections should not be overwritten by incremental sync.
 
 ## Recommended loop
 
@@ -26,3 +31,4 @@ This folder documents the local bridge between KeyPulse and an Obsidian vault.
 - Let the daily sync run once per morning.
 - Review event cards weekly.
 - Promote stable patterns into topic cards and evergreen notes.
+- Promote repeated topics into anchors when they describe a durable personal method.
