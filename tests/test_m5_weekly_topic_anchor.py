@@ -11,9 +11,11 @@ from keypulse.pipeline.weekly_topic_anchor import (
     WeeklyAnchor,
     anchor_today_clusters,
     load_weekly_anchors,
+    migrate_legacy_weekly_anchor_file,
     save_weekly_anchors,
     seed_w19_anchors,
     split_topics_and_unanchored,
+    upsert_anchor_timeline_entry,
     update_anchors_with_assignments,
 )
 
@@ -49,16 +51,81 @@ def test_load_save_roundtrip(tmp_path: Path) -> None:
     assert {a.slug for a in loaded} == {a.slug for a in anchors}
 
 
-def test_load_resets_on_new_week(tmp_path: Path) -> None:
+def test_load_keeps_cross_week_continuity(tmp_path: Path) -> None:
     p = tmp_path / "anchor.json"
     save_weekly_anchors("2026-W19", seed_w19_anchors(), path=p)
     loaded = load_weekly_anchors("2026-W20", path=p)
-    assert loaded == [], "新一周应自动 reset"
+    assert len(loaded) == 3, "跨周同 slug 应延续，不应 reset"
 
 
 def test_load_missing_file(tmp_path: Path) -> None:
     p = tmp_path / "no.json"
     assert load_weekly_anchors("2026-W19", path=p) == []
+
+
+def test_legacy_file_migrates_without_deleting_source(tmp_path: Path) -> None:
+    legacy = tmp_path / "weekly-anchor.json"
+    target = tmp_path / "anchors.json"
+    legacy.write_text(
+        json.dumps(
+            {
+                "week": "2026-W19",
+                "anchors": [
+                    {
+                        "slug": "v3-rollout",
+                        "display": "V3 上线",
+                        "started": "2026-05-12",
+                        "last_active": "2026-05-15",
+                        "state": "active",
+                        "daily_progress": [
+                            {"date": "2026-05-12", "cluster_id": "c1", "narrative": "立项"},
+                            {"date": "2026-05-12", "cluster_id": "c2", "narrative": "立项修订"},
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    migrated = migrate_legacy_weekly_anchor_file(legacy_path=legacy, target_path=target)
+    assert migrated is True
+    assert legacy.exists(), "旧文件必须保留作兜底"
+    loaded = load_weekly_anchors("2026-W20", path=target)
+    assert len(loaded) == 1
+    row = loaded[0]
+    assert row.slug == "v3-rollout"
+    assert row.timeline_entries == [
+        {"date": "2026-05-12", "summary": "立项修订", "daily_ref": "[[2026-05-12]]"}
+    ]
+
+
+def test_timeline_entries_roundtrip_and_idempotent_dedupe(tmp_path: Path) -> None:
+    p = tmp_path / "anchors.json"
+    anchor = WeeklyAnchor(
+        slug="v3-rollout",
+        display="V3 上线",
+        started="2026-05-12",
+        last_active="2026-05-20",
+        state="active",
+        timeline_entries=[
+            {"date": "2026-05-12", "summary": "立项", "daily_ref": "[[2026-05-12]]"},
+        ],
+    )
+    upsert_anchor_timeline_entry(anchor, date_str="2026-05-12", summary="立项修订", daily_ref="[[2026-05-12]]")
+    upsert_anchor_timeline_entry(anchor, date_str="2026-05-15", summary="跑通 smoke50", daily_ref="[[2026-05-15]]")
+    upsert_anchor_timeline_entry(anchor, date_str="2026-05-15", summary="跑通 smoke50", daily_ref="[[2026-05-15]]")
+    assert anchor.timeline_entries == [
+        {"date": "2026-05-12", "summary": "立项修订", "daily_ref": "[[2026-05-12]]"},
+        {"date": "2026-05-15", "summary": "跑通 smoke50", "daily_ref": "[[2026-05-15]]"},
+    ]
+
+    anchor.derived_from = "v2-stable"
+    save_weekly_anchors("2026-W20", [anchor], path=p)
+    loaded = load_weekly_anchors("2026-W21", path=p)
+    assert loaded[0].derived_from == "v2-stable"
+    assert loaded[0].timeline_entries == anchor.timeline_entries
 
 
 def test_anchor_to_existing_active() -> None:

@@ -1,7 +1,7 @@
-"""本周主线锚定层 — daily 与 weekly 之间的运行时状态。
+"""主线锚定层 — daily 与 weekly 之间的运行时状态。
 
 设计文档: docs/golden-daily/SCHEMA.md
-落盘: ~/.keypulse/weekly-anchor.json
+落盘: ~/.keypulse/anchors.json
 
 核心契约：
 - daily 跑前 load_weekly_anchors，跑完 save_weekly_anchors
@@ -14,15 +14,29 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import date as date_cls, datetime, timedelta
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol
 
 AnchorState = Literal["active", "candidate", "completed", "stale"]
 
-_DEFAULT_PATH = Path.home() / ".keypulse" / "weekly-anchor.json"
+_DEFAULT_PATH = Path.home() / ".keypulse" / "anchors.json"
+_LEGACY_PATH = Path.home() / ".keypulse" / "weekly-anchor.json"
+_SCHEMA_VERSION = 2
 _CANDIDATE_PROMOTE_DAYS = 2
 _STALE_DAYS = 5
+
+
+def _runtime_default_path() -> Path:
+    if _DEFAULT_PATH.name == "anchors.json" and _DEFAULT_PATH.parent.name == ".keypulse":
+        return Path.home() / ".keypulse" / "anchors.json"
+    return _DEFAULT_PATH
+
+
+def _runtime_legacy_path() -> Path:
+    if _LEGACY_PATH.name == "weekly-anchor.json" and _LEGACY_PATH.parent.name == ".keypulse":
+        return Path.home() / ".keypulse" / "weekly-anchor.json"
+    return _LEGACY_PATH
 
 
 @dataclass
@@ -34,20 +48,33 @@ class WeeklyAnchor:
     state: AnchorState
     daily_progress: list[dict] = field(default_factory=list)
     candidate_for_days: int = 0
+    timeline_entries: list[dict[str, str]] = field(default_factory=list)
+    derived_from: str | None = None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        payload = asdict(self)
+        payload["timeline_entries"] = _dedupe_timeline_entries(self.timeline_entries)
+        payload["derived_from"] = str(self.derived_from or "").strip() or None
+        return payload
 
     @classmethod
     def from_dict(cls, d: dict) -> "WeeklyAnchor":
+        daily_progress = [dict(item) for item in d.get("daily_progress", []) if isinstance(item, dict)]
+        timeline_entries_raw = d.get("timeline_entries")
+        if isinstance(timeline_entries_raw, list):
+            timeline_entries = _dedupe_timeline_entries(timeline_entries_raw)
+        else:
+            timeline_entries = _timeline_entries_from_daily_progress(daily_progress)
         return cls(
             slug=d["slug"],
             display=d.get("display", ""),
             started=d.get("started", ""),
             last_active=d.get("last_active", d.get("started", "")),
             state=d.get("state", "active"),
-            daily_progress=list(d.get("daily_progress", [])),
+            daily_progress=daily_progress,
             candidate_for_days=int(d.get("candidate_for_days", 0)),
+            timeline_entries=timeline_entries,
+            derived_from=str(d.get("derived_from") or "").strip() or None,
         )
 
 
@@ -62,26 +89,173 @@ class AnchorGateway(Protocol):
         ...
 
 
-def _state_payload(week_str: str, anchors: list[WeeklyAnchor]) -> dict:
+def _timeline_entry(date_text: str, summary: str, daily_ref: str | None = None) -> dict[str, str]:
+    date_norm = str(date_text or "").strip()
+    summary_norm = str(summary or "").strip()
+    if not date_norm:
+        return {}
+    if not summary_norm:
+        return {}
     return {
-        "week": week_str,
-        "anchors": [a.to_dict() for a in anchors],
-        "saved_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "date": date_norm,
+        "summary": summary_norm,
+        "daily_ref": str(daily_ref or f"[[{date_norm}]]").strip() or f"[[{date_norm}]]",
     }
 
 
+def _dedupe_timeline_entries(entries: list[dict[str, Any]]) -> list[dict[str, str]]:
+    by_date: dict[str, dict[str, str]] = {}
+    for raw in entries:
+        if not isinstance(raw, dict):
+            continue
+        normalized = _timeline_entry(
+            str(raw.get("date") or "").strip(),
+            str(raw.get("summary") or "").strip(),
+            str(raw.get("daily_ref") or "").strip() or None,
+        )
+        if not normalized:
+            continue
+        by_date[normalized["date"]] = normalized
+    return [by_date[key] for key in sorted(by_date.keys())]
+
+
+def _timeline_entries_from_daily_progress(daily_progress: list[dict[str, Any]]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in daily_progress:
+        if not isinstance(item, dict):
+            continue
+        row = _timeline_entry(
+            str(item.get("date") or "").strip(),
+            str(item.get("narrative") or "").strip(),
+        )
+        if row:
+            rows.append(row)
+    return _dedupe_timeline_entries(rows)
+
+
+def upsert_anchor_timeline_entry(
+    anchor: WeeklyAnchor,
+    *,
+    date_str: str,
+    summary: str,
+    daily_ref: str | None = None,
+) -> None:
+    row = _timeline_entry(date_str, summary, daily_ref)
+    if not row:
+        return
+    existing = [item for item in anchor.timeline_entries if isinstance(item, dict)]
+    existing.append(row)
+    anchor.timeline_entries = _dedupe_timeline_entries(existing)
+
+
+def _yaml_scalar(value: str) -> str:
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def render_anchor_note(anchor: WeeklyAnchor) -> str:
+    derived_raw = str(anchor.derived_from or "").strip()
+    derived_value = f"[[{derived_raw}]]" if derived_raw else ""
+    lines = [
+        "---",
+        f"anchor_id: {_yaml_scalar(anchor.slug)}",
+        f"display: {_yaml_scalar(anchor.display or anchor.slug)}",
+        f"started: {_yaml_scalar(anchor.started)}",
+        f"last_active: {_yaml_scalar(anchor.last_active)}",
+        f"state: {_yaml_scalar(anchor.state)}",
+        f"derived_from: {_yaml_scalar(derived_value)}",
+        "---",
+        "",
+        "## Timeline",
+    ]
+    for row in _dedupe_timeline_entries(anchor.timeline_entries):
+        date_text = str(row.get("date") or "").strip()
+        summary = str(row.get("summary") or "").strip()
+        daily_ref = str(row.get("daily_ref") or f"[[{date_text}]]").strip() or f"[[{date_text}]]"
+        if not date_text or not summary:
+            continue
+        lines.append(f"- {date_text} {summary} → {daily_ref}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_anchor_note(anchor: WeeklyAnchor, *, vault_path: Path) -> Path:
+    anchors_dir = Path(vault_path).expanduser() / "anchors"
+    anchors_dir.mkdir(parents=True, exist_ok=True)
+    target = anchors_dir / f"{anchor.slug}.md"
+    target.write_text(render_anchor_note(anchor), encoding="utf-8")
+    return target
+
+
+def _state_payload(week_str: str, anchors: list[WeeklyAnchor]) -> dict:
+    return {
+        "schema_version": _SCHEMA_VERSION,
+        "week": week_str,
+        "anchors": [a.to_dict() for a in anchors],
+        "saved_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    }
+
+
+def migrate_legacy_weekly_anchor_file(
+    *,
+    legacy_path: Path | None = None,
+    target_path: Path | None = None,
+    week_str: str = "",
+) -> bool:
+    legacy = legacy_path or _runtime_legacy_path()
+    target = target_path or _runtime_default_path()
+    if not legacy.exists():
+        return False
+    if target.exists():
+        return False
+
+    try:
+        payload = json.loads(legacy.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+
+    anchors_raw = payload.get("anchors")
+    if not isinstance(anchors_raw, list):
+        anchors_raw = []
+
+    anchors: list[WeeklyAnchor] = []
+    for item in anchors_raw:
+        if not isinstance(item, dict):
+            continue
+        slug = str(item.get("slug") or "").strip()
+        if not slug:
+            continue
+        anchors.append(WeeklyAnchor.from_dict(item))
+
+    resolved_week = str(payload.get("week") or week_str or "").strip()
+    save_weekly_anchors(resolved_week, anchors, path=target)
+    return True
+
+
 def load_weekly_anchors(week_str: str, *, path: Path | None = None) -> list[WeeklyAnchor]:
-    """读 ~/.keypulse/weekly-anchor.json。week 不一致时返回空（新一周自动 reset）。"""
-    p = path or _DEFAULT_PATH
+    """读 ~/.keypulse/anchors.json。兼容旧 weekly-anchor.json 一次性平迁。"""
+    p = path or _runtime_default_path()
+    if path is None and not p.exists():
+        migrate_legacy_weekly_anchor_file(week_str=week_str)
     if not p.exists():
         return []
     try:
         payload = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
-    if payload.get("week") != week_str:
+    anchors_raw = payload.get("anchors")
+    if not isinstance(anchors_raw, list):
         return []
-    return [WeeklyAnchor.from_dict(d) for d in payload.get("anchors", [])]
+    anchors: list[WeeklyAnchor] = []
+    for item in anchors_raw:
+        if not isinstance(item, dict):
+            continue
+        slug = str(item.get("slug") or "").strip()
+        if not slug:
+            continue
+        anchors.append(WeeklyAnchor.from_dict(item))
+    return anchors
 
 
 def save_weekly_anchors(
@@ -90,7 +264,7 @@ def save_weekly_anchors(
     *,
     path: Path | None = None,
 ) -> None:
-    p = path or _DEFAULT_PATH
+    p = path or _runtime_default_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(_state_payload(week_str, anchors), ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -183,6 +357,11 @@ def update_anchors_with_assignments(
                 "cluster_id": cluster_id,
                 "narrative": narrative,
             })
+            upsert_anchor_timeline_entry(
+                anchor,
+                date_str=date_str,
+                summary=narrative or anchor.display or anchor.slug,
+            )
             final_mapping[cluster_id] = slug
             continue
 
@@ -196,6 +375,11 @@ def update_anchors_with_assignments(
             "cluster_id": cluster_id,
             "narrative": narrative,
         })
+        upsert_anchor_timeline_entry(
+            anchor,
+            date_str=date_str,
+            summary=narrative or anchor.display or anchor.slug,
+        )
         if anchor.state == "candidate":
             anchor.candidate_for_days += 1
             if anchor.candidate_for_days >= _CANDIDATE_PROMOTE_DAYS:
@@ -204,6 +388,7 @@ def update_anchors_with_assignments(
 
     today = _parse_date(date_str)
     for anchor in by_slug.values():
+        anchor.timeline_entries = _dedupe_timeline_entries(anchor.timeline_entries)
         if anchor.state in ("active", "candidate"):
             last_active = _parse_date(anchor.last_active)
             if today and last_active and (today - last_active) > timedelta(days=_STALE_DAYS):
