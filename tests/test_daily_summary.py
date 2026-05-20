@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from keypulse.pipeline.daily_summary import (
     build_cluster_stubs_from_narrative,
@@ -530,22 +531,26 @@ def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_pat
     )
 
     assert "\n---\n\n## 🔬 算法 Trace（自检用）" in body
-    assert "| raw events | 7 |" in body
-    assert "| capped | 6 (token_guard) |" in body
-    assert "| clusters | 0 |" in body
-    assert "| things | 2 |" in body
-    assert "| events 卡片 | 6 |" in body
-    assert "| quality_gate | warn |" in body
-    assert "| 走的 path | flagship 全量（绕过 cluster） |" in body
+    assert "```text" in body
+    assert re.search(r"raw events\s+:\s+7", body)
+    assert re.search(r"capped\s+:\s+6 \(token_guard\)", body)
+    assert re.search(r"聚类策略\s+:\s+flagship 一步法（LLM 直接产 things）", body)
+    assert re.search(r"things\s+:\s+2", body)
+    assert re.search(r"events 卡片\s+:\s+6", body)
+    assert re.search(r"quality_gate\s+:\s+warn", body)
+    assert "clusters |" not in body
+    assert "走的 path" not in body
     assert "**数据采集源**（当日 raw events 按 source 聚合）" in body
-    assert "| keyboard_chunk | 7 | 09:55 | 10:13 | ok |" in body
-    assert "| window | 0 | — | — | ⚠ silent |" in body
+    assert re.search(r"source\s+events\s+最早\s+最晚\s+状态", body)
+    assert re.search(r"keyboard_chunk\s+7\s+09:55\s+10:13\s+ok", body)
+    assert re.search(r"window\s+0\s+—\s+—\s+⚠ silent", body)
     assert "**repair 自检**" in body
     assert "- 触发原因：things_lt_3" in body
     assert "- H3 计数：2 → 2 → 2" in body
     assert "- 失败原因：repair_things_lt_3:2" in body
-    assert "| daily_flagship | doubao-seed-1-6 | 22041→2055 | ok |" in body
-    assert "| L0_anchor | doubao-seed-1-6 | 14591→2306 | ok |" in body
+    assert re.search(r"stage\s+model\s+in→out tokens\s+状态", body)
+    assert re.search(r"daily_flagship\s+doubao-seed-1-6\s+22041→2055\s+ok", body)
+    assert re.search(r"L0_anchor\s+doubao-seed-1-6\s+14591→2306\s+ok", body)
     assert "09:55 keyboard_chunk ·" in body
     assert "改 self_heal 时区" in body
 

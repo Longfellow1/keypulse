@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -598,7 +599,8 @@ def test_flagship_repair_retries_when_things_below_three_and_keeps_quality_gate_
 
     assert gateway.calls == ["daily_flagship", "daily_flagship"]
     daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
-    assert "| quality_gate | ok |" in daily_body
+    assert "```text" in daily_body
+    assert re.search(r"quality_gate\s*:\s*ok", daily_body)
     assert "**repair 自检**" in daily_body
     assert "- 触发原因：things_lt_3" in daily_body
     assert "- H3 计数：2 → 3 → 3" in daily_body
@@ -662,7 +664,8 @@ def test_flagship_repair_triggers_when_topics_drop_below_three_even_if_narrative
     assert summary.cluster_count == 0
     assert gateway.calls == ["daily_flagship", "daily_flagship"]
     daily_body = Path(summary.daily_path).read_text(encoding="utf-8")
-    assert "| quality_gate | ok |" in daily_body
+    assert "```text" in daily_body
+    assert re.search(r"quality_gate\s*:\s*ok", daily_body)
     assert "- H3 计数：2 → 3 → 3" in daily_body
 
 def test_flagship_event_cap_keeps_hourly_coverage_before_score_fill():
