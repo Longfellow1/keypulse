@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import locale as _locale
 import plistlib
 import re
 import shutil
@@ -84,7 +85,46 @@ from keypulse.search.backends import resolve_search_backend
 # Shared console objects
 console = Console()
 err_console = Console(stderr=True)
-DATE_HELP_TEXT = "日期，支持 today / yesterday / -N(N天前) / 2026-05-19"
+
+
+def _detect_lang() -> str:
+    """Detect CLI language. Priority: KEYPULSE_LANG env > LANG env > system locale > 'en'."""
+    explicit = os.environ.get("KEYPULSE_LANG", "").strip().lower()
+    if explicit in ("zh", "en"):
+        return explicit
+    lang_env = os.environ.get("LANG", "") or os.environ.get("LC_ALL", "")
+    if "zh" in lang_env.lower():
+        return "zh"
+    try:
+        sys_locale = (_locale.getlocale()[0] or "").lower()
+        if "zh" in sys_locale or "chinese" in sys_locale:
+            return "zh"
+    except Exception:
+        pass
+    return "en"
+
+
+CLI_LANG = _detect_lang()
+
+
+def T(zh: str, en: str) -> str:
+    """Bilingual helper. Chinese on zh locale, English otherwise."""
+    return zh if CLI_LANG == "zh" else en
+
+
+DATE_HELP_TEXT = T(
+    "日期：today / yesterday / -N（N 天前）/ YYYY-MM-DD",
+    "Date: today / yesterday / -N (N days ago) / YYYY-MM-DD",
+)
+DATE_HELP_TEXT_SHORT = T(
+    "日期，支持 today / yesterday / -N(N天前) / 2026-05-19",
+    "Date: today / yesterday / -N (N days ago) / YYYY-MM-DD",
+)
+WEEK_HELP_TEXT = T(
+    "周：this / last / YYYY-Www（如 2026-W19）",
+    "Week: this / last / YYYY-Www (for example, 2026-W19)",
+)
+PLAIN_HELP = T("纯文本输出", "Plain text output")
 
 
 def get_config() -> Config:
@@ -535,31 +575,46 @@ def _warn_if_model_backends_need_setup(cfg: Config) -> None:
     click.secho("   daemon 仍会照常启动，但叙事 / 报告功能会失败", fg="red", err=True)
 
 
-@click.group()
+@click.group(
+    help=T(
+        "KeyPulse — 个人活动监控与日报/周报生成。\n\n"
+        "\b\n"
+        "常用命令：\n"
+        "  keypulse status                查看 daemon 状态\n"
+        "  keypulse doctor                诊断安装 / 配置 / 权限问题\n"
+        "  keypulse start                 启动后台采集\n"
+        "  keypulse stop                  停止后台采集\n"
+        "  keypulse healthcheck           运行健康检查\n"
+        "  keypulse daily run             生成今天日报\n"
+        "  keypulse weekly run            生成本周周报\n"
+        "  keypulse obsidian sync         同步到 Obsidian\n"
+        "  keypulse search \"<关键词>\"     搜索历史活动\n\n"
+        "完整命令列表见下方 Commands。\n\n"
+        "> 语言：中文（设置 KEYPULSE_LANG=en 切英文）",
+        "KeyPulse — personal activity tracking and daily/weekly reporting.\n\n"
+        "\b\n"
+        "Common commands:\n"
+        "  keypulse status                Show daemon status and runtime counters\n"
+        "  keypulse doctor                Diagnose install, config, and permission issues\n"
+        "  keypulse start                 Start background capture daemon\n"
+        "  keypulse stop                  Stop background capture daemon\n"
+        "  keypulse healthcheck           Run health diagnostics and emit JSON\n"
+        "  keypulse daily run             Generate today's daily Markdown report\n"
+        "  keypulse weekly run            Generate this week's weekly report\n"
+        "  keypulse obsidian sync         Sync notes into your Obsidian vault\n"
+        "  keypulse search \"<keyword>\"    Search historical activity records\n\n"
+        "See Commands below for the full command list.\n\n"
+        "> Language: English (set KEYPULSE_LANG=zh to switch to Chinese)"
+    )
+)
 def main():
-    """KeyPulse — 个人活动监控与日报/周报生成。
-
-    \b
-    常用命令：
-      keypulse status                查看 daemon 状态
-      keypulse doctor                诊断安装 / 配置 / 权限问题
-      keypulse start                 启动后台采集
-      keypulse stop                  停止后台采集
-      keypulse healthcheck           运行健康检查
-      keypulse daily run             生成今天日报
-      keypulse weekly run            生成本周周报
-      keypulse obsidian sync         同步到 Obsidian
-      keypulse search "<关键词>"     搜索历史活动
-
-    完整命令列表见下方 Commands。
-    """
     pass
 
 
-@main.command()
-@click.option("--force", is_flag=True, help="覆盖已有 profile")
+@main.command(help=T("首次启动配置（工作类型/区域/节奏/触发/视角）", "Initial setup wizard (work type/region/rhythm/trigger/style)."))
+@click.option("--force", is_flag=True, help=T("覆盖已有 profile", "Overwrite existing profile"))
 def setup(force):
-    """首次启动配置（工作类型/区域/节奏/触发/视角）"""
+    """Interactive setup."""
     profile_path = Path.home() / ".keypulse" / "profile.toml"
     if (not force) and (not is_first_run(profile_path)):
         click.echo(f"profile already exists: {profile_path} (use --force to overwrite)")
@@ -600,12 +655,12 @@ def setup(force):
     click.echo(f"✓ profile saved to {profile_path}")
 
 
-@main.command(name="mark-holiday")
+@main.command(name="mark-holiday", help=T("手动标注某周为假期，影响周报模板。", "Mark a week as holiday so weekly template/output adjusts accordingly."))
 @click.argument("week")
-@click.option("--reason", required=True)
-@click.option("--region", default=None)
+@click.option("--reason", required=True, help=T("假期原因说明", "Reason for the holiday marker"))
+@click.option("--region", default=None, help=T("地区标识（可选）", "Region hint (optional)"))
 def mark_holiday(week, reason, region):
-    """手动标注某周为假期，影响周报模板"""
+    """Mark holiday metadata."""
     raw_week = str(week).strip()
     iso_week = raw_week
     short_match = re.fullmatch(r"[Ww](\d{1,2})", raw_week)
@@ -844,10 +899,10 @@ def install_uninstall(remove_runtime, remove_data, force, plain):
 # 1. START
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
-@click.option("--config", "config_path", default=None, help="Path to config.toml")
+@main.command(help=T("启动 KeyPulse daemon。", "Start the KeyPulse daemon."))
+@click.option("--config", "config_path", default=None, help=T("配置文件路径（config.toml）", "Path to config.toml"))
 def start(config_path):
-    """Start the KeyPulse daemon."""
+    """Start daemon."""
     cfg = Config.load() if not config_path else _load_config_from(config_path)
     _warn_if_model_backends_need_setup(cfg)
     lock = SingleInstanceLock()
@@ -896,10 +951,10 @@ def start(config_path):
             console.print("[green]KeyPulse started[/green]")
 
 
-@main.command()
-@click.option("--config", "config_path", default=None, help="Path to config.toml")
+@main.command(help=T("在前台运行 KeyPulse（常用于 launchd/supervisor）。", "Run KeyPulse in the foreground (for launchd/supervisor)."))
+@click.option("--config", "config_path", default=None, help=T("配置文件路径（config.toml）", "Path to config.toml"))
 def serve(config_path):
-    """Run KeyPulse in the foreground under a supervisor such as launchd."""
+    """Run foreground service."""
     cfg = Config.load() if not config_path else _load_config_from(config_path)
     _warn_if_model_backends_need_setup(cfg)
     run(cfg)
@@ -917,9 +972,9 @@ def _load_config_from(path: str) -> Config:
 # 2. STOP
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
+@main.command(help=T("停止 KeyPulse daemon。", "Stop the KeyPulse daemon."))
 def stop():
-    """Stop the KeyPulse daemon."""
+    """Stop daemon."""
     lock = SingleInstanceLock()
     pid = lock.get_pid()
     launchd_plist = _launchd_daemon_plist_path()
@@ -965,9 +1020,9 @@ def stop():
 # 3. PAUSE
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
+@main.command(help=T("暂停活动采集。", "Pause activity monitoring."))
 def pause():
-    """Pause activity monitoring."""
+    """Pause monitoring."""
     cfg = get_config()
     require_db(cfg)
     set_state("status", "paused")
@@ -978,9 +1033,9 @@ def pause():
 # 4. RESUME
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
+@main.command(help=T("恢复活动采集。", "Resume activity monitoring."))
 def resume():
-    """Resume activity monitoring."""
+    """Resume monitoring."""
     cfg = get_config()
     require_db(cfg)
     set_state("status", "running")
@@ -991,10 +1046,10 @@ def resume():
 # 5. STATUS
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@main.command(help=T("查看 daemon 状态与采集运行信息。", "Show daemon status and capture runtime details."))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def status(plain):
-    """Show daemon status."""
+    """Show status."""
     cfg = get_config()
     require_db(cfg)
 
@@ -1087,10 +1142,10 @@ def status(plain):
 # 6. DOCTOR
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@main.command(help=T("检查系统配置、权限与依赖。", "Check system configuration, permissions, and dependencies."))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def doctor(plain):
-    """Check system configuration."""
+    """Run diagnostics."""
     checks = {}
     cfg = get_config()
     require_db(cfg)
@@ -1178,10 +1233,10 @@ def doctor(plain):
         sys.exit(1)
 
 
-@main.command()
+@main.command(help=T("运行健康检查，写入 ~/.keypulse/health.json。", "Run healthcheck and write ~/.keypulse/health.json."))
 @click.option("--config", "config_path", default=None)
 def healthcheck(config_path):
-    """运行健康检查，写入 ~/.keypulse/health.json（用户日常诊断用）。"""
+    """Run healthcheck."""
     from keypulse.health import run_healthcheck
 
     result = run_healthcheck(config_path=config_path)
@@ -1190,10 +1245,10 @@ def healthcheck(config_path):
         raise SystemExit(1)
 
 
-@main.command("self-heal", hidden=True)
-@click.option("--dry-run", is_flag=True, help="仅演练步骤，不真正重启 daemon")
+@main.command("self-heal", hidden=True, help=T("执行自愈流程（HUD/手动恢复）。", "Run product self-heal sequence for HUD/manual recovery."))
+@click.option("--dry-run", is_flag=True, help=T("仅演练步骤，不真正重启 daemon", "Dry run only; do not actually restart the daemon"))
 def self_heal_command(dry_run):
-    """Run product self-heal sequence for HUD/manual recovery."""
+    """Self-heal."""
     from keypulse.health.self_heal import run_self_heal
 
     cfg = get_config()
@@ -1303,36 +1358,36 @@ def _show_hud_status(plain: bool = False):
     console.print(table)
 
 
-@main.group(invoke_without_command=True)
+@main.group(invoke_without_command=True, help=T("管理 macOS 菜单栏 HUD。", "Manage the macOS status bar HUD."))
 @click.pass_context
 def hud(ctx):
-    """Manage the macOS status bar HUD."""
+    """HUD."""
     if ctx.invoked_subcommand is None:
         _start_hud()
 
 
-@hud.command("start")
+@hud.command("start", help=T("启动 HUD。", "Launch HUD."))
 def hud_start():
-    """Launch the macOS status bar HUD."""
+    """Start HUD."""
     _start_hud()
 
 
-@hud.command("stop")
+@hud.command("stop", help=T("停止 HUD。", "Stop HUD."))
 def hud_stop():
-    """Stop the running HUD instance."""
+    """Stop HUD."""
     _stop_hud()
 
 
-@hud.command("close")
+@hud.command("close", help=T("关闭 HUD。", "Close HUD."))
 def hud_close():
-    """Close the running HUD instance."""
+    """Close HUD."""
     _stop_hud()
 
 
-@hud.command("status")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@hud.command("status", help=T("查看 HUD 进程状态。", "Show HUD process status."))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def hud_status(plain):
-    """Show HUD process status."""
+    """HUD status."""
     _show_hud_status(plain=plain)
 
 
@@ -1340,12 +1395,12 @@ def hud_status(plain):
 # 7. SAVE
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
-@click.option("--text", default=None, help="Text to save")
-@click.option("--tag", default=None, help="Tag for the note")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@main.command(help=T("保存一条手动笔记。", "Save a manual note."))
+@click.option("--text", default=None, help=T("要保存的文本", "Text to save"))
+@click.option("--tag", default=None, help=T("笔记标签", "Tag for the note"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def save(text, tag, plain):
-    """Save a manual note."""
+    """Save note."""
     # Read from stdin if no --text provided
     if text is None:
         if not sys.stdin.isatty():
@@ -1389,12 +1444,12 @@ def save(text, tag, plain):
 # 8. TIMELINE
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
+@main.command(help=T("查看某天活动时间线。", "Show activity timeline for a day."))
 @click.option("--date", default=None, help=DATE_HELP_TEXT)
-@click.option("--today", is_flag=True, default=False, help="Show today's timeline")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@click.option("--today", is_flag=True, default=False, help=T("显示今天的时间线", "Show today's timeline"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def timeline(date, today, plain):
-    """Show activity timeline."""
+    """Timeline."""
     cfg = get_config()
     require_db(cfg)
 
@@ -1438,13 +1493,13 @@ def timeline(date, today, plain):
 # 9. RECENT
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
+@main.command(help=T("查看最近活动条目。", "Show recent activity items."))
 @click.option("--type", "item_type", default=None, type=click.Choice(["clipboard", "manual", "session"]),
-              help="Filter by type")
-@click.option("--limit", default=20, help="Number of items to show")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+              help=T("按类型过滤", "Filter by type"))
+@click.option("--limit", default=20, help=T("显示条目数", "Number of items to show"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def recent(item_type, limit, plain):
-    """Show recent items."""
+    """Recent items."""
     cfg = get_config()
     require_db(cfg)
 
@@ -1499,11 +1554,11 @@ def recent(item_type, limit, plain):
 # 10. STATS
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
-@click.option("--days", default=7, help="Number of days to analyze")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@main.command(help=T("查看活动统计。", "Show activity statistics."))
+@click.option("--days", default=7, help=T("分析天数", "Number of days to analyze"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def stats(days, plain):
-    """Show activity statistics."""
+    """Stats."""
     cfg = get_config()
     require_db(cfg)
 
@@ -1548,15 +1603,15 @@ Manual Saves: {stats_data['manual_count']}
 # 11. SEARCH
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command(name="search")
+@main.command(name="search", help=T("搜索历史活动。", "Search historical activity."))
 @click.argument("query")
-@click.option("--app", default=None, help="Filter by app name")
-@click.option("--since", default=None, help="Time filter (7d, 24h, or YYYY-MM-DD)")
-@click.option("--source", default=None, help="Filter by source (clipboard, manual, session)")
-@click.option("--limit", default=50, help="Number of results")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@click.option("--app", default=None, help=T("按应用名过滤", "Filter by app name"))
+@click.option("--since", default=None, help=T("时间过滤（7d、24h 或 YYYY-MM-DD）", "Time filter (7d, 24h, or YYYY-MM-DD)"))
+@click.option("--source", default=None, help=T("按来源过滤（clipboard、manual、session）", "Filter by source (clipboard, manual, session)"))
+@click.option("--limit", default=50, help=T("结果数量", "Number of results"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def search_cmd(query, app, since, source, limit, plain):
-    """Search activity."""
+    """Search."""
     cfg = get_config()
     require_db(cfg)
 
@@ -1607,16 +1662,16 @@ def search_cmd(query, app, since, source, limit, plain):
 # 12. SESSION (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("管理会话。", "Manage sessions."))
 def session():
-    """Manage sessions."""
+    """Session group."""
     pass
 
 
-@session.command("list")
+@session.command("list", help=T("列出会话。", "List sessions."))
 @click.option("--date", default=None, help=DATE_HELP_TEXT)
-@click.option("--limit", default=100, help="Number of sessions to show")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@click.option("--limit", default=100, help=T("显示会话数", "Number of sessions to show"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def session_list(date, limit, plain):
     """List sessions."""
     cfg = get_config()
@@ -1673,11 +1728,11 @@ def session_list(date, limit, plain):
         console.print(table)
 
 
-@session.command("show")
+@session.command("show", help=T("查看单个会话详情。", "Show details for one session."))
 @click.argument("session_id")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def session_show(session_id, plain):
-    """Show details of a session."""
+    """Show session."""
     cfg = get_config()
     require_db(cfg)
 
@@ -1700,9 +1755,9 @@ def session_show(session_id, plain):
 # 13. OBSIDIAN
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("管理 Obsidian 导出桥接。", "Manage the Obsidian export bridge."))
 def obsidian():
-    """Manage the Obsidian export bridge."""
+    """Obsidian group."""
     pass
 
 
@@ -1749,9 +1804,9 @@ def _sync_obsidian_bundle(
 # 13.4 DAILY (PR2 orchestrator entry)
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("日报：生成 / 重跑 / 查看每日活动总结。", "Daily reports: generate, rerun, and inspect daily activity summaries."))
 def daily():
-    """日报：生成 / 重跑 / 查看每日活动总结。"""
+    """Daily group."""
     pass
 
 
@@ -1789,15 +1844,46 @@ def _render_daily_fallback(cfg: Config, date_str: str, *, no_llm: bool) -> Path:
     return target
 
 
-@daily.command("run")
-@click.option("--date", "date_str", default="today", help=DATE_HELP_TEXT)
+@daily.command(
+    "run",
+    help=T(
+        "生成指定日期的日报（默认今天，全量重算）。\n\n"
+        "\b\n"
+        "会生成一份 Markdown 日报，写入你配置的 Obsidian vault。\n"
+        "内容包含：当天涉及的主题、关键决策、完成/交付事项（shipped）。\n\n"
+        "\b\n"
+        "示例：\n"
+        "  keypulse daily run                       # 生成今天日报\n"
+        "  keypulse daily run --date yesterday      # 重跑昨天日报\n"
+        "  keypulse daily run --date 2026-05-18     # 重跑指定日期\n"
+        "  keypulse daily run --date -3             # 重跑 3 天前\n"
+        "  keypulse daily run --incremental         # 增量模式（夜间补跑用）\n",
+        "Generate a daily report for the given date (defaults to today, full rebuild).\n\n"
+        "\b\n"
+        "This command creates a Markdown daily report and writes it to your configured Obsidian vault.\n"
+        "The report summarizes what you worked on that day: active topics, decisions made, and what got shipped.\n\n"
+        "\b\n"
+        "When to use:\n"
+        "  - Default usage: `keypulse daily run` for today's report.\n"
+        "  - Backfill: rerun yesterday or any specific day if you missed a run.\n"
+        "  - Incremental: nightly catch-up mode that only processes new events since the last run.\n\n"
+        "\b\n"
+        "Examples:\n"
+        "  keypulse daily run                          # Generate today's report\n"
+        "  keypulse daily run --date yesterday         # Re-run yesterday's report\n"
+        "  keypulse daily run --date 2026-05-18        # Re-run a specific date\n"
+        "  keypulse daily run --date -3                # Re-run 3 days ago\n"
+        "  keypulse daily run --incremental            # Incremental mode (only process new events)\n"
+    ),
+)
+@click.option("--date", "date_str", default="today", help=DATE_HELP_TEXT_SHORT)
 @click.option(
     "--incremental",
     is_flag=True,
     default=False,
-    help="增量模式：只处理上次 run 之后的新事件（夜间补跑用）。默认全量重算。",
+    help=T("增量模式：只处理上次 run 之后的新事件（夜间补跑用）。默认全量重算。", "Incremental mode: only process events since last run (for nightly catch-up). Default is full rebuild."),
 )
-@click.option("--mock-llm", is_flag=True, default=False, help="开发用：用 MOCK_LLM=1 跳过真实 LLM 调用")
+@click.option("--mock-llm", is_flag=True, default=False, help=T("开发用：用 MOCK_LLM=1 跳过真实 LLM 调用", "Dev only: skip real LLM calls (MOCK_LLM=1)"))
 @click.option(
     "--trigger",
     type=click.Choice(["18:00", "23:30"]),
@@ -1807,15 +1893,7 @@ def _render_daily_fallback(cfg: Config, date_str: str, *, no_llm: bool) -> Path:
     callback=_capture_legacy_daily_trigger,
 )
 def daily_run(date_str, incremental, mock_llm):
-    """生成指定日期的日报（默认今天，全量重算）。
-
-    \b
-    示例：
-      keypulse daily run                       # 生成今天日报
-      keypulse daily run --date yesterday      # 重跑昨天日报
-      keypulse daily run --date 2026-05-18     # 重跑指定日期
-      keypulse daily run --incremental         # 增量模式（夜间补跑用）
-    """
+    """Daily run."""
     date_str = _parse_date(date_str)
     cfg = get_config()
     require_db(cfg)
@@ -1856,24 +1934,19 @@ def daily_run(date_str, incremental, mock_llm):
 # 13.3b EVAL — 把 validator 包成一行命令，列 fail case + 出 score
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group(hidden=True)
+@main.group(hidden=True, help=T("评估日报/周报输出质量（隐藏命令）。", "Evaluate daily/weekly output quality (hidden commands)."))
 def eval():
-    """Score daily/weekly outputs against validator + golden baselines."""
+    """Eval group."""
     pass
 
 
-@eval.command("daily")
-@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 daily.md 路径")
+@eval.command("daily", help=T("对单个 daily.md 打分并列出失败项。", "Score one daily.md and list failing checks."))
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help=T("待评 daily.md 路径", "Path to candidate daily.md"))
 @click.option("--summary", "summary_path", type=click.Path(exists=True), default=None,
-              help="对应 daily-summary JSON 路径（可选，提供后会跑数据层断言）")
-@click.option("--fail-only", is_flag=True, default=False, help="只列 fail case 不打印 banner")
+              help=T("对应 daily-summary JSON 路径（可选，提供后会跑数据层断言）", "Matching daily-summary JSON path (optional; enables data-layer assertions)"))
+@click.option("--fail-only", is_flag=True, default=False, help=T("只列 fail case 不打印 banner", "Only list failed checks without banner"))
 def eval_daily(candidate, summary_path, fail_only):
-    """Score one daily.md and list all failing checks.
-
-    Examples:
-        keypulse eval daily --candidate ~/Go/Knowledge/Daily/2026-05-12.md
-        keypulse eval daily --candidate docs/golden-daily/2026-05-06.md
-    """
+    """Eval daily."""
     import json as _json
     from pathlib import Path as _Path
 
@@ -1911,20 +1984,14 @@ def eval_daily(candidate, summary_path, fail_only):
         raise SystemExit(1)
 
 
-@eval.command("weekly")
-@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 weekly.md 路径")
+@eval.command("weekly", help=T("对单个 weekly.md 打分并列出失败项。", "Score one weekly.md and list failing checks."))
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help=T("待评 weekly.md 路径", "Path to candidate weekly.md"))
 @click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="plain", show_default=True)
 @click.option("--dailies-dir", "dailies_dir", type=click.Path(exists=True), default=None,
-              help="本周 daily.md 所在目录，用于客观性溯源（可选）")
+              help=T("本周 daily.md 所在目录，用于客观性溯源（可选）", "Directory of daily.md files for this week (optional; used for objectivity checks)"))
 @click.option("--fail-only", is_flag=True, default=False)
 def eval_weekly(candidate, style, dailies_dir, fail_only):
-    """Score one weekly.md and list all failing checks.
-
-    Examples:
-        keypulse eval weekly --candidate docs/golden-weekly/2026-W19-exec.md --style exec
-        keypulse eval weekly --candidate ~/Go/Knowledge/Weekly/2026-W19.md --style plain \\
-            --dailies-dir ~/Go/Knowledge/Daily
-    """
+    """Eval weekly."""
     from pathlib import Path as _Path
 
     from keypulse.pipeline.weekly_validator import quick_score, validate_weekly_output
@@ -1965,9 +2032,9 @@ def eval_weekly(candidate, style, dailies_dir, fail_only):
     raise SystemExit(1)
 
 
-@eval.command("skill")
+@eval.command("skill", help=T("评估 skill 提案（占位，暂未实现）。", "Evaluate skill proposal (placeholder, not implemented yet)."))
 def eval_skill():
-    """[占位] skill propose eval — 等 V0 hello world 跑通才有数据，详见 docs/skill-v0-plan.md §14.3。"""
+    """Eval skill placeholder."""
     click.echo("skill propose eval 暂未实现。前置依赖：")
     click.echo("  1. V0 hello world 跑通（docs/skill-v0-plan.md §5）")
     click.echo("  2. 至少 2-3 个 skill 候选历史样本")
@@ -1980,18 +2047,18 @@ def eval_skill():
 # 13.4 WEEKLY (PR3 orchestrator entry)
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("周报：生成本周或指定周的总结报告。", "Weekly reports: generate summary reports for this week or a specific week."))
 def weekly():
-    """周报：生成本周或指定周的总结报告。"""
+    """Weekly group."""
     pass
 
 
-@weekly.command("run")
-@click.option("--week", "week_str", default="this", show_default=True, help="周，支持 this / last / 2026-W19")
+@weekly.command("run", help=T("生成指定周的周报。", "Generate a weekly report for the selected week."))
+@click.option("--week", "week_str", default="this", show_default=True, help=WEEK_HELP_TEXT)
 @click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="exec", show_default=True)
-@click.option("--mock-llm", is_flag=True, default=False, help="Use MOCK_LLM=1 stub gateway")
+@click.option("--mock-llm", is_flag=True, default=False, help=T("开发用：用 MOCK_LLM=1 跳过真实 LLM 调用", "Dev only: use MOCK_LLM=1 stub gateway"))
 def weekly_run(week_str, style, mock_llm):
-    """生成指定周的周报。--week 默认 this，可写 this / last / 2026-W19。"""
+    """Weekly run."""
     week_str = _parse_week(week_str)
     os.environ["HOME"] = str(Path.home())
     cfg = get_config()
@@ -2034,17 +2101,17 @@ def weekly_run(week_str, style, mock_llm):
 # 13.5 SINKS
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("管理自动 sink 发现。", "Manage automatic sink discovery."))
 def sinks():
-    """Manage automatic sink discovery."""
+    """Sinks group."""
     pass
 
 
-@sinks.command("detect")
-@click.option("--apply", "apply_binding", is_flag=True, default=False, help="Persist the detected sink binding")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@sinks.command("detect", help=T("检测当前活跃 sink，可选持久化绑定。", "Detect the active sink and optionally persist binding."))
+@click.option("--apply", "apply_binding", is_flag=True, default=False, help=T("保存检测到的 sink 绑定", "Persist the detected sink binding"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def sinks_detect(apply_binding, plain):
-    """Detect the active local sink and optionally persist it."""
+    """Detect sink."""
     cfg = get_config()
     sink = resolve_active_sink(cfg, persist=apply_binding)
 
@@ -2059,10 +2126,10 @@ def sinks_detect(apply_binding, plain):
         )
 
 
-@sinks.command("status")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@sinks.command("status", help=T("查看当前 sink 绑定。", "Show active sink binding."))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def sinks_status(plain):
-    """Show the active sink binding."""
+    """Sink status."""
     cfg = get_config()
     sink = resolve_active_sink(cfg)
 
@@ -2078,19 +2145,19 @@ def sinks_status(plain):
         console.print(table)
 
 
-@obsidian.command("sync")
+@obsidian.command("sync", help=T("导出/同步某天数据到 Obsidian。", "Export/sync one day's data into Obsidian."))
 @click.option(
     "--incremental",
     is_flag=True,
     default=False,
-    help="Incremental append mode: only add new events, do not re-render narrative.",
+    help=T("增量追加模式：只添加新事件，不重渲染叙事内容。", "Incremental append mode: only add new events, do not re-render narrative."),
 )
-@click.option("--yesterday", is_flag=True, default=False, help="Export yesterday's data (full sync)")
+@click.option("--yesterday", is_flag=True, default=False, help=T("导出昨天的数据（全量同步）", "Export yesterday's data (full sync)"))
 @click.option("--date", default=None, help=DATE_HELP_TEXT)
-@click.option("--output", default=None, help="Override vault path")
-@click.option("--vault-name", default=None, help="Override vault name")
+@click.option("--output", default=None, help=T("覆盖 vault 路径", "Override vault path"))
+@click.option("--vault-name", default=None, help=T("覆盖 vault 名称", "Override vault name"))
 def obsidian_sync(date, yesterday, incremental, output, vault_name):
-    """Export a daily Obsidian bundle."""
+    """Obsidian sync."""
     cfg = get_config()
     require_db(cfg)
 
@@ -2142,19 +2209,19 @@ def obsidian_sync(date, yesterday, incremental, output, vault_name):
 # 13.5 PIPELINE
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("检查与操作信息流水线。", "Inspect and operate the information pipeline."))
 def pipeline():
-    """Inspect and operate the information pipeline."""
+    """Pipeline group."""
     pass
 
 
-@pipeline.command("sync", hidden=True)
+@pipeline.command("sync", hidden=True, help=T("执行统一 daily sync 路径。", "Run unified daily sync path."))
 @click.option("--date", default=None, help=DATE_HELP_TEXT)
-@click.option("--yesterday", is_flag=True, default=False, help="Sync yesterday's data")
-@click.option("--output", default=None, help="Override vault path")
-@click.option("--vault-name", default=None, help="Override vault name")
+@click.option("--yesterday", is_flag=True, default=False, help=T("同步昨天的数据", "Sync yesterday's data"))
+@click.option("--output", default=None, help=T("覆盖 vault 路径", "Override vault path"))
+@click.option("--vault-name", default=None, help=T("覆盖 vault 名称", "Override vault name"))
 def pipeline_sync(date, yesterday, output, vault_name):
-    """Run the unified daily sync path."""
+    """Pipeline sync."""
     cfg = get_config()
     require_db(cfg)
 
@@ -2163,12 +2230,12 @@ def pipeline_sync(date, yesterday, output, vault_name):
     print(f"pipeline_sync=ok date={date_str} sink={sink_kind} output={target_output} written={written}")
 
 
-@pipeline.command("draft", hidden=True)
+@pipeline.command("draft", hidden=True, help=T("渲染 daily 草稿。", "Render daily draft through unified renderer."))
 @click.option("--date", default=None, help=DATE_HELP_TEXT)
-@click.option("--yesterday", is_flag=True, default=False, help="Build yesterday's draft")
-@click.option("--output", default=None, help="Write the draft to a file instead of stdout")
+@click.option("--yesterday", is_flag=True, default=False, help=T("构建昨天的草稿", "Build yesterday's draft"))
+@click.option("--output", default=None, help=T("将草稿写入文件而不是输出到 stdout", "Write the draft to a file instead of stdout"))
 def pipeline_draft(date, yesterday, output):
-    """Render a daily draft through the unified daily renderer."""
+    """Pipeline draft."""
     cfg = get_config()
     require_db(cfg)
 
@@ -2190,29 +2257,29 @@ def pipeline_draft(date, yesterday, output):
         console.print(body)
 
 
-@pipeline.group()
+@pipeline.group(help=T("记录与查看流水线反馈。", "Record and inspect pipeline feedback."))
 def feedback():
-    """Record and inspect pipeline feedback."""
+    """Feedback group."""
     pass
 
 
-@feedback.command("add")
-@click.option("--kind", required=True, help="Feedback kind, such as promote or demote")
-@click.option("--target", required=True, help="Target topic, event, or draft")
-@click.option("--note", required=True, help="Short feedback note")
+@feedback.command("add", help=T("追加一条反馈事件。", "Append one feedback event."))
+@click.option("--kind", required=True, help=T("反馈类型，例如 promote 或 demote", "Feedback kind, such as promote or demote"))
+@click.option("--target", required=True, help=T("目标主题、事件或草稿", "Target topic, event, or draft"))
+@click.option("--note", required=True, help=T("简短反馈说明", "Short feedback note"))
 def feedback_add(kind, target, note):
-    """Append one feedback event to the local feedback log."""
+    """Add feedback."""
     cfg = get_config()
     path = Path(cfg.pipeline.feedback_path).expanduser()
     append_feedback_event(path, FeedbackEvent(kind=kind, target=target, note=note))
     console.print(f"[green]Recorded feedback for {target}[/green]")
 
 
-@feedback.command("list")
-@click.option("--path", default=None, help="Override feedback log path")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@feedback.command("list", help=T("列出反馈事件。", "List recorded feedback events."))
+@click.option("--path", default=None, help=T("覆盖反馈日志路径", "Override feedback log path"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def feedback_list(path, plain):
-    """List recorded feedback events."""
+    """List feedback."""
     cfg = get_config()
     feedback_path = Path(path or cfg.pipeline.feedback_path).expanduser()
     events = read_feedback_events(feedback_path)
@@ -2231,21 +2298,21 @@ def feedback_list(path, plain):
         console.print(table)
 
 
-@feedback.command("refine", hidden=True)
-@click.option("--theme", "theme_name", required=True, help="Theme name to refine")
-@click.option("--instruction", required=True, help="Refinement instruction")
-@click.option("--state-path", default=None, help="Override theme state path")
+@feedback.command("refine", hidden=True, help=T("记录主题优化指令。", "Persist a theme refinement instruction."))
+@click.option("--theme", "theme_name", required=True, help=T("要优化的主题名", "Theme name to refine"))
+@click.option("--instruction", required=True, help=T("优化指令", "Refinement instruction"))
+@click.option("--state-path", default=None, help=T("覆盖主题状态路径", "Override theme state path"))
 def feedback_refine(theme_name, instruction, state_path):
-    """Persist a theme refinement instruction."""
+    """Refine feedback theme."""
     result = record_theme_feedback(state_path, theme_name=theme_name, instruction=instruction)
     console.print(f"[green]{result['theme_name']} v{result['version']}[/green]")
 
 
-@feedback.command("status", hidden=True)
-@click.option("--state-path", default=None, help="Override theme state path")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@feedback.command("status", hidden=True, help=T("查看当前主题画像。", "Show active theme profile."))
+@click.option("--state-path", default=None, help=T("覆盖主题状态路径", "Override theme state path"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def feedback_status(state_path, plain):
-    """Show the active theme profile."""
+    """Feedback status."""
     profile = current_theme_profile(state_path)
     if plain:
         print(f"theme_name={profile['theme_name']}")
@@ -2264,97 +2331,97 @@ def feedback_status(state_path, plain):
 # 13.9 DEV (internal command entrypoint)
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("开发者内部命令。", "Developer internal commands."))
 def dev():
-    """开发者内部命令。"""
+    """Dev group."""
     pass
 
 
-@dev.command("self-heal")
-@click.option("--dry-run", is_flag=True, help="仅演练步骤，不真正重启 daemon")
+@dev.command("self-heal", help=T("执行自愈流程（开发入口）。", "Run self-heal sequence (dev entry)."))
+@click.option("--dry-run", is_flag=True, help=T("仅演练步骤，不真正重启 daemon", "Dry run only; do not actually restart the daemon"))
 def dev_self_heal(dry_run):
-    """Run product self-heal sequence for HUD/manual recovery."""
+    """Dev self-heal."""
     return self_heal_command.callback(dry_run)
 
 
-@dev.group("eval")
+@dev.group("eval", help=T("评估日报/周报输出（开发入口）。", "Evaluate daily/weekly outputs (dev entry)."))
 def dev_eval():
-    """Score daily/weekly outputs against validator + golden baselines."""
+    """Dev eval group."""
     pass
 
 
-@dev_eval.command("daily")
-@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 daily.md 路径")
+@dev_eval.command("daily", help=T("评估 daily.md。", "Evaluate daily.md."))
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help=T("待评 daily.md 路径", "Path to candidate daily.md"))
 @click.option("--summary", "summary_path", type=click.Path(exists=True), default=None,
-              help="对应 daily-summary JSON 路径（可选，提供后会跑数据层断言）")
-@click.option("--fail-only", is_flag=True, default=False, help="只列 fail case 不打印 banner")
+              help=T("对应 daily-summary JSON 路径（可选，提供后会跑数据层断言）", "Matching daily-summary JSON path (optional; enables data-layer assertions)"))
+@click.option("--fail-only", is_flag=True, default=False, help=T("只列 fail case 不打印 banner", "Only list failed checks without banner"))
 def dev_eval_daily(candidate, summary_path, fail_only):
-    """Score one daily.md and list all failing checks."""
+    """Dev eval daily."""
     return eval_daily.callback(candidate, summary_path, fail_only)
 
 
-@dev_eval.command("weekly")
-@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 weekly.md 路径")
+@dev_eval.command("weekly", help=T("评估 weekly.md。", "Evaluate weekly.md."))
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help=T("待评 weekly.md 路径", "Path to candidate weekly.md"))
 @click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="plain", show_default=True)
 @click.option("--dailies-dir", "dailies_dir", type=click.Path(exists=True), default=None,
-              help="本周 daily.md 所在目录，用于客观性溯源（可选）")
+              help=T("本周 daily.md 所在目录，用于客观性溯源（可选）", "Directory of daily.md files for this week (optional; used for objectivity checks)"))
 @click.option("--fail-only", is_flag=True, default=False)
 def dev_eval_weekly(candidate, style, dailies_dir, fail_only):
-    """Score one weekly.md and list all failing checks."""
+    """Dev eval weekly."""
     return eval_weekly.callback(candidate, style, dailies_dir, fail_only)
 
 
-@dev_eval.command("skill")
+@dev_eval.command("skill", help=T("评估 skill 提案（占位）。", "Evaluate skill proposal (placeholder)."))
 def dev_eval_skill():
-    """[占位] skill propose eval — 等 V0 hello world 跑通才有数据。"""
+    """Dev eval skill placeholder."""
     return eval_skill.callback()
 
 
-@dev.group("pipeline")
+@dev.group("pipeline", help=T("信息流水线命令（开发入口）。", "Pipeline commands (dev entry)."))
 def dev_pipeline():
-    """Inspect and operate the information pipeline."""
+    """Dev pipeline group."""
     pass
 
 
-@dev_pipeline.command("sync")
+@dev_pipeline.command("sync", help=T("执行统一 daily sync 路径。", "Run unified daily sync path."))
 @click.option("--date", default=None, help=DATE_HELP_TEXT)
-@click.option("--yesterday", is_flag=True, default=False, help="Sync yesterday's data")
-@click.option("--output", default=None, help="Override vault path")
-@click.option("--vault-name", default=None, help="Override vault name")
+@click.option("--yesterday", is_flag=True, default=False, help=T("同步昨天的数据", "Sync yesterday's data"))
+@click.option("--output", default=None, help=T("覆盖 vault 路径", "Override vault path"))
+@click.option("--vault-name", default=None, help=T("覆盖 vault 名称", "Override vault name"))
 def dev_pipeline_sync(date, yesterday, output, vault_name):
-    """Run the unified daily sync path."""
+    """Dev pipeline sync."""
     return pipeline_sync.callback(date, yesterday, output, vault_name)
 
 
-@dev_pipeline.command("draft")
+@dev_pipeline.command("draft", help=T("渲染 daily 草稿。", "Render daily draft."))
 @click.option("--date", default=None, help=DATE_HELP_TEXT)
-@click.option("--yesterday", is_flag=True, default=False, help="Build yesterday's draft")
-@click.option("--output", default=None, help="Write the draft to a file instead of stdout")
+@click.option("--yesterday", is_flag=True, default=False, help=T("构建昨天的草稿", "Build yesterday's draft"))
+@click.option("--output", default=None, help=T("将草稿写入文件而不是输出到 stdout", "Write the draft to a file instead of stdout"))
 def dev_pipeline_draft(date, yesterday, output):
-    """Render a daily draft through the unified daily renderer."""
+    """Dev pipeline draft."""
     return pipeline_draft.callback(date, yesterday, output)
 
 
-@dev.group("feedback")
+@dev.group("feedback", help=T("流水线反馈命令（开发入口）。", "Pipeline feedback commands (dev entry)."))
 def dev_feedback():
-    """Record and inspect pipeline feedback."""
+    """Dev feedback group."""
     pass
 
 
-@dev_feedback.command("refine")
-@click.option("--theme", "theme_name", required=True, help="Theme name to refine")
-@click.option("--instruction", required=True, help="Refinement instruction")
-@click.option("--state-path", default=None, help="Override theme state path")
+@dev_feedback.command("refine", help=T("记录主题优化指令。", "Persist a theme refinement instruction."))
+@click.option("--theme", "theme_name", required=True, help=T("要优化的主题名", "Theme name to refine"))
+@click.option("--instruction", required=True, help=T("优化指令", "Refinement instruction"))
+@click.option("--state-path", default=None, help=T("覆盖主题状态路径", "Override theme state path"))
 def dev_feedback_refine(theme_name, instruction, state_path):
-    """Persist a theme refinement instruction."""
+    """Dev feedback refine."""
     return feedback_refine.callback(theme_name, instruction, state_path)
 
 
-@dev_feedback.command("status")
-@click.option("--state-path", default=None, help="Override theme state path")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@dev_feedback.command("status", help=T("查看当前主题画像。", "Show active theme profile."))
+@click.option("--state-path", default=None, help=T("覆盖主题状态路径", "Override theme state path"))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def dev_feedback_status(state_path, plain):
-    """Show the active theme profile."""
+    """Dev feedback status."""
     return feedback_status.callback(state_path, plain)
 
 
@@ -2362,14 +2429,14 @@ def dev_feedback_status(state_path, plain):
 # 14. EXPORT
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
+@main.command(help=T("导出活动数据。", "Export activity data."))
 @click.option("--format", type=click.Choice(["json", "csv", "md", "obsidian"]), default="json",
-              help="Export format")
-@click.option("--days", default=None, type=int, help="Number of days to export")
+              help=T("导出格式", "Export format"))
+@click.option("--days", default=None, type=int, help=T("导出天数", "Number of days to export"))
 @click.option("--date", default=None, help=DATE_HELP_TEXT)
-@click.option("--output", default=None, help="Output file path")
+@click.option("--output", default=None, help=T("输出文件路径", "Output file path"))
 def export(format, days, date, output):
-    """Export activity data."""
+    """Export data."""
     cfg = get_config()
     require_db(cfg)
     parsed_date = _parse_date(date) if date else None
@@ -2413,13 +2480,13 @@ def export(format, days, date, output):
 # 15. PURGE
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command()
-@click.option("--today", is_flag=True, default=False, help="Purge today's data")
-@click.option("--last-hours", type=int, default=None, help="Purge last N hours")
-@click.option("--app", default=None, help="Purge data for specific app")
-@click.option("--confirm", is_flag=True, default=False, help="Confirm deletion without prompt")
+@main.command(help=T("删除活动数据。", "Delete activity data."))
+@click.option("--today", is_flag=True, default=False, help=T("清理今天的数据", "Purge today's data"))
+@click.option("--last-hours", type=int, default=None, help=T("清理最近 N 小时数据", "Purge last N hours"))
+@click.option("--app", default=None, help=T("清理指定应用的数据", "Purge data for specific app"))
+@click.option("--confirm", is_flag=True, default=False, help=T("无需确认提示直接删除", "Confirm deletion without prompt"))
 def purge(today, last_hours, app, confirm):
-    """Delete activity data."""
+    """Purge data."""
     cfg = get_config()
     require_db(cfg)
 
@@ -2483,11 +2550,11 @@ def purge(today, last_hours, app, confirm):
     console.print(f"[green]Deleted {count} events.[/green]")
 
 
-@main.command(name="cost")
-@click.option("--week", "week_text", default=None, help="ISO week, e.g. 2026-W18")
-@click.option("--month", "month_text", default=None, help="Month, e.g. 2026-05")
+@main.command(name="cost", help=T("查看 ~/.keypulse/cost.jsonl 的 LLM 成本摘要。", "Show LLM cost summary from ~/.keypulse/cost.jsonl."))
+@click.option("--week", "week_text", default=None, help=T("ISO 周，例如 2026-W18", "ISO week, e.g. 2026-W18"))
+@click.option("--month", "month_text", default=None, help=T("月份，例如 2026-05", "Month, e.g. 2026-05"))
 def cost_report(week_text, month_text):
-    """Show LLM cost summary from ~/.keypulse/cost.jsonl."""
+    """Cost report."""
     if week_text and month_text:
         raise click.UsageError("Use either --week or --month, not both")
 
@@ -2527,16 +2594,16 @@ def cost_report(week_text, month_text):
 # 16. CONFIG (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group(name="config")
+@main.group(name="config", help=T("管理配置。", "Manage configuration."))
 def config_group():
-    """Manage configuration."""
+    """Config group."""
     pass
 
 
-@config_group.command("show")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@config_group.command("show", help=T("查看当前配置。", "Show current configuration."))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def config_show(plain):
-    """Show current configuration."""
+    """Show config."""
     cfg = get_config()
 
     if plain:
@@ -2582,9 +2649,9 @@ def config_show(plain):
         console.print(json.dumps(config_dict, indent=2))
 
 
-@config_group.command("path")
+@config_group.command("path", help=T("显示配置文件路径。", "Show config file path."))
 def config_path():
-    """Show config file path."""
+    """Config path."""
     path = get_config_path()
     print(str(path))
 
@@ -2594,9 +2661,9 @@ def config_path():
 # 17. MODEL (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("管理模型网关配置。", "Manage model gateway profiles."))
 def model():
-    """Manage model gateway profiles."""
+    """Model group."""
     pass
 
 
@@ -2757,10 +2824,10 @@ def _short_circuit_text(entry: object) -> str:
     return f"{remaining_min} / {cooldown} min cooldown"
 
 
-@model.command("status")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@model.command("status", help=T("查看模型 profile、后端健康与回退状态。", "Show model profile, backend health, and fallback state."))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def model_status(plain):
-    """Show model profile, backend health, and fallback state."""
+    """Model status."""
     cfg = get_config()
     gateway = load_model_gateway(cfg)
     snapshot = gateway.backend_status("write")
@@ -2826,9 +2893,9 @@ def model_status(plain):
         click.echo("Fallback: disabled")
 
 
-@model.command("setup")
+@model.command("setup", help=T("交互式配置云端/本地模型后端与 keychain。", "Interactive setup for cloud/local model backends with keychain storage."))
 def model_setup():
-    """Interactive setup for cloud/local model backends with keychain storage."""
+    """Model setup."""
     cfg = get_config()
     config_path = get_config_path()
 
@@ -2999,10 +3066,10 @@ def model_setup():
 main.add_command(model_setup, "model-setup")
 
 
-@model.command("use")
+@model.command("use", help=T("切换并持久化当前模型 profile。", "Persist the active model profile."))
 @click.argument("profile")
 def model_use(profile):
-    """Persist the active model profile."""
+    """Use model profile."""
     cfg = get_config()
     gateway = load_model_gateway(cfg)
     try:
@@ -3013,9 +3080,9 @@ def model_use(profile):
     console.print(f"[green]Model profile set to {profile}[/green]")
 
 
-@model.command("test")
+@model.command("test", help=T("测试当前选择的模型后端。", "Test the selected model backend."))
 def model_test():
-    """Test the selected model backend."""
+    """Model backend test."""
     cfg = get_config()
     gateway = load_model_gateway(cfg)
     result = gateway.test_backend()
@@ -3029,16 +3096,16 @@ def model_test():
 # 17. RULES (subgroup)
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("管理隐私策略。", "Manage privacy policies."))
 def rules():
-    """Manage privacy policies."""
+    """Rules group."""
     pass
 
 
-@rules.command("list")
-@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+@rules.command("list", help=T("列出全部隐私策略。", "List all privacy policies."))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def rules_list(plain):
-    """List all privacy policies."""
+    """List rules."""
     cfg = get_config()
     require_db(cfg)
 
@@ -3070,13 +3137,13 @@ def rules_list(plain):
         console.print(table)
 
 
-@rules.command("add")
-@click.option("--scope-type", required=True, help="Scope type (app, window, source, content)")
-@click.option("--scope-value", required=True, help="Scope value (e.g., 'Safari', 'password')")
-@click.option("--mode", required=True, help="Mode (allow, deny, metadata-only, redact, truncate)")
-@click.option("--priority", type=int, default=100, help="Priority (lower = higher priority)")
+@rules.command("add", help=T("新增隐私策略。", "Add a new privacy policy."))
+@click.option("--scope-type", required=True, help=T("范围类型（app、window、source、content）", "Scope type (app, window, source, content)"))
+@click.option("--scope-value", required=True, help=T("范围值（例如 'Safari'、'password'）", "Scope value (e.g., 'Safari', 'password')"))
+@click.option("--mode", required=True, help=T("模式（allow、deny、metadata-only、redact、truncate）", "Mode (allow, deny, metadata-only, redact, truncate)"))
+@click.option("--priority", type=int, default=100, help=T("优先级（值越小优先级越高）", "Priority (lower = higher priority)"))
 def rules_add(scope_type, scope_value, mode, priority):
-    """Add a new privacy policy."""
+    """Add rule."""
     cfg = get_config()
     require_db(cfg)
 
@@ -3091,10 +3158,10 @@ def rules_add(scope_type, scope_value, mode, priority):
     console.print(f"[green]Policy added (ID: {policy_id})[/green]")
 
 
-@rules.command("disable")
+@rules.command("disable", help=T("禁用某条隐私策略。", "Disable a privacy policy."))
 @click.argument("rule_id", type=int)
 def rules_disable(rule_id):
-    """Disable a privacy policy."""
+    """Disable rule."""
     cfg = get_config()
     require_db(cfg)
 
@@ -3110,17 +3177,17 @@ def rules_disable(rule_id):
 # MAINTENANCE
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(help=T("维护与清理命令。", "Maintenance and cleanup commands."))
 def maintenance():
-    """Maintenance and cleanup commands."""
+    """Maintenance group."""
     pass
 
 
-@maintenance.command(name="scrub-secrets")
-@click.option("--dry-run", is_flag=True, default=True, help="Preview changes without applying (default: true)")
-@click.option("--apply", is_flag=True, default=False, help="Apply redaction (must be explicit)")
+@maintenance.command(name="scrub-secrets", help=T("扫描并脱敏数据库与 vault 内的敏感信息。", "Scan and redact secrets from database and vault."))
+@click.option("--dry-run", is_flag=True, default=True, help=T("预览变更但不应用（默认 true）", "Preview changes without applying (default: true)"))
+@click.option("--apply", is_flag=True, default=False, help=T("应用脱敏（必须显式指定）", "Apply redaction (must be explicit)"))
 def maintenance_scrub_secrets(dry_run, apply):
-    """Redact secrets from database and vault."""
+    """Scrub secrets."""
     from pathlib import Path
     from keypulse.privacy.desensitizer import desensitize
     from keypulse.utils.paths import get_data_dir
