@@ -84,6 +84,7 @@ from keypulse.search.backends import resolve_search_backend
 # Shared console objects
 console = Console()
 err_console = Console(stderr=True)
+DATE_HELP_TEXT = "日期，支持 today / yesterday / -N(N天前) / 2026-05-19"
 
 
 def get_config() -> Config:
@@ -144,6 +145,52 @@ def _week_bounds(week_text: str) -> tuple[datetime, datetime]:
         raise click.UsageError("`--week` is not a valid ISO week") from exc
     start = start_date.replace(tzinfo=timezone.utc)
     return start, start + timedelta(days=7)
+
+
+def _parse_date(arg: str) -> str:
+    raw = (arg or "").strip()
+    if not raw:
+        raise click.UsageError("`--date` 不能为空")
+
+    normalized = raw.lower()
+    if normalized in {"today", "yesterday"}:
+        return resolve_local_date(normalized, yesterday=False)
+
+    relative_match = re.fullmatch(r"-(\d+)", normalized)
+    if relative_match:
+        days_ago = int(relative_match.group(1))
+        today_local = datetime.now(local_timezone()).date()
+        return (today_local - timedelta(days=days_ago)).isoformat()
+
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+    except ValueError as exc:
+        raise click.UsageError(f"`--date` 无效：{raw}。支持 today / yesterday / -N / YYYY-MM-DD。") from exc
+
+
+def _parse_week(arg: str) -> str:
+    raw = (arg or "").strip()
+    if not raw:
+        raise click.UsageError("`--week` 不能为空")
+
+    normalized = raw.lower()
+    if normalized in {"this", "last"}:
+        base_day = datetime.now(local_timezone()).date()
+        if normalized == "last":
+            base_day = base_day - timedelta(days=7)
+        iso = base_day.isocalendar()
+        return f"{iso.year:04d}-W{iso.week:02d}"
+
+    match = re.fullmatch(r"(\d{4})-W(\d{1,2})", raw)
+    if not match:
+        raise click.UsageError("`--week` 支持 this / last / YYYY-Www")
+    year = int(match.group(1))
+    week = int(match.group(2))
+    try:
+        datetime.fromisocalendar(year, week, 1)
+    except ValueError as exc:
+        raise click.UsageError("`--week` is not a valid ISO week") from exc
+    return f"{year:04d}-W{week:02d}"
 
 
 def _aggregate_cost(cost_path: Path, start: datetime, end: datetime) -> tuple[float, dict[str, dict[str, float | int]]]:
@@ -490,7 +537,22 @@ def _warn_if_model_backends_need_setup(cfg: Config) -> None:
 
 @click.group()
 def main():
-    """KeyPulse — macOS personal activity monitoring CLI."""
+    """KeyPulse — 个人活动监控与日报/周报生成。
+
+    \b
+    常用命令：
+      keypulse status                查看 daemon 状态
+      keypulse doctor                诊断安装 / 配置 / 权限问题
+      keypulse start                 启动后台采集
+      keypulse stop                  停止后台采集
+      keypulse healthcheck           运行健康检查
+      keypulse daily run             生成今天日报
+      keypulse weekly run            生成本周周报
+      keypulse obsidian sync         同步到 Obsidian
+      keypulse search "<关键词>"     搜索历史活动
+
+    完整命令列表见下方 Commands。
+    """
     pass
 
 
@@ -1119,7 +1181,7 @@ def doctor(plain):
 @main.command()
 @click.option("--config", "config_path", default=None)
 def healthcheck(config_path):
-    """Run health check and write ~/.keypulse/health.json."""
+    """运行健康检查，写入 ~/.keypulse/health.json（用户日常诊断用）。"""
     from keypulse.health import run_healthcheck
 
     result = run_healthcheck(config_path=config_path)
@@ -1128,7 +1190,7 @@ def healthcheck(config_path):
         raise SystemExit(1)
 
 
-@main.command("self-heal")
+@main.command("self-heal", hidden=True)
 @click.option("--dry-run", is_flag=True, help="仅演练步骤，不真正重启 daemon")
 def self_heal_command(dry_run):
     """Run product self-heal sequence for HUD/manual recovery."""
@@ -1328,7 +1390,7 @@ def save(text, tag, plain):
 # ═════════════════════════════════════════════════════════════════════════════
 
 @main.command()
-@click.option("--date", default=None, help="Date in YYYY-MM-DD format")
+@click.option("--date", default=None, help=DATE_HELP_TEXT)
 @click.option("--today", is_flag=True, default=False, help="Show today's timeline")
 @click.option("--plain", is_flag=True, default=False, help="Plain text output")
 def timeline(date, today, plain):
@@ -1340,7 +1402,7 @@ def timeline(date, today, plain):
     if date is None and today:
         date_str = None  # Will default to today
     elif date:
-        date_str = date
+        date_str = _parse_date(date)
     else:
         date_str = None  # Default to today
 
@@ -1552,7 +1614,7 @@ def session():
 
 
 @session.command("list")
-@click.option("--date", default=None, help="Date in YYYY-MM-DD format")
+@click.option("--date", default=None, help=DATE_HELP_TEXT)
 @click.option("--limit", default=100, help="Number of sessions to show")
 @click.option("--plain", is_flag=True, default=False, help="Plain text output")
 def session_list(date, limit, plain):
@@ -1560,7 +1622,8 @@ def session_list(date, limit, plain):
     cfg = get_config()
     require_db(cfg)
 
-    sessions = get_sessions(date_str=date, limit=limit)
+    parsed_date = _parse_date(date) if date else None
+    sessions = get_sessions(date_str=parsed_date, limit=limit)
 
     if plain:
         for s in sessions:
@@ -1644,7 +1707,11 @@ def obsidian():
 
 
 def _resolve_obsidian_date(date: Optional[str], yesterday: bool) -> str:
-    return resolve_local_date(date, yesterday=yesterday)
+    if yesterday:
+        return _parse_date("yesterday")
+    if date is None:
+        return _parse_date("today")
+    return _parse_date(date)
 
 
 def _sync_obsidian_bundle(
@@ -1684,8 +1751,19 @@ def _sync_obsidian_bundle(
 
 @main.group()
 def daily():
-    """Run daily clustering orchestration."""
+    """日报：生成 / 重跑 / 查看每日活动总结。"""
     pass
+
+
+def _capture_legacy_daily_trigger(
+    ctx: click.Context,
+    param: click.Parameter,
+    value: str | None,
+) -> None:
+    del param
+    if value:
+        ctx.meta["legacy_daily_trigger"] = value
+    return None
 
 
 def _daily_note_output_path(cfg: Config, date_str: str) -> Path:
@@ -1712,20 +1790,40 @@ def _render_daily_fallback(cfg: Config, date_str: str, *, no_llm: bool) -> Path:
 
 
 @daily.command("run")
-@click.option("--date", "date_str", required=True, help="Date in YYYY-MM-DD format")
-@click.option("--trigger", type=click.Choice(["18:00", "23:30"]), default="18:00", show_default=True)
-@click.option("--mock-llm", is_flag=True, default=False, help="Use MOCK_LLM=1 stub gateway")
-def daily_run(date_str, trigger, mock_llm):
-    """Run PR2 daily orchestrator once."""
+@click.option("--date", "date_str", default="today", help=DATE_HELP_TEXT)
+@click.option(
+    "--incremental",
+    is_flag=True,
+    default=False,
+    help="增量模式：只处理上次 run 之后的新事件（夜间补跑用）。默认全量重算。",
+)
+@click.option("--mock-llm", is_flag=True, default=False, help="开发用：用 MOCK_LLM=1 跳过真实 LLM 调用")
+@click.option(
+    "--trigger",
+    type=click.Choice(["18:00", "23:30"]),
+    default=None,
+    hidden=True,
+    expose_value=False,
+    callback=_capture_legacy_daily_trigger,
+)
+def daily_run(date_str, incremental, mock_llm):
+    """生成指定日期的日报（默认今天，全量重算）。
+
+    \b
+    示例：
+      keypulse daily run                       # 生成今天日报
+      keypulse daily run --date yesterday      # 重跑昨天日报
+      keypulse daily run --date 2026-05-18     # 重跑指定日期
+      keypulse daily run --incremental         # 增量模式（夜间补跑用）
+    """
+    date_str = _parse_date(date_str)
     cfg = get_config()
     require_db(cfg)
-
-    if trigger == "23:30":
-        click.echo(
-            "⚠️  --trigger 23:30 是增量模式：只消费 18:00 跑过之后新增的 events。"
-            "如要全量重跑该日，请使用 --trigger 18:00。",
-            err=True,
-        )
+    trigger = "23:30" if incremental else "18:00"
+    legacy_trigger = click.get_current_context().meta.get("legacy_daily_trigger")
+    if legacy_trigger in {"18:00", "23:30"}:
+        trigger = legacy_trigger
+        click.echo("⚠️  `--trigger` 已弃用，请改用 `--incremental`。", err=True)
 
     previous_mock = os.environ.get("MOCK_LLM")
     if mock_llm:
@@ -1758,7 +1856,7 @@ def daily_run(date_str, trigger, mock_llm):
 # 13.3b EVAL — 把 validator 包成一行命令，列 fail case + 出 score
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.group()
+@main.group(hidden=True)
 def eval():
     """Score daily/weekly outputs against validator + golden baselines."""
     pass
@@ -1884,16 +1982,17 @@ def eval_skill():
 
 @main.group()
 def weekly():
-    """Run weekly report orchestration."""
+    """周报：生成本周或指定周的总结报告。"""
     pass
 
 
 @weekly.command("run")
-@click.option("--week", "week_str", required=True, help="ISO week in YYYY-Www format")
+@click.option("--week", "week_str", default="this", show_default=True, help="周，支持 this / last / 2026-W19")
 @click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="exec", show_default=True)
 @click.option("--mock-llm", is_flag=True, default=False, help="Use MOCK_LLM=1 stub gateway")
 def weekly_run(week_str, style, mock_llm):
-    """Run PR3 weekly orchestrator once."""
+    """生成指定周的周报。--week 默认 this，可写 this / last / 2026-W19。"""
+    week_str = _parse_week(week_str)
     os.environ["HOME"] = str(Path.home())
     cfg = get_config()
     require_db(cfg)
@@ -1987,7 +2086,7 @@ def sinks_status(plain):
     help="Incremental append mode: only add new events, do not re-render narrative.",
 )
 @click.option("--yesterday", is_flag=True, default=False, help="Export yesterday's data (full sync)")
-@click.option("--date", default=None, help="Specific date in YYYY-MM-DD format (mutually exclusive with --incremental and --yesterday)")
+@click.option("--date", default=None, help=DATE_HELP_TEXT)
 @click.option("--output", default=None, help="Override vault path")
 @click.option("--vault-name", default=None, help="Override vault name")
 def obsidian_sync(date, yesterday, incremental, output, vault_name):
@@ -2010,7 +2109,7 @@ def obsidian_sync(date, yesterday, incremental, output, vault_name):
         record_trigger("T1", now=now, db_path=cfg.db_path_expanded, outcome="allowed")
 
     if incremental:
-        date_str = resolve_local_date("today", yesterday=False)
+        date_str = _parse_date("today")
     elif yesterday:
         date_str = _resolve_obsidian_date(None, yesterday=True)
     elif date:
@@ -2049,8 +2148,8 @@ def pipeline():
     pass
 
 
-@pipeline.command("sync")
-@click.option("--date", default=None, help="Specific date in YYYY-MM-DD format")
+@pipeline.command("sync", hidden=True)
+@click.option("--date", default=None, help=DATE_HELP_TEXT)
 @click.option("--yesterday", is_flag=True, default=False, help="Sync yesterday's data")
 @click.option("--output", default=None, help="Override vault path")
 @click.option("--vault-name", default=None, help="Override vault name")
@@ -2064,8 +2163,8 @@ def pipeline_sync(date, yesterday, output, vault_name):
     print(f"pipeline_sync=ok date={date_str} sink={sink_kind} output={target_output} written={written}")
 
 
-@pipeline.command("draft")
-@click.option("--date", default=None, help="Specific date in YYYY-MM-DD format")
+@pipeline.command("draft", hidden=True)
+@click.option("--date", default=None, help=DATE_HELP_TEXT)
 @click.option("--yesterday", is_flag=True, default=False, help="Build yesterday's draft")
 @click.option("--output", default=None, help="Write the draft to a file instead of stdout")
 def pipeline_draft(date, yesterday, output):
@@ -2132,7 +2231,7 @@ def feedback_list(path, plain):
         console.print(table)
 
 
-@feedback.command("refine")
+@feedback.command("refine", hidden=True)
 @click.option("--theme", "theme_name", required=True, help="Theme name to refine")
 @click.option("--instruction", required=True, help="Refinement instruction")
 @click.option("--state-path", default=None, help="Override theme state path")
@@ -2142,7 +2241,7 @@ def feedback_refine(theme_name, instruction, state_path):
     console.print(f"[green]{result['theme_name']} v{result['version']}[/green]")
 
 
-@feedback.command("status")
+@feedback.command("status", hidden=True)
 @click.option("--state-path", default=None, help="Override theme state path")
 @click.option("--plain", is_flag=True, default=False, help="Plain text output")
 def feedback_status(state_path, plain):
@@ -2162,6 +2261,104 @@ def feedback_status(state_path, plain):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# 13.9 DEV (internal command entrypoint)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@main.group()
+def dev():
+    """开发者内部命令。"""
+    pass
+
+
+@dev.command("self-heal")
+@click.option("--dry-run", is_flag=True, help="仅演练步骤，不真正重启 daemon")
+def dev_self_heal(dry_run):
+    """Run product self-heal sequence for HUD/manual recovery."""
+    return self_heal_command.callback(dry_run)
+
+
+@dev.group("eval")
+def dev_eval():
+    """Score daily/weekly outputs against validator + golden baselines."""
+    pass
+
+
+@dev_eval.command("daily")
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 daily.md 路径")
+@click.option("--summary", "summary_path", type=click.Path(exists=True), default=None,
+              help="对应 daily-summary JSON 路径（可选，提供后会跑数据层断言）")
+@click.option("--fail-only", is_flag=True, default=False, help="只列 fail case 不打印 banner")
+def dev_eval_daily(candidate, summary_path, fail_only):
+    """Score one daily.md and list all failing checks."""
+    return eval_daily.callback(candidate, summary_path, fail_only)
+
+
+@dev_eval.command("weekly")
+@click.option("--candidate", "candidate", required=True, type=click.Path(exists=True), help="待评 weekly.md 路径")
+@click.option("--style", "style", type=click.Choice(["plain", "exec"]), default="plain", show_default=True)
+@click.option("--dailies-dir", "dailies_dir", type=click.Path(exists=True), default=None,
+              help="本周 daily.md 所在目录，用于客观性溯源（可选）")
+@click.option("--fail-only", is_flag=True, default=False)
+def dev_eval_weekly(candidate, style, dailies_dir, fail_only):
+    """Score one weekly.md and list all failing checks."""
+    return eval_weekly.callback(candidate, style, dailies_dir, fail_only)
+
+
+@dev_eval.command("skill")
+def dev_eval_skill():
+    """[占位] skill propose eval — 等 V0 hello world 跑通才有数据。"""
+    return eval_skill.callback()
+
+
+@dev.group("pipeline")
+def dev_pipeline():
+    """Inspect and operate the information pipeline."""
+    pass
+
+
+@dev_pipeline.command("sync")
+@click.option("--date", default=None, help=DATE_HELP_TEXT)
+@click.option("--yesterday", is_flag=True, default=False, help="Sync yesterday's data")
+@click.option("--output", default=None, help="Override vault path")
+@click.option("--vault-name", default=None, help="Override vault name")
+def dev_pipeline_sync(date, yesterday, output, vault_name):
+    """Run the unified daily sync path."""
+    return pipeline_sync.callback(date, yesterday, output, vault_name)
+
+
+@dev_pipeline.command("draft")
+@click.option("--date", default=None, help=DATE_HELP_TEXT)
+@click.option("--yesterday", is_flag=True, default=False, help="Build yesterday's draft")
+@click.option("--output", default=None, help="Write the draft to a file instead of stdout")
+def dev_pipeline_draft(date, yesterday, output):
+    """Render a daily draft through the unified daily renderer."""
+    return pipeline_draft.callback(date, yesterday, output)
+
+
+@dev.group("feedback")
+def dev_feedback():
+    """Record and inspect pipeline feedback."""
+    pass
+
+
+@dev_feedback.command("refine")
+@click.option("--theme", "theme_name", required=True, help="Theme name to refine")
+@click.option("--instruction", required=True, help="Refinement instruction")
+@click.option("--state-path", default=None, help="Override theme state path")
+def dev_feedback_refine(theme_name, instruction, state_path):
+    """Persist a theme refinement instruction."""
+    return feedback_refine.callback(theme_name, instruction, state_path)
+
+
+@dev_feedback.command("status")
+@click.option("--state-path", default=None, help="Override theme state path")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def dev_feedback_status(state_path, plain):
+    """Show the active theme profile."""
+    return feedback_status.callback(state_path, plain)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # 14. EXPORT
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -2169,19 +2366,20 @@ def feedback_status(state_path, plain):
 @click.option("--format", type=click.Choice(["json", "csv", "md", "obsidian"]), default="json",
               help="Export format")
 @click.option("--days", default=None, type=int, help="Number of days to export")
-@click.option("--date", default=None, help="Specific date in YYYY-MM-DD format")
+@click.option("--date", default=None, help=DATE_HELP_TEXT)
 @click.option("--output", default=None, help="Output file path")
 def export(format, days, date, output):
     """Export activity data."""
     cfg = get_config()
     require_db(cfg)
+    parsed_date = _parse_date(date) if date else None
 
     if format == "json":
-        data = export_json(days=days, date_str=date)
+        data = export_json(days=days, date_str=parsed_date)
     elif format == "csv":
-        data = export_csv(days=days, date_str=date)
+        data = export_csv(days=days, date_str=parsed_date)
     elif format == "md":
-        data = export_markdown(days=days, date_str=date)
+        data = export_markdown(days=days, date_str=parsed_date)
     elif format == "obsidian":
         if output:
             target_output = output
@@ -2192,7 +2390,7 @@ def export(format, days, date, output):
         written = export_obsidian(
             output_dir=target_output,
             days=days,
-            date_str=date,
+            date_str=parsed_date,
             vault_name=cfg.obsidian.vault_name,
             model_gateway=gateway,
             wiki_link_mode=getattr(getattr(cfg, "obsidian", None), "wiki_link_mode", "relative"),
