@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import hashlib
+import unicodedata
 from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -356,6 +357,61 @@ def _trace_sample_events(raw_rows: list[dict[str, Any]], *, capped_limit: int | 
     return list(raw_rows)
 
 
+def _display_width(text: str) -> int:
+    width = 0
+    for char in str(text or ""):
+        width += 2 if unicodedata.east_asian_width(char) in {"F", "W", "A"} else 1
+    return width
+
+
+def _pad_display(text: str, width: int, *, align: str = "left") -> str:
+    value = str(text or "")
+    pad = max(int(width or 0) - _display_width(value), 0)
+    if align == "right":
+        return (" " * pad) + value
+    return value + (" " * pad)
+
+
+def _render_text_kv_block(rows: list[tuple[str, str]]) -> list[str]:
+    if not rows:
+        return []
+    key_width = max((_display_width(key) for key, _value in rows), default=0) + 2
+    lines = ["```text"]
+    for key, value in rows:
+        lines.append(f"{_pad_display(key, key_width)}: {value}")
+    lines.extend(["```", ""])
+    return lines
+
+
+def _render_text_table_block(
+    *,
+    headers: list[str],
+    rows: list[list[str]],
+    align_right_cols: set[int] | None = None,
+) -> list[str]:
+    if not headers:
+        return []
+    align_right = set(align_right_cols or set())
+    widths = []
+    for index, header in enumerate(headers):
+        column_cells = [str(row[index] if index < len(row) else "") for row in rows]
+        widths.append(max([_display_width(header), *(_display_width(cell) for cell in column_cells)]))
+
+    def render_row(values: list[str], is_header: bool = False) -> str:
+        cells: list[str] = []
+        for index, header in enumerate(headers):
+            value = str(values[index] if index < len(values) else "")
+            align = "right" if index in align_right and not is_header else "left"
+            cells.append(_pad_display(value, widths[index], align=align))
+        return "  ".join(cells).rstrip()
+
+    lines = ["```text", render_row(headers, is_header=True)]
+    for row in rows:
+        lines.append(render_row(row))
+    lines.extend(["```", ""])
+    return lines
+
+
 def _trace_source_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     aggregates: dict[str, dict[str, Any]] = {}
     for row in raw_rows:
@@ -422,19 +478,18 @@ def _trace_source_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def _trace_path_label(
+def _trace_cluster_strategy_label(
     *,
     orchestrator_rows: list[dict[str, Any]],
     cost_rows: list[dict[str, Any]],
     capped_row: dict[str, Any] | None,
-) -> tuple[str, int | None]:
+) -> str:
     budget_row = _trace_select_row(orchestrator_rows, tier="budget")
     if budget_row is not None:
-        cluster_count = int(budget_row.get("cluster_count") or 0)
-        return "budget L1+L2+L3", cluster_count
+        return "budget 分步法（pre-cluster + L1/L2/L3）"
     if capped_row is not None or any(str(row.get("capability") or "").strip() == "daily_flagship" for row in cost_rows):
-        return "flagship 全量（绕过 cluster）", 0
-    return "其他", None
+        return "flagship 一步法（LLM 直接产 things）"
+    return "其他"
 
 
 def _render_algorithm_trace_section(
@@ -445,6 +500,7 @@ def _render_algorithm_trace_section(
     event_card_count: int,
     clusters_hint: int = 0,
 ) -> list[str]:
+    del clusters_hint
     orchestrator_rows = _trace_orchestrator_rows(date_text)
     if not orchestrator_rows:
         return []
@@ -488,12 +544,11 @@ def _render_algorithm_trace_section(
     )
     source_rows = _trace_source_rows(raw_rows)
 
-    path_label, inferred_clusters = _trace_path_label(
+    cluster_strategy = _trace_cluster_strategy_label(
         orchestrator_rows=orchestrator_rows,
         cost_rows=cost_rows,
         capped_row=capped_row,
     )
-    cluster_count = int(clusters_hint or 0) if inferred_clusters is None else inferred_clusters
     quality_gate = _trace_quality_gate_label(main_body)
     trace_rows = _trace_sample_events(raw_rows, capped_limit=capped_limit)
     sample_lines: list[str] = []
@@ -512,27 +567,23 @@ def _render_algorithm_trace_section(
         "## 🔬 算法 Trace（自检用）",
         "",
         "**数据**",
-        "| 项 | 值 |",
-        "|---|---|",
-        f"| raw events | {raw_event_count} |",
-        f"| capped | {capped_display} |",
-        f"| 时间窗 | {date_text} 00:00 ~ 23:59 {local_timezone()} |",
-        f"| clusters | {cluster_count} |",
-        f"| things | {topic_count} |",
-        f"| events 卡片 | {event_card_count} |",
-        f"| quality_gate | {quality_gate} |",
-        f"| 走的 path | {path_label} |",
-        "",
     ]
-
-    if source_rows:
-        lines.extend(
+    lines.extend(
+        _render_text_kv_block(
             [
-                "**数据采集源**（当日 raw events 按 source 聚合）",
-                "| source | events | 最早 | 最晚 | 状态 |",
-                "|---|---|---|---|---|",
+                ("raw events", str(raw_event_count)),
+                ("capped", str(capped_display)),
+                ("时间窗", f"{date_text} 00:00 ~ 23:59 {local_timezone()}"),
+                ("聚类策略", cluster_strategy),
+                ("things", str(topic_count)),
+                ("events 卡片", str(event_card_count)),
+                ("quality_gate", quality_gate),
             ]
         )
+    )
+
+    if source_rows:
+        source_table: list[list[str]] = []
         for item in source_rows:
             events_count = int(item.get("events") or 0)
             earliest = item.get("earliest")
@@ -540,8 +591,15 @@ def _render_algorithm_trace_section(
             earliest_label = earliest.astimezone(local_timezone()).strftime("%H:%M") if isinstance(earliest, datetime) else "—"
             latest_label = latest.astimezone(local_timezone()).strftime("%H:%M") if isinstance(latest, datetime) else "—"
             status = "ok" if events_count >= 1 else "⚠ silent"
-            lines.append(f"| {item.get('source')} | {events_count} | {earliest_label} | {latest_label} | {status} |")
-        lines.append("")
+            source_table.append([str(item.get("source") or ""), str(events_count), earliest_label, latest_label, status])
+        lines.append("**数据采集源**（当日 raw events 按 source 聚合）")
+        lines.extend(
+            _render_text_table_block(
+                headers=["source", "events", "最早", "最晚", "状态"],
+                rows=source_table,
+                align_right_cols={1},
+            )
+        )
 
     if repair_row is not None:
         before_things = int(repair_row.get("before_things") or 0)
@@ -561,13 +619,7 @@ def _render_algorithm_trace_section(
         )
 
     if cost_rows:
-        lines.extend(
-            [
-                "**LLM 调用**",
-                "| stage | model | in→out tokens | 状态 |",
-                "|---|---|---|---|",
-            ]
-        )
+        table_rows: list[list[str]] = []
         for row in cost_rows:
             stage = str(row.get("capability") or "").strip() or "—"
             model = str(row.get("model") or "").strip() or "—"
@@ -580,8 +632,14 @@ def _render_algorithm_trace_section(
                 status = "failed: empty content"
             else:
                 status = "ok"
-            lines.append(f"| {stage} | {model} | {in_tokens}→{out_tokens} | {status} |")
-        lines.append("")
+            table_rows.append([stage, model, f"{in_tokens}→{out_tokens}", status])
+        lines.append("**LLM 调用**")
+        lines.extend(
+            _render_text_table_block(
+                headers=["stage", "model", "in→out tokens", "状态"],
+                rows=table_rows,
+            )
+        )
 
     lines.extend(
         [
