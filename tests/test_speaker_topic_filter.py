@@ -77,6 +77,6 @@ def test_topic_generation_ignores_system_window_events():
     )
 
     assert bundle["daily"][0]["properties"]["topic_count"] == 1
-    assert len(bundle["topics"]) == 1
+    assert set(bundle) == {"daily"}
     assert _topic_from_item({"app_name": "终端", "body": "docker compose config"}) == "docker-compose-config"
     assert _topic_from_item({"app_name": "终端"}) is None
