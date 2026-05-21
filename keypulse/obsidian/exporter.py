@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -10,10 +9,11 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
-from keypulse.obsidian.layout import iso_date, render_note, slugify, time_token
+from keypulse.obsidian.layout import iso_date, render_note, slugify
 from keypulse.obsidian.model import NoteCard
+from keypulse.obsidian.weekday import weekday_label
 from keypulse.quality import StrategyRegistry, StrategyRunner
 from keypulse.quality.strategies import register_cluster_strategies
 from keypulse.pipeline.daily_summary import render_daily_markdown
@@ -37,48 +37,7 @@ _TOMORROW_PLAN_LINE_PREFIX = "> 明天我想："
 _TOMORROW_PLAN_HINT = "> _写一句话留给明天的自己_"
 _USER_SOURCES_FOR_ITEM = frozenset({"clipboard", "manual", "browser", "browser_url"})
 _SYNC_CURSOR_FILENAME = "sync-cursor.json"
-_WIKI_LINK_RE = re.compile(r"\[\[(?P<target>[^\]|]+)(?:\|[^\]]+)?\]\]")
-_EVENT_HASH_SUFFIX_RE = re.compile(r"-[0-9a-f]{8}$")
 _SUPPORTED_WIKI_LINK_MODES = frozenset({"relative", "absolute_md"})
-_FILENAME_ACTION_MAP = {
-    "make": "build",
-    "build": "build",
-    "created": "build",
-    "create": "build",
-    "fix": "fix",
-    "fixed": "fix",
-    "修复": "fix",
-    "改": "fix",
-    "写": "write",
-    "写了": "write",
-    "test": "test",
-    "testing": "test",
-    "run": "run",
-    "deploy": "deploy",
-    "actual-success": "成功",
-    "成功了": "成功",
-    "实际成功了": "成功",
-    "未装": "跳过",
-    "没装": "跳过",
-    "skip": "跳过",
-}
-_FILENAME_STOPWORDS = {
-    "the",
-    "and",
-    "for",
-    "with",
-    "from",
-    "that",
-    "this",
-    "在",
-    "的",
-    "了",
-    "是",
-    "然后",
-    "之后",
-    "today",
-    "yesterday",
-}
 
 
 @dataclass(frozen=True)
@@ -157,51 +116,6 @@ def _normalize_wiki_link_mode(value: str | None) -> str:
     return mode
 
 
-def _keypulse_relative_path_for_note(note_path: str) -> Path:
-    relative = Path(note_path)
-    if not relative.parts:
-        return relative
-    head = relative.parts[0].lower()
-    if head == "events":
-        return Path("events", *relative.parts[1:])
-    if head == "topics":
-        return Path("topics", *relative.parts[1:])
-    return relative
-
-
-def _build_link_formatter(
-    *,
-    wiki_link_mode: str,
-    keypulse_home: Path,
-) -> Callable[[str, str | None], str]:
-    normalized_mode = _normalize_wiki_link_mode(wiki_link_mode)
-    resolved_home = keypulse_home.expanduser().resolve()
-
-    def _format(path: str, label: str | None) -> str:
-        relative = _keypulse_relative_path_for_note(path)
-        relative_posix = relative.as_posix()
-        label_text = (label or "").strip()
-        lower = relative_posix.lower()
-
-        if lower.startswith("events/") or lower.startswith("topics/"):
-            if normalized_mode == "absolute_md":
-                absolute_path = (resolved_home / relative).resolve()
-                link_text = label_text or Path(path).stem
-                return f"[{link_text}]({absolute_path.as_uri()})"
-
-            target = f"../.keypulse/{Path(relative_posix).with_suffix('').as_posix()}"
-            if label_text:
-                return f"[[{target}|{label_text}]]"
-            return f"[[{target}]]"
-
-        target = _link_from_path(path)
-        if label_text:
-            return f"[[{target}|{label_text}]]"
-        return f"[[{target}]]"
-
-    return _format
-
-
 def _default_db_path() -> Path:
     return _keypulse_home() / "keypulse.db"
 
@@ -278,214 +192,6 @@ def _query_events_by_date(db_path: Path, date_str: str, *, min_id_exclusive: int
     finally:
         conn.close()
     return [dict(row) for row in rows]
-
-
-def _read_text(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
-
-
-def _write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(path, text)
-
-
-def _is_section_heading(line: str) -> bool:
-    return line.startswith("## ")
-
-
-def _section_body_lines(text: str, heading: str) -> list[str] | None:
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        if line.strip() != heading:
-            continue
-        end = index + 1
-        while end < len(lines) and not _is_section_heading(lines[end]):
-            end += 1
-        return lines[index + 1 : end]
-    return None
-
-
-def _replace_section_body(text: str, heading: str, body_lines: list[str]) -> str:
-    lines = text.splitlines()
-    updated: list[str] = []
-    replaced = False
-    index = 0
-
-    while index < len(lines):
-        line = lines[index]
-        if not replaced and line.strip() == heading:
-            updated.append(line)
-            updated.extend(body_lines)
-            index += 1
-            while index < len(lines) and not _is_section_heading(lines[index]):
-                index += 1
-            replaced = True
-            continue
-
-        updated.append(line)
-        index += 1
-
-    if not replaced:
-        if updated and updated[-1].strip():
-            updated.append("")
-        updated.append(heading)
-        updated.extend(body_lines)
-
-    return "\n".join(updated).rstrip() + "\n"
-
-
-def _trim_trailing_blank_lines(lines: list[str]) -> list[str]:
-    trimmed = list(lines)
-    while trimmed and not trimmed[-1].strip():
-        trimmed.pop()
-    return trimmed
-
-
-def _extract_wiki_link_target(line: str) -> str | None:
-    match = _WIKI_LINK_RE.search(line)
-    if not match:
-        return None
-    return match.group("target").strip()
-
-
-def _event_link_key_from_target(target: str) -> str:
-    stem = Path(target).stem
-    return _EVENT_HASH_SUFFIX_RE.sub("", stem)
-
-
-def _topic_link_key_from_target(target: str) -> str:
-    normalized = str(target or "").strip().replace("\\", "/")
-    lowered = normalized.lower()
-    if lowered.startswith("../.keypulse/topics/"):
-        normalized = normalized[len("../.keypulse/topics/") :]
-    elif lowered.startswith("topics/"):
-        normalized = normalized[len("topics/") :]
-    return Path(normalized).with_suffix("").as_posix()
-
-
-def _section_link_keys(text: str, heading: str, *, kind: str) -> set[str]:
-    lines = _section_body_lines(text, heading) or []
-    keys: set[str] = set()
-    for line in lines:
-        target = _extract_wiki_link_target(line)
-        if not target:
-            continue
-        if kind == "event":
-            keys.add(_event_link_key_from_target(target))
-        else:
-            keys.add(_topic_link_key_from_target(target))
-    return keys
-
-
-def _append_unique_section_lines(
-    text: str,
-    heading: str,
-    new_lines: list[str],
-    *,
-    kind: str,
-) -> str:
-    existing_body = _trim_trailing_blank_lines(_section_body_lines(text, heading) or [])
-    existing_keys = _section_link_keys(text, heading, kind=kind)
-    appended: list[str] = []
-
-    for line in new_lines:
-        target = _extract_wiki_link_target(line)
-        key = None
-        if target:
-            key = _event_link_key_from_target(target) if kind == "event" else _topic_link_key_from_target(target)
-        else:
-            key = line.strip()
-        if key and key in existing_keys:
-            continue
-        if key:
-            existing_keys.add(key)
-        appended.append(line)
-
-    if not appended:
-        return text
-
-    merged = list(existing_body)
-    if merged and merged[-1].strip():
-        merged.append("")
-    merged.extend(appended)
-    if merged and merged[-1].strip():
-        merged.append("")
-    return _replace_section_body(text, heading, merged)
-
-
-def _replace_first_matching_line(text: str, pattern: str, replacement: str) -> str:
-    lines = text.splitlines()
-    compiled = re.compile(pattern)
-    for index, line in enumerate(lines):
-        if compiled.match(line.strip()):
-            lines[index] = replacement
-            return "\n".join(lines).rstrip() + "\n"
-    return text
-
-
-def _frontmatter_value(text: str, key: str) -> str | None:
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return None
-    for line in lines[1:]:
-        stripped = line.strip()
-        if stripped == "---":
-            break
-        if stripped.startswith(f"{key}:"):
-            return stripped.split(":", 1)[1].strip().strip('"').strip("'")
-    return None
-
-
-def _extract_block(text: str, start_marker: str, end_marker: str) -> str | None:
-    lines = text.splitlines()
-    start = None
-    for index, line in enumerate(lines):
-        if line.strip() == start_marker:
-            start = index
-            break
-    if start is None:
-        return None
-
-    end = None
-    for index in range(start + 1, len(lines)):
-        if lines[index].strip() == end_marker:
-            end = index
-            break
-    if end is None:
-        return None
-
-    return "\n".join(lines[start : end + 1])
-
-
-def _replace_block(text: str, start_marker: str, end_marker: str, replacement: str) -> str:
-    lines = text.splitlines()
-    updated: list[str] = []
-    index = 0
-    replaced = False
-
-    while index < len(lines):
-        if not replaced and lines[index].strip() == start_marker:
-            updated.extend(replacement.splitlines())
-            index += 1
-            while index < len(lines):
-                if lines[index].strip() == end_marker:
-                    index += 1
-                    break
-                index += 1
-            replaced = True
-            continue
-        updated.append(lines[index])
-        index += 1
-
-    if not replaced:
-        if updated and updated[-1].strip():
-            updated.append("")
-        updated.extend(replacement.splitlines())
-
-    return "\n".join(updated).rstrip() + "\n"
 
 
 def _strip_narrative_heading(text: str) -> str:
@@ -741,11 +447,7 @@ def _topic_title(topic_key: str | None) -> str:
 
 
 def _weekday_label(date_str: str) -> str:
-    labels = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-    try:
-        return labels[datetime.fromisoformat(date_str).weekday()]
-    except Exception:
-        return "今天"
+    return weekday_label(date_str)
 
 
 def _format_duration(secs: int) -> str:
@@ -782,140 +484,6 @@ def _topic_from_item(item: dict[str, Any]) -> str | None:
             return slugify(candidate, fallback="topic", max_length=64)
 
     return None
-
-
-def _event_slug(item: dict[str, Any], topic_key: str) -> str:
-    title = item.get("title") or item.get("window_title") or item.get("app_name") or topic_key
-    return slugify(str(title), fallback=topic_key, max_length=64)
-
-
-def _hash_suffix(*parts: str) -> str:
-    digest = hashlib.sha1("::".join(parts).encode("utf-8")).hexdigest()
-    return digest[:8]
-
-
-def _event_note_id(item: dict[str, Any], date_str: str, topic_key: str) -> str:
-    title = str(item.get("title") or item.get("window_title") or item.get("app_name") or topic_key or "").strip()
-    created_at = str(item.get("created_at") or "")
-    return _hash_suffix(date_str, topic_key, created_at, title)
-
-
-def _normalize_filename_token(token: str) -> str:
-    normalized = slugify(token, fallback="", max_length=32)
-    if not normalized:
-        return ""
-    return _FILENAME_ACTION_MAP.get(normalized, normalized)
-
-
-def _filename_tokens_from_text(text: str) -> list[str]:
-    slug = slugify(text, fallback="", max_length=120)
-    if not slug:
-        return []
-    out: list[str] = []
-    for raw in slug.split("-"):
-        token = _normalize_filename_token(raw)
-        if not token:
-            continue
-        out.append(token)
-    return out
-
-
-def _fallback_intent(item: dict[str, Any]) -> str:
-    event_type = str(item.get("event_type") or "").strip().lower()
-    if event_type == "manual_save":
-        return "capture"
-    if event_type:
-        return _normalize_filename_token(event_type) or "capture"
-    return "capture"
-
-
-def _build_event_filename_slug(item: dict[str, Any], title_text: str, topic_key: str) -> str:
-    tokens = _filename_tokens_from_text(title_text)
-    if not tokens or (tokens[0].isascii() and len(tokens[0]) < 2):
-        tokens = _filename_tokens_from_text(str(item.get("app_name") or item.get("origin_source") or topic_key or "event"))
-    actor = tokens[0] if tokens else "event"
-    intent = tokens[1] if len(tokens) >= 2 else _fallback_intent(item)
-    keyword_sources = tokens[2:] + _filename_tokens_from_text(str(topic_key))
-    keywords: list[str] = []
-    for token in keyword_sources:
-        if token in {actor, intent}:
-            continue
-        if token in _FILENAME_STOPWORDS:
-            continue
-        if token.isascii() and len(token) < 2:
-            continue
-        if token not in keywords:
-            keywords.append(token)
-        if len(keywords) >= 4:
-            break
-    parts = [actor, intent, *keywords]
-    deduped: list[str] = []
-    for token in parts:
-        if token and token not in deduped:
-            deduped.append(token)
-    slug = "-".join(deduped)
-    return slugify(slug, fallback="event-capture", max_length=96)
-
-
-def _humanize_event_title(
-    item: dict[str, Any],
-    topic_key: str,
-    *,
-    model_gateway: "ModelGateway | None",
-    humanize_titles: bool,
-) -> str:
-    original_title = str(item.get("title") or "").strip()
-    fallback_title = original_title or str(item.get("app_name") or topic_key or "event").strip()
-    if not humanize_titles or model_gateway is None:
-        return fallback_title
-
-    prompt_input = {
-        "title": fallback_title,
-        "body": str(item.get("body") or "").strip(),
-        "app_name": str(item.get("app_name") or "").strip(),
-        "topic_key": str(topic_key or "").strip(),
-    }
-    prompt = "\n".join(
-        [
-            "请把下面事件标题重写成“actor + intent + 关键词”短标题，避免机器味。",
-            "输出 JSON，字段 filename_title。",
-            json.dumps(prompt_input, ensure_ascii=False),
-        ]
-    )
-    try:
-        response = model_gateway.call(
-            "event_title_humanize",
-            prompt,
-            input_data=prompt_input,
-        )
-    except Exception as exc:
-        logger.warning("event title humanize fallback exc_type=%s exc=%s", type(exc).__name__, exc)
-        return fallback_title
-    if not isinstance(response, dict):
-        return fallback_title
-    candidate = " ".join(str(response.get("filename_title") or "").split()).strip()
-    if not candidate:
-        return fallback_title
-    return candidate
-
-
-def _event_filename(
-    item: dict[str, Any],
-    date_str: str,
-    topic_key: str,
-    *,
-    model_gateway: "ModelGateway | None" = None,
-    humanize_titles: bool = False,
-) -> str:
-    created_at = str(item.get("created_at") or "")
-    title = _humanize_event_title(
-        item,
-        topic_key,
-        model_gateway=model_gateway,
-        humanize_titles=humanize_titles,
-    )
-    event_slug = _build_event_filename_slug(item, title, topic_key)
-    return f"{time_token(created_at)}-{event_slug}.md"
 
 
 def _meaningful_item(event: dict[str, Any]) -> bool:
@@ -1137,61 +705,6 @@ def _title_from_event(event: dict[str, Any], body: str) -> str:
     return (event.get("app_name") or event.get("event_type") or "event").strip()
 
 
-def _note_path(kind: str, date_str: str, topic_key: str, created_at: str | None = None) -> str:
-    if kind == "daily":
-        return f"Daily/{date_str}.md"
-    if kind == "topic":
-        return f"Topics/{topic_key}.md"
-    token = time_token(created_at)
-    suffix = _hash_suffix(date_str, topic_key, created_at or "")
-    return f"Events/{date_str}/{token}-{topic_key}-{suffix}.md"
-
-
-def _link_from_path(path: str) -> str:
-    return path.removesuffix(".md")
-
-
-def _obsidian_link(
-    path: str,
-    label: str | None = None,
-    *,
-    link_formatter: Callable[[str, str | None], str] | None = None,
-) -> str:
-    if link_formatter is not None:
-        return link_formatter(path, label)
-    target = _link_from_path(path)
-    if label and label.strip():
-        return f"[[{target}|{label.strip()}]]"
-    return f"[[{target}]]"
-
-
-def _event_identity(item: dict[str, Any]) -> tuple[str, str, str]:
-    return (
-        str(item.get("created_at") or item.get("ts_start") or ""),
-        str(item.get("title") or ""),
-        str(item.get("topic_key") or ""),
-    )
-
-
-def _existing_topic_alias(topics_dir: Path, item: dict[str, Any]) -> str | None:
-    tags = str(item.get("tags") or "").strip()
-    if not tags:
-        return None
-    parts = [part.strip() for part in tags.split(",") if part.strip()]
-    if len(parts) < 2:
-        return None
-    candidate = slugify("-".join(parts), fallback="topic")
-    topic_path = topics_dir / f"{candidate}.md"
-    return candidate if topic_path.exists() else None
-
-
-def _preview_links(links: list[str], label: str, limit: int = 8) -> list[str]:
-    preview = [f"- {link}" for link in links[:limit]]
-    if len(links) > limit:
-        preview.append(f"- 另有 {len(links) - limit} 条{label}已生成单独笔记")
-    return preview
-
-
 def _render_dashboard_blocks(work_blocks: list[Any] | None, limit: int = 5) -> str:
     blocks = sorted((block for block in work_blocks or [] if not getattr(block, "fragment", False)), key=lambda block: (-getattr(block, "duration_sec", 0), getattr(block, "ts_start", "")))[:limit]
     if not blocks:
@@ -1304,51 +817,9 @@ def _build_note_card(
     if extra_props:
         properties.update(extra_props)
     return NoteCard(
-        path=path or _note_path(kind, date_str, topic_key, item.get("created_at")),
+        path=path or f"Daily/{date_str}.md",
         properties=properties,
         body=body,
-    )
-
-
-def _build_topic_card(
-    vault_name: str,
-    date_str: str,
-    topic_key: str,
-    topic_items: list[dict[str, Any]],
-    *,
-    link_formatter: Callable[[str, str | None], str] | None = None,
-) -> NoteCard:
-    event_summaries: list[str] = []
-    for item in topic_items:
-        event_link = _obsidian_link(
-            _note_path("event", date_str, topic_key, item.get("created_at")),
-            item["title"],
-            link_formatter=link_formatter,
-        )
-        event_summaries.append(f"- {event_link} - {item['title']}")
-
-    topic_body = "\n".join(
-        [
-            f"# {_topic_title(topic_key)}",
-            "",
-            f"- 知识库：{vault_name}",
-            f"- 关联片段：{len(topic_items)}",
-            "",
-            "## 相关证据",
-            *event_summaries,
-        ]
-    )
-
-    return _build_note_card(
-        "topic",
-        date_str,
-        topic_key,
-        topic_items[0],
-        topic_body,
-        extra_props={
-            "item_count": len(topic_items),
-            "vault": vault_name,
-        },
     )
 
 
@@ -1381,58 +852,14 @@ def build_obsidian_bundle(
     )
     work_item_count = len(work_blocks)
     work_topic_count = len({block.theme for block in work_blocks if not block.fragment})
-    topic_block_counts = Counter(block.theme for block in work_blocks if not block.fragment)
-    link_formatter = _build_link_formatter(
-        wiki_link_mode=wiki_link_mode,
-        keypulse_home=_keypulse_home(),
-    )
+    _ = wiki_link_mode
 
     topics: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in normalized:
         topics[item["topic_key"]].append(item)
 
-    daily_links: list[str] = []
-    daily_topic_links: list[str] = []
-    event_cards: list[NoteCard] = []
-    topic_cards: list[NoteCard] = []
-    evidence_paths: dict[tuple[str, str, str], str] = {}
-
-    for topic_key, topic_items in sorted(topics.items()):
-        topic_items = sorted(topic_items, key=lambda item: item["created_at"] or "")
-
-        for item in topic_items:
-            event_card = _build_event_card(
-                item,
-                date_str,
-                topic_key,
-                link_formatter=link_formatter,
-                model_gateway=model_gateway,
-                humanize_titles=humanize_titles,
-            )
-            event_cards.append(event_card)
-            event_link = _obsidian_link(event_card.path, item["title"], link_formatter=link_formatter)
-            evidence_paths[_event_identity(item)] = event_card.path
-            daily_links.append(event_link)
-
-        if topic_key == "uncategorized" or topic_block_counts.get(topic_key, 0) < 2:
-            continue
-
-        topic_card = _build_topic_card(
-            vault_name,
-            date_str,
-            topic_key,
-            topic_items,
-            link_formatter=link_formatter,
-        )
-        topic_cards.append(topic_card)
-        daily_topic_links.append(_obsidian_link(topic_card.path, _topic_title(topic_key), link_formatter=link_formatter))
-
     summary_events = _summary_events_from_topics(topics)
     summary_topics = _summary_topics_from_blocks(work_blocks, summary_events)
-    daily_event_cards = [
-        (Path(card.path).stem, str(card.properties.get("title") or Path(card.path).stem))
-        for card in event_cards
-    ]
     daily_body = render_daily_markdown(
         date=date_str,
         topics=summary_topics,
@@ -1448,7 +875,6 @@ def build_obsidian_bundle(
             for topic in summary_topics
         },
         model_gateway=model_gateway,
-        event_cards=daily_event_cards,
         previous_plan=previous_plan,
         tomorrow_plan=current_plan_existing,
     )
@@ -1466,94 +892,34 @@ def build_obsidian_bundle(
         },
     )
 
-    return {
-        "daily": [daily_card.as_dict()],
-        "events": [card.as_dict() for card in event_cards],
-        "topics": [card.as_dict() for card in topic_cards],
-    }
-
-
-def _build_event_card(
-    item: dict[str, Any],
-    date_str: str,
-    topic_key: str,
-    *,
-    link_formatter: Callable[[str, str | None], str] | None = None,
-    model_gateway: "ModelGateway | None" = None,
-    humanize_titles: bool = False,
-) -> NoteCard:
-    # TODO(M4): 整段删除（legacy events/ 卡片渲染路径下线）
-    event_path = (
-        f"Events/{date_str}/"
-        f"{_event_filename(item, date_str, topic_key, model_gateway=model_gateway, humanize_titles=humanize_titles)}"
-    )
-    body = "\n".join(
-        [
-            f"# {item['title']}",
-            "",
-            f"- 来源：{_source_label(item['origin_source'])}",
-            f"- 应用：{item.get('app_name') or '—'}",
-            f"- 置信度：{item['confidence']}",
-            f"- 所属主题：{_obsidian_link(_note_path('topic', date_str, topic_key), _topic_title(topic_key), link_formatter=link_formatter)}",
-            "",
-            "## 原始内容",
-            item["body"] or "_当前没有可展示的正文_",
-        ]
-    )
-    extra = {
-        "origin_source": item["origin_source"],
-        "event_type": item["event_type"],
-        "app": item.get("app_name") or "",
-        "confidence": item["confidence"],
-        "topic": topic_key,
-        "vault": item.get("vault", "KeyPulse"),
-        "id": _event_note_id(item, date_str, topic_key),
-    }
-    return _build_note_card("event", date_str, topic_key, item, body, extra_props=extra, path=event_path)
+    return {"daily": [daily_card.as_dict()]}
 
 
 def write_obsidian_bundle(bundle: dict[str, list[dict[str, Any]]], output_dir: str | Path) -> list[Path]:
     output_path = Path(output_dir).expanduser()
     written: list[Path] = []
-    # TODO(M4): 整段删除（legacy events/topics 写盘路径下线）
-    # NOTE: 先只写 daily，停止新增 ~/.keypulse/events 与 ~/.keypulse/topics。
-    for section in ("daily",):
-        for note in bundle.get(section, []):
-            relative = Path(note["path"])
-            target = output_path / relative
-            new_text = render_note(note["properties"], note["body"])
-            if section == "daily":
-                from keypulse.obsidian.quality_gate import (
-                    build_quality_gate_placeholder,
-                    should_write_daily,
-                )
-
-                ok, reason, new_score, _old_score = should_write_daily(new_text, target)
-                if not ok:
-                    date_str = target.stem
-                    placeholder_body = build_quality_gate_placeholder(
-                        date_str=date_str,
-                        score=new_score,
-                        reason=reason,
-                    )
-                    new_text = render_note(note["properties"], placeholder_body)
-                    logger.warning("daily write replaced with placeholder (%s): %s", target.name, reason)
-            atomic_write_text(target, new_text)
-            written.append(target)
-    return written
-
-
-def _write_note_if_missing(output_path: Path, keypulse_home: Path, note: dict[str, Any]) -> Path | None:
-    relative = Path(note["path"])
-    if relative.parts and relative.parts[0].lower() in {"events", "topics"}:
-        # TODO(M4): 整段删除（legacy events/topics 写盘路径下线）
-        return None
-    else:
+    for note in bundle.get("daily", []):
+        relative = Path(note["path"])
         target = output_path / relative
-    if target.exists():
-        return None
-    atomic_write_text(target, render_note(note["properties"], note["body"]))
-    return target
+        new_text = render_note(note["properties"], note["body"])
+        from keypulse.obsidian.quality_gate import (
+            build_quality_gate_placeholder,
+            should_write_daily,
+        )
+
+        ok, reason, new_score, _old_score = should_write_daily(new_text, target)
+        if not ok:
+            date_str = target.stem
+            placeholder_body = build_quality_gate_placeholder(
+                date_str=date_str,
+                score=new_score,
+                reason=reason,
+            )
+            new_text = render_note(note["properties"], placeholder_body)
+            logger.warning("daily write replaced with placeholder (%s): %s", target.name, reason)
+        atomic_write_text(target, new_text)
+        written.append(target)
+    return written
 
 
 def export_obsidian_incremental(
@@ -1567,18 +933,12 @@ def export_obsidian_incremental(
     model_gateway: "ModelGateway | None" = None,
     humanize_titles: bool = False,
 ) -> list[Path]:
-    output_path = Path(vault_path).expanduser()
-    keypulse_home = _keypulse_home()
-    topics_dir = keypulse_home / "topics"
+    _ = (vault_path, vault_name, wiki_link_mode, model_gateway, humanize_titles)
     date_str = iso_date(date)
     db_path_resolved = Path(db_path).expanduser()
     cursor_file = _sync_cursor_path(cursor_path)
     cursor_state = _read_cursor_state(cursor_file)
     last_event_id = int(cursor_state.get("last_event_id") or 0)
-    link_formatter = _build_link_formatter(
-        wiki_link_mode=wiki_link_mode,
-        keypulse_home=keypulse_home,
-    )
 
     if db_path_resolved.exists():
         window_raw_events = _query_events_by_date(db_path_resolved, date_str, min_id_exclusive=last_event_id)
@@ -1589,74 +949,6 @@ def export_obsidian_incremental(
             window_raw_events = [row for row in raw_events if int(row.get("id") or 0) > last_event_id]
         else:
             window_raw_events = list(raw_events)
-    written: list[Path] = []
-
-    event_items: list[dict[str, Any]] = []
-    for raw_event in sorted(window_raw_events, key=lambda row: str(row.get("ts_start") or "")):
-        item = _to_item(raw_event)
-        if item is not None:
-            event_items.append(item)
-
-    topic_items_by_key: dict[str, list[tuple[dict[str, Any], str]]] = defaultdict(list)
-
-    for item in event_items:
-        event_card = _build_event_card(
-            item,
-            date_str,
-            item["topic_key"],
-            link_formatter=link_formatter,
-            model_gateway=model_gateway,
-            humanize_titles=humanize_titles,
-        )
-        topic_bucket = _existing_topic_alias(topics_dir, item) or item["topic_key"]
-        written_path = _write_note_if_missing(output_path, keypulse_home, event_card.as_dict())
-        if written_path is not None:
-            topic_items_by_key[topic_bucket].append((item, event_card.path))
-            written.append(written_path)
-
-    for topic_key, topic_entries in sorted(topic_items_by_key.items()):
-        topic_path = topics_dir / f"{topic_key}.md"
-        if topic_path.exists():
-            topic_text = _read_text(topic_path)
-            existing_topic_event_keys = _section_link_keys(topic_text, "## 相关证据", kind="event")
-            topic_lines_to_add: list[str] = []
-
-            for item, event_path in topic_entries:
-                event_key = _event_link_key_from_target(event_path)
-                if event_key in existing_topic_event_keys:
-                    continue
-                existing_topic_event_keys.add(event_key)
-                topic_lines_to_add.append(
-                    f"- {_obsidian_link(event_path, item['title'], link_formatter=link_formatter)} - {item['title']}"
-                )
-
-            if topic_lines_to_add:
-                updated_text = _replace_first_matching_line(
-                    topic_text,
-                    r"^- 关联片段：\s*\d+\s*$",
-                    f"- 关联片段：{len(existing_topic_event_keys)}",
-                )
-                updated_text = _append_unique_section_lines(updated_text, "## 相关证据", topic_lines_to_add, kind="event")
-                _write_text(topic_path, updated_text)
-                written.append(topic_path)
-
-            continue
-
-        if topic_key == "uncategorized" or len(topic_entries) < 2:
-            continue
-
-        topic_items = [item for item, _event_path in topic_entries]
-        topic_card = _build_topic_card(
-            vault_name,
-            date_str,
-            topic_key,
-            topic_items,
-            link_formatter=link_formatter,
-        )
-        written_path = _write_note_if_missing(output_path, keypulse_home, topic_card.as_dict())
-        if written_path is not None:
-            written.append(written_path)
-
     max_new_id = max((int(row.get("id") or 0) for row in window_raw_events), default=last_event_id)
     _write_cursor_state_atomic(
         cursor_file,
@@ -1665,8 +957,7 @@ def export_obsidian_incremental(
             "last_run_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-
-    return written
+    return []
 
 
 def _export_obsidian_incremental(

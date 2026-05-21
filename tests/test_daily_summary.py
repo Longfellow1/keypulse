@@ -4,6 +4,7 @@ import json
 import os
 import re
 
+import keypulse.i18n as i18n
 from keypulse.pipeline.daily_summary import (
     _render_text_table_block,
     build_cluster_stubs_from_narrative,
@@ -205,6 +206,37 @@ def test_merge_topic_status_snapshot_single_topic_across_days():
     assert merged["keypulse-weekly"]["state"] == "completed"
     assert merged["keypulse-weekly"]["last_seen_date"] == "2026-05-08"
     assert merged["keypulse-weekly"]["evidence_dates"] == ["2026-05-07", "2026-05-08"]
+
+
+def test_render_daily_markdown_prepends_frontmatter_aliases_and_tags_with_iso_week(monkeypatch):
+    monkeypatch.setenv("KEYPULSE_LANG", "zh")
+    monkeypatch.setattr(i18n, "_LANG_CACHE", None)
+    body = render_daily_markdown(
+        date="2026-05-21",
+        topics=[],
+        events=[],
+        topic_snapshot={},
+    )
+    lines = body.splitlines()
+    assert lines[0] == "---"
+    assert lines[1] == "aliases:"
+    assert '  - "2026-05-21 周四"' in body
+    assert "tags:" in body
+    assert '  - "daily"' in body
+    assert '  - "daily/2026-W21"' in body
+    assert "📍 Asia/Shanghai" in body
+
+
+def test_render_daily_markdown_aliases_switch_to_en_locale(monkeypatch):
+    monkeypatch.setenv("KEYPULSE_LANG", "en")
+    monkeypatch.setattr(i18n, "_LANG_CACHE", None)
+    body = render_daily_markdown(
+        date="2026-05-21",
+        topics=[],
+        events=[],
+        topic_snapshot={},
+    )
+    assert '  - "2026-05-21 Thu"' in body
 
 
 def test_render_daily_markdown_dual_layer_prefers_topics_and_unanchored_desc_time():
