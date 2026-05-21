@@ -1749,6 +1749,21 @@ def _resolve_obsidian_date(date: Optional[str], yesterday: bool) -> str:
     return _parse_date(date)
 
 
+def _coerce_db_path(raw_value: Any) -> tuple[Path, bool]:
+    if isinstance(raw_value, Path):
+        return raw_value.expanduser(), True
+    if isinstance(raw_value, os.PathLike):
+        try:
+            return Path(raw_value).expanduser(), True
+        except TypeError:
+            return get_db_path(), False
+    if isinstance(raw_value, str):
+        stripped = raw_value.strip()
+        if stripped and not re.fullmatch(r"<object object at 0x[0-9a-fA-F]+>", stripped):
+            return Path(stripped).expanduser(), True
+    return get_db_path(), False
+
+
 def _sync_obsidian_bundle(
     cfg: Config,
     date_str: str,
@@ -1761,22 +1776,29 @@ def _sync_obsidian_bundle(
     target_output = output or str(sink.output_dir)
     target_vault = vault_name or cfg.obsidian.vault_name
     gateway = load_model_gateway(cfg) if hasattr(cfg, "model") else None
+    db_path, db_path_valid = _coerce_db_path(getattr(cfg, "db_path_expanded", None))
     written = export_obsidian(
         target_output,
         date_str=date_str,
         vault_name=target_vault,
         model_gateway=gateway,
         incremental=incremental,
-        db_path=str(cfg.db_path_expanded),
+        db_path=str(db_path),
         wiki_link_mode=getattr(getattr(cfg, "obsidian", None), "wiki_link_mode", "relative"),
         humanize_titles=getattr(getattr(cfg, "obsidian", None), "humanize_titles", False),
     )
-    try:
-        ran = run_daily_after_obsidian_sync(date_str, db_path=cfg.db_path_expanded)
-        if ran:
-            click.echo("[daily] orchestrator ran via obsidian sync")
-    except Exception as exc:
-        click.echo(f"[daily] orchestrator failed via obsidian sync: {exc}", err=True)
+    if db_path_valid:
+        try:
+            ran = run_daily_after_obsidian_sync(date_str, db_path=db_path)
+            if ran:
+                click.echo("[daily] orchestrator ran via obsidian sync")
+        except Exception as exc:
+            click.echo(f"[daily] orchestrator failed via obsidian sync: {exc}", err=True)
+    else:
+        click.echo(
+            "[daily] orchestrator skipped via obsidian sync: invalid db_path_expanded",
+            err=True,
+        )
     return len(written), target_output, sink.kind
 
 
@@ -2152,9 +2174,15 @@ def _anchor_sort_date_key(value: Any) -> date_cls:
         return date_cls.min
 
 
-def _collect_anchor_merge_candidates(anchors_dir: Path, *, max_anchors: int = 100) -> list[dict[str, str]]:
+def _collect_anchor_merge_candidates(
+    anchors_dir: Path,
+    *,
+    max_anchors: int = 100,
+    slug_filter: str = "",
+) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     seen_anchor_ids: set[str] = set()
+    slug_filter_key = str(slug_filter or "").strip().casefold()
 
     for path in sorted(anchors_dir.glob("*.md")):
         try:
@@ -2163,6 +2191,8 @@ def _collect_anchor_merge_candidates(anchors_dir: Path, *, max_anchors: int = 10
             continue
         frontmatter, body, _had_frontmatter = _split_markdown_frontmatter(raw)
         anchor_id = str(frontmatter.get("anchor_id") or path.stem).strip() or path.stem
+        if slug_filter_key and slug_filter_key not in anchor_id.casefold():
+            continue
         if anchor_id in seen_anchor_ids:
             continue
         seen_anchor_ids.add(anchor_id)
@@ -2194,7 +2224,12 @@ def _collect_anchor_merge_candidates(anchors_dir: Path, *, max_anchors: int = 10
     return ordered[: max(int(max_anchors), 0)]
 
 
-def _request_anchor_merge_groups(gateway: ModelGateway, anchors: list[dict[str, str]]) -> dict[str, Any]:
+def _request_anchor_merge_groups(
+    gateway: ModelGateway,
+    anchors: list[dict[str, str]],
+    *,
+    aggressive: bool = False,
+) -> dict[str, Any]:
     output_schema = {
         "type": "object",
         "required": ["groups"],
@@ -2209,23 +2244,37 @@ def _request_anchor_merge_groups(gateway: ModelGateway, anchors: list[dict[str, 
                         "duplicates": {"type": "array", "items": {"type": "string"}},
                         "reason": {"type": "string"},
                         "group_title": {"type": "string"},
+                        "ambiguous": {"type": "boolean"},
                     },
                 },
             }
         },
     }
     payload = {"anchors": anchors}
+    certainty_line = (
+        "只在 100% 确信是同一件事时才分到同一组。"
+        if not aggressive
+        else "宁可多分一组也不漏；只要主题接近就考虑分组；不确定也要分组并标注 ambiguous=true。"
+    )
     prompt = "\n".join(
         [
             "你是主线去重审阅器。下面是 anchor 列表。",
             "任务：找出“同一长尾工作被拆成多份”的副本组。",
-            "只在 100% 确信是同一件事时才分到同一组。",
+            certainty_line,
             "规则：",
             "1) primary_anchor_id 必须在输入 anchors 中。",
             "2) duplicates 只放副本 anchor_id，且不能包含 primary。",
             "3) primary 选择 started 最早者；若并列，选命名更具代表性者。",
-            "4) 不确定就不要分组。",
-            "输出 JSON：{groups:[{primary_anchor_id, duplicates, reason, group_title?}]}",
+            (
+                "4) 不确定就不要分组。"
+                if not aggressive
+                else "4) aggressive 模式：模糊关系也可分组，并设置 ambiguous=true。"
+            ),
+            (
+                "输出 JSON：{groups:[{primary_anchor_id, duplicates, reason, group_title?}]}"
+                if not aggressive
+                else "输出 JSON：{groups:[{primary_anchor_id, duplicates, reason, group_title?, ambiguous?}]}"
+            ),
             "",
             "<<INPUT_JSON>>",
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
@@ -2246,7 +2295,12 @@ def _request_anchor_merge_groups(gateway: ModelGateway, anchors: list[dict[str, 
     return raw
 
 
-def _normalize_anchor_merge_groups(payload: dict[str, Any], known_anchor_ids: set[str]) -> list[dict[str, Any]]:
+def _normalize_anchor_merge_groups(
+    payload: dict[str, Any],
+    known_anchor_ids: set[str],
+    *,
+    aggressive: bool = False,
+) -> list[dict[str, Any]]:
     groups_raw = payload.get("groups")
     if not isinstance(groups_raw, list):
         raise ValueError("LLM output missing `groups` array")
@@ -2262,6 +2316,8 @@ def _normalize_anchor_merge_groups(payload: dict[str, Any], known_anchor_ids: se
         if primary not in known_anchor_ids:
             raise ValueError(f"LLM output references unknown primary anchor_id: {primary}")
         duplicates_raw = item.get("duplicates")
+        if not isinstance(duplicates_raw, list):
+            duplicates_raw = item.get("duplicate_anchor_ids")
         if not isinstance(duplicates_raw, list):
             raise ValueError(f"LLM output group `{primary}` has invalid `duplicates`")
         duplicates = [
@@ -2285,15 +2341,35 @@ def _normalize_anchor_merge_groups(payload: dict[str, Any], known_anchor_ids: se
                 "duplicates": duplicates,
                 "reason": reason,
                 "group_title": str(item.get("group_title") or "").strip(),
+                "ambiguous": bool(item.get("ambiguous")) if aggressive else False,
             }
         )
     deduped.sort(key=lambda row: (-len(row["duplicates"]), row["primary_anchor_id"]))
     return deduped
 
 
+def _build_anchor_merge_plan(groups: list[dict[str, Any]], *, include_ambiguous: bool = False) -> dict[str, Any]:
+    normalized_groups: list[dict[str, Any]] = []
+    for group in groups:
+        primary = str(group.get("primary_anchor_id") or "").strip()
+        duplicates = [str(item).strip() for item in (group.get("duplicates") or []) if str(item).strip()]
+        if not primary or not duplicates:
+            continue
+        row: dict[str, Any] = {
+            "primary_anchor_id": primary,
+            "duplicate_anchor_ids": duplicates,
+        }
+        if include_ambiguous:
+            row["ambiguous"] = bool(group.get("ambiguous"))
+        normalized_groups.append(row)
+    return {"groups": normalized_groups}
+
+
 def _render_anchor_merge_report(
     anchors: list[dict[str, str]],
     groups: list[dict[str, Any]],
+    *,
+    include_ambiguous: bool = False,
 ) -> str:
     by_id = {
         str(item.get("anchor_id") or "").strip(): dict(item)
@@ -2324,8 +2400,312 @@ def _render_anchor_merge_report(
                 f"(started {str(dup.get('started') or 'unknown')})"
             )
         lines.append(f"理由: {str(group.get('reason') or '').strip()}")
+        if include_ambiguous and bool(group.get("ambiguous")):
+            lines.append("标记: ambiguous=true")
         lines.append("")
+    plan_payload = _build_anchor_merge_plan(groups, include_ambiguous=include_ambiguous)
+    lines.append("## 完整 plan.json")
+    lines.append("```json")
+    lines.append(json.dumps(plan_payload, ensure_ascii=False, indent=2))
+    lines.append("```")
+    lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _parse_iso_date(value: Any) -> date_cls | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return date_cls.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _merge_anchor_frontmatter(
+    primary_frontmatter: dict[str, Any],
+    duplicate_frontmatters: list[dict[str, Any]],
+) -> dict[str, Any]:
+    merged = dict(primary_frontmatter)
+    candidates = [primary_frontmatter, *duplicate_frontmatters]
+    started_dates = [_parse_iso_date(item.get("started")) for item in candidates]
+    started_valid = [item for item in started_dates if item is not None]
+    if started_valid:
+        merged["started"] = min(started_valid).isoformat()
+
+    last_active_dates = [_parse_iso_date(item.get("last_active") or item.get("started")) for item in candidates]
+    last_active_valid = [item for item in last_active_dates if item is not None]
+    if last_active_valid:
+        merged["last_active"] = max(last_active_valid).isoformat()
+
+    state_priority = {"active": 4, "candidate": 3, "stale": 2, "dormant": 1}
+    selected_state = str(merged.get("state") or "").strip()
+    selected_rank = state_priority.get(selected_state, 0)
+    for item in candidates:
+        state = str(item.get("state") or "").strip()
+        rank = state_priority.get(state, 0)
+        if rank > selected_rank:
+            selected_state = state
+            selected_rank = rank
+    if selected_state:
+        merged["state"] = selected_state
+    return merged
+
+
+def _split_timeline_section(body: str) -> tuple[str, list[str], str]:
+    text = str(body or "")
+    timeline_match = re.search(r"^##\s+Timeline\s*$", text, re.MULTILINE)
+    if timeline_match is None:
+        return text, [], ""
+    section = text[timeline_match.end() :]
+    next_heading = re.search(r"^##\s+", section, re.MULTILINE)
+    timeline_text = section[: next_heading.start()] if next_heading else section
+    suffix = section[next_heading.start() :] if next_heading else ""
+    lines = [str(line).strip() for line in timeline_text.splitlines() if str(line).strip()]
+    return text[: timeline_match.start()], lines, suffix
+
+
+_TIMELINE_LINE_RE = re.compile(r"^\s*-\s*(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?)\s+(.*)$")
+
+
+def _timeline_sort_key(line: str, index: int) -> tuple[int, datetime, int]:
+    match = _TIMELINE_LINE_RE.match(str(line or "").strip())
+    if match is None:
+        return 1, datetime.max, index
+    stamp_text = match.group(1).replace(" ", "T")
+    normalized = stamp_text if "T" in stamp_text else f"{stamp_text}T00:00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return 1, datetime.max, index
+    return 0, parsed, index
+
+
+def _timeline_dedupe_key(line: str) -> tuple[str, str]:
+    text = str(line or "").strip()
+    match = _TIMELINE_LINE_RE.match(text)
+    if match is None:
+        normalized = re.sub(r"\s+", " ", text).strip()
+        return "", normalized.casefold()
+    stamp = match.group(1).replace(" ", "T")
+    content = re.sub(r"\s+", " ", match.group(2).strip()).strip()
+    no_ref = re.sub(r"\s*(?:→|->)\s*\[\[[^\]]+\]\]\s*$", "", content).strip()
+    signature = no_ref or content
+    return stamp, signature.casefold()
+
+
+def _merge_timeline_lines(line_groups: list[list[str]]) -> list[str]:
+    combined: list[str] = []
+    for lines in line_groups:
+        for line in lines:
+            normalized = str(line or "").strip()
+            if normalized:
+                combined.append(normalized)
+
+    sorted_rows = sorted(
+        list(enumerate(combined)),
+        key=lambda item: _timeline_sort_key(item[1], item[0]),
+    )
+    deduped: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for _idx, line in sorted_rows:
+        key = _timeline_dedupe_key(line)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(line)
+    return deduped
+
+
+def _render_body_with_timeline(prefix: str, timeline_lines: list[str], suffix: str) -> str:
+    prefix_text = str(prefix or "").strip("\n")
+    suffix_text = str(suffix or "").strip("\n")
+    parts: list[str] = []
+    if prefix_text:
+        parts.append(prefix_text)
+    parts.append("## Timeline")
+    if timeline_lines:
+        parts.append("\n".join(timeline_lines))
+    if suffix_text:
+        parts.append(suffix_text)
+    return "\n\n".join(parts).rstrip() + "\n"
+
+
+def _load_anchor_note_index(anchors_dir: Path) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for path in sorted(anchors_dir.glob("*.md")):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        frontmatter, body, _had_frontmatter = _split_markdown_frontmatter(raw)
+        anchor_id = str(frontmatter.get("anchor_id") or path.stem).strip() or path.stem
+        if anchor_id in rows:
+            continue
+        rows[anchor_id] = {
+            "anchor_id": anchor_id,
+            "path": path,
+            "frontmatter": dict(frontmatter),
+            "body": str(body or ""),
+        }
+    return rows
+
+
+def _normalize_merge_plan_groups(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    groups_raw = payload.get("groups")
+    if not isinstance(groups_raw, list):
+        raise ValueError("plan.json missing `groups` array")
+    groups: list[dict[str, Any]] = []
+    for item in groups_raw:
+        if not isinstance(item, dict):
+            raise ValueError("plan group must be object")
+        primary_anchor_id = str(item.get("primary_anchor_id") or "").strip()
+        if not primary_anchor_id:
+            raise ValueError("plan group missing `primary_anchor_id`")
+        duplicates_raw = item.get("duplicate_anchor_ids")
+        if not isinstance(duplicates_raw, list):
+            duplicates_raw = item.get("duplicates")
+        if not isinstance(duplicates_raw, list):
+            raise ValueError(f"plan group `{primary_anchor_id}` has invalid `duplicate_anchor_ids`")
+        duplicate_anchor_ids = [
+            str(anchor_id).strip()
+            for anchor_id in duplicates_raw
+            if str(anchor_id).strip() and str(anchor_id).strip() != primary_anchor_id
+        ]
+        if not duplicate_anchor_ids:
+            continue
+        groups.append(
+            {
+                "primary_anchor_id": primary_anchor_id,
+                "duplicate_anchor_ids": duplicate_anchor_ids,
+            }
+        )
+    return groups
+
+
+def _build_anchor_merge_apply_plan(
+    anchor_rows: dict[str, dict[str, Any]],
+    groups: list[dict[str, Any]],
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    tasks: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    link_map: dict[str, str] = {}
+    delete_paths: list[Path] = []
+    used_duplicates: set[str] = set()
+    timeline_delta_total = 0
+
+    for group in groups:
+        primary_id = str(group.get("primary_anchor_id") or "").strip()
+        duplicate_ids = [
+            str(item).strip()
+            for item in (group.get("duplicate_anchor_ids") or [])
+            if str(item).strip() and str(item).strip() != primary_id
+        ]
+        primary_row = anchor_rows.get(primary_id)
+        if primary_row is None:
+            skipped.append(
+                {
+                    "reason": "missing_primary",
+                    "detail": primary_id,
+                }
+            )
+            continue
+
+        duplicate_rows: list[dict[str, Any]] = []
+        missing_duplicates: list[str] = []
+        for duplicate_id in duplicate_ids:
+            if duplicate_id in used_duplicates:
+                skipped.append(
+                    {
+                        "reason": "duplicate_reused",
+                        "detail": duplicate_id,
+                    }
+                )
+                continue
+            duplicate_row = anchor_rows.get(duplicate_id)
+            if duplicate_row is None:
+                missing_duplicates.append(duplicate_id)
+                continue
+            duplicate_rows.append(duplicate_row)
+        if missing_duplicates:
+            skipped.append(
+                {
+                    "reason": "missing_duplicate",
+                    "detail": f"{primary_id}: {', '.join(missing_duplicates)}",
+                }
+            )
+            continue
+        if not duplicate_rows:
+            continue
+
+        primary_prefix, primary_lines, primary_suffix = _split_timeline_section(str(primary_row.get("body") or ""))
+        timeline_groups = [primary_lines]
+        duplicate_frontmatters: list[dict[str, Any]] = []
+        extra_content_duplicates: list[dict[str, Any]] = []
+        for duplicate_row in duplicate_rows:
+            dup_prefix, dup_lines, dup_suffix = _split_timeline_section(str(duplicate_row.get("body") or ""))
+            timeline_groups.append(dup_lines)
+            duplicate_frontmatters.append(dict(duplicate_row.get("frontmatter") or {}))
+            if str(dup_prefix or "").strip() or str(dup_suffix or "").strip():
+                extra_content_duplicates.append(duplicate_row)
+
+        merged_lines = _merge_timeline_lines(timeline_groups)
+        merged_frontmatter = _merge_anchor_frontmatter(
+            dict(primary_row.get("frontmatter") or {}),
+            duplicate_frontmatters,
+        )
+        merged_body = _render_body_with_timeline(primary_prefix, merged_lines, primary_suffix)
+        merged_text = _render_markdown_with_frontmatter(merged_frontmatter, merged_body)
+
+        task = {
+            "primary_anchor_id": primary_id,
+            "primary_path": Path(str(primary_row["path"])),
+            "primary_text": merged_text,
+            "duplicates": duplicate_rows,
+            "timeline_before": len(primary_lines),
+            "timeline_after": len(merged_lines),
+        }
+        if extra_content_duplicates and not force:
+            blocked.append(
+                {
+                    "primary_anchor_id": primary_id,
+                    "duplicate_anchor_ids": [str(item.get("anchor_id") or "") for item in extra_content_duplicates],
+                    "duplicate_paths": [str(item["path"]) for item in extra_content_duplicates],
+                }
+            )
+            continue
+
+        tasks.append(task)
+        used_duplicates.update(str(item.get("anchor_id") or "") for item in duplicate_rows)
+        timeline_delta_total += max(0, int(task["timeline_after"]) - int(task["timeline_before"]))
+        primary_stem = Path(str(primary_row["path"])).stem
+        for duplicate_row in duplicate_rows:
+            duplicate_path = Path(str(duplicate_row["path"]))
+            duplicate_stem = duplicate_path.stem
+            link_map[duplicate_stem] = primary_stem
+            link_map[f"anchors/{duplicate_stem}"] = primary_stem
+            delete_paths.append(duplicate_path)
+
+    deduped_delete_paths: list[Path] = []
+    seen_delete_paths: set[str] = set()
+    for path in delete_paths:
+        key = str(path)
+        if key in seen_delete_paths:
+            continue
+        seen_delete_paths.add(key)
+        deduped_delete_paths.append(path)
+
+    return {
+        "tasks": tasks,
+        "blocked": blocked,
+        "skipped": skipped,
+        "link_map": link_map,
+        "delete_paths": deduped_delete_paths,
+        "timeline_delta_total": timeline_delta_total,
+    }
 
 
 def _apply_rename_plan(rename_plan: list[dict[str, Any]]) -> None:
@@ -2424,6 +2804,146 @@ def obsidian_migrate_filenames(vault: str | None, apply_changes: bool) -> None:
 
 
 @obsidian.command(
+    "merge-anchors",
+    help=T(
+        "按 plan.json 合并 anchor 文件并重写全 vault wikilink（默认 dry-run）。",
+        "Merge anchor files via plan.json and rewrite vault wikilinks (dry-run by default).",
+    ),
+)
+@click.option(
+    "--vault",
+    "vault",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=str),
+    default=None,
+    help=T("Obsidian vault 路径（默认读配置）", "Obsidian vault path (defaults to config)"),
+)
+@click.option(
+    "--plan",
+    "plan_path",
+    required=True,
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=str),
+    help=T("合并计划 JSON 路径", "Path to merge plan JSON"),
+)
+@click.option(
+    "--apply",
+    "apply_changes",
+    is_flag=True,
+    default=False,
+    help=T("执行真实改动（默认仅预览）", "Apply changes (default is preview only)"),
+)
+@click.option(
+    "--force",
+    "force",
+    is_flag=True,
+    default=False,
+    help=T("允许删除含额外手写内容的 duplicate（高风险）", "Allow deleting duplicates with extra hand-written content"),
+)
+def obsidian_merge_anchors(vault: str | None, plan_path: str, apply_changes: bool, force: bool) -> None:
+    vault_root = _resolve_obsidian_vault_path(vault)
+    anchors_dir = vault_root / "anchors"
+    if not anchors_dir.exists():
+        raise click.UsageError(f"anchors directory not found: {anchors_dir}")
+
+    try:
+        payload = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise click.ClickException(f"failed to load plan json: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise click.ClickException("plan json must be an object")
+
+    try:
+        groups = _normalize_merge_plan_groups(payload)
+    except ValueError as exc:
+        raise click.ClickException(f"invalid merge plan: {exc}") from exc
+    if not groups:
+        click.echo("merge_anchors mode=dry-run planned_groups=0")
+        return
+
+    anchor_rows = _load_anchor_note_index(anchors_dir)
+    merge_plan = _build_anchor_merge_apply_plan(anchor_rows, groups, force=force)
+    tasks = list(merge_plan["tasks"])
+    blocked = list(merge_plan["blocked"])
+    skipped = list(merge_plan["skipped"])
+    link_map = dict(merge_plan["link_map"])
+    delete_paths = [Path(str(path)) for path in merge_plan["delete_paths"]]
+    timeline_delta_total = int(merge_plan["timeline_delta_total"])
+
+    rewrites_total = 0
+    rewrite_preview: list[dict[str, str]] = []
+    rewrite_errors: list[dict[str, str]] = []
+    rewritten_files: dict[Path, str] = {}
+    for path in _iter_obsidian_markdown_paths(vault_root):
+        try:
+            original = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            rewrite_errors.append({"path": str(path), "detail": str(exc)})
+            continue
+        rewritten, rewrites = _rewrite_wikilinks_in_text(original, link_map)
+        if not rewrites:
+            continue
+        rewrites_total += len(rewrites)
+        rel_path = str(path.relative_to(vault_root))
+        for line_no, before, after in rewrites[:5]:
+            rewrite_preview.append({"path": rel_path, "line": str(line_no), "before": before, "after": after})
+        if apply_changes and rewritten != original:
+            rewritten_files[path] = rewritten
+
+    if apply_changes and blocked and not force:
+        raise click.ClickException(
+            "merge blocked: duplicate notes contain non-Timeline content; rerun with --force after manual review"
+        )
+
+    if apply_changes:
+        for task in tasks:
+            primary_path = Path(str(task["primary_path"]))
+            primary_path.write_text(str(task["primary_text"]), encoding="utf-8")
+        for path, rewritten in rewritten_files.items():
+            path.write_text(rewritten, encoding="utf-8")
+        for duplicate_path in delete_paths:
+            duplicate_path.unlink(missing_ok=True)
+
+    mode = "apply" if apply_changes else "dry-run"
+    click.echo(
+        "merge_anchors "
+        f"mode={mode} vault={vault_root} "
+        f"planned_groups={len(groups)} merged_groups={len(tasks)} "
+        f"rename_mappings={len(delete_paths)} wikilink_rewrites={rewrites_total} "
+        f"timeline_delta={timeline_delta_total} blocked={len(blocked)} skipped={len(skipped)}"
+    )
+    for task in tasks:
+        primary_rel = Path(str(task["primary_path"])).relative_to(vault_root)
+        duplicate_rels = [Path(str(item["path"])).relative_to(vault_root) for item in task["duplicates"]]
+        click.echo(
+            f"  * {task['primary_anchor_id']}: timeline {task['timeline_before']} -> {task['timeline_after']} "
+            f"delete={len(duplicate_rels)}"
+        )
+    if blocked:
+        click.echo("blocked_duplicates:")
+        for item in blocked[:30]:
+            click.echo(
+                "  - "
+                f"primary={item['primary_anchor_id']} duplicates={','.join(item['duplicate_anchor_ids'])} "
+                f"paths={','.join(item['duplicate_paths'])}"
+            )
+    if delete_paths:
+        click.echo("delete_candidates:")
+        for path in delete_paths[:60]:
+            click.echo(f"  - {path.relative_to(vault_root)}")
+    if rewrite_preview:
+        click.echo("wikilink_preview:")
+        for item in rewrite_preview[:30]:
+            click.echo(f"  ~ {item['path']}:{item['line']} {item['before']} -> {item['after']}")
+    if rewrite_errors:
+        click.echo("rewrite_errors:")
+        for item in rewrite_errors[:30]:
+            click.echo(f"  - path={item['path']} detail={item['detail']}")
+    if skipped:
+        click.echo("skipped:")
+        for item in skipped[:30]:
+            click.echo(f"  - reason={item['reason']} detail={item['detail']}")
+
+
+@obsidian.command(
     "propose-anchor-merges",
     help=T(
         "扫描 anchor 历史并输出候选合并建议（只读）。",
@@ -2445,7 +2965,35 @@ def obsidian_migrate_filenames(vault: str | None, apply_changes: bool) -> None:
     show_default=True,
     help=T("最多送入 LLM 的 anchor 数", "Max anchors sent to LLM"),
 )
-def obsidian_propose_anchor_merges(vault: str | None, max_anchors: int) -> None:
+@click.option(
+    "--slug-filter",
+    "slug_filter",
+    type=str,
+    default="",
+    show_default=False,
+    help=T("仅分析 anchor_id 含该子串的 anchors（不区分大小写）", "Only analyze anchors whose slug contains this substring (case-insensitive)"),
+)
+@click.option(
+    "--output-json",
+    "output_json",
+    type=click.Path(file_okay=True, dir_okay=False, path_type=str),
+    default=None,
+    help=T("将分组 plan 同时写入 JSON 文件", "Also write merge plan JSON to path"),
+)
+@click.option(
+    "--aggressive",
+    "aggressive",
+    is_flag=True,
+    default=False,
+    help=T("激进模式：宁可多分组也不漏，并标注 ambiguous", "Aggressive mode: favor recall and mark ambiguous groups"),
+)
+def obsidian_propose_anchor_merges(
+    vault: str | None,
+    max_anchors: int,
+    slug_filter: str,
+    output_json: str | None,
+    aggressive: bool,
+) -> None:
     if int(max_anchors) <= 0:
         raise click.UsageError("--max-anchors must be > 0")
 
@@ -2454,20 +3002,37 @@ def obsidian_propose_anchor_merges(vault: str | None, max_anchors: int) -> None:
     if not anchors_dir.exists():
         raise click.UsageError(f"anchors directory not found: {anchors_dir}")
 
-    anchors = _collect_anchor_merge_candidates(anchors_dir, max_anchors=max_anchors)
-    if not anchors:
-        click.echo("# 建议合并组（0 个）")
-        return
+    anchors = _collect_anchor_merge_candidates(
+        anchors_dir,
+        max_anchors=max_anchors,
+        slug_filter=slug_filter,
+    )
+    groups: list[dict[str, Any]] = []
+    if anchors:
+        gateway = load_model_gateway(get_config())
+        known_anchor_ids = {
+            str(item.get("anchor_id") or "").strip()
+            for item in anchors
+            if str(item.get("anchor_id") or "").strip()
+        }
+        try:
+            raw = _request_anchor_merge_groups(gateway, anchors, aggressive=aggressive)
+            groups = _normalize_anchor_merge_groups(raw, known_anchor_ids, aggressive=aggressive)
+        except (LLMCallError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise click.ClickException(f"LLM merge proposal parse failed: {exc}") from exc
 
-    gateway = load_model_gateway(get_config())
-    known_anchor_ids = {str(item.get("anchor_id") or "").strip() for item in anchors if str(item.get("anchor_id") or "").strip()}
-    try:
-        raw = _request_anchor_merge_groups(gateway, anchors)
-        groups = _normalize_anchor_merge_groups(raw, known_anchor_ids)
-    except (LLMCallError, ValueError, TypeError, json.JSONDecodeError) as exc:
-        raise click.ClickException(f"LLM merge proposal parse failed: {exc}") from exc
+    report = _render_anchor_merge_report(
+        anchors,
+        groups,
+        include_ambiguous=aggressive,
+    )
+    click.echo(report)
 
-    click.echo(_render_anchor_merge_report(anchors, groups))
+    if output_json:
+        plan_payload = _build_anchor_merge_plan(groups, include_ambiguous=aggressive)
+        output_path = Path(output_json).expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(plan_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 @obsidian.command("backfill-aliases", help=T("补齐 Obsidian aliases/tags frontmatter。", "Backfill Obsidian aliases/tags frontmatter."))

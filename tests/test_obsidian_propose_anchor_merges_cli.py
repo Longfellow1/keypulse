@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -88,6 +89,7 @@ def test_normalize_anchor_merge_groups_success_and_invalid() -> None:
             "duplicates": ["b"],
             "reason": "同一长尾",
             "group_title": "",
+            "ambiguous": False,
         }
     ]
 
@@ -156,6 +158,109 @@ def test_obsidian_propose_anchor_merges_outputs_markdown_with_mock_llm(monkeypat
     assert "主 anchor: 多轮训练数据范式问题排查 (started 2026-05-06, active)" in result.output
     assert "  - 多轮训练数据范式修正 (started 2026-05-07)" in result.output
     assert "理由: 同一长尾工作的连续多天进展" in result.output
+    assert "## 完整 plan.json" in result.output
+    assert '"duplicate_anchor_ids": [' in result.output
+
+
+def test_collect_anchor_merge_candidates_slug_filter(tmp_path: Path) -> None:
+    anchors_dir = tmp_path / "anchors"
+    anchors_dir.mkdir(parents=True, exist_ok=True)
+    _write_anchor(
+        anchors_dir / "a.md",
+        anchor_id="project-architecture-x",
+        display="项目架构 X",
+        started="2026-05-01",
+        last_active="2026-05-02",
+        state="active",
+        timeline="- 2026-05-01",
+    )
+    _write_anchor(
+        anchors_dir / "b.md",
+        anchor_id="weekly-sync-note",
+        display="周同步",
+        started="2026-05-01",
+        last_active="2026-05-02",
+        state="active",
+        timeline="- 2026-05-01",
+    )
+
+    filtered = _collect_anchor_merge_candidates(anchors_dir, slug_filter="ARCHITECTURE")
+
+    assert len(filtered) == 1
+    assert filtered[0]["anchor_id"] == "project-architecture-x"
+
+
+def test_obsidian_propose_anchor_merges_output_json_and_aggressive(monkeypatch, tmp_path: Path) -> None:
+    vault = tmp_path / "Knowledge"
+    anchors_dir = vault / "anchors"
+    anchors_dir.mkdir(parents=True, exist_ok=True)
+    _write_anchor(
+        anchors_dir / "a.md",
+        anchor_id="project-architecture-x",
+        display="项目架构 X",
+        started="2026-05-01",
+        last_active="2026-05-08",
+        state="active",
+        timeline="- 2026-05-08 收敛方案",
+    )
+    _write_anchor(
+        anchors_dir / "b.md",
+        anchor_id="project-architecture-x-note",
+        display="项目架构 X 纪要",
+        started="2026-05-02",
+        last_active="2026-05-09",
+        state="candidate",
+        timeline="- 2026-05-09 补录纪要",
+    )
+    captured_prompt: dict[str, str] = {}
+
+    class FakeGateway:
+        def call(self, capability, prompt, **kwargs):
+            del capability, kwargs
+            captured_prompt["value"] = prompt
+            return {
+                "groups": [
+                    {
+                        "group_title": "项目架构 X",
+                        "primary_anchor_id": "project-architecture-x",
+                        "duplicates": ["project-architecture-x-note"],
+                        "reason": "主题高度接近",
+                        "ambiguous": True,
+                    }
+                ]
+            }
+
+    monkeypatch.setattr("keypulse.cli.load_model_gateway", lambda _cfg: FakeGateway())
+
+    output_json = tmp_path / "merge-plan.json"
+    result = CliRunner().invoke(
+        main,
+        [
+            "obsidian",
+            "propose-anchor-merges",
+            "--vault",
+            str(vault),
+            "--slug-filter",
+            "architecture",
+            "--aggressive",
+            "--output-json",
+            str(output_json),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "宁可多分一组也不漏" in captured_prompt["value"]
+    assert "标记: ambiguous=true" in result.output
+    payload = json.loads(output_json.read_text(encoding="utf-8"))
+    assert payload == {
+        "groups": [
+            {
+                "primary_anchor_id": "project-architecture-x",
+                "duplicate_anchor_ids": ["project-architecture-x-note"],
+                "ambiguous": True,
+            }
+        ]
+    }
 
 
 def test_obsidian_propose_anchor_merges_reports_parse_error(monkeypatch, tmp_path: Path) -> None:
