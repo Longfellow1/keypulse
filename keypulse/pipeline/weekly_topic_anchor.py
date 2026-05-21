@@ -29,6 +29,8 @@ _STALE_DAYS = 5
 _PROJECT_ALIAS: dict[str, str] = {
     # "hud": "keypulse",
 }
+_INVALID_FILENAME_CHARS_RE = re.compile(r'[\/\\:*?"<>|]')
+_MAX_FILENAME_LENGTH = 100
 
 
 def _runtime_default_path() -> Path:
@@ -184,9 +186,38 @@ def _anchor_tags(anchor: WeeklyAnchor) -> list[str]:
     return deduped
 
 
-def render_anchor_note(anchor: WeeklyAnchor) -> str:
+def _sanitize_filename(display: str, fallback: str) -> str:
+    fallback_value = str(fallback or "").strip()
+    candidate = str(display or "").strip()
+    if not candidate:
+        candidate = fallback_value
+
+    sanitized = _INVALID_FILENAME_CHARS_RE.sub("-", candidate)
+    sanitized = sanitized.strip(" .")
+    if len(sanitized) > _MAX_FILENAME_LENGTH:
+        sanitized = sanitized[:_MAX_FILENAME_LENGTH].rstrip(" .")
+    if not sanitized:
+        return fallback_value
+    return sanitized
+
+
+def anchor_note_filename(display: str, fallback_slug: str) -> str:
+    base = _sanitize_filename(display, fallback_slug)
+    return f"{base}.md"
+
+
+def render_anchor_note(
+    anchor: WeeklyAnchor,
+    *,
+    anchor_filename_by_slug: dict[str, str] | None = None,
+) -> str:
     derived_raw = str(anchor.derived_from or "").strip()
-    derived_value = f"[[{derived_raw}]]" if derived_raw else ""
+    derived_target = (
+        str((anchor_filename_by_slug or {}).get(derived_raw) or derived_raw).strip()
+        if derived_raw
+        else ""
+    )
+    derived_value = f"[[{derived_target}]]" if derived_target else ""
     display_value = str(anchor.display or anchor.slug)
     alias_value = str(anchor.display or "").strip()
     tags = _anchor_tags(anchor)
@@ -226,11 +257,19 @@ def render_anchor_note(anchor: WeeklyAnchor) -> str:
     return "\n".join(lines)
 
 
-def write_anchor_note(anchor: WeeklyAnchor, *, vault_path: Path) -> Path:
+def write_anchor_note(
+    anchor: WeeklyAnchor,
+    *,
+    vault_path: Path,
+    anchor_filename_by_slug: dict[str, str] | None = None,
+) -> Path:
     anchors_dir = Path(vault_path).expanduser() / "anchors"
     anchors_dir.mkdir(parents=True, exist_ok=True)
-    target = anchors_dir / f"{anchor.slug}.md"
-    target.write_text(render_anchor_note(anchor), encoding="utf-8")
+    target = anchors_dir / anchor_note_filename(anchor.display, anchor.slug)
+    target.write_text(
+        render_anchor_note(anchor, anchor_filename_by_slug=anchor_filename_by_slug),
+        encoding="utf-8",
+    )
     return target
 
 

@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from keypulse.pipeline.weekly_topic_anchor import (
+    _sanitize_filename,
     WeeklyAnchor,
     anchor_today_clusters,
+    write_anchor_note,
     load_weekly_anchors,
     migrate_legacy_weekly_anchor_file,
     render_anchor_note,
@@ -174,6 +176,31 @@ def test_render_anchor_note_omits_aliases_when_display_is_empty() -> None:
     note = render_anchor_note(anchor)
     assert 'display: "keypulse-p2-plan"' in note
     assert "aliases:" not in note
+
+
+def test_sanitize_filename_replaces_forbidden_chars_and_trims() -> None:
+    sanitized = _sanitize_filename('  Alpha/Beta:*?"<>|.  ', "fallback-slug")
+    assert sanitized == "Alpha-Beta-------"
+
+
+def test_sanitize_filename_fallbacks_and_truncates() -> None:
+    assert _sanitize_filename("", "fallback-slug") == "fallback-slug"
+    assert _sanitize_filename("   ...   ", "fallback-slug") == "fallback-slug"
+    long_name = "a" * 140
+    assert _sanitize_filename(long_name, "fallback-slug") == ("a" * 100)
+
+
+def test_write_anchor_note_uses_display_based_filename(tmp_path: Path) -> None:
+    anchor = WeeklyAnchor(
+        slug="weekly-v3-rollout",
+        display="周报 v3 设计与落地",
+        started="2026-05-01",
+        last_active="2026-05-02",
+        state="active",
+    )
+    path = write_anchor_note(anchor, vault_path=tmp_path)
+    assert path.name == "周报 v3 设计与落地.md"
+    assert path.exists()
 
 
 def test_anchor_to_existing_active() -> None:

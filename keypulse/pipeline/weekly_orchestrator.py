@@ -34,6 +34,7 @@ from keypulse.pipeline.topic_status import TopicStatusSnapshot, compute_topic_st
 from keypulse.pipeline.degraded_content import generate_degraded_topic
 from keypulse.pipeline.quality_score import QualityBreakdown, append_quality_log, compute_quality_score
 from keypulse.pipeline.weekly_topic_anchor import (
+    anchor_note_filename,
     load_weekly_anchors,
     save_weekly_anchors,
     write_anchor_note,
@@ -402,8 +403,9 @@ def _call_weekly_llm(
 
 
 def _build_prompt(spec_body: str, capability: str, payload: dict[str, Any]) -> str:
+    rendered_spec = spec_body.replace("{{lang}}", current_lang()).strip()
     rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)
-    return "\n".join([f"CAPABILITY: {capability}", spec_body.strip(), _INPUT_MARKER_BEGIN, rendered, _INPUT_MARKER_END])
+    return "\n".join([f"CAPABILITY: {capability}", rendered_spec, _INPUT_MARKER_BEGIN, rendered, _INPUT_MARKER_END])
 
 
 def _format_weekly_validation_feedback(failures: list[ValidationFailure]) -> str:
@@ -2296,21 +2298,29 @@ def _home_obsidian_vault_path() -> Path:
     return Path.home() / "Go" / "Knowledge"
 
 
-def _replace_anchor_display_mentions(summary: str, *, self_slug: str, candidates: list[tuple[str, str]]) -> str:
+def _replace_anchor_display_mentions(summary: str, *, self_slug: str, candidates: list[tuple[str, ...]]) -> str:
     ranked = sorted(
-        [(str(display), str(slug)) for display, slug in candidates if str(display).strip() and str(slug).strip()],
+        [
+            (
+                str(item[0]),
+                str(item[1]),
+                str(item[2] if len(item) >= 3 else anchor_note_filename(str(item[0]), str(item[1])).removesuffix(".md")),
+            )
+            for item in candidates
+            if isinstance(item, tuple) and len(item) >= 2 and str(item[0]).strip() and str(item[1]).strip()
+        ],
         key=lambda item: len(item[0]),
         reverse=True,
     )
 
     def _replace_plain(text: str) -> str:
         replaced = text
-        for display, slug in ranked:
+        for display, slug, target in ranked:
             if slug == self_slug:
                 continue
             if not display or display not in replaced:
                 continue
-            replaced = replaced.replace(display, f"[[{slug}]]")
+            replaced = replaced.replace(display, f"[[{target}]]")
         return replaced
 
     source = str(summary or "")
@@ -2399,13 +2409,17 @@ def _postprocess_anchor_graph(week_str: str, *, gateway: ModelGateway, stats: We
         child.derived_from = derived_slug
         derived_updates += 1
 
-    display_candidates: list[tuple[str, str]] = []
+    display_candidates: list[tuple[str, str, str]] = []
     for anchor in anchors:
         display = str(anchor.display or "").strip()
         slug = str(anchor.slug or "").strip()
         if not display or not slug:
             continue
-        display_candidates.append((display, slug))
+        filename = anchor_note_filename(display, slug)
+        target = filename.removesuffix(".md")
+        if not target:
+            continue
+        display_candidates.append((display, slug, target))
     display_candidates.sort(key=lambda item: len(item[0]), reverse=True)
 
     wikilink_updates = 0
@@ -2424,10 +2438,17 @@ def _postprocess_anchor_graph(week_str: str, *, gateway: ModelGateway, stats: We
     if derived_updates > 0 or wikilink_updates > 0:
         save_weekly_anchors(week_str, anchors)
 
+    anchor_filename_by_slug: dict[str, str] = {}
+    for anchor in anchors:
+        slug = str(anchor.slug or "").strip()
+        if not slug:
+            continue
+        anchor_filename_by_slug[slug] = anchor_note_filename(str(anchor.display or ""), slug).removesuffix(".md")
+
     vault_path = _home_obsidian_vault_path()
     for anchor in anchors:
         try:
-            write_anchor_note(anchor, vault_path=vault_path)
+            write_anchor_note(anchor, vault_path=vault_path, anchor_filename_by_slug=anchor_filename_by_slug)
         except OSError:
             continue
 

@@ -18,7 +18,7 @@ temperature: 0.2
 
 规则：
 - `slug`：ASCII 小写连字符；避免时间词、语气词；不得与 `existing_slugs` 重复。
-- `display_name`：2-40 字，清晰表达主题，不要口号化。
+- `display_name`：2-40 字，清晰表达主题，不要口号化；语言必须匹配当前 locale `{{lang}}`（`zh`=中文，`en`=英文）。
 - `keywords`：5-10 个，ASCII 小写，优先技术名词/对象词/动作词，去重。
 - 不编造输入完全无关的概念。
 

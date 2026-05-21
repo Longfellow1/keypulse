@@ -61,12 +61,12 @@ def test_weekly_postprocess_sets_derived_and_converts_wikilink(tmp_path, monkeyp
     loaded = load_weekly_anchors("2026-W20")
     child = next(item for item in loaded if item.slug == "v3-rollout")
     assert child.derived_from == "v2-stable"
-    assert "[[v2-stable]]" in child.timeline_entries[0]["summary"]
+    assert "[[V2 稳定化]]" in child.timeline_entries[0]["summary"]
 
-    note = tmp_path / "vault" / "anchors" / "v3-rollout.md"
+    note = tmp_path / "vault" / "anchors" / "V3 上线.md"
     body = note.read_text(encoding="utf-8")
-    assert 'derived_from: "[[v2-stable]]"' in body
-    assert "[[v2-stable]]" in body
+    assert 'derived_from: "[[V2 稳定化]]"' in body
+    assert "[[V2 稳定化]]" in body
 
 
 def test_replace_anchor_display_mentions_prefers_longest_and_handles_special_chars():
@@ -80,6 +80,6 @@ def test_replace_anchor_display_mentions_prefers_longest_and_handles_special_cha
             ("C++ Runtime (v2)", "cpp-runtime-v2"),
         ],
     )
-    assert "[[v2-stable]]" in replaced
-    assert "[[cpp-runtime-v2]]" in replaced
-    assert "[[[[v2-stable]]]]" not in replaced
+    assert "[[V2 稳定化]]" in replaced
+    assert "[[C++ Runtime (v2)]]" in replaced
+    assert "[[[[V2 稳定化]]]]" not in replaced

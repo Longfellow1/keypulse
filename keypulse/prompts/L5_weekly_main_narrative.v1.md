@@ -41,3 +41,4 @@ temperature: 0.3
 3. 不造数字、不补外部背景。
 4. narrative 信息不足也要输出保守事实句，不可空字符串；decisions / outputs / blockers 允许空数组。
 5. 若 `cross_week_diff` 非空，优先体现状态迁移（如 started->in_progress）。
+6. narrative / decisions / outputs / blockers 文案语言必须匹配当前 locale `{{lang}}`（`zh`=中文，`en`=英文）。

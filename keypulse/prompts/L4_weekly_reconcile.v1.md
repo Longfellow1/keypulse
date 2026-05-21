@@ -31,6 +31,7 @@ temperature: 0.2
 3. `weekly_entries` 只能来自输入。
 4. 主题名使用输入中最清晰的 `name`。
 5. 不输出 markdown，不解释过程。
+6. 输出 `name` 必须匹配当前 locale `{{lang}}`（`zh`=中文，`en`=英文）。
 
 **命名反套话约束**（name 字段必须满足）：
 - name 必须是**名词短语或具体项目/模块名**，例如 "KeyPulse 周报算法" / "RAG 离线方案 v2" / "Daily 排序与分段"

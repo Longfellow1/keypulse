@@ -1946,6 +1946,287 @@ def _backfill_weekly_note(path: Path) -> tuple[bool, bool]:
     return changed, aliases_skipped
 
 
+_MIGRATE_TMP_SUFFIX = ".kp-migrate-tmp"
+
+
+def _resolve_obsidian_vault_path(vault: str | None) -> Path:
+    if vault:
+        return Path(vault).expanduser()
+    cfg = get_config()
+    return Path(cfg.obsidian.vault_path).expanduser()
+
+
+def _collect_anchor_rename_plan(anchors_dir: Path) -> dict[str, Any]:
+    from keypulse.pipeline.weekly_topic_anchor import _sanitize_filename
+
+    rows: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    seen_anchor_ids: set[str] = set()
+
+    for path in sorted(anchors_dir.glob("*.md")):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            skipped.append({"path": str(path), "reason": "read_failed", "detail": str(exc)})
+            continue
+        frontmatter, _body, _had_frontmatter = _split_markdown_frontmatter(raw)
+        anchor_id = str(frontmatter.get("anchor_id") or path.stem).strip() or path.stem
+        if anchor_id in seen_anchor_ids:
+            skipped.append({"path": str(path), "reason": "duplicate_anchor_id", "detail": anchor_id})
+            continue
+        seen_anchor_ids.add(anchor_id)
+        display = str(frontmatter.get("display") or "").strip()
+        target_stem = _sanitize_filename(display, anchor_id)
+        rows.append(
+            {
+                "path": path,
+                "anchor_id": anchor_id,
+                "target_stem": target_stem,
+                "target_path": anchors_dir / f"{target_stem}.md",
+            }
+        )
+
+    target_to_anchor_ids: dict[str, set[str]] = {}
+    for row in rows:
+        target_to_anchor_ids.setdefault(str(row["target_stem"]), set()).add(str(row["anchor_id"]))
+    collision_targets = {
+        target: sorted(anchor_ids)
+        for target, anchor_ids in target_to_anchor_ids.items()
+        if len(anchor_ids) > 1
+    }
+
+    valid_rows: list[dict[str, Any]] = []
+    for row in rows:
+        target_stem = str(row["target_stem"])
+        if target_stem in collision_targets:
+            skipped.append(
+                {
+                    "path": str(row["path"]),
+                    "reason": "collision",
+                    "detail": f"{target_stem}: {', '.join(collision_targets[target_stem])}",
+                }
+            )
+            continue
+        valid_rows.append(row)
+
+    rename_needed_rows = [row for row in valid_rows if str(row["path"].name) != str(row["target_path"].name)]
+    rename_sources = {Path(str(row["path"])) for row in rename_needed_rows}
+    rename_plan: list[dict[str, Any]] = []
+
+    for row in rename_needed_rows:
+        source_path = Path(str(row["path"]))
+        target_path = Path(str(row["target_path"]))
+        if target_path.exists() and target_path not in rename_sources:
+            skipped.append(
+                {
+                    "path": str(source_path),
+                    "reason": "target_exists",
+                    "detail": str(target_path),
+                }
+            )
+            continue
+        rename_plan.append(row)
+
+    link_map: dict[str, str] = {}
+    for row in valid_rows:
+        anchor_id = str(row["anchor_id"]).strip()
+        target_stem = str(row["target_stem"]).strip()
+        if not anchor_id or not target_stem:
+            continue
+        link_map[anchor_id] = target_stem
+        link_map[f"anchors/{anchor_id}"] = target_stem
+
+    return {
+        "rows": rows,
+        "valid_rows": valid_rows,
+        "rename_plan": rename_plan,
+        "link_map": link_map,
+        "collision_targets": collision_targets,
+        "skipped": skipped,
+    }
+
+
+def _rewrite_wikilinks_in_text(markdown: str, link_map: dict[str, str]) -> tuple[str, list[tuple[int, str, str]]]:
+    rewrites: list[tuple[int, str, str]] = []
+    if not link_map:
+        return str(markdown or ""), rewrites
+
+    def _normalize_target(raw_target: str) -> tuple[str, str]:
+        target = str(raw_target or "").strip()
+        if not target:
+            return "", ""
+        base, has_hash, tail = target.partition("#")
+        normalized = base.strip()
+        if normalized.endswith(".md"):
+            normalized = normalized[:-3]
+        heading_suffix = f"#{tail}" if has_hash else ""
+        return normalized, heading_suffix
+
+    updated_lines: list[str] = []
+    for line_no, line in enumerate(str(markdown or "").splitlines(keepends=True), start=1):
+        cursor = 0
+        rebuilt: list[str] = []
+        line_text = str(line)
+        while cursor < len(line_text):
+            start = line_text.find("[[", cursor)
+            if start < 0:
+                rebuilt.append(line_text[cursor:])
+                break
+            rebuilt.append(line_text[cursor:start])
+            scan = start + 2
+            depth = 1
+            nested = False
+            while scan < len(line_text) - 1 and depth > 0:
+                pair = line_text[scan : scan + 2]
+                if pair == "[[":
+                    nested = True
+                    depth += 1
+                    scan += 2
+                    continue
+                if pair == "]]":
+                    depth -= 1
+                    scan += 2
+                    continue
+                scan += 1
+            if depth != 0:
+                rebuilt.append(line_text[start:])
+                cursor = len(line_text)
+                break
+            original = line_text[start:scan]
+            replacement = original
+            if not nested:
+                inner = original[2:-2]
+                target_text, _pipe, _alias = inner.partition("|")
+                normalized, heading_suffix = _normalize_target(target_text)
+                if normalized:
+                    mapped = link_map.get(normalized)
+                    if mapped is not None:
+                        replacement = f"[[{mapped}{heading_suffix}]]"
+                        if replacement != original:
+                            rewrites.append((line_no, original, replacement))
+            rebuilt.append(replacement)
+            cursor = scan
+        updated_lines.append("".join(rebuilt))
+    return "".join(updated_lines), rewrites
+
+
+def _iter_obsidian_markdown_paths(vault_root: Path) -> list[Path]:
+    candidate_dirs = [
+        vault_root / "anchors",
+        vault_root / "daily",
+        vault_root / "weekly",
+        vault_root / "Daily",
+        vault_root / "Weekly",
+    ]
+    deduped: dict[str, Path] = {}
+    for folder in candidate_dirs:
+        if not folder.exists():
+            continue
+        for path in sorted(folder.rglob("*.md")):
+            try:
+                key = str(path.resolve()).casefold()
+            except OSError:
+                key = str(path).casefold()
+            if key not in deduped:
+                deduped[key] = path
+    return [deduped[key] for key in sorted(deduped.keys())]
+
+
+def _apply_rename_plan(rename_plan: list[dict[str, Any]]) -> None:
+    staged: list[tuple[Path, Path, Path]] = []
+    for idx, row in enumerate(rename_plan):
+        source_path = Path(str(row["path"]))
+        target_path = Path(str(row["target_path"]))
+        tmp_path = source_path.with_name(f"{source_path.name}{_MIGRATE_TMP_SUFFIX}-{idx}")
+        source_path.rename(tmp_path)
+        staged.append((tmp_path, source_path, target_path))
+    for tmp_path, _source_path, target_path in staged:
+        tmp_path.rename(target_path)
+
+
+@obsidian.command(
+    "migrate-filenames",
+    help=T(
+        "迁移 anchor 文件名到 display，并重写全 vault wikilink（默认 dry-run）。",
+        "Migrate anchor filenames to display and rewrite vault wikilinks (dry-run by default).",
+    ),
+)
+@click.option(
+    "--vault",
+    "vault",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=str),
+    default=None,
+    help=T("Obsidian vault 路径（默认读配置）", "Obsidian vault path (defaults to config)"),
+)
+@click.option(
+    "--apply",
+    "apply_changes",
+    is_flag=True,
+    default=False,
+    help=T("执行真实改动（默认仅预览）", "Apply changes (default is preview only)"),
+)
+def obsidian_migrate_filenames(vault: str | None, apply_changes: bool) -> None:
+    vault_root = _resolve_obsidian_vault_path(vault)
+    anchors_dir = vault_root / "anchors"
+    if not anchors_dir.exists():
+        raise click.UsageError(f"anchors directory not found: {anchors_dir}")
+
+    plan = _collect_anchor_rename_plan(anchors_dir)
+    rename_plan = list(plan["rename_plan"])
+    link_map = dict(plan["link_map"])
+    skipped = list(plan["skipped"])
+    collision_targets = dict(plan["collision_targets"])
+
+    rewrites_total = 0
+    rewrite_preview: list[dict[str, str]] = []
+    markdown_paths = _iter_obsidian_markdown_paths(vault_root)
+    for path in markdown_paths:
+        try:
+            original = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            skipped.append({"path": str(path), "reason": "read_failed", "detail": str(exc)})
+            continue
+        rewritten, rewrites = _rewrite_wikilinks_in_text(original, link_map)
+        if not rewrites:
+            continue
+        rewrites_total += len(rewrites)
+        rel_path = str(path.relative_to(vault_root))
+        for line_no, before, after in rewrites[:5]:
+            rewrite_preview.append({"path": rel_path, "line": str(line_no), "before": before, "after": after})
+        if apply_changes and rewritten != original:
+            try:
+                path.write_text(rewritten, encoding="utf-8")
+            except OSError as exc:
+                skipped.append({"path": str(path), "reason": "write_failed", "detail": str(exc)})
+
+    if apply_changes:
+        _apply_rename_plan(rename_plan)
+
+    mode = "apply" if apply_changes else "dry-run"
+    click.echo(
+        "migrate_filenames "
+        f"mode={mode} vault={vault_root} "
+        f"planned_renames={len(rename_plan)} wikilink_rewrites={rewrites_total} "
+        f"collisions={len(collision_targets)} skipped={len(skipped)}"
+    )
+    if rename_plan:
+        click.echo("renames:")
+        for row in rename_plan:
+            source_rel = row["path"].relative_to(vault_root)
+            target_rel = row["target_path"].relative_to(vault_root)
+            click.echo(f"  R {source_rel} -> {target_rel}")
+    if rewrite_preview:
+        click.echo("wikilink_preview:")
+        for item in rewrite_preview[:30]:
+            click.echo(
+                f"  ~ {item['path']}:{item['line']} {item['before']} -> {item['after']}"
+            )
+    if skipped:
+        click.echo("skipped:")
+        for item in skipped[:30]:
+            click.echo(f"  - {item['reason']} path={item['path']} detail={item['detail']}")
+
+
 @obsidian.command("backfill-aliases", help=T("补齐 Obsidian aliases/tags frontmatter。", "Backfill Obsidian aliases/tags frontmatter."))
 def obsidian_backfill_aliases():
     """Backfill aliases/tags in anchor, daily, weekly notes."""

@@ -284,7 +284,7 @@ def test_render_daily_markdown_dual_layer_prefers_topics_and_unanchored_desc_tim
     )
     assert "## 今日要点" in body
     assert "## 今天做的事" in body
-    assert "### [[weekly-v3-rollout|周报 v3 设计与落地]]" in body
+    assert "### [[周报 v3 设计与落地]]" in body
     assert "## 今日 raw events (unanchored)" not in body
     assert "## 今日涉及的主题" not in body
 
@@ -384,7 +384,7 @@ def test_render_daily_markdown_phase_a_section_contract_and_event_cards(tmp_path
     ]
     assert "## 今天的事件卡" not in body
     assert "## 跨日延续" not in body
-    assert "- [[blocked-topic|被阻塞主题]]" in body
+    assert "- [[被阻塞主题]]" in body
 
 
 def test_render_daily_markdown_appends_algorithm_trace_from_log_and_cost(tmp_path, monkeypatch):

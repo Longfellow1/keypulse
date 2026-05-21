@@ -27,6 +27,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from keypulse.i18n import current_lang
 from keypulse.pipeline.model import LLMCallError, ModelGateway
 from keypulse.utils.dates import local_timezone
 
@@ -70,11 +71,12 @@ class DailyGenerationResult:
 
 def build_prompt(spec_body: str, capability: str, payload: Mapping[str, Any]) -> str:
     """Build the same `CAPABILITY: ... <<INPUT_JSON>> ...` envelope the orchestrator uses."""
+    rendered_spec = spec_body.replace("{{lang}}", current_lang()).strip()
     rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)
     return "\n".join(
         [
             f"CAPABILITY: {capability}",
-            spec_body.strip(),
+            rendered_spec,
             _INPUT_MARKER_BEGIN,
             rendered,
             _INPUT_MARKER_END,
