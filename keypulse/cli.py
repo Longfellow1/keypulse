@@ -1,14 +1,16 @@
 from __future__ import annotations
 import json
 import os
+import plistlib
 import re
+import shutil
 import sys
 import time
 import signal
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -171,6 +173,32 @@ def _launchd_daemon_plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / "com.keypulse.daemon.plist"
 
 
+def _launch_agents_dir() -> Path:
+    return Path.home() / "Library" / "LaunchAgents"
+
+
+def _install_logs_dir() -> Path:
+    return get_data_dir() / "logs"
+
+
+def _keypulse_executable_path() -> Path:
+    override = os.environ.get("KEYPULSE_EXECUTABLE", "").strip()
+    candidates = [override, shutil.which("keypulse") or ""]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate).expanduser()
+        if not path.is_absolute():
+            resolved = shutil.which(str(path))
+            path = Path(resolved) if resolved else path
+        if path.exists():
+            return path.resolve()
+    raise click.ClickException(
+        "Could not find the installed `keypulse` executable. "
+        "Install with Homebrew first, or set KEYPULSE_EXECUTABLE=/absolute/path/to/keypulse."
+    )
+
+
 def _launchd_label_loaded(label: str) -> bool:
     try:
         result = subprocess.run(["launchctl", "list"], check=False, capture_output=True, text=True)
@@ -208,6 +236,202 @@ def _launchd_bootstrap(plist_path: Path) -> bool:
         if result.returncode == 0:
             return True
     return False
+
+
+_DEFAULT_USER_CONFIG = """# KeyPulse user config.
+# Homebrew installs the CLI. This file controls the local runtime.
+
+[app]
+db_path = "~/.keypulse/keypulse.db"
+log_path = "~/.keypulse/keypulse.log"
+flush_interval_sec = 5
+retention_days = 30
+
+[watchers]
+window = true
+idle = true
+clipboard = true
+manual = true
+keyboard_chunk = true
+browser = false
+browser_url = true
+ax_text = false
+ocr = false
+
+[obsidian]
+vault_path = "~/Documents/KeyPulse"
+vault_name = "KeyPulse"
+export_hour = 9
+export_minute = 5
+wiki_link_mode = "relative"
+humanize_titles = false
+
+[integration]
+standalone_output_path = "~/Documents/KeyPulse"
+state_path = "~/.keypulse/sink-state.json"
+
+[model]
+active_profile = "local-first"
+state_path = "~/.keypulse/model-state.json"
+
+[model.local]
+kind = "lm_studio"
+base_url = "http://127.0.0.1:1234"
+model = "keypulse-local"
+api_key_env = ""
+
+[model.cloud]
+kind = "openai_compatible"
+base_url = "https://api.openai.com/v1"
+model = "keypulse-cloud"
+api_key_env = "OPENAI_API_KEY"
+"""
+
+
+_LAUNCHD_LABELS = (
+    "com.keypulse.daemon",
+    "com.keypulse.healthcheck",
+    "com.keypulse.obsidian-sync",
+    "com.keypulse.obsidian-sync-hourly",
+)
+
+
+def _default_path_env(executable: Path) -> str:
+    parts = [
+        str(executable.parent),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ]
+    deduped: list[str] = []
+    for item in parts:
+        if item not in deduped:
+            deduped.append(item)
+    return ":".join(deduped)
+
+
+def _launchd_jobs(executable: Path) -> dict[str, dict[str, Any]]:
+    logs = _install_logs_dir()
+    env = {"PATH": _default_path_env(executable)}
+    return {
+        "com.keypulse.daemon": {
+            "Label": "com.keypulse.daemon",
+            "ProgramArguments": [str(executable), "serve"],
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "ThrottleInterval": 10,
+            "StandardOutPath": str(logs / "daemon.log"),
+            "StandardErrorPath": str(logs / "daemon.err"),
+            "EnvironmentVariables": env,
+        },
+        "com.keypulse.healthcheck": {
+            "Label": "com.keypulse.healthcheck",
+            "ProgramArguments": [str(executable), "healthcheck"],
+            "StartInterval": 600,
+            "RunAtLoad": True,
+            "StandardOutPath": str(logs / "healthcheck.log"),
+            "StandardErrorPath": str(logs / "healthcheck.err"),
+            "EnvironmentVariables": env,
+        },
+        "com.keypulse.obsidian-sync": {
+            "Label": "com.keypulse.obsidian-sync",
+            "ProgramArguments": [str(executable), "obsidian", "sync"],
+            "StartCalendarInterval": [
+                {"Hour": 12, "Minute": 0},
+                {"Hour": 13, "Minute": 0},
+                {"Hour": 18, "Minute": 0},
+                {"Hour": 21, "Minute": 0},
+            ],
+            "RunAtLoad": False,
+            "KeepAlive": False,
+            "StandardOutPath": str(logs / "obsidian-sync.log"),
+            "StandardErrorPath": str(logs / "obsidian-sync.err"),
+            "EnvironmentVariables": env,
+        },
+        "com.keypulse.obsidian-sync-hourly": {
+            "Label": "com.keypulse.obsidian-sync-hourly",
+            "ProgramArguments": [str(executable), "obsidian", "sync", "--incremental"],
+            "StartInterval": 3600,
+            "ThrottleInterval": 60,
+            "RunAtLoad": False,
+            "KeepAlive": False,
+            "StandardOutPath": str(logs / "obsidian-sync-hourly.log"),
+            "StandardErrorPath": str(logs / "obsidian-sync-hourly.err"),
+            "EnvironmentVariables": env,
+        },
+    }
+
+
+def _launchd_plist_path(label: str) -> Path:
+    return _launch_agents_dir() / f"{label}.plist"
+
+
+def _write_launchd_plist(label: str, payload: dict[str, Any], *, force: bool = False) -> str:
+    path = _launchd_plist_path(label)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            existing = plistlib.loads(path.read_bytes())
+        except Exception:
+            existing = None
+        if existing == payload:
+            return "unchanged"
+        if not force:
+            raise click.ClickException(f"{path} already exists and differs. Re-run with --force to replace it.")
+        status = "updated"
+    else:
+        status = "created"
+
+    with path.open("wb") as handle:
+        plistlib.dump(payload, handle, sort_keys=False)
+    return status
+
+
+def _launchd_load_plist(path: Path) -> bool:
+    for command in (
+        ["launchctl", "bootout", f"gui/{os.getuid()}", str(path)],
+        ["launchctl", "unload", str(path)],
+    ):
+        try:
+            subprocess.run(command, check=False, capture_output=True, text=True)
+        except OSError:
+            pass
+    for command in (
+        ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(path)],
+        ["launchctl", "load", str(path)],
+    ):
+        try:
+            result = subprocess.run(command, check=False, capture_output=True, text=True)
+        except OSError:
+            continue
+        if result.returncode == 0:
+            return True
+    return False
+
+
+def _install_launchd_jobs(*, load: bool, force: bool) -> list[tuple[str, Path, str, bool]]:
+    executable = _keypulse_executable_path()
+    _install_logs_dir().mkdir(parents=True, exist_ok=True)
+    results: list[tuple[str, Path, str, bool]] = []
+    for label, payload in _launchd_jobs(executable).items():
+        status = _write_launchd_plist(label, payload, force=force)
+        path = _launchd_plist_path(label)
+        loaded = _launchd_load_plist(path) if load else False
+        results.append((label, path, status, loaded))
+    return results
+
+
+def _write_default_user_config(*, force: bool = False) -> str:
+    path = get_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existed = path.exists()
+    if path.exists() and not force:
+        return "exists"
+    atomic_write_text(path, _DEFAULT_USER_CONFIG)
+    return "updated" if existed else "created"
 
 
 def _load_capture_runtime_state() -> dict | None:
@@ -352,6 +576,206 @@ def mark_holiday(week, reason, region):
 
     marked_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     click.echo(f"✓ holiday marked: {iso_week}")
+
+
+@main.group("install", help="Install, initialize, launchd, and uninstall management.")
+def install_group():
+    """Install lifecycle group."""
+    pass
+
+
+def _echo_launchd_results(results: list[tuple[str, Path, str, bool]], *, plain: bool = False) -> None:
+    for label, path, status_text, loaded in results:
+        if plain:
+            print(f"{label}={status_text},path={path},loaded={loaded}")
+        else:
+            load_text = "loaded" if loaded else "not loaded"
+            console.print(f"[green]{label}[/green] {status_text} ({load_text}) -> {path}")
+
+
+@install_group.command("launchd", help="Write and load KeyPulse launchd jobs.")
+@click.option("--no-load", is_flag=True, default=False, help="Write plists without loading launchd")
+@click.option("--force", is_flag=True, default=False, help="Replace existing KeyPulse plists when their content differs")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def install_launchd(no_load, force, plain):
+    """Install launchd jobs."""
+    if sys.platform != "darwin":
+        raise click.ClickException("launchd installation is only supported on macOS.")
+    results = _install_launchd_jobs(load=not no_load, force=force)
+    _echo_launchd_results(results, plain=plain)
+
+
+@install_group.command("init", help="Initialize the KeyPulse runtime after Homebrew install.")
+@click.option("--no-launchd", is_flag=True, default=False, help="Skip launchd job installation")
+@click.option("--no-load", is_flag=True, default=False, help="Write launchd plists without loading them")
+@click.option("--force-config", is_flag=True, default=False, help="Overwrite existing config.toml")
+@click.option("--force-launchd", is_flag=True, default=False, help="Replace existing launchd plists when their content differs")
+@click.option("--skip-sink-detect", is_flag=True, default=False, help="Skip automatic sink detection")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def install_init(no_launchd, no_load, force_config, force_launchd, skip_sink_detect, plain):
+    """Initialize runtime."""
+    if sys.platform != "darwin":
+        raise click.ClickException("KeyPulse install init is currently macOS-only.")
+
+    data_dir = get_data_dir()
+    logs_dir = _install_logs_dir()
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    config_status = _write_default_user_config(force=force_config)
+    cfg = Config.load()
+    init_db(cfg.db_path_expanded)
+
+    sink_status = "skipped"
+    if not skip_sink_detect:
+        try:
+            sink = resolve_active_sink(cfg, persist=True)
+            sink_status = f"{sink.kind}:{sink.output_dir}" if sink is not None else "none"
+        except Exception as exc:
+            sink_status = f"failed:{type(exc).__name__}:{exc}"
+
+    launchd_results: list[tuple[str, Path, str, bool]] = []
+    if not no_launchd:
+        launchd_results = _install_launchd_jobs(load=not no_load, force=force_launchd)
+
+    if plain:
+        print(f"data_dir={data_dir}")
+        print(f"logs_dir={logs_dir}")
+        print(f"config={config_status}:{get_config_path()}")
+        print(f"db_path={cfg.db_path_expanded}")
+        print(f"sink={sink_status}")
+        for label, path, status_text, loaded in launchd_results:
+            print(f"launchd.{label}={status_text},path={path},loaded={loaded}")
+        return
+
+    console.print("[green]KeyPulse runtime initialized.[/green]")
+    console.print(f"Data: {data_dir}")
+    console.print(f"Logs: {logs_dir}")
+    console.print(f"Config: {get_config_path()} ({config_status})")
+    console.print(f"Database: {cfg.db_path_expanded}")
+    console.print(f"Sink: {sink_status}")
+    if launchd_results:
+        _echo_launchd_results(launchd_results)
+    console.print("")
+    console.print("Next steps:")
+    console.print("  keypulse setup")
+    console.print("  keypulse model setup")
+    console.print("  keypulse doctor")
+
+
+@install_group.command("doctor", help="Check install-level status.")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def install_doctor(plain):
+    """Install diagnostics."""
+    checks: dict[str, tuple[bool, str]] = {}
+    try:
+        executable = _keypulse_executable_path()
+        checks["executable"] = (executable.exists(), str(executable))
+    except click.ClickException as exc:
+        checks["executable"] = (False, str(exc))
+
+    config_path = get_config_path()
+    checks["config"] = (config_path.exists(), str(config_path))
+    cfg = Config.load()
+    checks["database"] = (cfg.db_path_expanded.exists(), str(cfg.db_path_expanded))
+    try:
+        sink = resolve_active_sink(cfg, persist=False)
+        checks["sink"] = (True, f"{sink.kind}:{sink.output_dir}")
+    except Exception as exc:
+        checks["sink"] = (False, f"{type(exc).__name__}:{exc}")
+    checks["model"] = (not _model_backends_need_setup(cfg), cfg.model.active_profile)
+
+    for label in _LAUNCHD_LABELS:
+        path = _launchd_plist_path(label)
+        loaded = _launchd_label_loaded(label)
+        checks[f"launchd.{label}"] = (path.exists() and loaded, f"path={path},loaded={loaded}")
+
+    if plain:
+        for name, (ok, detail) in checks.items():
+            print(f"{name}={'OK' if ok else 'FAIL'} {detail}")
+    else:
+        table = Table(title="KeyPulse install doctor", show_header=True, header_style="bold cyan")
+        table.add_column("Check")
+        table.add_column("Status")
+        table.add_column("Detail")
+        for name, (ok, detail) in checks.items():
+            table.add_row(name, "[green]OK[/green]" if ok else "[red]FAIL[/red]", detail)
+        console.print(table)
+    if not all(ok for ok, _detail in checks.values()):
+        raise SystemExit(1)
+
+
+def _unlink_if_exists(path: Path) -> bool:
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
+def _remove_keypulse_path(path: Path) -> bool:
+    data_dir = get_data_dir().resolve()
+    target = path.expanduser()
+    try:
+        resolved = target.resolve(strict=False)
+    except OSError:
+        resolved = target
+    if data_dir != resolved and data_dir not in resolved.parents:
+        raise click.ClickException(f"Refusing to remove path outside ~/.keypulse: {target}")
+    if target.is_dir():
+        shutil.rmtree(target)
+        return True
+    return _unlink_if_exists(target)
+
+
+@install_group.command("uninstall", help="Uninstall launchd jobs and optionally remove runtime/data.")
+@click.option("--remove-runtime", is_flag=True, default=False, help="Remove logs, pid files, health state, and other runtime files")
+@click.option("--remove-data", is_flag=True, default=False, help="Remove config, database, and state files (requires --force)")
+@click.option("--force", is_flag=True, default=False, help="Confirm destructive removal")
+@click.option("--plain", is_flag=True, default=False, help="Plain text output")
+def install_uninstall(remove_runtime, remove_data, force, plain):
+    """Uninstall runtime wiring."""
+    if remove_data and not force:
+        raise click.ClickException("--remove-data requires --force.")
+
+    removed: list[str] = []
+    for label in _LAUNCHD_LABELS:
+        path = _launchd_plist_path(label)
+        _launchd_bootout(path)
+        if _unlink_if_exists(path):
+            removed.append(str(path))
+
+    if remove_runtime:
+        for path in (
+            get_pid_path(),
+            get_hud_pid_path(),
+            get_log_path(),
+            get_data_dir() / "health.json",
+            _install_logs_dir(),
+        ):
+            if _remove_keypulse_path(path):
+                removed.append(str(path))
+
+    if remove_data:
+        cfg = Config.load()
+        for path in (
+            cfg.db_path_expanded,
+            get_config_path(),
+            Path(cfg.integration.state_path).expanduser(),
+            Path(cfg.model.state_path).expanduser(),
+        ):
+            if _remove_keypulse_path(path):
+                removed.append(str(path))
+
+    if plain:
+        for item in removed:
+            print(f"removed={item}")
+        print("data_preserved=" + str(not remove_data))
+        return
+
+    console.print("[green]KeyPulse launchd jobs removed.[/green]")
+    if removed:
+        for item in removed:
+            console.print(f"removed: {item}")
+    if not remove_data:
+        console.print(f"User data preserved under {get_data_dir()}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════

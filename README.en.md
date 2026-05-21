@@ -176,10 +176,13 @@ A **Golden Set** of labeled days keeps the narrative pipeline from silently drif
 Three steps to install — after that, it just lives there.
 
 ```bash
-# 1. Install — one command builds .app into /Applications and registers launchd
-git clone https://github.com/Longfellow1/keypulse.git
-cd keypulse
-make install
+# 1. Install — Homebrew installs the CLI; KeyPulse initializes the runtime
+curl -fsSL https://raw.githubusercontent.com/Longfellow1/keypulse/main/install.sh | bash
+
+# Or manually:
+brew tap Longfellow1/keypulse
+brew install keypulse
+keypulse install init
 
 # 2. Configure — interactive 3-choice wizard (~2 min)
 keypulse setup
@@ -206,7 +209,7 @@ It now lives in your menu bar permanently. Survives reboot, restarted by `launch
 | `keypulse healthcheck` | Atomic health report (launchd runs it every 10 min) |
 | `keypulse purge --app Slack --confirm` | Wipe everything from an app, permanently |
 
-Full CLI reference: `keypulse --help`. First-time configuration details: [docs/setup-onboarding.md](docs/setup-onboarding.md).
+Full CLI reference: `keypulse --help`. Install details: [docs/homebrew-install.md](docs/homebrew-install.md). First-time configuration details: [docs/setup-onboarding.md](docs/setup-onboarding.md).
 
 ---
 
@@ -263,7 +266,7 @@ Not generic productivity tips. A library of patterns named by you, shaped by you
 
 - **Platform:** macOS 12+ (Apple Silicon + Intel)
 - **Tests:** 800+ passing (pytest, including capability framework architectural invariants)
-- **Installable:** `make install` — one-shot, builds .app and registers launchd
+- **Installable:** Homebrew installs the CLI; `keypulse install init` initializes runtime + launchd
 - **First-time setup:** `keypulse setup` — interactive 3-choice wizard, ~2 min
 - **Roadmap:** quarterly/annual memoir-style recall · cross-device merge · voice-prompted reflection
 

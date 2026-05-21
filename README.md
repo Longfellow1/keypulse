@@ -180,10 +180,13 @@ KeyPulse 不想替代你的 PKM 系统。它只把每天的工作痕迹写回你
 三步装完，之后它就一直在那。
 
 ```bash
-# 1. 装 — 一行命令，打 .app 进 /Applications，挂 launchd
-git clone https://github.com/Longfellow1/keypulse.git
-cd keypulse
-make install
+# 1. 装 — Homebrew 安装 CLI，并由 KeyPulse 初始化 runtime
+curl -fsSL https://raw.githubusercontent.com/Longfellow1/keypulse/main/install.sh | bash
+
+# 或者手动：
+brew tap Longfellow1/keypulse
+brew install keypulse
+keypulse install init
 
 # 2. 配 — 三选一交互向导（约 2 分钟）
 keypulse setup
@@ -210,18 +213,7 @@ keypulse setup
 | `keypulse healthcheck` | 原子健康报告（launchd 每 10 分钟自动跑） |
 | `keypulse purge --app Slack --confirm` | 彻底删除某个应用的全部数据 |
 
-完整命令参考：`keypulse --help`。首次配置的细节看 [docs/setup-onboarding.md](docs/setup-onboarding.md)。
-
-### Daily launchd 模板（PR2）
-
-仓库提供 `scripts/com.keypulse.daily.plist`，内置两个触发点：
-- `18:00` → `keypulse daily run --trigger 18:00`
-- `23:30` → `keypulse daily run --trigger 23:30`
-
-建议步骤（只示例文件操作，不用 `launchctl load`）：
-1. 复制模板到 `~/Library/LaunchAgents/com.keypulse.daily.plist`
-2. 按本机路径调整 `ProgramArguments`（例如 `keypulse` 可执行路径）
-3. 用 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.keypulse.daily.plist` 启用
+完整命令参考：`keypulse --help`。安装细节看 [docs/homebrew-install.md](docs/homebrew-install.md)，首次配置看 [docs/setup-onboarding.md](docs/setup-onboarding.md)。
 
 ---
 
@@ -278,7 +270,7 @@ Obsidian 不只是一个笔记本，它是一张图。当日报、主题卡、�
 
 - **平台：** macOS 12+（Apple Silicon + Intel）
 - **测试：** 800+ passing（pytest，含 capability 框架架构不变量）
-- **安装：** `make install` 一键打包 .app + 注册 launchd 托管
+- **安装：** Homebrew 安装 CLI，`keypulse install init` 初始化 runtime + launchd
 - **首次配置：** `keypulse setup` 三选一向导，约 2 分钟
 - **Roadmap：** 季度 / 年度回忆录式整理 · 多设备合并 · 语音反思对话
 
