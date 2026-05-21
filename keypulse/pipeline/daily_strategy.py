@@ -319,10 +319,16 @@ def _build_recent_topic_history(date_str: str, days: int = 7) -> list[dict[str, 
         except OSError:
             continue
 
-        matches = list(re.finditer(r"^### \[\[(?P<anchor>[^|\]]+)\|(?P<display>[^\]]+)\]\]", text, re.MULTILINE))
+        matches = list(re.finditer(r"^### \[\[(?P<link>[^\]]+)\]\]", text, re.MULTILINE))
         for match in matches:
-            anchor = match.group("anchor").strip()
-            display = match.group("display").strip()
+            link = str(match.group("link") or "").strip()
+            target, sep, alias = link.partition("|")
+            anchor = target.strip()
+            display = alias.strip() if sep else target.strip()
+            if not anchor:
+                continue
+            anchor = anchor.split("#", 1)[0].strip()
+            display = display.split("#", 1)[0].strip() or anchor
             body_start = match.end()
             next_match = re.search(r"^(?:### |## )", text[body_start:], re.MULTILINE)
             body_end = body_start + next_match.start() if next_match else len(text)

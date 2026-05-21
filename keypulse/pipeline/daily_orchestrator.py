@@ -1211,6 +1211,7 @@ def _run_anchor_for_clusters(
             date_str=date_str,
             today_clusters=today_clusters,
             weekly_anchors=weekly_anchors,
+            known_anchors=_known_anchor_candidates(weekly_anchors),
             gateway=AnchorGateway(gateway),
         )
     except Exception as exc:
@@ -1334,6 +1335,26 @@ def _run_anchor_for_clusters(
             }
         )
     return topics, summary_events, unanchored_events
+
+
+def _known_anchor_candidates(anchors: list[Any], *, max_items: int = 100) -> list[Any]:
+    def _date_key(value: Any) -> date_cls:
+        text = str(value or "").strip()
+        try:
+            return date_cls.fromisoformat(text)
+        except ValueError:
+            return date_cls.min
+
+    ordered = sorted(
+        list(anchors),
+        key=lambda anchor: (
+            _date_key(getattr(anchor, "last_active", "")),
+            _date_key(getattr(anchor, "started", "")),
+            str(getattr(anchor, "slug", "")).strip(),
+        ),
+        reverse=True,
+    )
+    return ordered[: max(int(max_items), 0)]
 
 
 def run_daily(date_str: str, *, trigger: str = "18:00") -> DailySummary:

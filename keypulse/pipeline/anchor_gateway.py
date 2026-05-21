@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 from keypulse.pipeline.daily_strategy import build_prompt
@@ -34,8 +35,12 @@ class AnchorGateway:
         date_str: str,
         today_clusters: list[dict],
         weekly_anchors: list[WeeklyAnchor],
+        known_anchors: list[WeeklyAnchor] | None = None,
     ) -> dict[str, Any]:
         spec = load_prompt("L0_anchor")
+        known_anchor_list = self._select_known_anchors(
+            known_anchors if known_anchors is not None else weekly_anchors
+        )
         input_data = {
             "date": str(date_str),
             "today_clusters": [
@@ -49,6 +54,7 @@ class AnchorGateway:
                 if str(cluster.get("cluster_id") or "").strip()
             ],
             "weekly_anchors": [anchor.to_dict() for anchor in weekly_anchors],
+            "known_anchors": [anchor.to_dict() for anchor in known_anchor_list],
         }
         prompt = build_prompt(spec.body, "L0_anchor", input_data)
 
@@ -80,6 +86,25 @@ class AnchorGateway:
         assignments = {str(key): str(value) for key, value in assignments_raw.items()}
         new_anchors = [dict(item) for item in new_anchors_raw if isinstance(item, dict)]
         return {"assignments": assignments, "new_anchors": new_anchors}
+
+    @staticmethod
+    def _select_known_anchors(anchors: list[WeeklyAnchor], *, max_items: int = 100) -> list[WeeklyAnchor]:
+        def _parse_date(value: str) -> date:
+            try:
+                return date.fromisoformat(str(value or "").strip())
+            except ValueError:
+                return date.min
+
+        ordered = sorted(
+            list(anchors),
+            key=lambda anchor: (
+                _parse_date(getattr(anchor, "last_active", "")),
+                _parse_date(getattr(anchor, "started", "")),
+                str(getattr(anchor, "slug", "")).strip(),
+            ),
+            reverse=True,
+        )
+        return ordered[: max(int(max_items), 0)]
 
     @staticmethod
     def _normalize_response(raw_response: Any) -> dict[str, Any]:

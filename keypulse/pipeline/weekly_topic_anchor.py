@@ -13,13 +13,14 @@
 from __future__ import annotations
 
 import json
+import inspect
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol
 
-AnchorState = Literal["active", "candidate", "completed", "stale"]
+AnchorState = Literal["active", "candidate", "completed", "stale", "dormant"]
 
 _DEFAULT_PATH = Path.home() / ".keypulse" / "anchors.json"
 _LEGACY_PATH = Path.home() / ".keypulse" / "weekly-anchor.json"
@@ -91,6 +92,7 @@ class AnchorGateway(Protocol):
         date_str: str,
         today_clusters: list[dict],
         weekly_anchors: list[WeeklyAnchor],
+        known_anchors: list[WeeklyAnchor] | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -361,17 +363,36 @@ def anchor_today_clusters(
     date_str: str,
     today_clusters: list[dict],
     weekly_anchors: list[WeeklyAnchor],
+    known_anchors: list[WeeklyAnchor] | None = None,
     gateway: AnchorGateway | Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
     """委托 gateway 做归并，返回 {assignments, new_anchors}。
 
     gateway 可以是含 .assign 方法的对象，或 callable。
     """
+    known = known_anchors if known_anchors is not None else weekly_anchors
     if hasattr(gateway, "assign"):
-        return gateway.assign(
+        assigner = gateway.assign
+        accepts_known = "known_anchors" in inspect.signature(assigner).parameters
+        if accepts_known:
+            return assigner(
+                date_str=date_str,
+                today_clusters=today_clusters,
+                weekly_anchors=weekly_anchors,
+                known_anchors=known,
+            )
+        return assigner(
             date_str=date_str,
             today_clusters=today_clusters,
             weekly_anchors=weekly_anchors,
+        )
+    accepts_known = "known_anchors" in inspect.signature(gateway).parameters
+    if accepts_known:
+        return gateway(
+            date_str=date_str,
+            today_clusters=today_clusters,
+            weekly_anchors=weekly_anchors,
+            known_anchors=known,
         )
     return gateway(
         date_str=date_str,
