@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # KeyPulse — One-click installer for macOS
-# Usage: bash install.sh [--no-launchd] [--dev]
+# Usage:
+#   bash install.sh                 # public Homebrew install
+#   bash install.sh --dev           # local editable install fallback
+#   bash install.sh --no-brew       # alias for --dev
+#   bash install.sh --dev --no-launchd
 set -euo pipefail
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -16,10 +20,25 @@ header()  { echo -e "\n${BOLD}$*${RESET}"; }
 # ── Flags ─────────────────────────────────────────────────────────────────────
 INSTALL_LAUNCHD=true
 DEV_MODE=false
+NO_BREW=false
 for arg in "$@"; do
   case $arg in
     --no-launchd) INSTALL_LAUNCHD=false ;;
     --dev)        DEV_MODE=true ;;
+    --no-brew)    DEV_MODE=true; NO_BREW=true ;;
+    -h|--help)
+      cat <<'HELP'
+KeyPulse installer
+
+Usage:
+  bash install.sh                 Install via Homebrew, then run keypulse install init
+  bash install.sh --dev           Developer fallback: editable install into ~/.keypulse/venv
+  bash install.sh --no-brew       Alias for --dev
+  bash install.sh --dev --no-launchd
+HELP
+      exit 0
+      ;;
+    *) error "Unknown option: $arg"; exit 1 ;;
   esac
 done
 
@@ -81,10 +100,18 @@ reload_launchd_plist() {
 # ─────────────────────────────────────────────────────────────────────────────
 header "KeyPulse Installer"
 echo "  Repo:    $REPO_DIR"
-echo "  Venv:    $VENV_DIR"
-echo "  Bin:     $BIN_DIR/keypulse"
+if [[ "$DEV_MODE" == true ]]; then
+  echo "  Mode:    developer editable install"
+  echo "  Venv:    $VENV_DIR"
+  echo "  Bin:     $BIN_DIR/keypulse"
+else
+  echo "  Mode:    Homebrew public install"
+  echo "  Tap:     Longfellow1/keypulse"
+  echo "  Formula: keypulse"
+fi
 echo "  Config:  $CONFIG_FILE"
 [[ "$DEV_MODE" == true ]] && warn "Dev mode enabled (editable install)"
+[[ "$NO_BREW" == true ]] && warn "--no-brew selected; using developer fallback"
 
 # ── 1. macOS check ────────────────────────────────────────────────────────────
 header "1/6  Checking system"
@@ -94,6 +121,43 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 1
 fi
 success "macOS $(sw_vers -productVersion)"
+
+if [[ "$DEV_MODE" != true ]]; then
+  header "2/4  Checking Homebrew"
+  if ! command -v brew &>/dev/null; then
+    error "Homebrew is required for the public installer."
+    echo "  Install Homebrew first:"
+    echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    exit 1
+  fi
+  success "Homebrew $(brew --version | head -n 1 | awk '{print $2}')"
+
+  header "3/4  Installing KeyPulse"
+  info "Tapping Longfellow1/keypulse…"
+  brew tap Longfellow1/keypulse
+  if brew list --formula keypulse &>/dev/null; then
+    info "KeyPulse already installed; upgrading…"
+    brew upgrade keypulse || brew reinstall keypulse
+  else
+    brew install keypulse
+  fi
+  success "keypulse executable installed"
+
+  header "4/4  Initializing runtime"
+  keypulse install init
+
+  echo ""
+  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo -e "${GREEN}${BOLD}  KeyPulse installed successfully!${RESET}"
+  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo ""
+  echo "  Next steps:"
+  echo -e "     ${CYAN}keypulse setup${RESET}"
+  echo -e "     ${CYAN}keypulse model setup${RESET}"
+  echo -e "     ${CYAN}keypulse doctor${RESET}"
+  echo ""
+  exit 0
+fi
 
 # ── 2. Python 3.11+ ───────────────────────────────────────────────────────────
 PYTHON=""
