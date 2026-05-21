@@ -862,121 +862,6 @@ def _topic_display_name(topic_slug: str, topics_index: list[dict[str, Any]]) -> 
     return topic_slug.replace("-", " ")
 
 
-def _event_link(date_str: str, event_id: str) -> str:
-    return f"[[../.keypulse/events/{date_str}/{event_id}|{event_id}]]"
-
-
-def _upsert_topic(
-    *,
-    date_str: str,
-    trigger: str,
-    slug: str,
-    display_name: str,
-    keywords: list[str],
-    narrative: str,
-    event_ids: list[str],
-) -> str:
-    # TODO(M4): 整段删除（legacy topics/ 写盘路径下线）
-    return "disabled"
-
-    # NOTE: 保留旧实现供 M4 一刀切前回滚；当前逻辑不会执行。
-    topics_dir = get_data_dir() / "topics"
-    topics_dir.mkdir(parents=True, exist_ok=True)
-    path = topics_dir / f"{slug}.md"
-    now_date = date_str
-
-    existing_text = path.read_text(encoding="utf-8") if path.exists() else ""
-    first_seen = now_date
-    if existing_text:
-        for line in existing_text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("first_seen:"):
-                first_seen = stripped.split(":", 1)[1].strip() or now_date
-                break
-
-    keyword_values = []
-    seen: set[str] = set()
-    for item in keywords:
-        normalized = str(item).strip().lower()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        keyword_values.append(normalized)
-    if len(keyword_values) < 5:
-        keyword_values.extend([f"kw{i}" for i in range(len(keyword_values) + 1, 6)])
-    keyword_values = keyword_values[:10]
-
-    entry_line = f"- {date_str} {trigger} | {len(event_ids)} events | {narrative}"
-    evidence_lines = [f"- {_event_link(date_str, event_id)}" for event_id in event_ids]
-
-    if existing_text:
-        lines = existing_text.splitlines()
-        if entry_line not in existing_text:
-            lines.append(entry_line)
-        for evidence in evidence_lines:
-            if evidence not in existing_text:
-                lines.append(evidence)
-        body = "\n".join(lines).rstrip() + "\n"
-    else:
-        body = "\n".join(
-            [
-                "---",
-                "type: topic",
-                f"slug: {slug}",
-                f"display_name: {display_name}",
-                f"first_seen: {first_seen}",
-                f"last_seen: {now_date}",
-                "keywords:",
-                *[f"  - {item}" for item in keyword_values],
-                "---",
-                "",
-                f"# {display_name}",
-                "",
-                "## Entries",
-                entry_line,
-                "",
-                "## Related Events",
-                *evidence_lines,
-                "",
-            ]
-        )
-
-    # typed diff: update mutable keys in place
-    body = re.sub(r"(?m)^display_name:\s*.*$", f"display_name: {display_name}", body)
-    body = re.sub(r"(?m)^last_seen:\s*.*$", f"last_seen: {now_date}", body)
-
-    atomic_write_text(path, body)
-    return "updated" if existing_text else "created"
-
-
-def _refresh_hot(topics_touched: list[tuple[str, str]], date_str: str) -> None:
-    # TODO(M4): 整段删除（legacy hot/topics 写盘路径下线）
-    return
-
-    # NOTE: 保留旧实现供 M4 一刀切前回滚；当前逻辑不会执行。
-    hot_path = get_data_dir() / "hot.md"
-    existing: dict[str, str] = {}
-    if hot_path.exists():
-        for line in hot_path.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if not stripped.startswith("- "):
-                continue
-            token = stripped[2:]
-            slug, _, tail = token.partition("|")
-            slug = slug.strip()
-            if not slug:
-                continue
-            existing[slug] = tail.strip() or date_str
-    for slug, _display in topics_touched:
-        existing[slug] = date_str
-
-    lines = ["# hot topics", ""]
-    for slug, last_seen in sorted(existing.items(), key=lambda item: item[1], reverse=True)[:50]:
-        lines.append(f"- {slug} | {last_seen}")
-    lines.append("")
-    atomic_write_text(hot_path, "\n".join(lines))
-
-
 def _append_log(record: dict[str, Any]) -> None:
     log_path = get_data_dir() / "log.md"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1752,7 +1637,6 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
         except (LLMCallError, ValueError, KeyError, OSError, RuntimeError):
             l3_results = {}
 
-    topics_touched: list[tuple[str, str]] = []
     topic_diffs: list[str] = []
     resolved_clusters: list[ClusterRecord] = []
     for cluster in cluster_records:
@@ -1781,30 +1665,7 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
             start, end = _component_time_range(component_events)
             narrative = f"本主题共 {len(resolved.event_ids)} 条相关事件，时间范围 {start}-{end}。"
         resolved = replace(resolved, narrative_one_line=narrative)
-
-        keywords = list(resolved.keywords)
-        if resolved.topic_action == "new":
-            keywords = [str(item) for item in (l3_results.get(resolved.component_id, {}).get("keywords") or [])] or keywords
-        else:
-            for item in topics_index:
-                if str(item.get("slug") or "") == resolved.topic_slug:
-                    keywords = [str(v) for v in (item.get("keywords") or [])]
-                    break
-
-        diff = _upsert_topic(
-            date_str=date_str,
-            trigger=trigger,
-            slug=resolved.topic_slug,
-            display_name=resolved.display_name,
-            keywords=keywords,
-            narrative=narrative,
-            event_ids=list(resolved.event_ids),
-        )
-        topic_diffs.append(f"{resolved.topic_slug}:{diff}")
-        topics_touched.append((resolved.topic_slug, resolved.display_name))
         resolved_clusters.append(resolved)
-
-    _refresh_hot(topics_touched, date_str)
     _append_log(
         {
             "ts": _now_iso(),
@@ -1867,8 +1728,13 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
     )
 
     topic_snapshot = build_topic_status_snapshot_from_narrative(date_str, result.markdown) or {
-        slug: {"name": display, "state": "in_progress", "last_seen_date": date_str, "evidence_dates": [date_str]}
-        for slug, display in topics_touched
+        cluster.topic_slug: {
+            "name": cluster.display_name,
+            "state": "in_progress",
+            "last_seen_date": date_str,
+            "evidence_dates": [date_str],
+        }
+        for cluster in resolved_clusters
     }
 
     with recorder.stage("render"):

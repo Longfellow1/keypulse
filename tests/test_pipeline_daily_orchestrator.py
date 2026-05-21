@@ -328,7 +328,7 @@ def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch
     assert gateway.calls == ["L1_cluster_review", "L2_narrative", "L3_topic_naming", "L0_anchor"]
     assert summary.cluster_count == 1
     assert summary.misc_event_ids == ("3",)
-    assert summary.topic_diffs == ("keypulse-daily-strategy:disabled",)
+    assert summary.topic_diffs == ()
     assert not (tmp_path / ".keypulse" / "hot.md").exists()
     l2_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "L2_narrative")
     assert len(l2_input["clusters"]) == 1
