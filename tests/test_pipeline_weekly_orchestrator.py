@@ -5,11 +5,12 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import keypulse.i18n as i18n
 from click.testing import CliRunner
 
 from keypulse.cli import main
 from keypulse.pipeline.daily_summary import write_daily_summary
-from keypulse.pipeline.weekly_orchestrator import run_weekly
+from keypulse.pipeline.weekly_orchestrator import _upsert_frontmatter_tags, _weekly_alias, run_weekly
 from keypulse.pipeline import weekly_orchestrator
 from keypulse.store.db import close, init_db
 from keypulse.store.repository import get_state
@@ -214,6 +215,8 @@ def test_run_weekly_fallback_when_daily_count_below_threshold(tmp_path, monkeypa
 
 def test_run_weekly_runs_when_daily_count_meets_threshold(tmp_path, monkeypatch):
     _reset_weekly_runtime_state()
+    monkeypatch.setenv("KEYPULSE_LANG", "zh")
+    monkeypatch.setattr(i18n, "_LANG_CACHE", None)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     monkeypatch.setattr(
         "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
@@ -421,3 +424,65 @@ def test_run_weekly_exec_style_contains_mainline_echo_and_cross_week_diff(tmp_pa
     assert "## 一个观察" in body
     assert "## 跨周差异" in body
     close()
+
+
+def test_run_weekly_writes_frontmatter_tags_for_plain_and_exec_styles(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
+        lambda _cfg, persist=False: SimpleNamespace(output_dir=tmp_path / "vault"),
+    )
+    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    _seed_topics(tmp_path)
+    _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
+    monkeypatch.setenv("MOCK_LLM", "1")
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
+
+    plain_path = Path(run_weekly("2026-W18", style="plain"))
+    plain_lines = plain_path.read_text(encoding="utf-8").splitlines()
+
+    assert plain_lines[0] == "---"
+    assert plain_lines[1] == "tags:"
+    assert '  - "weekly"' in plain_lines
+    assert '  - "weekly/plain"' in plain_lines
+    assert '  - "2026-W18 (4/27–5/3)"' in plain_lines
+
+    exec_path = Path(run_weekly("2026-W18", style="exec"))
+    exec_lines = exec_path.read_text(encoding="utf-8").splitlines()
+
+    assert exec_lines[0] == "---"
+    assert exec_lines[1] == "tags:"
+    assert '  - "weekly"' in exec_lines
+    assert '  - "weekly/exec"' in exec_lines
+    assert '  - "2026-W18 (4/27–5/3)"' in exec_lines
+    close()
+
+
+def test_upsert_frontmatter_tags_appends_when_frontmatter_already_exists():
+    source = "\n".join(
+        [
+            "---",
+            'title: "Weekly Note"',
+            'tags: ["legacy"]',
+            "---",
+            "# Weekly",
+        ]
+    )
+    patched = _upsert_frontmatter_tags(source, ["weekly", "weekly/exec"])
+
+    assert patched.splitlines()[0] == "---"
+    assert 'title: "Weekly Note"' in patched
+    assert '  - "legacy"' in patched
+    assert '  - "weekly"' in patched
+    assert '  - "weekly/exec"' in patched
+
+
+def test_weekly_alias_switches_with_locale(monkeypatch):
+    monkeypatch.setenv("KEYPULSE_LANG", "zh")
+    monkeypatch.setattr(i18n, "_LANG_CACHE", None)
+    assert _weekly_alias("2026-W21") == "2026-W21 (5/18–5/24)"
+
+    monkeypatch.setenv("KEYPULSE_LANG", "en")
+    monkeypatch.setattr(i18n, "_LANG_CACHE", None)
+    assert _weekly_alias("2026-W21") == "2026-W21 (May 18 – May 24)"

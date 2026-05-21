@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from keypulse.obsidian.quality_gate import score_daily
+from keypulse.obsidian.weekday import weekday_label as _weekday_label
 from keypulse.pipeline.event_intake import cap_events_by_source
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.paths import get_data_dir
@@ -1115,6 +1116,58 @@ def _cross_day_continuations(
     return continuations
 
 
+def _yaml_scalar(value: str) -> str:
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _daily_tags(date_text: str) -> list[str]:
+    year, week, _weekday = date_cls.fromisoformat(date_text).isocalendar()
+    return ["daily", f"daily/{year}-W{week:02d}"]
+
+
+def _render_frontmatter_tags(tags: list[str], aliases: list[str] | None = None) -> str:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        key = str(tag).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+
+    deduped_aliases: list[str] = []
+    seen_aliases: set[str] = set()
+    for alias in aliases or []:
+        key = str(alias).strip()
+        if not key or key in seen_aliases:
+            continue
+        seen_aliases.add(key)
+        deduped_aliases.append(key)
+
+    lines = [
+        "---",
+    ]
+    if deduped_aliases:
+        lines.extend(
+            [
+                "aliases:",
+                *[f"  - {_yaml_scalar(alias)}" for alias in deduped_aliases],
+            ]
+        )
+    lines.extend(
+        [
+        "tags:",
+        *[f"  - {_yaml_scalar(tag)}" for tag in deduped],
+        "---",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _daily_alias(date_text: str) -> str:
+    return f"{date_text} {_weekday_label(date_text)}"
+
+
 def render_daily_markdown(
     *,
     date: str,
@@ -1281,4 +1334,6 @@ def render_daily_markdown(
     if trace_lines:
         lines.extend(trace_lines)
     lines.append("")
-    return "\n".join(lines).strip()
+    body = "\n".join(lines).strip()
+    frontmatter = _render_frontmatter_tags(_daily_tags(date_text), aliases=[_daily_alias(date_text)])
+    return f"{frontmatter}\n{body}"

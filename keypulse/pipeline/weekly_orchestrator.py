@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from keypulse.config import Config
+from keypulse.i18n import current_lang
 from keypulse.integrations import resolve_active_sink
 from keypulse.hud.state import read_hud_state
 from keypulse.pipeline.daily_summary import (
@@ -61,6 +62,7 @@ _STRONG_DECISION_MARKERS = ("决定", "拍板", "敲定", "确定", "定了")
 _STRONG_OUTPUT_MARKERS = ("落地", "上线", "发布", "提交", "合并", "完成", "跑通", "修复")
 _STRONG_BLOCKED_MARKERS = ("卡点", "阻塞", "失败", "报错", "无法", "问题")
 _WIKILINK_RE = re.compile(r"\[\[[^\]]+\]\]")
+_EN_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 _STATUS_PRIORITY = {
     "new": 0,
@@ -1415,6 +1417,182 @@ def _build_cross_week_section_lines(cross_week_diff: list[dict[str, str]]) -> li
     return lines
 
 
+def _yaml_scalar(value: str) -> str:
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _yaml_unquote(value: str) -> str:
+    token = str(value or "").strip()
+    if not token:
+        return ""
+    if token.startswith('"') and token.endswith('"') and len(token) >= 2:
+        try:
+            return str(json.loads(token))
+        except json.JSONDecodeError:
+            return token[1:-1]
+    if token.startswith("'") and token.endswith("'") and len(token) >= 2:
+        return token[1:-1]
+    return token
+
+
+def _split_frontmatter(markdown: str) -> tuple[list[str] | None, str]:
+    lines = str(markdown or "").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None, str(markdown or "")
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            frontmatter = lines[1:idx]
+            body = "\n".join(lines[idx + 1 :])
+            return frontmatter, body
+    return None, str(markdown or "")
+
+
+def _parse_inline_yaml_list(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not (text.startswith("[") and text.endswith("]")):
+        return [_yaml_unquote(text)] if text else []
+    inner = text[1:-1].strip()
+    if not inner:
+        return []
+    return [_yaml_unquote(item) for item in inner.split(",")]
+
+
+def _remove_tags_from_frontmatter(frontmatter: list[str]) -> tuple[list[str], list[str]]:
+    kept: list[str] = []
+    existing_tags: list[str] = []
+    i = 0
+    total = len(frontmatter)
+    while i < total:
+        line = frontmatter[i]
+        stripped = line.strip()
+        if stripped.startswith("tags:"):
+            inline_value = stripped.split(":", 1)[1].strip()
+            if inline_value:
+                existing_tags.extend(_parse_inline_yaml_list(inline_value))
+            i += 1
+            while i < total:
+                next_line = frontmatter[i]
+                next_stripped = next_line.strip()
+                if next_stripped.startswith("- "):
+                    existing_tags.append(_yaml_unquote(next_stripped[2:].strip()))
+                    i += 1
+                    continue
+                if next_line.startswith(" ") or next_line.startswith("\t"):
+                    i += 1
+                    continue
+                break
+            continue
+        kept.append(line)
+        i += 1
+    return kept, existing_tags
+
+
+def _dedupe_tags(tags: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        key = str(tag).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+    return deduped
+
+
+def _weekly_tags(style: str) -> list[str]:
+    return ["weekly", f"weekly/{style}"]
+
+
+def _weekly_alias(week_str: str) -> str:
+    start = _week_start(week_str)
+    end = start + timedelta(days=6)
+    if current_lang() == "zh":
+        date_range = f"{start.month}/{start.day}–{end.month}/{end.day}"
+    else:
+        date_range = f"{_EN_MONTHS[start.month - 1]} {start.day} – {_EN_MONTHS[end.month - 1]} {end.day}"
+    return f"{week_str} ({date_range})"
+
+
+def _upsert_frontmatter_tags(markdown: str, tags: list[str]) -> str:
+    required_tags = _dedupe_tags(tags)
+    frontmatter, body = _split_frontmatter(markdown)
+    if frontmatter is None:
+        lines = [
+            "---",
+            "tags:",
+            *[f"  - {_yaml_scalar(tag)}" for tag in required_tags],
+            "---",
+            str(markdown or ""),
+        ]
+        return "\n".join(lines).rstrip()
+
+    kept, existing = _remove_tags_from_frontmatter(frontmatter)
+    merged_tags = _dedupe_tags([*existing, *required_tags])
+    rebuilt_frontmatter = [
+        *kept,
+        "tags:",
+        *[f"  - {_yaml_scalar(tag)}" for tag in merged_tags],
+    ]
+    lines = ["---", *rebuilt_frontmatter, "---", body]
+    return "\n".join(lines).rstrip()
+
+
+def _remove_aliases_from_frontmatter(frontmatter: list[str]) -> tuple[list[str], list[str]]:
+    kept: list[str] = []
+    existing_aliases: list[str] = []
+    i = 0
+    total = len(frontmatter)
+    while i < total:
+        line = frontmatter[i]
+        stripped = line.strip()
+        if stripped.startswith("aliases:"):
+            inline_value = stripped.split(":", 1)[1].strip()
+            if inline_value:
+                existing_aliases.extend(_parse_inline_yaml_list(inline_value))
+            i += 1
+            while i < total:
+                next_line = frontmatter[i]
+                next_stripped = next_line.strip()
+                if next_stripped.startswith("- "):
+                    existing_aliases.append(_yaml_unquote(next_stripped[2:].strip()))
+                    i += 1
+                    continue
+                if next_line.startswith(" ") or next_line.startswith("\t"):
+                    i += 1
+                    continue
+                break
+            continue
+        kept.append(line)
+        i += 1
+    return kept, existing_aliases
+
+
+def _upsert_frontmatter_aliases(markdown: str, aliases: list[str]) -> str:
+    required_aliases = _dedupe_tags(aliases)
+    if not required_aliases:
+        return markdown
+    frontmatter, body = _split_frontmatter(markdown)
+    if frontmatter is None:
+        lines = [
+            "---",
+            "aliases:",
+            *[f"  - {_yaml_scalar(alias)}" for alias in required_aliases],
+            "---",
+            str(markdown or ""),
+        ]
+        return "\n".join(lines).rstrip()
+
+    kept, existing = _remove_aliases_from_frontmatter(frontmatter)
+    merged_aliases = _dedupe_tags([*existing, *required_aliases])
+    rebuilt_frontmatter = [
+        *kept,
+        "aliases:",
+        *[f"  - {_yaml_scalar(alias)}" for alias in merged_aliases],
+    ]
+    lines = ["---", *rebuilt_frontmatter, "---", body]
+    return "\n".join(lines).rstrip()
+
+
 def _render_weekly_markdown(
     week_str: str,
     top_topics: list[dict[str, Any]],
@@ -1436,20 +1614,23 @@ def _render_weekly_markdown(
         lines.extend(_build_cross_week_section_lines(cross_week_diff))
         lines.extend(_build_explorer_section_lines(l6_output))
         lines.extend(["", *_generation_info_lines(stats, quality_breakdown, quality_history)])
-        return "\n".join(lines)
-    lines = _render_exec_weekly_markdown(
-        week_str,
-        top_topics,
-        l5_output,
-        l6_output,
-        cross_week_diff=cross_week_diff,
-        daily_count=daily_count,
-        stats=stats,
-        quality_breakdown=quality_breakdown,
-        quality_history=quality_history,
-        key_data_section=key_data_section,
-    )
-    return "\n".join(lines)
+        rendered = "\n".join(lines)
+    else:
+        lines = _render_exec_weekly_markdown(
+            week_str,
+            top_topics,
+            l5_output,
+            l6_output,
+            cross_week_diff=cross_week_diff,
+            daily_count=daily_count,
+            stats=stats,
+            quality_breakdown=quality_breakdown,
+            quality_history=quality_history,
+            key_data_section=key_data_section,
+        )
+        rendered = "\n".join(lines)
+    with_tags = _upsert_frontmatter_tags(rendered, _weekly_tags(style))
+    return _upsert_frontmatter_aliases(with_tags, [_weekly_alias(week_str)])
 
 
 def _exec_state_label(state: str) -> str:

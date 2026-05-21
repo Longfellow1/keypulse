@@ -9,19 +9,22 @@ import sys
 import time
 import signal
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import click
+import yaml
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
 from keypulse.config import Config
+from keypulse.obsidian.layout import render_frontmatter
+from keypulse.obsidian.weekday import weekday_label as _weekday_label
 from keypulse.store.db import init_db, get_conn
 from keypulse.store.repository import (
     get_sessions,
@@ -61,6 +64,7 @@ from keypulse.pipeline import (
     current_theme_profile,
 )
 from keypulse.pipeline.model import LLMCallError, ModelGateway
+from keypulse.i18n import CLI_LANG as _CLI_LANG, T, current_lang
 from keypulse.pipeline.model_keychain import (
     KeychainCommandError,
     KeychainUnavailable,
@@ -85,31 +89,7 @@ from keypulse.search.backends import resolve_search_backend
 # Shared console objects
 console = Console()
 err_console = Console(stderr=True)
-
-
-def _detect_lang() -> str:
-    """Detect CLI language. Priority: KEYPULSE_LANG env > LANG env > system locale > 'en'."""
-    explicit = os.environ.get("KEYPULSE_LANG", "").strip().lower()
-    if explicit in ("zh", "en"):
-        return explicit
-    lang_env = os.environ.get("LANG", "") or os.environ.get("LC_ALL", "")
-    if "zh" in lang_env.lower():
-        return "zh"
-    try:
-        sys_locale = (_locale.getlocale()[0] or "").lower()
-        if "zh" in sys_locale or "chinese" in sys_locale:
-            return "zh"
-    except Exception:
-        pass
-    return "en"
-
-
-CLI_LANG = _detect_lang()
-
-
-def T(zh: str, en: str) -> str:
-    """Bilingual helper. Chinese on zh locale, English otherwise."""
-    return zh if CLI_LANG == "zh" else en
+CLI_LANG = _CLI_LANG
 
 
 DATE_HELP_TEXT = T(
@@ -1798,6 +1778,223 @@ def _sync_obsidian_bundle(
     except Exception as exc:
         click.echo(f"[daily] orchestrator failed via obsidian sync: {exc}", err=True)
     return len(written), target_output, sink.kind
+
+
+def _split_markdown_frontmatter(markdown: str) -> tuple[dict[str, Any], str, bool]:
+    lines = str(markdown or "").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, str(markdown or ""), False
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() != "---":
+            continue
+        raw_block = "\n".join(lines[1:idx])
+        payload = yaml.safe_load(raw_block) if raw_block.strip() else {}
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        body = "\n".join(lines[idx + 1 :])
+        return dict(payload), body, True
+    return {}, str(markdown or ""), False
+
+
+def _render_markdown_with_frontmatter(frontmatter: dict[str, Any], body: str) -> str:
+    def _normalize(value: Any) -> Any:
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, date_cls):
+            return value.isoformat()
+        if isinstance(value, list):
+            return [_normalize(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): _normalize(item) for key, item in value.items()}
+        return value
+
+    rendered_fm = render_frontmatter(_normalize(frontmatter))
+    body_text = str(body or "").lstrip("\n")
+    if body_text:
+        return f"{rendered_fm}\n{body_text.rstrip()}\n"
+    return f"{rendered_fm}\n"
+
+
+def _dedupe_text(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        key = str(value).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+    return deduped
+
+
+def _daily_tags_for_backfill(date_text: str) -> list[str]:
+    year, week, _ = datetime.fromisoformat(date_text).date().isocalendar()
+    return ["daily", f"daily/{year}-W{week:02d}"]
+
+
+def _weekly_tags_for_backfill(style: str) -> list[str]:
+    return ["weekly", f"weekly/{style}"]
+
+
+def _weekly_style_from_markdown(body: str) -> str:
+    stripped = str(body or "").lstrip()
+    return "plain" if stripped.startswith("# 这周") else "exec"
+
+
+def _weekly_alias_for_backfill(week_str: str) -> str:
+    monday = datetime.strptime(f"{week_str}-1", "%G-W%V-%u").date()
+    sunday = monday + timedelta(days=6)
+    if current_lang() == "zh":
+        date_range = f"{monday.month}/{monday.day}–{sunday.month}/{sunday.day}"
+    else:
+        months = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        date_range = f"{months[monday.month - 1]} {monday.day} – {months[sunday.month - 1]} {sunday.day}"
+    return f"{week_str} ({date_range})"
+
+
+def _anchor_tags_for_backfill(*, slug: str, display: str, started: str, last_active: str, state: str) -> list[str]:
+    from keypulse.pipeline.weekly_topic_anchor import WeeklyAnchor, _anchor_tags
+
+    anchor = WeeklyAnchor(
+        slug=slug,
+        display=display,
+        started=started,
+        last_active=last_active,
+        state=state,  # type: ignore[arg-type]
+    )
+    return _anchor_tags(anchor)
+
+
+def _backfill_anchor_note(path: Path) -> tuple[bool, bool]:
+    raw = path.read_text(encoding="utf-8")
+    frontmatter, body, _had_frontmatter = _split_markdown_frontmatter(raw)
+    changed = False
+    aliases_skipped = "aliases" in frontmatter
+
+    display = str(frontmatter.get("display") or "").strip()
+    if "aliases" not in frontmatter and display:
+        frontmatter["aliases"] = [display]
+        changed = True
+
+    if "tags" not in frontmatter:
+        slug = str(frontmatter.get("anchor_id") or path.stem).strip() or path.stem
+        state = str(frontmatter.get("state") or "active").strip() or "active"
+        started = str(frontmatter.get("started") or "").strip()
+        last_active = str(frontmatter.get("last_active") or "").strip()
+        tags = _anchor_tags_for_backfill(
+            slug=slug,
+            display=(display or slug),
+            started=started,
+            last_active=(last_active or started),
+            state=state,
+        )
+        frontmatter["tags"] = _dedupe_text(tags)
+        changed = True
+
+    if changed:
+        path.write_text(_render_markdown_with_frontmatter(frontmatter, body), encoding="utf-8")
+    return changed, aliases_skipped
+
+
+def _backfill_daily_note(path: Path) -> tuple[bool, bool]:
+    raw = path.read_text(encoding="utf-8")
+    frontmatter, body, _had_frontmatter = _split_markdown_frontmatter(raw)
+    changed = False
+    aliases_skipped = "aliases" in frontmatter
+
+    date_text = path.stem
+    try:
+        datetime.fromisoformat(date_text)
+    except ValueError:
+        return False, True
+
+    if "aliases" not in frontmatter:
+        frontmatter["aliases"] = [f"{date_text} {_weekday_label(date_text)}"]
+        changed = True
+    if "tags" not in frontmatter:
+        frontmatter["tags"] = _daily_tags_for_backfill(date_text)
+        changed = True
+
+    if changed:
+        path.write_text(_render_markdown_with_frontmatter(frontmatter, body), encoding="utf-8")
+    return changed, aliases_skipped
+
+
+def _backfill_weekly_note(path: Path) -> tuple[bool, bool]:
+    raw = path.read_text(encoding="utf-8")
+    frontmatter, body, _had_frontmatter = _split_markdown_frontmatter(raw)
+    changed = False
+    aliases_skipped = "aliases" in frontmatter
+
+    week_str = path.stem
+    try:
+        datetime.strptime(f"{week_str}-1", "%G-W%V-%u")
+    except ValueError:
+        return False, True
+
+    if "aliases" not in frontmatter:
+        frontmatter["aliases"] = [_weekly_alias_for_backfill(week_str)]
+        changed = True
+    if "tags" not in frontmatter:
+        frontmatter["tags"] = _weekly_tags_for_backfill(_weekly_style_from_markdown(body))
+        changed = True
+
+    if changed:
+        path.write_text(_render_markdown_with_frontmatter(frontmatter, body), encoding="utf-8")
+    return changed, aliases_skipped
+
+
+@obsidian.command("backfill-aliases", help=T("补齐 Obsidian aliases/tags frontmatter。", "Backfill Obsidian aliases/tags frontmatter."))
+def obsidian_backfill_aliases():
+    """Backfill aliases/tags in anchor, daily, weekly notes."""
+    cfg = get_config()
+    vault_root = Path(cfg.obsidian.vault_path).expanduser()
+
+    targets = {
+        "anchors": (vault_root / "anchors", _backfill_anchor_note),
+        "daily": (vault_root / "Daily", _backfill_daily_note),
+        "weekly": (vault_root / "Weekly", _backfill_weekly_note),
+    }
+    stats: dict[str, dict[str, int]] = {
+        name: {"scanned": 0, "changed": 0, "skipped": 0, "alias_skipped": 0}
+        for name in targets
+    }
+
+    for name, (folder, handler) in targets.items():
+        if not folder.exists():
+            continue
+        for path in sorted(folder.glob("*.md")):
+            stats[name]["scanned"] += 1
+            try:
+                changed, alias_skipped = handler(path)
+            except (OSError, yaml.YAMLError):
+                stats[name]["skipped"] += 1
+                continue
+            if changed:
+                stats[name]["changed"] += 1
+            else:
+                stats[name]["skipped"] += 1
+            if alias_skipped:
+                stats[name]["alias_skipped"] += 1
+
+    total_scanned = sum(item["scanned"] for item in stats.values())
+    total_changed = sum(item["changed"] for item in stats.values())
+    total_skipped = sum(item["skipped"] for item in stats.values())
+    total_alias_skipped = sum(item["alias_skipped"] for item in stats.values())
+
+    click.echo(
+        "backfill_aliases "
+        f"vault={vault_root} "
+        f"scanned={total_scanned} changed={total_changed} skipped={total_skipped} alias_skipped={total_alias_skipped}"
+    )
+    for name in ("anchors", "daily", "weekly"):
+        bucket = stats[name]
+        click.echo(
+            f"  {name}: scanned={bucket['scanned']} changed={bucket['changed']} "
+            f"skipped={bucket['skipped']} alias_skipped={bucket['alias_skipped']}"
+        )
 
 
 # ═════════════════════════════════════════════════════════════════════════════

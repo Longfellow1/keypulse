@@ -12,6 +12,7 @@ from keypulse.pipeline.weekly_topic_anchor import (
     anchor_today_clusters,
     load_weekly_anchors,
     migrate_legacy_weekly_anchor_file,
+    render_anchor_note,
     save_weekly_anchors,
     seed_w19_anchors,
     split_topics_and_unanchored,
@@ -126,6 +127,53 @@ def test_timeline_entries_roundtrip_and_idempotent_dedupe(tmp_path: Path) -> Non
     loaded = load_weekly_anchors("2026-W21", path=p)
     assert loaded[0].derived_from == "v2-stable"
     assert loaded[0].timeline_entries == anchor.timeline_entries
+
+
+def test_render_anchor_note_adds_active_and_project_tags() -> None:
+    anchor = WeeklyAnchor(
+        slug="keypulse-p1-5-repair",
+        display="KeyPulse P1.5 Repair",
+        started="2026-05-01",
+        last_active="2026-05-21",
+        state="active",
+    )
+    note = render_anchor_note(anchor)
+    assert "aliases:" in note
+    assert '  - "KeyPulse P1.5 Repair"' in note
+    assert "tags:" in note
+    assert '  - "anchor"' in note
+    assert '  - "anchor/active"' in note
+    assert '  - "project/keypulse"' in note
+
+
+def test_render_anchor_note_supports_dormant_state_and_alias_project_slug(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_topic_anchor._PROJECT_ALIAS",
+        {"hud": "keypulse"},
+    )
+    anchor = WeeklyAnchor(
+        slug="hud-p2-fix",
+        display="HUD P2 Fix",
+        started="2026-05-01",
+        last_active="2026-05-21",
+        state="dormant",  # type: ignore[arg-type]
+    )
+    note = render_anchor_note(anchor)
+    assert '  - "anchor/dormant"' in note
+    assert '  - "project/keypulse"' in note
+
+
+def test_render_anchor_note_omits_aliases_when_display_is_empty() -> None:
+    anchor = WeeklyAnchor(
+        slug="keypulse-p2-plan",
+        display="",
+        started="2026-05-01",
+        last_active="2026-05-21",
+        state="active",
+    )
+    note = render_anchor_note(anchor)
+    assert 'display: "keypulse-p2-plan"' in note
+    assert "aliases:" not in note
 
 
 def test_anchor_to_existing_active() -> None:

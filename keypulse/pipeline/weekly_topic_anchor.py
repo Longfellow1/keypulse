@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
@@ -25,6 +26,9 @@ _LEGACY_PATH = Path.home() / ".keypulse" / "weekly-anchor.json"
 _SCHEMA_VERSION = 2
 _CANDIDATE_PROMOTE_DAYS = 2
 _STALE_DAYS = 5
+_PROJECT_ALIAS: dict[str, str] = {
+    # "hud": "keypulse",
+}
 
 
 def _runtime_default_path() -> Path:
@@ -152,21 +156,65 @@ def _yaml_scalar(value: str) -> str:
     return json.dumps(str(value), ensure_ascii=False)
 
 
+def _project_slug_tag(anchor_slug: str) -> str:
+    token = str(anchor_slug or "").split("-", 1)[0].strip().lower()
+    aliased = str(_PROJECT_ALIAS.get(token, token) or "").strip().lower()
+    normalized = re.sub(r"[^a-z0-9]", "", aliased)
+    if not normalized or normalized.isdigit():
+        return ""
+    return f"project/{normalized}"
+
+
+def _anchor_tags(anchor: WeeklyAnchor) -> list[str]:
+    tags = ["anchor"]
+    state = str(anchor.state or "").strip().lower()
+    if state:
+        tags.append(f"anchor/{state}")
+    project_tag = _project_slug_tag(anchor.slug)
+    if project_tag:
+        tags.append(project_tag)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        key = str(tag).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+    return deduped
+
+
 def render_anchor_note(anchor: WeeklyAnchor) -> str:
     derived_raw = str(anchor.derived_from or "").strip()
     derived_value = f"[[{derived_raw}]]" if derived_raw else ""
+    display_value = str(anchor.display or anchor.slug)
+    alias_value = str(anchor.display or "").strip()
+    tags = _anchor_tags(anchor)
     lines = [
         "---",
         f"anchor_id: {_yaml_scalar(anchor.slug)}",
-        f"display: {_yaml_scalar(anchor.display or anchor.slug)}",
+        f"display: {_yaml_scalar(display_value)}",
+    ]
+    if alias_value:
+        lines.extend(
+            [
+                "aliases:",
+                f"  - {_yaml_scalar(alias_value)}",
+            ]
+        )
+    lines.extend(
+        [
         f"started: {_yaml_scalar(anchor.started)}",
         f"last_active: {_yaml_scalar(anchor.last_active)}",
         f"state: {_yaml_scalar(anchor.state)}",
+        "tags:",
+        *[f"  - {_yaml_scalar(tag)}" for tag in tags],
         f"derived_from: {_yaml_scalar(derived_value)}",
         "---",
         "",
         "## Timeline",
-    ]
+        ]
+    )
     for row in _dedupe_timeline_entries(anchor.timeline_entries):
         date_text = str(row.get("date") or "").strip()
         summary = str(row.get("summary") or "").strip()

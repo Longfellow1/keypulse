@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
-from zoneinfo import ZoneInfo
 
 import pytest
 
+import keypulse.i18n as i18n
 from keypulse.obsidian.exporter import (
     ExportWorkBlock,
-    _build_event_card,
+    _weekday_label,
     _is_meaningful_topic,
     _render_dashboard_blocks,
     _to_item,
@@ -52,34 +51,18 @@ def _make_item(**overrides):
     return item
 
 
-def _topic_bundle_with_two_blocks(*, first_end: str, second_start: str, second_end: str, topic_title: str):
-    return build_obsidian_bundle(
-        [
-            _make_item(
-                created_at="2026-04-20T09:10:00+00:00",
-                ts_start="2026-04-20T09:10:00+00:00",
-                ts_end=first_end,
-                title=topic_title,
-                body=topic_title,
-                tags="alpha,beta,gamma",
-            ),
-            _make_item(
-                created_at=second_start,
-                ts_start=second_start,
-                ts_end=second_end,
-                title=topic_title,
-                body=topic_title,
-                tags="alpha,beta,gamma",
-                session_id="session-2",
-            ),
-        ],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-    )
-
-
 def test_slugify_preserves_chinese_characters():
     assert slugify("中文 Topic") == "中文-topic"
+
+
+def test_weekday_label_is_i18n_aware(monkeypatch):
+    monkeypatch.setenv("KEYPULSE_LANG", "zh")
+    monkeypatch.setattr(i18n, "_LANG_CACHE", None)
+    assert _weekday_label("2026-05-21") == "周四"
+
+    monkeypatch.setenv("KEYPULSE_LANG", "en")
+    monkeypatch.setattr(i18n, "_LANG_CACHE", None)
+    assert _weekday_label("2026-05-21") == "Thu"
 
 
 @pytest.mark.parametrize(
@@ -151,7 +134,7 @@ def test_topic_title_falls_back_to_uncategorized(value):
     assert _topic_title(value) == "未归类"
 
 
-def test_build_obsidian_bundle_routes_noisy_topics_to_uncategorized():
+def test_build_obsidian_bundle_returns_daily_only_for_noisy_topic():
     bundle = build_obsidian_bundle(
         [
             _make_item(
@@ -164,247 +147,23 @@ def test_build_obsidian_bundle_routes_noisy_topics_to_uncategorized():
         date_str="2026-04-20",
     )
 
-    assert bundle["topics"] == []
-    assert bundle["events"][0]["properties"]["topic"] == "uncategorized"
-    assert "未归类" in bundle["events"][0]["body"]
+    assert set(bundle) == {"daily"}
+    daily_body = bundle["daily"][0]["body"]
+    assert "Topics/" not in daily_body
+    assert "Events/" not in daily_body
 
 
-def test_build_obsidian_bundle_skips_topic_cards_when_only_one_non_fragment_work_block_exists():
-    bundle = build_obsidian_bundle(
-        [
-            _make_item(
-                created_at="2026-04-20T09:10:00+00:00",
-                title="分析 数据 导出",
-                body="分析 数据 导出",
-                tags="https://example.com",
-                session_id="session-1",
-            ),
-            _make_item(
-                created_at="2026-04-20T09:25:00+00:00",
-                title="分析 数据 导出",
-                body="分析 数据 导出",
-                tags="https://example.com",
-                session_id="session-2",
-            ),
-        ],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-        sessions=[
-            {"id": "session-1", "duration_sec": 120},
-            {"id": "session-2", "duration_sec": 360},
-        ],
-    )
-
-    assert bundle["topics"] == []
-    assert "Topics/" not in bundle["daily"][0]["body"]
-
-
-def test_build_obsidian_bundle_creates_topic_card_after_two_non_fragment_work_blocks():
-    bundle = build_obsidian_bundle(
-        [
-            _make_item(
-                created_at="2026-04-20T09:10:00+00:00",
-                title="分析 数据 导出",
-                body="分析 数据 导出",
-                tags="https://example.com",
-                session_id="session-1",
-            ),
-            _make_item(
-                created_at="2026-04-20T09:25:00+00:00",
-                title="分析 数据 导出",
-                body="分析 数据 导出",
-                tags="https://example.com",
-                session_id="session-2",
-            ),
-        ],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-        sessions=[
-            {"id": "session-1", "duration_sec": 360},
-            {"id": "session-2", "duration_sec": 420},
-        ],
-    )
-
-    assert len(bundle["topics"]) == 1
-    assert bundle["topics"][0]["properties"]["topic"] == "分析-数据-导出"
-    assert "未归类" not in bundle["topics"][0]["body"]
-
-
-def test_build_obsidian_bundle_uses_uncategorized_bucket_for_none_topics():
-    bundle = build_obsidian_bundle(
-        [
-            _make_item(
-                title="123-456",
-                body="123-456",
-                tags="123-456",
-            )
-        ],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-    )
-
-    assert bundle["events"][0]["properties"]["topic"] == "uncategorized"
-    assert bundle["topics"] == []
-
-
-def test_build_obsidian_bundle_keeps_chinese_topic_slugs():
-    bundle = build_obsidian_bundle(
-        [
-            _make_item(
-                title="分析 数据 导出",
-                body="分析 数据 导出",
-                tags="https://example.com",
-                session_id="session-1",
-            ),
-            _make_item(
-                created_at="2026-04-20T09:25:00+00:00",
-                title="分析 数据 导出",
-                body="分析 数据 导出",
-                tags="https://example.com",
-                session_id="session-2",
-            ),
-        ],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-20",
-        sessions=[
-            {"id": "session-1", "duration_sec": 360},
-            {"id": "session-2", "duration_sec": 360},
-        ],
-    )
-
-    assert bundle["topics"][0]["path"] == "Topics/分析-数据-导出.md"
-
-
-def test_build_event_card_uses_fragment_filename_for_dirty_title(monkeypatch):
-    monkeypatch.setattr("keypulse.obsidian.layout.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
-    card = _build_event_card(
-        _to_item(
-            _make_item(
-                created_at="2026-04-20T09:10:00+00:00",
-                ts_start="2026-04-20T09:10:00+00:00",
-                ts_end="2026-04-20T09:11:00+00:00",
-                title="A B",
-                body="A B",
-                tags="alpha,beta,gamma",
-            )
-        ),
-        "2026-04-20",
-        "uncategorized",
-    )
-
-    assert Path(card.path).name.startswith("1710-")
-    assert "片段-" not in Path(card.path).name
-    assert Path(card.path).suffix == ".md"
-    assert "a-b" not in card.path
-    assert len(Path(card.path).stem.split("-")) >= 2
-
-
-def test_build_event_card_uses_slug_for_meaningful_title(monkeypatch):
-    monkeypatch.setattr("keypulse.obsidian.layout.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
-    card = _build_event_card(
-        _to_item(
-            _make_item(
-                created_at="2026-04-20T09:10:00+00:00",
-                ts_start="2026-04-20T09:10:00+00:00",
-                ts_end="2026-04-20T09:16:00+00:00",
-                title="修复 keypulse 安装问题",
-                body="修复 keypulse 安装问题",
-                tags="https://example.com",
-            )
-        ),
-        "2026-04-20",
-        "修复-keypulse-安装问题",
-    )
-
-    assert Path(card.path).name.startswith("1710-")
-    assert "片段-" not in Path(card.path).name
-    assert re.search(r"-[0-9a-f]{8}\.md$", Path(card.path).name) is None
-
-
-def test_build_event_card_humanize_titles_off_does_not_call_gateway(monkeypatch):
-    class _Gateway:
-        def call(self, *args, **kwargs):
-            raise AssertionError("gateway.call should not be called when humanize_titles is off")
-
-    monkeypatch.setattr("keypulse.obsidian.layout.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
-    card = _build_event_card(
-        _to_item(
-            _make_item(
-                created_at="2026-04-20T09:10:00+00:00",
-                ts_start="2026-04-20T09:10:00+00:00",
-                ts_end="2026-04-20T09:16:00+00:00",
-                title="make app bundle 实际成功了 preflight 没装",
-                body="make app bundle 实际成功了 preflight 没装",
-            )
-        ),
-        "2026-04-20",
-        "build-app",
-        model_gateway=_Gateway(),
-        humanize_titles=False,
-    )
-
-    assert "build-app" in Path(card.path).stem
-
-
-def test_build_event_card_humanize_titles_on_calls_gateway(monkeypatch):
-    class _Gateway:
-        def __init__(self):
-            self.calls: list[tuple[str, str]] = []
-
-        def call(self, capability, prompt, **kwargs):
-            self.calls.append((capability, prompt))
-            return {"filename_title": "build app bundle 成功 preflight 跳过"}
-
-    gateway = _Gateway()
-    monkeypatch.setattr("keypulse.obsidian.layout.local_timezone", lambda: ZoneInfo("Asia/Shanghai"))
-    card = _build_event_card(
-        _to_item(
-            _make_item(
-                created_at="2026-04-20T09:10:00+00:00",
-                ts_start="2026-04-20T09:10:00+00:00",
-                ts_end="2026-04-20T09:16:00+00:00",
-                title="make app 实际成功了 bundle 已在 dist preflight 在 venv 没装",
-                body="make app 实际成功了 bundle 已在 dist preflight 在 venv 没装",
-            )
-        ),
-        "2026-04-20",
-        "build-app",
-        model_gateway=gateway,
-        humanize_titles=True,
-    )
-
-    assert gateway.calls
-    assert gateway.calls[0][0] == "event_title_humanize"
-    assert "build-app-bundle-成功-preflight-跳过" in Path(card.path).name
-
-
-def test_topic_title_handles_placeholder_keys():
-    assert _topic_title("topic") == "未归类"
-    assert _topic_title("uncategorized") == "未归类"
-    assert _topic_title(None) == "未归类"
-
-
-def test_build_obsidian_bundle_creates_daily_and_event_cards_for_single_item():
+def test_build_obsidian_bundle_creates_daily_note_for_single_item():
     bundle = build_obsidian_bundle([_sample_item()], vault_name="Harland Knowledge", date_str="2026-04-18")
 
     assert bundle["daily"][0]["path"] == "Daily/2026-04-18.md"
-    assert set(bundle) == {"daily", "events", "topics"}
+    assert set(bundle) == {"daily"}
     assert bundle["daily"][0]["properties"]["type"] == "daily"
-    assert bundle["events"][0]["properties"]["type"] == "event"
-    assert "修复 keypulse 安装问题" in bundle["events"][0]["body"]
     assert "## 今天的事件卡" not in bundle["daily"][0]["body"]
     assert "[[../.keypulse/events/" not in bundle["daily"][0]["body"]
-    assert bundle["topics"] == []
 
 
-def test_build_obsidian_bundle_renders_relative_keypulse_links_by_default():
-    bundle = build_obsidian_bundle([_sample_item()], vault_name="Harland Knowledge", date_str="2026-04-18")
-    daily_body = bundle["daily"][0]["body"]
-    assert "[[../.keypulse/events/" not in daily_body
-    assert "file:///" not in daily_body
-
-
-def test_build_obsidian_bundle_daily_contract_keeps_relative_event_links(monkeypatch, tmp_path: Path):
+def test_build_obsidian_bundle_wiki_link_mode_does_not_emit_legacy_file_links(monkeypatch, tmp_path: Path):
     home = tmp_path / "home"
     home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(Path, "home", lambda: home)
@@ -420,7 +179,7 @@ def test_build_obsidian_bundle_daily_contract_keeps_relative_event_links(monkeyp
     assert "(file://" not in daily_body
 
 
-def test_build_obsidian_bundle_skips_loginwindow_event_cards_and_counts():
+def test_build_obsidian_bundle_skips_loginwindow_items_from_counts():
     bundle = build_obsidian_bundle(
         [
             _make_item(
@@ -435,10 +194,28 @@ def test_build_obsidian_bundle_skips_loginwindow_event_cards_and_counts():
         date_str="2026-04-18",
     )
 
-    assert bundle["events"] == []
     assert bundle["daily"][0]["properties"]["item_count"] == 0
     assert "## 今天的事件卡" not in bundle["daily"][0]["body"]
-    assert bundle["topics"] == []
+
+
+def test_to_item_derives_manual_title_from_body_when_missing():
+    item = _to_item(
+        {
+            "created_at": "2026-04-18T10:00:00+00:00",
+            "source": "manual",
+            "event_type": "manual_save",
+            "title": "",
+            "body": "今天把 retention 启动崩溃修掉，并补了回归测试",
+            "app_name": "",
+            "tags": "keypulse,retention",
+            "content_text": "今天把 retention 启动崩溃修掉，并补了回归测试",
+            "window_title": "",
+            "speaker": "user",
+        }
+    )
+
+    assert item is not None
+    assert item["title"] == "今天把 retention 启动崩溃修掉，并补了回归测试"
 
 
 def test_write_obsidian_bundle_writes_markdown_notes(tmp_path: Path, monkeypatch):
@@ -533,28 +310,6 @@ def test_write_obsidian_bundle_writes_placeholder_when_quality_gate_refuses(tmp_
     content = daily_path.read_text(encoding="utf-8")
     assert "采集异常" in content
     assert "quality_gate REFUSED" in content
-
-
-def test_build_obsidian_bundle_derives_manual_title_from_body_when_missing():
-    bundle = build_obsidian_bundle(
-        [
-            {
-                "created_at": "2026-04-18T10:00:00+00:00",
-                "source": "manual",
-                "event_type": "manual_save",
-                "title": "",
-                "body": "今天把 retention 启动崩溃修掉，并补了回归测试",
-                "app_name": "",
-                "tags": "keypulse,retention",
-            }
-        ],
-        vault_name="Harland Knowledge",
-        date_str="2026-04-18",
-    )
-
-    event_note = bundle["events"][0]
-    assert "manual_save" not in event_note["body"]
-    assert "# 今天把 retention 启动崩溃修掉，并补了回归测试" in event_note["body"]
 
 
 def test_render_dashboard_blocks_limits_to_top_five_non_fragments():
