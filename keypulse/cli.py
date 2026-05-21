@@ -2132,6 +2132,202 @@ def _iter_obsidian_markdown_paths(vault_root: Path) -> list[Path]:
     return [deduped[key] for key in sorted(deduped.keys())]
 
 
+def _anchor_timeline_excerpt(body: str, *, max_chars: int = 200) -> str:
+    text = str(body or "")
+    timeline_match = re.search(r"^##\s+Timeline\s*$", text, re.MULTILINE)
+    timeline_text = text
+    if timeline_match is not None:
+        section = text[timeline_match.end() :]
+        next_heading = re.search(r"^##\s+", section, re.MULTILINE)
+        timeline_text = section[: next_heading.start()] if next_heading else section
+    normalized = re.sub(r"\s+", " ", timeline_text).strip()
+    return normalized[: max(int(max_chars), 0)]
+
+
+def _anchor_sort_date_key(value: Any) -> date_cls:
+    text = str(value or "").strip()
+    try:
+        return date_cls.fromisoformat(text)
+    except ValueError:
+        return date_cls.min
+
+
+def _collect_anchor_merge_candidates(anchors_dir: Path, *, max_anchors: int = 100) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    seen_anchor_ids: set[str] = set()
+
+    for path in sorted(anchors_dir.glob("*.md")):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        frontmatter, body, _had_frontmatter = _split_markdown_frontmatter(raw)
+        anchor_id = str(frontmatter.get("anchor_id") or path.stem).strip() or path.stem
+        if anchor_id in seen_anchor_ids:
+            continue
+        seen_anchor_ids.add(anchor_id)
+        display = str(frontmatter.get("display") or anchor_id).strip() or anchor_id
+        started = str(frontmatter.get("started") or "").strip()
+        last_active = str(frontmatter.get("last_active") or started).strip() or started
+        state = str(frontmatter.get("state") or "").strip()
+        timeline_excerpt = _anchor_timeline_excerpt(body, max_chars=200)
+        rows.append(
+            {
+                "anchor_id": anchor_id,
+                "display": display,
+                "started": started,
+                "last_active": last_active,
+                "state": state,
+                "timeline_excerpt": timeline_excerpt,
+            }
+        )
+
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            _anchor_sort_date_key(row.get("last_active")),
+            _anchor_sort_date_key(row.get("started")),
+            str(row.get("anchor_id") or ""),
+        ),
+        reverse=True,
+    )
+    return ordered[: max(int(max_anchors), 0)]
+
+
+def _request_anchor_merge_groups(gateway: ModelGateway, anchors: list[dict[str, str]]) -> dict[str, Any]:
+    output_schema = {
+        "type": "object",
+        "required": ["groups"],
+        "properties": {
+            "groups": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["primary_anchor_id", "duplicates", "reason"],
+                    "properties": {
+                        "primary_anchor_id": {"type": "string"},
+                        "duplicates": {"type": "array", "items": {"type": "string"}},
+                        "reason": {"type": "string"},
+                        "group_title": {"type": "string"},
+                    },
+                },
+            }
+        },
+    }
+    payload = {"anchors": anchors}
+    prompt = "\n".join(
+        [
+            "你是主线去重审阅器。下面是 anchor 列表。",
+            "任务：找出“同一长尾工作被拆成多份”的副本组。",
+            "只在 100% 确信是同一件事时才分到同一组。",
+            "规则：",
+            "1) primary_anchor_id 必须在输入 anchors 中。",
+            "2) duplicates 只放副本 anchor_id，且不能包含 primary。",
+            "3) primary 选择 started 最早者；若并列，选命名更具代表性者。",
+            "4) 不确定就不要分组。",
+            "输出 JSON：{groups:[{primary_anchor_id, duplicates, reason, group_title?}]}",
+            "",
+            "<<INPUT_JSON>>",
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+            "<<END_INPUT_JSON>>",
+        ]
+    )
+    raw = gateway.call(
+        "L0_anchor",
+        prompt,
+        schema=output_schema,
+        max_tokens=1400,
+        temperature=0.0,
+        prompt_version="obsidian.propose-anchor-merges.v1",
+        input_data=payload,
+    )
+    if not isinstance(raw, dict):
+        raise ValueError("LLM output must be a JSON object")
+    return raw
+
+
+def _normalize_anchor_merge_groups(payload: dict[str, Any], known_anchor_ids: set[str]) -> list[dict[str, Any]]:
+    groups_raw = payload.get("groups")
+    if not isinstance(groups_raw, list):
+        raise ValueError("LLM output missing `groups` array")
+
+    deduped: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, tuple[str, ...]]] = set()
+    for item in groups_raw:
+        if not isinstance(item, dict):
+            raise ValueError("LLM output group must be object")
+        primary = str(item.get("primary_anchor_id") or "").strip()
+        if not primary:
+            raise ValueError("LLM output group missing `primary_anchor_id`")
+        if primary not in known_anchor_ids:
+            raise ValueError(f"LLM output references unknown primary anchor_id: {primary}")
+        duplicates_raw = item.get("duplicates")
+        if not isinstance(duplicates_raw, list):
+            raise ValueError(f"LLM output group `{primary}` has invalid `duplicates`")
+        duplicates = [
+            str(anchor_id).strip()
+            for anchor_id in duplicates_raw
+            if str(anchor_id).strip() and str(anchor_id).strip() != primary
+        ]
+        duplicates = [anchor_id for anchor_id in duplicates if anchor_id in known_anchor_ids]
+        if not duplicates:
+            continue
+        reason = str(item.get("reason") or "").strip()
+        if not reason:
+            raise ValueError(f"LLM output group `{primary}` missing `reason`")
+        key = (primary, tuple(sorted(duplicates)))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(
+            {
+                "primary_anchor_id": primary,
+                "duplicates": duplicates,
+                "reason": reason,
+                "group_title": str(item.get("group_title") or "").strip(),
+            }
+        )
+    deduped.sort(key=lambda row: (-len(row["duplicates"]), row["primary_anchor_id"]))
+    return deduped
+
+
+def _render_anchor_merge_report(
+    anchors: list[dict[str, str]],
+    groups: list[dict[str, Any]],
+) -> str:
+    by_id = {
+        str(item.get("anchor_id") or "").strip(): dict(item)
+        for item in anchors
+        if str(item.get("anchor_id") or "").strip()
+    }
+    lines = [f"# 建议合并组（{len(groups)} 个）", ""]
+    for idx, group in enumerate(groups, start=1):
+        primary_id = str(group.get("primary_anchor_id") or "").strip()
+        primary = by_id.get(primary_id, {})
+        title = (
+            str(group.get("group_title") or "").strip()
+            or str(primary.get("display") or primary_id)
+            or primary_id
+        )
+        lines.append(f"## 组 {idx}: {title}")
+        lines.append(
+            "主 anchor: "
+            f"{str(primary.get('display') or primary_id)} "
+            f"(started {str(primary.get('started') or 'unknown')}, {str(primary.get('state') or 'unknown')})"
+        )
+        lines.append("副 anchor:")
+        for dup_id in [str(item).strip() for item in (group.get("duplicates") or []) if str(item).strip()]:
+            dup = by_id.get(dup_id, {})
+            lines.append(
+                "  - "
+                f"{str(dup.get('display') or dup_id)} "
+                f"(started {str(dup.get('started') or 'unknown')})"
+            )
+        lines.append(f"理由: {str(group.get('reason') or '').strip()}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _apply_rename_plan(rename_plan: list[dict[str, Any]]) -> None:
     staged: list[tuple[Path, Path, Path]] = []
     for idx, row in enumerate(rename_plan):
@@ -2225,6 +2421,53 @@ def obsidian_migrate_filenames(vault: str | None, apply_changes: bool) -> None:
         click.echo("skipped:")
         for item in skipped[:30]:
             click.echo(f"  - {item['reason']} path={item['path']} detail={item['detail']}")
+
+
+@obsidian.command(
+    "propose-anchor-merges",
+    help=T(
+        "扫描 anchor 历史并输出候选合并建议（只读）。",
+        "Scan historical anchors and print merge proposals (read-only).",
+    ),
+)
+@click.option(
+    "--vault",
+    "vault",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=str),
+    default=None,
+    help=T("Obsidian vault 路径（默认读配置）", "Obsidian vault path (defaults to config)"),
+)
+@click.option(
+    "--max-anchors",
+    "max_anchors",
+    type=int,
+    default=100,
+    show_default=True,
+    help=T("最多送入 LLM 的 anchor 数", "Max anchors sent to LLM"),
+)
+def obsidian_propose_anchor_merges(vault: str | None, max_anchors: int) -> None:
+    if int(max_anchors) <= 0:
+        raise click.UsageError("--max-anchors must be > 0")
+
+    vault_root = _resolve_obsidian_vault_path(vault)
+    anchors_dir = vault_root / "anchors"
+    if not anchors_dir.exists():
+        raise click.UsageError(f"anchors directory not found: {anchors_dir}")
+
+    anchors = _collect_anchor_merge_candidates(anchors_dir, max_anchors=max_anchors)
+    if not anchors:
+        click.echo("# 建议合并组（0 个）")
+        return
+
+    gateway = load_model_gateway(get_config())
+    known_anchor_ids = {str(item.get("anchor_id") or "").strip() for item in anchors if str(item.get("anchor_id") or "").strip()}
+    try:
+        raw = _request_anchor_merge_groups(gateway, anchors)
+        groups = _normalize_anchor_merge_groups(raw, known_anchor_ids)
+    except (LLMCallError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise click.ClickException(f"LLM merge proposal parse failed: {exc}") from exc
+
+    click.echo(_render_anchor_merge_report(anchors, groups))
 
 
 @obsidian.command("backfill-aliases", help=T("补齐 Obsidian aliases/tags frontmatter。", "Backfill Obsidian aliases/tags frontmatter."))
