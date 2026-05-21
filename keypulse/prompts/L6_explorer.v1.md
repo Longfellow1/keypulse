@@ -30,3 +30,4 @@ temperature: 0.4
 3. `observation.anchor_quote` 必须来自 `weekly_dailies[].content_full` 原文子串。
 4. 不写建议/命令/绝对化/自我中心口吻。
 5. 证据不足时 dropped_balls 和 risks 可为空。
+6. 所有输出文案语言必须匹配当前 locale `{{lang}}`（`zh`=中文，`en`=英文）。

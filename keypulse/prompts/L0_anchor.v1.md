@@ -25,6 +25,7 @@ temperature: 0.1
 3. 邮件提醒、登录页、单 event chatter、重复开工动作默认 `unanchored`。
 4. 不得漏掉任何输入 cluster_id。
 5. slug 使用 ASCII 小写连字符，长度 3-40。
+6. `new_anchors[].display` 必须使用当前 locale `{{lang}}` 的人类可读命名；`slug` 保持英文稳定 ID。
 
 输出格式：
 ```json

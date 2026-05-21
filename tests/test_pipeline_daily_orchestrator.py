@@ -411,7 +411,7 @@ def test_anchor_note_same_date_is_overwritten_on_rerun(tmp_path, monkeypatch):
     run_daily("2026-05-01", trigger="18:00")
     run_daily("2026-05-01", trigger="18:00")
 
-    anchor_note = tmp_path / "Go" / "Knowledge" / "anchors" / "weekly-v3-rollout.md"
+    anchor_note = tmp_path / "Go" / "Knowledge" / "anchors" / "周报 v3 设计与落地.md"
     note_body = anchor_note.read_text(encoding="utf-8")
     assert note_body.count("- 2026-05-01 ") == 1
     assert "第二版摘要" in note_body

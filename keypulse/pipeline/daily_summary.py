@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from keypulse.obsidian.quality_gate import score_daily
 from keypulse.obsidian.weekday import weekday_label as _weekday_label
 from keypulse.pipeline.event_intake import cap_events_by_source
+from keypulse.pipeline.weekly_topic_anchor import anchor_note_filename
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.paths import get_data_dir
 from keypulse.utils.dates import local_day_bounds, local_timezone
@@ -1005,10 +1006,10 @@ def read_daily_summary(date: str) -> dict[str, Any] | None:
 
 
 def _anchor_link(anchor: str, display: str | None = None) -> str:
-    display_text = str(display or "").strip()
-    if display_text:
-        return f"[[{anchor}|{display_text}]]"
-    return f"[[{anchor}]]"
+    target = anchor_note_filename(str(display or ""), str(anchor or "")).removesuffix(".md")
+    if target:
+        return f"[[{target}]]"
+    return f"[[{str(anchor or '').strip()}]]"
 
 
 def _daily_event_cards(date_text: str) -> list[tuple[str, str]]:

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from keypulse.config import Config
+from keypulse.i18n import current_lang
 from keypulse.integrations import resolve_active_sink
 from keypulse.observability.watcher_tiers import WATCHER_TIERS
 from keypulse.pipeline.clustering import (
@@ -42,6 +43,7 @@ from keypulse.pipeline.event_intake import cap_events_by_source
 from keypulse.pipeline.llm_errors import classify_llm_error
 from keypulse.pipeline.weekly_topic_anchor import (
     anchor_today_clusters,
+    anchor_note_filename,
     load_weekly_anchors,
     seed_w19_anchors,
     save_weekly_anchors,
@@ -177,11 +179,12 @@ def _extract_event_payload(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _build_prompt(spec_body: str, capability: str, payload: Mapping[str, Any]) -> str:
+    rendered_spec = spec_body.replace("{{lang}}", current_lang()).strip()
     rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)
     return "\n".join(
         [
             f"CAPABILITY: {capability}",
-            spec_body.strip(),
+            rendered_spec,
             _INPUT_MARKER_BEGIN,
             rendered,
             _INPUT_MARKER_END,
@@ -1162,11 +1165,19 @@ def _sync_anchor_notes(
     else:
         vault_path = Path(Config().obsidian.vault_path).expanduser()
 
+    anchor_filename_by_slug: dict[str, str] = {}
+    for anchor in anchors:
+        slug = str(getattr(anchor, "slug", "")).strip()
+        if not slug:
+            continue
+        display = str(getattr(anchor, "display", "")).strip()
+        anchor_filename_by_slug[slug] = anchor_note_filename(display, slug).removesuffix(".md")
+
     for anchor in anchors:
         if str(getattr(anchor, "state", "")).strip() not in {"active", "candidate"}:
             continue
         try:
-            write_anchor_note(anchor, vault_path=vault_path)
+            write_anchor_note(anchor, vault_path=vault_path, anchor_filename_by_slug=anchor_filename_by_slug)
         except OSError as exc:
             _logger.warning("anchor_note_write_failed slug=%s path=%s err=%s", getattr(anchor, "slug", ""), vault_path, exc)
 
