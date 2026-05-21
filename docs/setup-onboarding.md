@@ -43,7 +43,13 @@ keypulse setup
 keypulse start
 ```
 
-或者已经装了 `.app`，直接 `make install` + `make reload`。
+如果是 Homebrew 安装，推荐用安装生命周期命令统一管理 launchd：
+
+```bash
+keypulse install launchd
+```
+
+`.app` / `make install` 现在只作为本地开发打包路径。
 
 验证：
 
