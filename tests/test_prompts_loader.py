@@ -8,12 +8,12 @@ from keypulse.prompts.loader import PromptCapabilityNotFoundError, load_prompt
 @pytest.mark.parametrize(
     "capability,version,model_tier,max_tokens,body_marker",
     [
-        ("daily_flagship", "v1", "premium", 4000, "整篇日报内容"),
+        ("daily_flagship", "v3", "premium", 4000, "整篇日报内容"),
         ("L1_cluster_review", "v1", "standard", 800, "只输出 JSON"),
         ("L2_narrative", "v2", "standard", 4000, "整篇日报内容"),
         ("L3_topic_naming", "v1", "mini", 300, "新主题命名器"),
         ("L4_weekly_reconcile", "v1", "standard", 900, "主题归并器"),
-        ("L5_weekly_main_narrative", "v1", "standard", 900, "单主题叙事"),
+        ("L5_weekly_main_narrative", "v2", "standard", 900, "单主题叙事"),
         ("L6_explorer", "v1", "standard", 700, "跨主题观察"),
         ("L7_principle_distillation", "v1", "standard", 1200, "原则提炼器"),
     ],
