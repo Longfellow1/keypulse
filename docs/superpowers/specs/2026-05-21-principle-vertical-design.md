@@ -1,7 +1,7 @@
 # Principle Vertical — Design Spec
 
 **Date:** 2026-05-21
-**Status:** Approved by user, ready for implementation plan
+**Status:** ⚠️ SUPERSEDED by `docs/skill-v0-plan.md`（2026-05-22 方向修正：本 spec 走偏到「被动 PKM 沉淀」，权威路线见 skill-v0-plan）
 **Author:** Brainstorming session (Opus 4.7 + user)
 
 ## 背景
@@ -223,3 +223,55 @@ V2 数据 schema 已经留好 hooks：`kind`/`confidence`/`source`/`quote` 都�
 5. weekly orchestrator 集成
 6. 测试覆盖（unit + integration + golden set）
 7. 跑一周真实数据采集验证
+
+## 长期阶段规划（2026-05-22 追加）
+
+### 长期目标
+
+跟 Hermes / 蒸馏框架文章（`docs/analysis/keypulse-endgame-and-distillation-framework.md`）对齐：**从行为数据生长出个人方法论图书馆，终局是用户跟自己的矿做 agent 对话挖矿**。
+
+参见 memory `[[project_principle_agent_dialogue_endgame]]`。
+
+### 关键设计判断
+
+principle vertical V1 已经把"采集→蒸馏→存储→周报"的**通用管道**架好。后续不开新 vertical，先稳。skill 蒸馏（Hermes 文章主推那层）是**同管道 + 不同 prompt**的事，复用基础设施。
+
+### 阶段表
+
+| 阶段 | 范围 | 入口 | 出口 | 时长估 |
+|------|------|------|------|--------|
+| **V1** ✓ | principle 蒸馏管道（M1-M6） | spec 拍板 | pytest 全绿 + cherry-pick main | 完成 |
+| **V1.5** | M7 真实数据验证 + prompt 小修 | daemon 重启 + 一周采集 | ≥3 触动 / 垃圾<20% / 整理<10min/w | 1 周 |
+| **V2** | schema 完备（`last_reviewed` + `refines`）+ 隐私脱敏审计前置 + V1.5 反馈修 prompt | V1.5 出报告 | 隐私合规通过 + schema 锁定 | 2-3 周 |
+| **V2.5** | 开 skill 双轨（同管道 + L8_skill_distillation prompt） | V2 稳定 ≥4 周无回归 | skill 蒸馏稳定产出 + weekly 双节呈现 | 3-4 周 |
+| **V3** | 合并/审计工具（LLM-suggested replace + 90 天 last_reviewed 审计） + wiki 跨条聚合 | 矿堆 100+ 条/双轨 | 数据可治理（无僵尸/无重复） | 1-2 月 |
+| **V4** | agent 对话 UI（用户自然语言查询自己的矿） | V3 稳 + 用户主动想"找东西" | 终局形态雏形 | 长期 |
+
+### 阶段过渡硬门槛（不达标不进下一阶段）
+
+- **V1.5 → V2**：人眼审通过（不是 validator pass，是 `[[feedback_metric_driven_delivery]]` 的"读完才算"）
+- **V2 → V2.5**：隐私审计**必须**通过（开源/商业化前置门槛，迟做要 backfill 历史数据）
+- **V2.5 → V3**：双轨各自跑稳 ≥4 周无回归
+- **V3 → V4**：用户开始**主动表达**想检索（"我之前关于 X 说过什么来着"），不靠产品推
+
+### 设计原则（防偏移）
+
+1. **不开第二个 vertical 之前先把第一个跑稳**——避免双线半成品
+2. **schema 增强往前提**（V2 不能拖到 V3）——晚改要 backfill，成本指数级
+3. **隐私脱敏前置**——开源 / 给别人看之前必须过
+4. **agent 对话延后**——别在矿少的时候做 UI，会变玩具
+
+### 从 Hermes 文章借鉴的具体机制（按阶段分配）
+
+| 借鉴点 | 阶段 | 怎么做 |
+|--------|------|--------|
+| 隐私写盘前过滤（35 app 黑名单 + 字段脱敏 + 隐私窗口检测）| V2 | 审计 keypulse 现状对照清单，缺口补上 |
+| 同义合并由 LLM 主动建议 `replace X with Y because Y refines X` | V3 | 抛弃 embedding 相似度算法，直接让 LLM 看 `known_principles` 列表自决 |
+| "已存在即跳过"→"已存在但更精炼则 refine" | V2 | 加 `refines: <old_principle_id>` frontmatter 字段，LLM 自标，保留两版历史 |
+| 周度二次蒸馏（一周 principle 聚合成 meta-principle）| V3 | 跟 wiki 跨条聚合合并到一个能力点 |
+
+### 明确不抄
+
+- **"3 次出现阈值"触发器**——对 principle 漏抓（一次说的也可能值钱）
+- **AI Agent 自决创建 commit**——必须人眼审，不能让 LLM 自己定生死
+- **SKILL.md 格式作为 principle 载体**——principle 不要"步骤/清单"，当前 frontmatter 更贴切
