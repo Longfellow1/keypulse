@@ -17,6 +17,7 @@ from keypulse.config import Config
 from keypulse.i18n import current_lang
 from keypulse.integrations import resolve_active_sink
 from keypulse.hud.state import read_hud_state
+from keypulse.obsidian.principle_exporter import list_week_principles
 from keypulse.pipeline.daily_summary import (
     build_topic_status_snapshot_from_narrative,
     merge_topic_status_snapshots,
@@ -1419,6 +1420,26 @@ def _build_cross_week_section_lines(cross_week_diff: list[dict[str, str]]) -> li
     return lines
 
 
+def _build_principles_section_lines(principles: list[dict[str, str]]) -> list[str]:
+    if not principles:
+        return []
+
+    lines = ["## 本周新沉淀原则", ""]
+    for item in principles:
+        slug = str(item.get("slug") or item.get("principle_id") or "").strip()
+        distilled = str(item.get("distilled") or "").strip()
+        if not slug:
+            continue
+        if distilled:
+            lines.append(f"- [[{slug}]] — {distilled}")
+        else:
+            lines.append(f"- [[{slug}]]")
+    if len(lines) == 2:
+        return []
+    lines.append("")
+    return lines
+
+
 def _yaml_scalar(value: str) -> str:
     return json.dumps(str(value), ensure_ascii=False)
 
@@ -1602,6 +1623,7 @@ def _render_weekly_markdown(
     l5_output: dict[str, Any],
     l6_output: dict[str, Any],
     cross_week_diff: list[dict[str, str]],
+    new_principles: list[dict[str, str]],
     *,
     style: str,
     daily_count: int,
@@ -1614,6 +1636,7 @@ def _render_weekly_markdown(
         lines = [f"# 这周 ({week_str})", ""]
         lines.extend(_build_main_section_lines(top_topics, topic_index_map, l5_output))
         lines.extend(_build_cross_week_section_lines(cross_week_diff))
+        lines.extend(_build_principles_section_lines(new_principles))
         lines.extend(_build_explorer_section_lines(l6_output))
         lines.extend(["", *_generation_info_lines(stats, quality_breakdown, quality_history)])
         rendered = "\n".join(lines)
@@ -1624,6 +1647,7 @@ def _render_weekly_markdown(
             l5_output,
             l6_output,
             cross_week_diff=cross_week_diff,
+            new_principles=new_principles,
             daily_count=daily_count,
             stats=stats,
             quality_breakdown=quality_breakdown,
@@ -1729,6 +1753,7 @@ def _render_exec_weekly_markdown(
     l5_output: dict[str, Any],
     l6_output: dict[str, Any],
     cross_week_diff: list[dict[str, str]],
+    new_principles: list[dict[str, str]],
     *,
     daily_count: int,
     stats: WeeklyRunStats,
@@ -1858,6 +1883,9 @@ def _render_exec_weekly_markdown(
                 lines.append(f"- 跨周状态迁移: {topic} {from_state}->{to_state}")
     else:
         lines.append("- （本周无显式状态迁移）")
+    principle_section = _build_principles_section_lines(new_principles)
+    if principle_section:
+        lines.extend(["", *principle_section])
     anchors = _next_week_anchors(top_topics, l6_output)
     anchor_lines = [f"- {item}" for item in anchors] if anchors else ["- （无）"]
     lines.extend(["", "## 下周锚点", *anchor_lines, "", "---", *_generation_info_lines(stats, quality_breakdown, quality_history)])
@@ -2728,6 +2756,8 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
     _record_weekly_llm_degraded(l6_result)
     stats.l6_source = l6_result.source
     l6_output_dict = _normalize_l6_output(l6_result.content if l6_result.content is not None else _fallback_l6(l6_input, l6_result.reason))
+    sink = resolve_active_sink(Config.load(), persist=False)
+    new_principles = list_week_principles(week_str=week_str, vault_path=sink.output_dir)
     validator_attempts = 0
     validator_failures: list[ValidationFailure] = []
     blocking_failures: list[ValidationFailure] = []
@@ -2740,6 +2770,7 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
             l5_output_dict,
             l6_output_dict,
             cross_week_diff,
+            new_principles,
             style=style,
             daily_count=len(daily_summaries),
             stats=stats,
@@ -2833,6 +2864,7 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
             l5_output_dict,
             l6_output_dict,
             cross_week_diff,
+            new_principles,
             style=style,
             daily_count=len(daily_summaries),
             stats=stats,
