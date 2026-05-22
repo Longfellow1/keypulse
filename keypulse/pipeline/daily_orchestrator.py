@@ -15,6 +15,7 @@ from typing import Any, Callable, Mapping
 from keypulse.config import Config
 from keypulse.i18n import current_lang
 from keypulse.integrations import resolve_active_sink
+from keypulse.obsidian.principle_exporter import export_principles, load_known_principles
 from keypulse.observability.watcher_tiers import WATCHER_TIERS
 from keypulse.pipeline.clustering import (
     build_evidence_graph,
@@ -54,6 +55,7 @@ from keypulse.pipeline.weekly_topic_anchor import (
 )
 from keypulse.pipeline.model import LLMCallError, ModelGateway, load_model_gateway
 from keypulse.pipeline.model_card import resolve_tier
+from keypulse.pipeline.principle_distillation import PrincipleDistillationError, PrincipleDistillationGateway
 from keypulse.pipeline.run_record import RunRecorder
 from keypulse.store.repository import query_raw_events
 from keypulse.utils.atomic_io import atomic_write_text
@@ -872,6 +874,104 @@ def _append_log(record: dict[str, Any]) -> None:
         handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def _keyboard_chunks_for_principles(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+    for event in events:
+        source = str(event.get("source") or "").strip().lower()
+        if source != "keyboard_chunk":
+            continue
+        content = str(event.get("content_text") or "").strip()
+        if not content:
+            continue
+        chunks.append(
+            {
+                "id": str(event.get("id") or "").strip(),
+                "ts_start": str(event.get("ts_start") or "").strip(),
+                "app_name": str(event.get("app_name") or "").strip(),
+                "window_title": str(event.get("window_title") or "").strip(),
+                "content": content,
+            }
+        )
+    return chunks
+
+
+def _record_principle_stage_details(
+    *,
+    recorder: RunRecorder,
+    principle_count: int,
+    errors: list[str],
+) -> None:
+    recorder.mark_stage("principle_distillation", "ok")
+    existing = dict(recorder.stage_details.get("principle_distillation", {}))
+    existing["principle_count"] = str(max(int(principle_count), 0))
+    existing["errors"] = " | ".join(str(item).strip() for item in errors if str(item).strip())
+    recorder.stage_details["principle_distillation"] = existing
+
+
+def _run_principle_distillation(
+    *,
+    date_str: str,
+    events: list[dict[str, Any]],
+    gateway: ModelGateway,
+    recorder: RunRecorder | None = None,
+) -> tuple[int, list[str]]:
+    chunks = _keyboard_chunks_for_principles(events)
+    if not chunks:
+        if recorder is not None:
+            _record_principle_stage_details(recorder=recorder, principle_count=0, errors=[])
+        return 0, []
+
+    principle_count = 0
+    errors: list[str] = []
+    sink = resolve_active_sink(Config.load(), persist=False)
+    known_principles = load_known_principles(sink.output_dir)
+
+    try:
+        candidates = PrincipleDistillationGateway(gateway).distill(
+            date_str=date_str,
+            keyboard_chunks=chunks,
+            known_principles=known_principles,
+        )
+        export_result = export_principles(
+            date_str=date_str,
+            candidates=candidates,
+            vault_path=sink.output_dir,
+        )
+        principle_count = len(export_result.written_paths)
+        errors.extend(export_result.errors)
+    except Exception as exc:
+        if isinstance(exc, PrincipleDistillationError):
+            _logger.warning(
+                "principle_distillation_failed date=%s reason=%s prompt=%s raw_response=%r",
+                date_str,
+                exc,
+                exc.prompt,
+                exc.raw_response,
+            )
+        else:
+            _logger.warning("principle_distillation_failed date=%s reason=%s", date_str, exc, exc_info=True)
+        errors.append(f"{type(exc).__name__}:{exc}")
+
+    _append_log(
+        {
+            "ts": _now_iso(),
+            "capability": "daily_orchestrator",
+            "date": date_str,
+            "decision": "principle_distillation",
+            "principle_count": principle_count,
+            "error_count": len(errors),
+        }
+    )
+
+    if recorder is not None:
+        _record_principle_stage_details(
+            recorder=recorder,
+            principle_count=principle_count,
+            errors=errors,
+        )
+    return principle_count, errors
+
+
 def _daily_path(date_str: str) -> Path:
     sink = resolve_active_sink(Config.load(), persist=False)
     target = sink.output_dir / "Daily" / f"{date_str}.md"
@@ -1533,6 +1633,12 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
                     "status": "degraded" if repair_failure_reason else "ok",
                 }
             )
+        _run_principle_distillation(
+            date_str=date_str,
+            events=events,
+            gateway=gateway,
+            recorder=recorder,
+        )
         with recorder.stage("render"):
             daily_markdown = render_daily_markdown(
                 date=date_str,
@@ -1768,6 +1874,13 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
         }
         for cluster in resolved_clusters
     }
+
+    _run_principle_distillation(
+        date_str=date_str,
+        events=events,
+        gateway=gateway,
+        recorder=recorder,
+    )
 
     with recorder.stage("render"):
         daily_markdown = render_daily_markdown(
