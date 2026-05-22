@@ -15,6 +15,7 @@ from keypulse.prompts.loader import PromptCapabilityNotFoundError, load_prompt
         ("L4_weekly_reconcile", "v1", "standard", 900, "主题归并器"),
         ("L5_weekly_main_narrative", "v1", "standard", 900, "单主题叙事"),
         ("L6_explorer", "v1", "standard", 700, "跨主题观察"),
+        ("L7_principle_distillation", "v1", "standard", 1200, "原则提炼器"),
     ],
 )
 def test_load_prompt_for_all_capabilities(capability, version, model_tier, max_tokens, body_marker):
