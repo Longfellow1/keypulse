@@ -139,8 +139,12 @@ def _parse_prompt_file(path: Path) -> PromptSpec:
 
 def load_prompt(capability: str) -> PromptSpec:
     resolved_capability = _normalize_capability(capability)
+    candidates: list[tuple[Path, PromptSpec]] = []
     for path in sorted(_PROMPTS_DIR.glob("*.md")):
         spec = _parse_prompt_file(path)
         if spec.capability == resolved_capability:
-            return spec
-    raise PromptCapabilityNotFoundError(f"prompt capability not found: {capability}")
+            candidates.append((path, spec))
+    if not candidates:
+        raise PromptCapabilityNotFoundError(f"prompt capability not found: {capability}")
+    # Return the latest version (last in sorted order)
+    return candidates[-1][1]
