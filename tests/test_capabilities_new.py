@@ -97,6 +97,13 @@ def test_watcher_health_capability_flags_silent_timeout(monkeypatch):
     assert state.code == "ax_text_silent_timeout"
 
 
+def test_watcher_health_specs_include_browser_url() -> None:
+    by_name = {spec.watcher_name: spec for spec in WATCHER_HEALTH_SPECS}
+    browser_url = by_name.get("browser_url")
+    assert browser_url is not None
+    assert browser_url.capability_name == "browser_url_watcher"
+
+
 @pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_watcher_health_specs_cover_real_watchers():
     """The manifest must include every watcher we ship heartbeat for."""

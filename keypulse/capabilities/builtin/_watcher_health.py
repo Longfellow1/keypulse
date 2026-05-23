@@ -116,6 +116,11 @@ WATCHER_HEALTH_SPECS: list[WatcherHealthSpec] = [
         hint="浏览器标签采集线程异常，请重启 daemon",
     ),
     WatcherHealthSpec(
+        watcher_name="browser_url",
+        capability_name="browser_url_watcher",
+        hint="浏览器 URL 采集线程异常，请重启 daemon；若持续失败请检查自动化权限",
+    ),
+    WatcherHealthSpec(
         watcher_name="keyboard_chunk",
         capability_name="keyboard_chunk_watcher",
         hint="键盘分块采集线程异常，请重启 daemon；若持续失败请检查输入监控权限",
