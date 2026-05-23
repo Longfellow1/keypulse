@@ -12,6 +12,7 @@ from typing import Optional, Callable, Any
 from keypulse.capabilities.base import HealthState
 from keypulse.capabilities.registry import CapabilityRegistry, get_default_registry
 from keypulse.capabilities.store import save_states as save_capability_states
+from keypulse.capabilities.builtin.browser_automation import clear_browser_automation_denied_browsers_on_startup
 from keypulse.config import Config
 from keypulse.utils.lock import SingleInstanceLock
 from keypulse.utils.logging import setup_logging, get_logger
@@ -352,6 +353,12 @@ def run(config: Optional[Config] = None):
         sys.exit(1)
 
     init_db(config.db_path_expanded)
+    cleared_denied = clear_browser_automation_denied_browsers_on_startup()
+    logger.info(
+        "daemon startup reset browser automation denied cache (cleared=%d, browsers=%s)",
+        len(cleared_denied),
+        ", ".join(cleared_denied) if cleared_denied else "-",
+    )
     registry = get_default_registry()
     _run_capability_self_check(registry)
     _spawn_self_check_supervisor(registry=registry)

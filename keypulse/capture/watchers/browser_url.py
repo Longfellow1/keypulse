@@ -174,12 +174,22 @@ class BrowserUrlWatcher(BaseWatcher):
         if browser_name in self._disabled_browsers:
             return
         self._disabled_browsers.add(browser_name)
+
+        denied_persisted: bool | None = None
         if not reason.startswith("unsupported:"):
-            mark_browser_automation_denied(browser_name)
+            denied_persisted = mark_browser_automation_denied(browser_name)
+
+        reason_suffix = ""
+        if denied_persisted is True:
+            reason_suffix = "; persisted_denied=true"
+        elif denied_persisted is False:
+            reason_suffix = "; persisted_denied=pending_cooldown"
+
         logger.warning(
-            "BrowserUrlWatcher: disabling %s after %s",
+            "BrowserUrlWatcher: disabling %s after %s%s",
             browser_name,
             reason,
+            reason_suffix,
         )
 
     def _run(self) -> None:
