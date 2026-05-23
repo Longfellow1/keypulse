@@ -1,0 +1,144 @@
+{
+  "type": "object",
+  "required": ["date", "per_entity", "per_day"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "description": "ISO 8601 日期 (YYYY-MM-DD)"
+    },
+    "per_entity": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["entity_name", "entity_purity", "entity_completeness"],
+        "properties": {
+          "entity_name": {
+            "type": "string"
+          },
+          "entity_purity": {
+            "type": "object",
+            "required": ["score", "wrong_event_ids", "reasoning"],
+            "properties": {
+              "score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "wrong_event_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reasoning": {
+                "type": "string"
+              }
+            }
+          },
+          "entity_completeness": {
+            "type": "object",
+            "required": ["score", "missing_event_ids", "reasoning"],
+            "properties": {
+              "score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "missing_event_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reasoning": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "per_day": {
+      "type": "object",
+      "required": [
+        "cross_entity_warning_precision",
+        "cross_entity_warning_recall",
+        "overall_quality"
+      ],
+      "properties": {
+        "cross_entity_warning_precision": {
+          "type": "object",
+          "required": [
+            "score",
+            "extractor_reported_event_ids",
+            "true_positive_event_ids",
+            "false_positive_event_ids",
+            "reasoning"
+          ],
+          "properties": {
+            "score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "extractor_reported_event_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "true_positive_event_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "false_positive_event_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reasoning": {
+              "type": "string"
+            }
+          }
+        },
+        "cross_entity_warning_recall": {
+          "type": "object",
+          "required": ["score", "missed_event_ids", "reasoning"],
+          "properties": {
+            "score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "missed_event_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reasoning": {
+              "type": "string"
+            }
+          }
+        },
+        "overall_quality": {
+          "type": "object",
+          "required": ["score", "reasoning"],
+          "properties": {
+            "score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "reasoning": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
