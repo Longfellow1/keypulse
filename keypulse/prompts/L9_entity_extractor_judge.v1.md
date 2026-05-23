@@ -73,4 +73,34 @@ temperature: 0.1
 
 ## 输出格式
 
-严格输出 JSON，且必须符合 schema。不要输出 markdown，不要添加额外字段。
+严格输出 JSON，且必须符合 schema。不要输出 markdown，不要添加额外字段。`date` 字段必须 echo 输入中的 `date`（同一个 YYYY-MM-DD 值）。
+
+完整输出示例（字段名严格按 schema）：
+
+```json
+{
+  "date": "2026-05-19",
+  "per_entity": [
+    {
+      "entity_name": "KeyPulse",
+      "entity_purity": { "score": 0.95, "wrong_event_ids": [], "reasoning": "所有归属 events 都是 KeyPulse 仓库开发活动" },
+      "entity_completeness": { "score": 0.90, "missing_event_ids": ["98271"], "reasoning": "event 98271 涉及 KeyPulse HUD 但被归到 Mindbones" }
+    }
+  ],
+  "per_day": {
+    "cross_entity_warning_precision": {
+      "score": 1.0,
+      "extractor_reported_event_ids": ["97897"],
+      "true_positive_event_ids": ["97897"],
+      "false_positive_event_ids": [],
+      "reasoning": "extractor 报告的 97897 经检视真跨 ChatGPT Atlas 与 CorpusFlow"
+    },
+    "cross_entity_warning_recall": {
+      "score": 0.5,
+      "missed_event_ids": ["98000"],
+      "reasoning": "98000 涉及 KeyPulse 与奇趣宝 但 needs_review=false"
+    },
+    "overall_quality": { "score": 0.88, "reasoning": "主项目边界清晰，少量跨项目漏标" }
+  }
+}
+```
