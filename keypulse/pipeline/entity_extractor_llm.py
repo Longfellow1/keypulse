@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,10 @@ from typing import Any
 from keypulse.pipeline.model import ModelGateway
 from keypulse.pipeline.daily_strategy import build_prompt
 from keypulse.prompts.loader import load_prompt
+from keypulse.store.repository import query_raw_events
+from keypulse.utils.dates import local_day_bounds
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -195,51 +200,61 @@ class EntityExtractor:
     def extract_for_date(self, date_str: str) -> EntityExtractionResult:
         """Extract entities from a specific date's events.
 
+        Reads raw events from the database for the specified date, caps them to 60 events
+        using the source-weighted capping logic from daily_orchestrator, then runs entity
+        extraction via LLM.
+
         Args:
             date_str: ISO 8601 date string (YYYY-MM-DD)
 
         Returns:
             EntityExtractionResult
         """
-        # Read events from ~/.keypulse/daily-summary/{date}.json
-        daily_dir = Path.home() / ".keypulse" / "daily-summary"
-        daily_file = daily_dir / f"{date_str}.json"
+        # Get UTC bounds for the date (in local timezone)
+        start_iso, end_iso = local_day_bounds(date_str)
 
-        if not daily_file.exists():
-            raise FileNotFoundError(f"Daily summary not found: {daily_file}")
-
+        # Query raw events from database for this date
         try:
-            daily_data = json.loads(daily_file.read_text(encoding="utf-8"))
+            raw_events = query_raw_events(since=start_iso, until=end_iso, limit=5000)
         except Exception as exc:
-            raise RuntimeError(f"Failed to read {daily_file}: {exc}") from exc
+            raise RuntimeError(f"Failed to query raw events for {date_str}: {exc}") from exc
 
-        # Extract raw events (if available) or use clusters as events
-        events = daily_data.get("events") or []
+        if not raw_events:
+            _logger.warning("No raw events found for %s", date_str)
+            return EntityExtractionResult(
+                date=date_str,
+                entities=[],
+                event_entity_map=[],
+                cross_entity_warning=[],
+            )
 
-        # If no raw events but clusters exist, use clusters as event-like structures
-        if not events and "clusters" in daily_data:
-            clusters = daily_data.get("clusters") or []
-            events = [
-                {
-                    "eid": f"cluster_{i}",
-                    "c": cluster.get("display_name", ""),
-                    "wu": cluster.get("display_name", ""),
-                }
-                for i, cluster in enumerate(clusters)
-            ]
+        _logger.info("Queried %d raw events for %s", len(raw_events), date_str)
+
+        # Cap events using the same logic as daily_flagship
+        from keypulse.pipeline.event_intake import cap_events_by_source
+
+        capped_events, was_capped = cap_events_by_source(raw_events, limit=60)
+
+        if was_capped:
+            _logger.warning(
+                "Events capped from %d to %d for %s", len(raw_events), len(capped_events), date_str
+            )
 
         # Add date if not present
-        if events and "date" not in events[0]:
-            for event in events:
+        for event in capped_events:
+            if "date" not in event:
                 event["date"] = date_str
 
-        return self.extract_entities(events)
+        _logger.info("Running entity extraction with %d capped events for %s", len(capped_events), date_str)
+        return self.extract_entities(capped_events)
 
 
 if __name__ == "__main__":
     import sys
+    from pathlib import Path
     from keypulse.pipeline.model import ModelGateway
     from keypulse.config import Config
+    from keypulse.store.db import init_db
 
     if len(sys.argv) < 2:
         print("Usage: python -m keypulse.pipeline.entity_extractor_llm <date>")
@@ -247,6 +262,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     target_date = sys.argv[1]
+
+    # Initialize database
+    db_path = Path.home() / ".keypulse" / "keypulse.db"
+    init_db(db_path)
 
     # Load config and initialize gateway
     config = Config()
