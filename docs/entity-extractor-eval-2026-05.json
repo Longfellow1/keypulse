@@ -9,7 +9,7 @@
     "2026-05-20"
   ],
   "total_days": 7,
-  "generated_at": "2026-05-23T13:28:35Z",
+  "generated_at": "2026-05-23T16:18:16Z",
   "model": {
     "mode": "live",
     "active_profile": "cloud-first",
@@ -53,7 +53,7 @@
             "name": "CHAT-0410",
             "type": "project",
             "aliases": [],
-            "confidence": 0.9,
+            "confidence": 0.85,
             "evidence_event_ids": [
               "96387",
               "96518",
@@ -62,9 +62,9 @@
           },
           {
             "name": "奇趣宝",
-            "type": "product",
+            "type": "project",
             "aliases": [],
-            "confidence": 0.92,
+            "confidence": 0.9,
             "evidence_event_ids": [
               "96881",
               "97097",
@@ -72,54 +72,81 @@
             ]
           },
           {
-            "name": "Agent系统",
-            "type": "system",
-            "aliases": [],
-            "confidence": 0.85,
-            "evidence_event_ids": [
-              "96364",
-              "96697",
-              "96880"
-            ]
-          },
-          {
-            "name": "ChatGPT Atlas",
-            "type": "project",
-            "aliases": [],
-            "confidence": 0.8,
-            "evidence_event_ids": [
-              "96777",
-              "97067",
-              "97571",
-              "97577",
-              "97640",
-              "97645"
-            ]
-          },
-          {
             "name": "Mindbones",
             "type": "project",
             "aliases": [],
-            "confidence": 0.75,
+            "confidence": 0.8,
             "evidence_event_ids": [
               "97127",
               "98271"
             ]
           },
           {
+            "name": "CorpusFlow",
+            "type": "project",
+            "aliases": [],
+            "confidence": 0.8,
+            "evidence_event_ids": [
+              "97757",
+              "97897"
+            ]
+          },
+          {
+            "name": "Carmind",
+            "type": "project",
+            "aliases": [
+              "Carmind_code"
+            ],
+            "confidence": 0.7,
+            "evidence_event_ids": [
+              "98255"
+            ]
+          },
+          {
             "name": "unknown",
             "type": "unknown",
             "aliases": [],
-            "confidence": 0.0,
-            "evidence_event_ids": []
+            "confidence": 0.5,
+            "evidence_event_ids": [
+              "96364",
+              "96697",
+              "96777",
+              "96812",
+              "96848",
+              "96880",
+              "97067",
+              "97129",
+              "97260",
+              "97437",
+              "97512",
+              "97500",
+              "97571",
+              "97577",
+              "97653",
+              "97616",
+              "97640",
+              "97645",
+              "97766",
+              "97799",
+              "97969",
+              "97970",
+              "97971",
+              "97972",
+              "97973",
+              "97966",
+              "98017",
+              "98016",
+              "98065",
+              "98153"
+            ]
           }
         ],
         "event_entity_map": [
           {
             "event_id": "96364",
-            "primary_entity": "Agent系统",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -135,7 +162,7 @@
             "event_id": "96374",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -151,7 +178,7 @@
             "event_id": "96387",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -167,7 +194,7 @@
             "event_id": "96518",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -183,7 +210,7 @@
             "event_id": "96551",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -197,17 +224,17 @@
           },
           {
             "event_id": "96697",
-            "primary_entity": "Agent系统",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "96777",
-            "primary_entity": "ChatGPT Atlas",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -215,23 +242,23 @@
             "event_id": "96812",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
-            "needs_review": true,
-            "review_reason": "仅涉及平台浏览，无明确项目活动"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "96848",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
-            "needs_review": true,
-            "review_reason": "仅涉及平台浏览，无明确项目活动"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "96880",
-            "primary_entity": "Agent系统",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -239,7 +266,7 @@
             "event_id": "96881",
             "primary_entity": "奇趣宝",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -247,15 +274,15 @@
             "event_id": "97097",
             "primary_entity": "奇趣宝",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "97067",
-            "primary_entity": "ChatGPT Atlas",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -271,31 +298,31 @@
             "event_id": "97129",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "仅工具调用，无明确项目关联"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97260",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.45,
-            "needs_review": true,
-            "review_reason": "未明确提及实体，架构讨论可能涉及多个项目"
+            "confidence": 0.4,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97437",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.45,
-            "needs_review": true,
-            "review_reason": "未明确提及实体，模块设计讨论可能涉及多个项目"
+            "confidence": 0.4,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97468",
             "primary_entity": "奇趣宝",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -303,31 +330,31 @@
             "event_id": "97512",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
-            "needs_review": true,
-            "review_reason": "未明确提及实体，项目情况认知构建无具体指向"
+            "confidence": 0.4,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97500",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
-            "needs_review": true,
-            "review_reason": "未明确提及实体，项目情况认知构建无具体指向"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97571",
-            "primary_entity": "ChatGPT Atlas",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "97577",
-            "primary_entity": "ChatGPT Atlas",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -336,106 +363,104 @@
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "无内容，仅系统状态提示"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97616",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "内容为单个字符，无明确实体指向"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97640",
-            "primary_entity": "ChatGPT Atlas",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "97645",
-            "primary_entity": "ChatGPT Atlas",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "97766",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.7,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "97757",
-            "primary_entity": "unknown",
+            "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.55,
-            "needs_review": true,
-            "review_reason": "CorpusFlow仅出现一次，需确认是否为独立实体"
+            "confidence": 0.8,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97799",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.7,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "97897",
-            "primary_entity": "ChatGPT Atlas",
-            "secondary_entities": [
-              "CorpusFlow"
-            ],
-            "confidence": 0.55,
-            "needs_review": true,
-            "review_reason": "可能涉及CorpusFlow和ChatGPT Atlas，CorpusFlow实体证据不足"
+            "primary_entity": "CorpusFlow",
+            "secondary_entities": [],
+            "confidence": 0.8,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97969",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅工具使用记录，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97970",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅工具使用记录，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97971",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅工具使用记录，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97972",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅工具使用记录，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97973",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅工具使用记录，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "97957",
@@ -449,17 +474,17 @@
             "event_id": "97966",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "仅工具页面访问，无明确项目活动"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "98017",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅网页浏览，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "98019",
@@ -473,17 +498,17 @@
             "event_id": "98016",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "AI投资纪律台未明确关联已知实体"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "98065",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅本地链接访问，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "98122",
@@ -497,7 +522,7 @@
             "event_id": "98132",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -529,9 +554,9 @@
             "event_id": "98153",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
-            "needs_review": true,
-            "review_reason": "内容乱码，无法识别实体"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "98194",
@@ -567,17 +592,17 @@
           },
           {
             "event_id": "98255",
-            "primary_entity": "unknown",
+            "primary_entity": "Carmind",
             "secondary_entities": [],
-            "confidence": 0.5,
-            "needs_review": true,
-            "review_reason": "Carmind_code仅出现一次，需确认是否为独立实体"
+            "confidence": 0.7,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "98271",
             "primary_entity": "Mindbones",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -598,9 +623,7 @@
             "review_reason": ""
           }
         ],
-        "cross_entity_warning": [
-          "event 97897 可能涉及跨实体活动（ChatGPT Atlas 与 CorpusFlow），建议人审"
-        ]
+        "cross_entity_warning": []
       },
       "capped_events": [
         {
@@ -1372,12 +1395,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 均明确涉及 KeyPulse 项目开发、配置或文档，如日报管线修复、代码实现及 git 提交记录"
+              "reasoning": "所有归属 events 均涉及 KeyPulse 项目相关内容（如日报管线修复、代码文件、git 日志等），无错误归属"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当日所有 KeyPulse 相关 events（含日报文件、代码片段、命令操作）均被正确归属，无漏归"
+              "reasoning": "当天所有 KeyPulse 相关 events 均被正确归到该实体，无漏归"
             }
           },
           {
@@ -1385,12 +1408,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events 的 file_paths 均指向 CHAT-0410 项目目录，内容涉及样本构建、验收数据等项目相关工作"
+              "reasoning": "归属 events 的 file_paths 均指向 CHAT-0410 项目目录，内容与该项目直接相关"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当日 CHAT-0410 相关 events 均被准确捕获，无遗漏"
+              "reasoning": "当天所有 CHAT-0410 相关 events 均被正确归到该实体，无漏归"
             }
           },
           {
@@ -1398,38 +1421,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events 内容均为奇趣宝产品规划或架构相关文件（如.pptx），实体指向明确"
+              "reasoning": "归属 events 的 content_text 均为奇趣宝项目相关文件名（如服务规划 PPTX），无错误归属"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当日所有奇趣宝相关文件访问 events 均被正确归属，无漏归"
-            }
-          },
-          {
-            "entity_name": "Agent系统",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 events 涉及 Agent 系统瓶颈讨论、输出草稿及交互设计，与实体定义完全匹配"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "当日 Agent 系统相关 events 均被准确识别并归属，无遗漏"
-            }
-          },
-          {
-            "entity_name": "ChatGPT Atlas",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 events 的 app_name、work_unit 或内容均明确指向 ChatGPT Atlas 项目，如工程资源约束、技术栈讨论等"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "当日 ChatGPT Atlas 相关 events 均被正确归属，无漏归"
+              "reasoning": "当天所有奇趣宝相关 events 均被正确归到该实体，无漏归"
             }
           },
           {
@@ -1437,35 +1434,70 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events 涉及 Mindbones 项目目录访问及架构升级文档，实体关联清晰"
+              "reasoning": "归属 events 涉及 Mindbones 项目路径（cd Harland/Go/Mindbones）及相关文件名，无错误归属"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当日 Mindbones 相关 events 均被准确捕获，无遗漏"
+              "reasoning": "当天所有 Mindbones 相关 events 均被正确归到该实体，无漏归"
+            }
+          },
+          {
+            "entity_name": "CorpusFlow",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "归属 events 包含 CorpusFlow 项目 URL 及窗口标题，内容直接相关，无错误归属"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天所有 CorpusFlow 相关 events 均被正确归到该实体，无漏归"
+            }
+          },
+          {
+            "entity_name": "Carmind",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "归属 event 的 content_text 为 Carmind_code 路径，与实体别名一致，无错误归属"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天唯一 Carmind 相关 event 被正确归到该实体，无漏归"
+            }
+          },
+          {
+            "entity_name": "unknown",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "归属 events 未涉及任何已抽取实体的特征，归为 unknown 合理，无错误归属"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "所有应归为 unknown 的 events 均被正确归属，无漏归"
             }
           }
         ],
         "per_day": {
           "cross_entity_warning_precision": {
             "score": 1.0,
-            "extractor_reported_event_ids": [
-              "97897"
-            ],
-            "true_positive_event_ids": [
-              "97897"
-            ],
+            "extractor_reported_event_ids": [],
+            "true_positive_event_ids": [],
             "false_positive_event_ids": [],
-            "reasoning": "extractor 报告的 event 97897 内容包含 CorpusFlow 链接，且 primary_entity 为 ChatGPT Atlas，确认为跨实体活动"
+            "reasoning": "extractor 未报告任何跨实体告警（cross_entity_warning 为空），分母为 0，保守计 1.0"
           },
           "cross_entity_warning_recall": {
             "score": 1.0,
             "missed_event_ids": [],
-            "reasoning": "当日未发现其他真实跨实体事件，extractor 已完整标记唯一跨实体 event 97897"
+            "reasoning": "未发现涉及已抽取实体的真实跨实体事件，分母为 0，保守计 1.0"
           },
           "overall_quality": {
-            "score": 0.98,
-            "reasoning": "各实体纯度与完整性均达满分，跨实体告警精确无遗漏，实体抽取质量优异"
+            "score": 1.0,
+            "reasoning": "所有实体的纯度和完整性均为 1.0，跨实体告警无错误或遗漏，整体抽取质量优秀"
           }
         }
       }
@@ -1479,37 +1511,46 @@
         "date": "2026-05-07",
         "entities": [
           {
-            "name": "KeyPulse",
+            "name": "GitNexus",
             "type": "project",
-            "aliases": [
-              "keypulse"
-            ],
+            "aliases": [],
             "confidence": 0.95,
             "evidence_event_ids": [
-              "30801",
-              "30809",
-              "30818",
-              "31004",
-              "31007",
-              "31084",
-              "31085",
-              "31087",
-              "35320",
-              "35814",
-              "35816",
-              "32166"
+              "86137"
             ]
           },
           {
             "name": "CorpusFlow",
             "type": "project",
             "aliases": [],
-            "confidence": 0.94,
+            "confidence": 0.92,
             "evidence_event_ids": [
               "28076",
               "30931",
               "31562",
-              "33382"
+              "33382",
+              "30680"
+            ]
+          },
+          {
+            "name": "KeyPulse",
+            "type": "project",
+            "aliases": [
+              "keypulse"
+            ],
+            "confidence": 0.93,
+            "evidence_event_ids": [
+              "30801",
+              "30809",
+              "30818",
+              "35320",
+              "31004",
+              "31007",
+              "31084",
+              "31087",
+              "35814",
+              "35816",
+              "32166"
             ]
           },
           {
@@ -1518,93 +1559,52 @@
             "aliases": [
               "RAGFLOW"
             ],
-            "confidence": 0.85,
+            "confidence": 0.65,
             "evidence_event_ids": [
               "30853",
-              "31236"
+              "28141"
             ]
           },
           {
             "name": "migration_package",
             "type": "project",
             "aliases": [],
-            "confidence": 0.88,
+            "confidence": 0.7,
             "evidence_event_ids": [
+              "32156",
               "30556",
               "30552",
               "30635",
               "30652",
               "30647",
-              "30648",
-              "32156"
+              "30648"
             ]
           },
           {
             "name": "C_Agents",
             "type": "project",
             "aliases": [],
-            "confidence": 0.85,
+            "confidence": 0.5,
             "evidence_event_ids": [
-              "33101",
-              "31453"
+              "33101"
             ]
           },
           {
             "name": "my-slide",
             "type": "project",
             "aliases": [],
-            "confidence": 0.8,
+            "confidence": 0.5,
             "evidence_event_ids": [
               "36678",
               "33446"
             ]
           },
           {
-            "name": "GitNexus",
-            "type": "project",
-            "aliases": [],
-            "confidence": 0.8,
-            "evidence_event_ids": [
-              "86137"
-            ]
-          },
-          {
-            "name": "Assistant",
-            "type": "project",
-            "aliases": [],
-            "confidence": 0.75,
-            "evidence_event_ids": [
-              "28077"
-            ]
-          },
-          {
             "name": "unknown",
             "type": "unknown",
             "aliases": [],
-            "confidence": 0.3,
-            "evidence_event_ids": [
-              "34545",
-              "34546",
-              "34547",
-              "34550",
-              "34551",
-              "34552",
-              "34553",
-              "31107",
-              "31116",
-              "31142",
-              "31145",
-              "31156",
-              "31276",
-              "31287",
-              "31510",
-              "31511",
-              "31532",
-              "30687",
-              "30731",
-              "33027",
-              "33039"
-            ]
+            "confidence": 0.0,
+            "evidence_event_ids": []
           }
         ],
         "event_entity_map": [
@@ -1612,7 +1612,7 @@
             "event_id": "86137",
             "primary_entity": "GitNexus",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.95,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1652,7 +1652,7 @@
             "event_id": "28076",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1682,9 +1682,9 @@
           },
           {
             "event_id": "28077",
-            "primary_entity": "Assistant",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1692,7 +1692,7 @@
             "event_id": "30801",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1700,7 +1700,7 @@
             "event_id": "30809",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1708,7 +1708,7 @@
             "event_id": "30818",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1716,7 +1716,7 @@
             "event_id": "30853",
             "primary_entity": "RAGFlow",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.6,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1724,7 +1724,7 @@
             "event_id": "28135",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.3,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1732,7 +1732,7 @@
             "event_id": "28141",
             "primary_entity": "RAGFlow",
             "secondary_entities": [],
-            "confidence": 0.75,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1741,8 +1741,8 @@
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "未明确提及具体项目，讨论部署策略"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "30931",
@@ -1756,23 +1756,23 @@
             "event_id": "31004",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "31005",
-            "primary_entity": "CorpusFlow",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
-            "needs_review": true,
-            "review_reason": "讨论演示CSV精调，可能关联CorpusFlow但证据不充分"
+            "confidence": 0.4,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "31007",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1780,15 +1780,7 @@
             "event_id": "31084",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
-            "needs_review": false,
-            "review_reason": ""
-          },
-          {
-            "event_id": "31085",
-            "primary_entity": "KeyPulse",
-            "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1796,7 +1788,7 @@
             "event_id": "31087",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1836,7 +1828,7 @@
             "event_id": "31156",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1844,15 +1836,15 @@
             "event_id": "35320",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "31236",
-            "primary_entity": "RAGFlow",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1868,23 +1860,23 @@
             "event_id": "31287",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.3,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "30534",
-            "primary_entity": "CorpusFlow",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
-            "needs_review": true,
-            "review_reason": "问答数据可能用于CorpusFlow但未明确关联"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "30556",
             "primary_entity": "migration_package",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1892,7 +1884,7 @@
             "event_id": "30552",
             "primary_entity": "migration_package",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1900,7 +1892,7 @@
             "event_id": "35814",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1908,7 +1900,7 @@
             "event_id": "35816",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1916,7 +1908,7 @@
             "event_id": "30635",
             "primary_entity": "migration_package",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1924,7 +1916,7 @@
             "event_id": "30652",
             "primary_entity": "migration_package",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1932,7 +1924,7 @@
             "event_id": "30647",
             "primary_entity": "migration_package",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1940,15 +1932,15 @@
             "event_id": "30648",
             "primary_entity": "migration_package",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "31453",
-            "primary_entity": "C_Agents",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.75,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1956,7 +1948,7 @@
             "event_id": "31510",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1980,7 +1972,7 @@
             "event_id": "30680",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1988,7 +1980,7 @@
             "event_id": "30687",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -1996,7 +1988,7 @@
             "event_id": "30731",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2004,7 +1996,7 @@
             "event_id": "31562",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2012,7 +2004,7 @@
             "event_id": "31577",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2020,7 +2012,7 @@
             "event_id": "33027",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2028,7 +2020,7 @@
             "event_id": "33039",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2044,7 +2036,7 @@
             "event_id": "32156",
             "primary_entity": "migration_package",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2052,7 +2044,7 @@
             "event_id": "32166",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2060,7 +2052,7 @@
             "event_id": "33101",
             "primary_entity": "C_Agents",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.5,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2076,7 +2068,7 @@
             "event_id": "36678",
             "primary_entity": "my-slide",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.5,
             "needs_review": false,
             "review_reason": ""
           },
@@ -2084,25 +2076,20 @@
             "event_id": "33446",
             "primary_entity": "my-slide",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.5,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "33535",
-            "primary_entity": "CorpusFlow",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.7,
-            "needs_review": true,
-            "review_reason": "讨论微调数据调研，可能关联CorpusFlow但未明确"
+            "confidence": 0.4,
+            "needs_review": false,
+            "review_reason": ""
           }
         ],
-        "cross_entity_warning": [
-          "event 30885 未明确项目归属，建议人审",
-          "event 31005 可能关联CorpusFlow但证据不足，建议人审",
-          "event 30534 问答数据归属不明确，建议人审",
-          "event 33535 微调数据调研归属存疑，建议人审"
-        ]
+        "cross_entity_warning": []
       },
       "capped_events": [
         {
@@ -2874,16 +2861,16 @@
         "date": "2026-05-07",
         "per_entity": [
           {
-            "entity_name": "KeyPulse",
+            "entity_name": "GitNexus",
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events（如 30801 涉及 keypulse/hud 代码、35320 为 keypulse git 提交）均明确属于 KeyPulse"
+              "reasoning": "归属事件 86137 内容涉及 /gitnexus-web 路径，确属 GitNexus"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天所有 KeyPulse 相关 events（如 30801、35814）均被正确归属"
+              "reasoning": "当天无其他 GitNexus 相关事件，无漏归"
             }
           },
           {
@@ -2891,14 +2878,25 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events（28076 终端窗口标题、31562 git 提交）均明确属于 CorpusFlow"
+              "reasoning": "归属事件 28076、30931、31562、33382、30680 均明确提及 CorpusFlow 项目或相关代码/讨论"
             },
             "entity_completeness": {
-              "score": 0.8,
-              "missing_event_ids": [
-                "33535"
-              ],
-              "reasoning": "event 33535 讨论微调数据调研，与 CorpusFlow 数据生成目标相关但未被归属，true_related_count=5，missing_count=1"
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天 CorpusFlow 相关事件均被正确归属，无漏归"
+            }
+          },
+          {
+            "entity_name": "KeyPulse",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "归属事件 30801、30809、30818、35320、31004、31007、31084、31087、35814、35816、32166 涉及 keypulse 代码路径、git 提交或命令操作，均属 KeyPulse"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天 KeyPulse 相关事件均被正确归属，无漏归"
             }
           },
           {
@@ -2906,14 +2904,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events（30853 提及 RAGFLOW 切块方案、31236 讨论 RAG 方案）均属于 RAGFlow"
+              "reasoning": "归属事件 30853 提及 RAGFLOW 切块方案，28141 窗口标题含 RAGFlow 优化指南，均属 RAGFlow"
             },
             "entity_completeness": {
-              "score": 0.6667,
-              "missing_event_ids": [
-                "28141"
-              ],
-              "reasoning": "event 28141 窗口标题含 RAGFlow 优化指南但未被归属，true_related_count=3，missing_count=1"
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天 RAGFlow 相关事件均被正确归属，无漏归"
             }
           },
           {
@@ -2921,12 +2917,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events（30556、30647 等窗口标题含 migration_package）均正确归属"
+              "reasoning": "归属事件 32156、30556、30552、30635、30652、30647、30648 窗口标题均含 migration_package，确属该实体"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "所有 migration_package 相关 events 均被归属"
+              "reasoning": "当天 migration_package 相关事件均被正确归属，无漏归"
             }
           },
           {
@@ -2934,12 +2930,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events（33101 终端窗口标题、31453 Agent 架构讨论）均属于 C_Agents"
+              "reasoning": "归属事件 33101 窗口标题为 C_Agents 项目，确属该实体"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "所有 C_Agents 相关 events 均被归属"
+              "reasoning": "当天 C_Agents 相关事件均被正确归属，无漏归"
             }
           },
           {
@@ -2947,82 +2943,46 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events（36678 初始化命令、33446 终端窗口）均属于 my-slide"
+              "reasoning": "归属事件 36678 为 my-slide 初始化命令，33446 窗口标题为 my-slide 项目，均属该实体"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "所有 my-slide 相关 events 均被归属"
-            }
-          },
-          {
-            "entity_name": "GitNexus",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 event 86137 明确涉及 GitNexus 项目依赖更新"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "唯一 GitNexus 相关 event 已被归属"
-            }
-          },
-          {
-            "entity_name": "Assistant",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 event 28077 终端窗口标题明确为 Assistant"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "唯一 Assistant 相关 event 已被归属"
+              "reasoning": "当天 my-slide 相关事件均被正确归属，无漏归"
             }
           },
           {
             "entity_name": "unknown",
             "entity_purity": {
-              "score": 1.0,
+              "score": 0.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events 均为无法明确项目的通用操作（如 34545 使用 Chrome），无错误归属"
+              "reasoning": "无归属事件（分母为0），保守赋值0.0"
             },
             "entity_completeness": {
               "score": 0.0,
               "missing_event_ids": [],
-              "reasoning": "unknown 为兜底类别，无明确“应属于 unknown”的事件定义，分母为 0，保守给分"
+              "reasoning": "无明确属于 unknown 的事件（分母为0），保守赋值0.0"
             }
           }
         ],
         "per_day": {
           "cross_entity_warning_precision": {
             "score": 0.0,
-            "extractor_reported_event_ids": [
-              "30885",
-              "31005",
-              "30534",
-              "33535"
-            ],
+            "extractor_reported_event_ids": [],
             "true_positive_event_ids": [],
-            "false_positive_event_ids": [
-              "30885",
-              "31005",
-              "30534",
-              "33535"
-            ],
-            "reasoning": "报告的 4 个事件均未涉及多个实体，仅为归属不明确或单一项目相关，无真实跨实体事件"
+            "false_positive_event_ids": [],
+            "reasoning": "extractor 未报告任何跨实体告警（分母为0），保守赋值0.0"
           },
           "cross_entity_warning_recall": {
             "score": 0.0,
             "missed_event_ids": [
               "28141"
             ],
-            "reasoning": "event 28141 窗口标题同时提及 RAGFlow 和 Mindbones，属于跨实体事件但未被标记 needs_review"
+            "reasoning": "事件 28141 窗口标题同时涉及 RAGFlow 和 Mindbones，属真实跨实体事件，但 extractor 未标记 needs_review；真实跨实体事件共1个，漏标1个，recall=0/1=0.0"
           },
           "overall_quality": {
-            "score": 0.65,
-            "reasoning": "主要项目（KeyPulse、CorpusFlow 等）实体纯度高，但存在 RAGFlow/CorpusFlow 完整性缺失，跨实体告警准确率和召回率均为 0，整体质量中等"
+            "score": 0.85,
+            "reasoning": "各实体纯度和完整性均为1.0，抽取准确；但存在1起跨实体事件漏标，整体质量良好"
           }
         }
       }
@@ -3038,7 +2998,9 @@
           {
             "name": "KeyPulse",
             "type": "project",
-            "aliases": [],
+            "aliases": [
+              "keypulse"
+            ],
             "confidence": 0.98,
             "evidence_event_ids": [
               "89206",
@@ -3062,40 +3024,74 @@
               "89520",
               "89624",
               "89659",
+              "89691",
               "89746",
               "89803",
               "89819",
               "89822",
               "89878",
-              "89880"
+              "89880",
+              "53739",
+              "53804"
             ]
           },
           {
             "name": "Chat Agent",
             "type": "project",
             "aliases": [
-              "CHAT-0410"
+              "CHAT-0410",
+              "chat agent"
             ],
             "confidence": 0.95,
             "evidence_event_ids": [
               "89365",
               "89393",
               "53783",
+              "89421",
               "89635",
               "89636",
+              "53921",
               "89695",
+              "89898",
               "89949",
-              "54018"
+              "54018",
+              "54038",
+              "54044"
             ]
           },
           {
-            "name": "比赛项目",
+            "name": "CorpusFlow",
             "type": "project",
-            "aliases": [],
-            "confidence": 0.9,
+            "aliases": [
+              "CorpusFlow-"
+            ],
+            "confidence": 0.8,
             "evidence_event_ids": [
+              "89480"
+            ]
+          },
+          {
+            "name": "unknown",
+            "type": "unknown",
+            "aliases": [],
+            "confidence": 0.5,
+            "evidence_event_ids": [
+              "53737",
+              "89237",
+              "89257",
               "89335",
-              "89342"
+              "89342",
+              "89372",
+              "89425",
+              "89488",
+              "89491",
+              "89549",
+              "89640",
+              "89641",
+              "89945",
+              "89947",
+              "90075",
+              "90139"
             ]
           }
         ],
@@ -3121,16 +3117,16 @@
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅提及人物名称，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89237",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅为人物百科页面，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89254",
@@ -3142,19 +3138,19 @@
           },
           {
             "event_id": "53739",
-            "primary_entity": "unknown",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "仅提及HUD红问题定位，未明确归属项目"
+            "confidence": 0.85,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89257",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅为命令行参数，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89289",
@@ -3174,17 +3170,17 @@
           },
           {
             "event_id": "89335",
-            "primary_entity": "比赛项目",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "89342",
-            "primary_entity": "比赛项目",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3192,7 +3188,7 @@
             "event_id": "89346",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.98,
+            "confidence": 0.99,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3200,7 +3196,7 @@
             "event_id": "89348",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.98,
+            "confidence": 0.99,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3208,7 +3204,7 @@
             "event_id": "89365",
             "primary_entity": "Chat Agent",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3216,9 +3212,9 @@
             "event_id": "89372",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
-            "needs_review": true,
-            "review_reason": "仅为职位名称，无明确项目关联"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89388",
@@ -3232,7 +3228,7 @@
             "event_id": "89393",
             "primary_entity": "Chat Agent",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3270,31 +3266,27 @@
           },
           {
             "event_id": "89421",
-            "primary_entity": "unknown",
-            "secondary_entities": [
-              "Chat Agent"
-            ],
-            "confidence": 0.5,
-            "needs_review": true,
-            "review_reason": "讨论评测增强，可能关联Chat Agent但证据不明确"
+            "primary_entity": "Chat Agent",
+            "secondary_entities": [],
+            "confidence": 0.75,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "53804",
             "primary_entity": "KeyPulse",
-            "secondary_entities": [
-              "Chat Agent"
-            ],
-            "confidence": 0.55,
-            "needs_review": true,
-            "review_reason": "同时提及KeyPulse日报和实时语音Agent解决方案（可能关联Chat Agent）"
+            "secondary_entities": [],
+            "confidence": 0.8,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89425",
             "primary_entity": "unknown",
             "secondary_entities": [],
             "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅为研讨会标题，无明确项目关联"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89437",
@@ -3332,33 +3324,33 @@
             "event_id": "89476",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.98,
+            "confidence": 0.99,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "89480",
-            "primary_entity": "unknown",
+            "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.2,
-            "needs_review": true,
-            "review_reason": "仅为平台名称，无明确项目关联"
+            "confidence": 0.8,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89488",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
-            "needs_review": true,
-            "review_reason": "Daily文档可能关联KeyPulse，但需确认"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89491",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
-            "needs_review": true,
-            "review_reason": "Daily文档可能关联KeyPulse，但需确认"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89509",
@@ -3386,11 +3378,11 @@
           },
           {
             "event_id": "89549",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
-            "needs_review": true,
-            "review_reason": "Daily文档可能关联KeyPulse，但需确认"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89624",
@@ -3404,7 +3396,7 @@
             "event_id": "89635",
             "primary_entity": "Chat Agent",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3412,7 +3404,7 @@
             "event_id": "89636",
             "primary_entity": "Chat Agent",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3420,23 +3412,23 @@
             "event_id": "89640",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.1,
-            "needs_review": true,
-            "review_reason": "仅为错误命令，无明确项目关联"
+            "confidence": 0.2,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89641",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.1,
-            "needs_review": true,
-            "review_reason": "仅为目录切换命令，无明确项目关联"
+            "confidence": 0.2,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89659",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.98,
+            "confidence": 0.99,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3444,9 +3436,9 @@
             "event_id": "89691",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.85,
-            "needs_review": true,
-            "review_reason": "提及weekly代码结构，可能关联KeyPulse但需确认"
+            "confidence": 0.9,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "53921",
@@ -3517,30 +3509,30 @@
             "primary_entity": "Chat Agent",
             "secondary_entities": [],
             "confidence": 0.85,
-            "needs_review": true,
-            "review_reason": "讨论地点slot解析，可能关联Chat Agent但需确认"
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89945",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
-            "needs_review": true,
-            "review_reason": "仅为社区名称，无明确项目关联"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89947",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.2,
-            "needs_review": true,
-            "review_reason": "仅为社区名称，无明确项目关联"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "89949",
             "primary_entity": "Chat Agent",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.99,
             "needs_review": false,
             "review_reason": ""
           },
@@ -3554,46 +3546,38 @@
           },
           {
             "event_id": "54038",
-            "primary_entity": "unknown",
-            "secondary_entities": [
-              "Chat Agent"
-            ],
-            "confidence": 0.5,
-            "needs_review": true,
-            "review_reason": "讨论评测集设计，可能关联Chat Agent但证据不明确"
+            "primary_entity": "Chat Agent",
+            "secondary_entities": [],
+            "confidence": 0.9,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "54044",
-            "primary_entity": "unknown",
-            "secondary_entities": [
-              "Chat Agent"
-            ],
-            "confidence": 0.5,
-            "needs_review": true,
-            "review_reason": "讨论边界案例，可能关联Chat Agent但证据不明确"
+            "primary_entity": "Chat Agent",
+            "secondary_entities": [],
+            "confidence": 0.9,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "90075",
             "primary_entity": "unknown",
-            "secondary_entities": [
-              "KeyPulse"
-            ],
-            "confidence": 0.6,
-            "needs_review": true,
-            "review_reason": "Weekly汇报可能关联KeyPulse，但需确认"
+            "secondary_entities": [],
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "90139",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
-            "needs_review": true,
-            "review_reason": "Daily文档可能关联KeyPulse，但需确认"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           }
         ],
-        "cross_entity_warning": [
-          "event 53804 涉及KeyPulse和Chat Agent两个独立项目活动，建议人审"
-        ]
+        "cross_entity_warning": []
       },
       "capped_events": [
         {
@@ -4403,19 +4387,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 的 file_paths 包含 keypulse 或 content_text 明确涉及 KeyPulse 开发活动，无错误归属"
+              "reasoning": "所有归属 events 均涉及 KeyPulse 项目代码、git 提交或直接提及，无错误归属"
             },
             "entity_completeness": {
-              "score": 0.82,
-              "missing_event_ids": [
-                "89488",
-                "89491",
-                "89549",
-                "89691",
-                "90139",
-                "53804"
-              ],
-              "reasoning": "event 89488/89491/89549/90139 为 Daily 文档可能关联 KeyPulse，89691 提及 'kp weekly run'（kp 为 KeyPulse 缩写），53804 明确涉及 KeyPulse 日报，但均未被归到 KeyPulse 的 evidence_event_ids 中。true_related_count=33，missing_count=6，completeness=1-6/33≈0.82"
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天所有 KeyPulse 相关 events 均被正确归到该实体，无漏归"
             }
           },
           {
@@ -4423,53 +4400,57 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 的 content_text 明确提及 Chat Agent 能力、测试或项目路径（CHAT-0410），无错误归属"
-            },
-            "entity_completeness": {
-              "score": 0.67,
-              "missing_event_ids": [
-                "53921",
-                "89898",
-                "54038",
-                "54044"
-              ],
-              "reasoning": "event 53921 明确整理 Chat Agent 项目结构，89898 讨论 Chat Agent 相关的 slot 解析，54038/54044 讨论 Chat Agent 评测集设计与边界案例，但均未被归到 Chat Agent 的 evidence_event_ids 中。true_related_count=12，missing_count=4，completeness=1-4/12≈0.67"
-            }
-          },
-          {
-            "entity_name": "比赛项目",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 events 89335/89342 均明确涉及复赛、赛会相关内容，无错误归属"
+              "reasoning": "所有归属 events 均涉及 Chat Agent 能力描述、代码路径或评测讨论，无错误归属"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天涉及比赛项目的 events 仅有 89335/89342，均被正确归到该实体"
+              "reasoning": "当天所有 Chat Agent 相关 events 均被正确归到该实体，无漏归"
+            }
+          },
+          {
+            "entity_name": "CorpusFlow",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "归属 event 89480 明确提及 CorpusFlow 项目，无错误归属"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天唯一 CorpusFlow 相关 event 89480 已被归到该实体，无漏归"
+            }
+          },
+          {
+            "entity_name": "unknown",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "所有归属 events 均不涉及 KeyPulse、Chat Agent 或 CorpusFlow，符合 unknown 定义"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天所有无法归属到已知实体的 events 均被正确归到 unknown，无漏归"
             }
           }
         ],
         "per_day": {
           "cross_entity_warning_precision": {
             "score": 1.0,
-            "extractor_reported_event_ids": [
-              "53804"
-            ],
-            "true_positive_event_ids": [
-              "53804"
-            ],
+            "extractor_reported_event_ids": [],
+            "true_positive_event_ids": [],
             "false_positive_event_ids": [],
-            "reasoning": "extractor 报告的 event 53804 经检视同时涉及 KeyPulse（日报）和 Chat Agent（实时语音 Agent 解决方案），确认为跨实体事件"
+            "reasoning": "extractor 未报告任何跨实体告警（reported=0），保守计为无错误，precision=1.0"
           },
           "cross_entity_warning_recall": {
             "score": 1.0,
             "missed_event_ids": [],
-            "reasoning": "当天真实跨实体事件仅 53804，已被 extractor 标记，无遗漏"
+            "reasoning": "经检视当天无真实跨实体事件（true_cross=0），无需报告，recall=1.0"
           },
           "overall_quality": {
-            "score": 0.9,
-            "reasoning": "KeyPulse 和比赛项目实体边界清晰，抽取纯度和完整性较高；Chat Agent 存在少量漏归但核心事件已覆盖；跨实体告警准确且无遗漏，整体抽取质量良好"
+            "score": 1.0,
+            "reasoning": "各实体归属准确率和完整性均为1.0，跨实体告警无误报漏报，整体抽取质量优异"
           }
         }
       }
@@ -4483,10 +4464,30 @@
         "date": "2026-05-21",
         "entities": [
           {
+            "name": "KeyPulse",
+            "type": "project",
+            "aliases": [
+              "keypulse",
+              "homebrew-keypulse"
+            ],
+            "confidence": 0.95,
+            "evidence_event_ids": [
+              "99206",
+              "99298",
+              "99301",
+              "100163",
+              "101912",
+              "102092",
+              "103859",
+              "104559",
+              "105893"
+            ]
+          },
+          {
             "name": "CHAT-0410",
             "type": "project",
             "aliases": [],
-            "confidence": 0.95,
+            "confidence": 0.93,
             "evidence_event_ids": [
               "99156",
               "99318",
@@ -4500,23 +4501,6 @@
               "104351",
               "104356",
               "104506"
-            ]
-          },
-          {
-            "name": "keypulse",
-            "type": "project",
-            "aliases": [],
-            "confidence": 0.95,
-            "evidence_event_ids": [
-              "99206",
-              "99298",
-              "99301",
-              "100163",
-              "101912",
-              "102092",
-              "103859",
-              "104559",
-              "105893"
             ]
           },
           {
@@ -4535,11 +4519,10 @@
             "name": "Carmind_code",
             "type": "project",
             "aliases": [],
-            "confidence": 0.9,
+            "confidence": 0.88,
             "evidence_event_ids": [
               "99933",
               "99934",
-              "99949",
               "100837",
               "104041"
             ]
@@ -4548,7 +4531,7 @@
             "name": "Log_analysis",
             "type": "project",
             "aliases": [],
-            "confidence": 0.88,
+            "confidence": 0.85,
             "evidence_event_ids": [
               "99422",
               "99423",
@@ -4557,28 +4540,13 @@
             ]
           },
           {
-            "name": "Mindbones",
-            "type": "project",
-            "aliases": [],
-            "confidence": 0.8,
-            "evidence_event_ids": [
-              "99968"
-            ]
-          },
-          {
-            "name": "finance",
-            "type": "project",
-            "aliases": [],
-            "confidence": 0.8,
-            "evidence_event_ids": [
-              "99521"
-            ]
-          },
-          {
             "name": "Career_harness",
             "type": "project",
-            "aliases": [],
-            "confidence": 0.85,
+            "aliases": [
+              "MCP-Boss",
+              "boss-agent-cli"
+            ],
+            "confidence": 0.8,
             "evidence_event_ids": [
               "103692",
               "103829",
@@ -4588,33 +4556,41 @@
             ]
           },
           {
-            "name": "Lark Helper",
-            "type": "app",
+            "name": "Mindbones",
+            "type": "project",
             "aliases": [],
-            "confidence": 0.85,
+            "confidence": 0.75,
             "evidence_event_ids": [
-              "99218"
+              "99968"
+            ]
+          },
+          {
+            "name": "Agent_Runtime_PoC",
+            "type": "project",
+            "aliases": [
+              "Agent_Runtime_PoC_工程"
+            ],
+            "confidence": 0.7,
+            "evidence_event_ids": [
+              "99949",
+              "100421"
+            ]
+          },
+          {
+            "name": "Finance",
+            "type": "project",
+            "aliases": [],
+            "confidence": 0.65,
+            "evidence_event_ids": [
+              "99521"
             ]
           },
           {
             "name": "unknown",
             "type": "unknown",
             "aliases": [],
-            "confidence": 0.5,
-            "evidence_event_ids": [
-              "99614",
-              "99615",
-              "100039",
-              "100985",
-              "101196",
-              "101197",
-              "101841",
-              "102419",
-              "102420",
-              "102421",
-              "103828",
-              "104779"
-            ]
+            "confidence": 0.0,
+            "evidence_event_ids": []
           }
         ],
         "event_entity_map": [
@@ -4622,13 +4598,13 @@
             "event_id": "99156",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "99206",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
             "confidence": 0.95,
             "needs_review": false,
@@ -4636,15 +4612,15 @@
           },
           {
             "event_id": "99218",
-            "primary_entity": "Lark Helper",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "99298",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
             "confidence": 0.95,
             "needs_review": false,
@@ -4654,7 +4630,7 @@
             "event_id": "99318",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4662,13 +4638,13 @@
             "event_id": "99782",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "99301",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
             "confidence": 0.95,
             "needs_review": false,
@@ -4678,7 +4654,7 @@
             "event_id": "99352",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4686,7 +4662,7 @@
             "event_id": "99463",
             "primary_entity": "Carmind_code",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4694,7 +4670,7 @@
             "event_id": "99422",
             "primary_entity": "Log_analysis",
             "secondary_entities": [],
-            "confidence": 0.88,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4702,7 +4678,7 @@
             "event_id": "99423",
             "primary_entity": "Log_analysis",
             "secondary_entities": [],
-            "confidence": 0.88,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4718,7 +4694,7 @@
             "event_id": "99516",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4726,23 +4702,23 @@
             "event_id": "99614",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "通用项目交付文档，无明确实体归属"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "99615",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "通用任务规划文档，无明确实体归属"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "99521",
-            "primary_entity": "finance",
+            "primary_entity": "Finance",
             "secondary_entities": [],
-            "confidence": 0.8,
+            "confidence": 0.65,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4750,15 +4726,15 @@
             "event_id": "99950",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "仅工具命令片段，无实体上下文"
+            "confidence": 0.2,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "99933",
             "primary_entity": "Carmind_code",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4772,9 +4748,9 @@
           },
           {
             "event_id": "99949",
-            "primary_entity": "Carmind_code",
+            "primary_entity": "Agent_Runtime_PoC",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4782,7 +4758,7 @@
             "event_id": "99968",
             "primary_entity": "Mindbones",
             "secondary_entities": [],
-            "confidence": 0.8,
+            "confidence": 0.75,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4790,7 +4766,7 @@
             "event_id": "100041",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4798,23 +4774,23 @@
             "event_id": "100039",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.45,
-            "needs_review": true,
-            "review_reason": "评审反馈，未明确关联项目"
+            "confidence": 0.4,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "100092",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.35,
-            "needs_review": true,
-            "review_reason": "仅Github操作片段，无实体上下文"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "100163",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4822,7 +4798,7 @@
             "event_id": "100325",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4830,15 +4806,15 @@
             "event_id": "100330",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "100421",
-            "primary_entity": "Carmind_code",
+            "primary_entity": "Agent_Runtime_PoC",
             "secondary_entities": [],
-            "confidence": 0.8,
+            "confidence": 0.65,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4846,7 +4822,7 @@
             "event_id": "100422",
             "primary_entity": "Log_analysis",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.75,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4854,15 +4830,15 @@
             "event_id": "100387",
             "primary_entity": "Log_analysis",
             "secondary_entities": [],
-            "confidence": 0.88,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "100620",
-            "primary_entity": "Carmind_code",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.75,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4870,7 +4846,7 @@
             "event_id": "100783",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4878,7 +4854,7 @@
             "event_id": "100819",
             "primary_entity": "Log_analysis",
             "secondary_entities": [],
-            "confidence": 0.88,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4894,45 +4870,45 @@
             "event_id": "100985",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "日常文档，无明确实体归属"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "101196",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "周报文档，无明确实体归属"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "101197",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "周报文档，无明确实体归属"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "101841",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "命令行片段，无实体上下文"
+            "confidence": 0.2,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "101868",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "101912",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
             "confidence": 0.95,
             "needs_review": false,
@@ -4940,9 +4916,9 @@
           },
           {
             "event_id": "102092",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4950,31 +4926,31 @@
             "event_id": "102419",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "历史日常文档，无明确实体归属"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "102420",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "历史日常文档，无明确实体归属"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "102421",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "历史日常文档，无明确实体归属"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "103523",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.95,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4982,7 +4958,7 @@
             "event_id": "103596",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4990,7 +4966,7 @@
             "event_id": "103692",
             "primary_entity": "Career_harness",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.75,
             "needs_review": false,
             "review_reason": ""
           },
@@ -4998,9 +4974,9 @@
             "event_id": "103828",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.3,
-            "needs_review": true,
-            "review_reason": "目录切换命令，无实体上下文"
+            "confidence": 0.2,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "103829",
@@ -5014,13 +4990,13 @@
             "event_id": "103706",
             "primary_entity": "Career_harness",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "103859",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
             "confidence": 0.95,
             "needs_review": false,
@@ -5038,7 +5014,7 @@
             "event_id": "104041",
             "primary_entity": "Carmind_code",
             "secondary_entities": [],
-            "confidence": 0.9,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -5046,13 +5022,13 @@
             "event_id": "104506",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "104559",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
             "confidence": 0.95,
             "needs_review": false,
@@ -5062,7 +5038,7 @@
             "event_id": "104351",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -5070,7 +5046,7 @@
             "event_id": "104356",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -5078,21 +5054,21 @@
             "event_id": "104779",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.45,
-            "needs_review": true,
-            "review_reason": "原型描述，未明确关联项目"
+            "confidence": 0.4,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "105289",
             "primary_entity": "Career_harness",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "105893",
-            "primary_entity": "keypulse",
+            "primary_entity": "KeyPulse",
             "secondary_entities": [],
             "confidence": 0.95,
             "needs_review": false,
@@ -5875,29 +5851,29 @@
         "date": "2026-05-21",
         "per_entity": [
           {
+            "entity_name": "KeyPulse",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "所有归属 events 均涉及 keypulse 项目文件路径、窗口标题或 git 提交，归属准确"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天所有 KeyPulse 相关 events 均被正确归到该实体"
+            }
+          },
+          {
             "entity_name": "CHAT-0410",
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 的 file_paths、window_title 或 work_unit 均明确指向 CHAT-0410 项目"
+              "reasoning": "所有归属 events 均涉及 CHAT-0410 项目文件路径或窗口标题，归属准确"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天所有涉及 CHAT-0410 的 events 均被正确归到该实体"
-            }
-          },
-          {
-            "entity_name": "keypulse",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "所有归属 events 的 file_paths、window_title 或 work_unit 均明确指向 keypulse 项目"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "当天所有涉及 keypulse 的 events 均被正确归到该实体"
+              "reasoning": "当天所有 CHAT-0410 相关 events 均被正确归到该实体"
             }
           },
           {
@@ -5905,12 +5881,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 的 window_title 或 work_unit 均明确指向 CorpusFlow 项目"
+              "reasoning": "所有归属 events 均涉及 CorpusFlow 项目窗口标题或文件路径，归属准确"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天所有涉及 CorpusFlow 的 events 均被正确归到该实体"
+              "reasoning": "当天所有 CorpusFlow 相关 events 均被正确归到该实体"
             }
           },
           {
@@ -5918,14 +5894,14 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 的 window_title 或内容均与车载语音交互需求相关，符合 Carmind_code 项目定位"
+              "reasoning": "所有归属 events 均涉及 Carmind_code 项目窗口标题或相关需求讨论，归属准确"
             },
             "entity_completeness": {
-              "score": 0.83,
+              "score": 0.8,
               "missing_event_ids": [
                 "99463"
               ],
-              "reasoning": "event 99463 涉及车载语音交互需求，属于 Carmind_code 但未被归到该实体（assigned_count=6，missing_count=1，completeness=1-1/6≈0.83）"
+              "reasoning": "event 99463 涉及车载语音交互需求（Carmind_code 核心领域）但未被纳入 evidence_event_ids，true_related_count=5，missing_count=1"
             }
           },
           {
@@ -5933,40 +5909,14 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 的 window_title 均明确指向 Log_analysis 项目"
+              "reasoning": "所有归属 events 均涉及 Log_analysis 项目窗口标题或日志处理内容，归属准确"
             },
             "entity_completeness": {
               "score": 0.8,
               "missing_event_ids": [
                 "100422"
               ],
-              "reasoning": "event 100422 涉及日志数据处理，属于 Log_analysis 但未被归到该实体（assigned_count=5，missing_count=1，completeness=1-1/5=0.8）"
-            }
-          },
-          {
-            "entity_name": "Mindbones",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 event 99968 的 window_title 明确指向 Mindbones 项目"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "当天仅 event 99968 涉及 Mindbones，已被正确归属"
-            }
-          },
-          {
-            "entity_name": "finance",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 event 99521 的 window_title 明确指向 finance 项目"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "当天仅 event 99521 涉及 finance，已被正确归属"
+              "reasoning": "event 100422 涉及批量日志数据处理（Log_analysis 核心任务）但未被纳入 evidence_event_ids，true_related_count=5，missing_count=1"
             }
           },
           {
@@ -5974,57 +5924,83 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 的 window_title、命令或内容均与 Career_harness 项目相关"
+              "reasoning": "所有归属 events 均涉及 Career_harness 项目路径、窗口标题或其别名（MCP-Boss、boss-agent-cli），归属准确"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天所有涉及 Career_harness 的 events 均被正确归到该实体"
+              "reasoning": "当天所有 Career_harness 相关 events 均被正确归到该实体"
             }
           },
           {
-            "entity_name": "Lark Helper",
+            "entity_name": "Mindbones",
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 event 99218 的 work_unit 明确指向 Lark Helper 应用"
+              "reasoning": "归属 event 99968 涉及 Mindbones 项目窗口标题及代码内容，归属准确"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天仅 event 99218 涉及 Lark Helper，已被正确归属"
+              "reasoning": "当天唯一 Mindbones 相关 event 已被正确归到该实体"
+            }
+          },
+          {
+            "entity_name": "Agent_Runtime_PoC",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "所有归属 events 均涉及 Agent_Runtime_PoC 工程文档或需求讨论，归属准确"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天所有 Agent_Runtime_PoC 相关 events 均被正确归到该实体"
+            }
+          },
+          {
+            "entity_name": "Finance",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "归属 event 99521 涉及 finance 项目窗口标题，归属准确"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天唯一 Finance 相关 event 已被正确归到该实体"
             }
           },
           {
             "entity_name": "unknown",
             "entity_purity": {
-              "score": 1.0,
+              "score": 0.5,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 均为通用文档、命令片段或无明确实体归属内容，归为 unknown 合理"
+              "reasoning": "evidence_event_ids 为空，分母为 0，保守给分"
             },
             "entity_completeness": {
-              "score": 1.0,
+              "score": 0.5,
               "missing_event_ids": [],
-              "reasoning": "当天无明确实体归属的 events 均被正确归到 unknown"
+              "reasoning": "无明确属于 unknown 的事件，true_related_count 为 0，保守给分"
             }
           }
         ],
         "per_day": {
           "cross_entity_warning_precision": {
-            "score": 0.0,
+            "score": 1.0,
             "extractor_reported_event_ids": [],
             "true_positive_event_ids": [],
             "false_positive_event_ids": [],
-            "reasoning": "extractor 未报告任何跨实体告警（reported=0），按规则保守赋值 0.0"
+            "reasoning": "extractor 未报告任何跨实体告警（cross_entity_warning 为空），无 false positive，precision 为 1.0"
           },
           "cross_entity_warning_recall": {
-            "score": 0.0,
+            "score": 1.0,
             "missed_event_ids": [],
-            "reasoning": "当天无真实跨实体事件（true_cross=0），按规则保守赋值 0.0"
+            "reasoning": "经检视所有 events，未发现涉及多个实体的真实跨实体事件，故无 missed event，recall 为 1.0"
           },
           "overall_quality": {
-            "score": 0.92,
-            "reasoning": "主要项目（CHAT-0410、keypulse 等）实体边界清晰，归属准确；仅 Carmind_code 和 Log_analysis 各遗漏 1 个事件，整体抽取质量良好"
+            "score": 0.95,
+            "reasoning": "主要实体（KeyPulse、CHAT-0410 等）纯度和完整性均为 1.0，仅 Carmind_code 和 Log_analysis 各遗漏 1 个事件，跨实体告警准确，整体质量优秀"
           }
         }
       }
@@ -6040,8 +6016,10 @@
           {
             "name": "KeyPulse",
             "type": "project",
-            "aliases": [],
-            "confidence": 0.95,
+            "aliases": [
+              "keypulse"
+            ],
+            "confidence": 0.98,
             "evidence_event_ids": [
               "84417",
               "31644",
@@ -6053,14 +6031,9 @@
               "27436",
               "27433",
               "27449",
-              "27749",
-              "27746",
               "31873",
-              "27773",
-              "31655",
-              "32112",
-              "32118",
-              "32127"
+              "27749",
+              "27746"
             ]
           },
           {
@@ -6078,79 +6051,26 @@
           {
             "name": "CorpusFlow",
             "type": "project",
-            "aliases": [],
+            "aliases": [
+              "corpusflow"
+            ],
             "confidence": 0.92,
             "evidence_event_ids": [
               "27297",
               "31658",
               "84583",
-              "31773",
-              "31775",
-              "31777",
-              "31779",
               "27480",
               "27464",
               "31906",
-              "27769",
-              "27766",
-              "27785",
-              "28018"
+              "27766"
             ]
           },
           {
-            "name": "RAG项目",
-            "type": "project",
-            "aliases": [],
-            "confidence": 0.75,
-            "evidence_event_ids": [
-              "31993",
-              "27313",
-              "27611"
-            ]
-          },
-          {
-            "name": "奇瑞股价分析",
-            "type": "workflow",
-            "aliases": [],
-            "confidence": 0.7,
-            "evidence_event_ids": [
-              "31690"
-            ]
-          },
-          {
-            "name": "个人事务",
+            "name": "unknown",
             "type": "unknown",
             "aliases": [],
-            "confidence": 0.65,
-            "evidence_event_ids": [
-              "32085",
-              "32141"
-            ]
-          },
-          {
-            "name": "工具使用",
-            "type": "workflow",
-            "aliases": [],
-            "confidence": 0.6,
-            "evidence_event_ids": [
-              "84420",
-              "84421",
-              "84422",
-              "84423",
-              "84424",
-              "84425",
-              "84428",
-              "84429",
-              "27282",
-              "31653",
-              "31654",
-              "27286",
-              "27392",
-              "85523",
-              "85524",
-              "32007",
-              "32010"
-            ]
+            "confidence": 0.0,
+            "evidence_event_ids": []
           }
         ],
         "event_entity_map": [
@@ -6158,7 +6078,7 @@
             "event_id": "84417",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.98,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6166,87 +6086,87 @@
             "event_id": "31644",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.98,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "84420",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "84421",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "27283",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "84422",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "27282",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "84423",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "84424",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "84425",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "84428",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "84429",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6254,7 +6174,7 @@
             "event_id": "27284",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.98,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6276,25 +6196,25 @@
           },
           {
             "event_id": "27286",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.2,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "31653",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "31654",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6310,7 +6230,7 @@
             "event_id": "27297",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6318,15 +6238,15 @@
             "event_id": "31658",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "31690",
-            "primary_entity": "奇瑞股价分析",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.7,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6334,31 +6254,31 @@
             "event_id": "84583",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.95,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "27313",
-            "primary_entity": "RAG项目",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.75,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "31773",
-            "primary_entity": "CorpusFlow",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "31775",
-            "primary_entity": "CorpusFlow",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6366,7 +6286,7 @@
             "event_id": "31777",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.75,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6374,15 +6294,15 @@
             "event_id": "31779",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.75,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "27392",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6446,7 +6366,7 @@
             "event_id": "27480",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.95,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6462,15 +6382,15 @@
             "event_id": "27464",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.95,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "27611",
-            "primary_entity": "RAG项目",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.75,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6485,10 +6405,12 @@
           {
             "event_id": "27746",
             "primary_entity": "KeyPulse",
-            "secondary_entities": [],
-            "confidence": 0.95,
-            "needs_review": false,
-            "review_reason": ""
+            "secondary_entities": [
+              "CorpusFlow"
+            ],
+            "confidence": 0.55,
+            "needs_review": true,
+            "review_reason": "同一事件包含KeyPulse和CorpusFlow两个独立项目活动"
           },
           {
             "event_id": "31873",
@@ -6502,15 +6424,15 @@
             "event_id": "31906",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.95,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "27769",
-            "primary_entity": "CorpusFlow",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6518,7 +6440,7 @@
             "event_id": "27766",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6526,7 +6448,7 @@
             "event_id": "27773",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6534,55 +6456,55 @@
             "event_id": "27785",
             "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.92,
-            "needs_review": false,
-            "review_reason": ""
-          },
-          {
-            "event_id": "85523",
-            "primary_entity": "工具使用",
-            "secondary_entities": [],
-            "confidence": 0.6,
-            "needs_review": false,
-            "review_reason": ""
-          },
-          {
-            "event_id": "85524",
-            "primary_entity": "工具使用",
-            "secondary_entities": [],
-            "confidence": 0.6,
-            "needs_review": false,
-            "review_reason": ""
-          },
-          {
-            "event_id": "31993",
-            "primary_entity": "RAG项目",
-            "secondary_entities": [],
             "confidence": 0.75,
             "needs_review": false,
             "review_reason": ""
           },
           {
-            "event_id": "32007",
-            "primary_entity": "工具使用",
+            "event_id": "85523",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
+          },
+          {
+            "event_id": "85524",
+            "primary_entity": "unknown",
+            "secondary_entities": [],
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
+          },
+          {
+            "event_id": "31993",
+            "primary_entity": "unknown",
+            "secondary_entities": [],
+            "confidence": 0.4,
+            "needs_review": false,
+            "review_reason": ""
+          },
+          {
+            "event_id": "32007",
+            "primary_entity": "unknown",
+            "secondary_entities": [],
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "32010",
-            "primary_entity": "工具使用",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.6,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "32085",
-            "primary_entity": "个人事务",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.65,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6590,23 +6512,23 @@
             "event_id": "32112",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.85,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "32118",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "CorpusFlow",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "32127",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -6620,22 +6542,24 @@
           },
           {
             "event_id": "32141",
-            "primary_entity": "个人事务",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.65,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "28018",
-            "primary_entity": "CorpusFlow",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.92,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           }
         ],
-        "cross_entity_warning": []
+        "cross_entity_warning": [
+          "event 27746 涉及KeyPulse和CorpusFlow两个独立项目活动，建议人审"
+        ]
       },
       "capped_events": [
         {
@@ -7409,16 +7333,14 @@
           {
             "entity_name": "KeyPulse",
             "entity_purity": {
-              "score": 0.94,
-              "wrong_event_ids": [
-                "32118"
-              ],
-              "reasoning": "event 32118 内容涉及指令微调模式和多轮配置，更符合 CorpusFlow 的功能定位，被错归到 KeyPulse"
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "所有归属 events 均涉及 KeyPulse 项目开发、文档评审或功能优化，如 event 84417 的 HUD 修复、27284 的项目背景描述等，内容与实体高度相关"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "所有属于 KeyPulse 的 events 均被正确归到该实体"
+              "reasoning": "当天涉及 KeyPulse 的事件（如 31655 的 HUD 启动命令、27773 的 HUD 状态栏行为描述、32112 的采集异常处理）均被正确归到该实体，无漏归"
             }
           },
           {
@@ -7426,12 +7348,12 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 均为 GitNexus 仓库开发活动"
+              "reasoning": "归属 events 均为 GitNexus 项目的代码提交（如 84455 修复 CI 超时、84456 添加健康检查端点），file_paths 和 work_unit 均明确指向该项目"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "所有属于 GitNexus 的 events 均被正确归到该实体"
+              "reasoning": "当天所有 GitNexus 相关事件（4 条 git_log 记录）均被正确归属，无错归或漏归"
             }
           },
           {
@@ -7439,85 +7361,35 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 均符合 CorpusFlow 指令微调数据生成平台的定位"
-            },
-            "entity_completeness": {
-              "score": 0.93,
-              "missing_event_ids": [
-                "32118"
-              ],
-              "reasoning": "event 32118 涉及指令微调与多轮配置，属于 CorpusFlow 但被归到 KeyPulse"
-            }
-          },
-          {
-            "entity_name": "RAG项目",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "所有归属 events 均明确涉及 RAG 项目相关内容"
+              "reasoning": "归属 events 涉及 CorpusFlow 的功能定义（84583）、批量 Query 生成需求（27297）、GitHub 仓库（31906）等，内容与实体匹配度高"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "所有属于 RAG 项目的 events 均被正确归到该实体"
-            }
-          },
-          {
-            "entity_name": "奇瑞股价分析",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 event 31690 内容为奇瑞股价波动原因分析，符合实体定义"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "唯一属于该实体的 event 31690 被正确归到"
-            }
-          },
-          {
-            "entity_name": "个人事务",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 events 32085（转租）和 32141（简历）均为个人事务"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "所有属于个人事务的 events 均被正确归到该实体"
-            }
-          },
-          {
-            "entity_name": "工具使用",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "所有归属 events 均为 Terminal、Chrome 等工具的使用记录"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "所有属于工具使用的 events 均被正确归到该实体"
+              "reasoning": "当天 CorpusFlow 相关事件（如 31777 的指令微调问题、27785 的 System Prompt 配置）均被正确归属，无漏归"
             }
           }
         ],
         "per_day": {
           "cross_entity_warning_precision": {
             "score": 1.0,
-            "extractor_reported_event_ids": [],
-            "true_positive_event_ids": [],
+            "extractor_reported_event_ids": [
+              "27746"
+            ],
+            "true_positive_event_ids": [
+              "27746"
+            ],
             "false_positive_event_ids": [],
-            "reasoning": "extractor 未报告任何跨实体告警，无 false positive"
+            "reasoning": "extractor 报告的 event 27746 经检视确实同时涉及 KeyPulse（项目文档评审）和 CorpusFlow（提及项目名），为真实跨实体事件"
           },
           "cross_entity_warning_recall": {
             "score": 1.0,
             "missed_event_ids": [],
-            "reasoning": "当天无真实跨实体事件，无漏标"
+            "reasoning": "当天所有真实跨实体事件（仅 event 27746）均被 extractor 标记，无遗漏"
           },
           "overall_quality": {
-            "score": 0.95,
-            "reasoning": "主要项目（KeyPulse、GitNexus、CorpusFlow）抽取准确，仅存在1起实体错归事件，跨实体告警无漏报误报"
+            "score": 0.98,
+            "reasoning": "三大项目实体归属准确率高（purity 和 completeness 均为 1.0），跨实体告警精确（precision 和 recall 均为 1.0），整体抽取质量优秀"
           }
         }
       }
@@ -7533,7 +7405,9 @@
           {
             "name": "KeyPulse",
             "type": "project",
-            "aliases": [],
+            "aliases": [
+              "keypulse"
+            ],
             "confidence": 0.95,
             "evidence_event_ids": [
               "88477",
@@ -7584,50 +7458,34 @@
               "88616",
               "88617",
               "88619",
-              "88621",
-              "88555"
+              "88621"
             ]
           },
           {
-            "name": "简历准备",
-            "type": "workflow",
+            "name": "CorpusFlow",
+            "type": "project",
             "aliases": [],
-            "confidence": 0.85,
+            "confidence": 0.6,
             "evidence_event_ids": [
-              "53414",
-              "53419",
-              "53438",
-              "53440"
+              "88606"
             ]
           },
           {
-            "name": "泰晶科技分析",
-            "type": "analysis_task",
-            "aliases": [
-              "泰晶科技"
-            ],
-            "confidence": 0.7,
-            "evidence_event_ids": [
-              "88497"
-            ]
-          },
-          {
-            "name": "unknown",
+            "name": "泰晶科技",
             "type": "unknown",
             "aliases": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "evidence_event_ids": [
-              "53425",
-              "88560"
+              "88497"
             ]
           }
         ],
         "event_entity_map": [
           {
             "event_id": "53414",
-            "primary_entity": "简历准备",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7641,9 +7499,9 @@
           },
           {
             "event_id": "53419",
-            "primary_entity": "简历准备",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7683,7 +7541,7 @@
             "event_id": "53425",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.2,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7691,15 +7549,15 @@
             "event_id": "88495",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "88497",
-            "primary_entity": "泰晶科技分析",
+            "primary_entity": "泰晶科技",
             "secondary_entities": [],
-            "confidence": 0.7,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7715,7 +7573,7 @@
             "event_id": "88501",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7731,9 +7589,9 @@
             "event_id": "88503",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "内容模糊，无法明确归属实体"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "88506",
@@ -7867,7 +7725,7 @@
             "event_id": "88546",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7875,7 +7733,7 @@
             "event_id": "88547",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7897,41 +7755,41 @@
           },
           {
             "event_id": "88555",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
-            "needs_review": true,
-            "review_reason": "本地回调URL可能与KeyPulse相关，但证据较弱"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "88556",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "金融数据集网站浏览，未明确项目关联"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "88557",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.4,
-            "needs_review": true,
-            "review_reason": "招聘页面浏览，未明确项目关联"
+            "confidence": 0.3,
+            "needs_review": false,
+            "review_reason": ""
           },
           {
             "event_id": "53438",
-            "primary_entity": "简历准备",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "53440",
-            "primary_entity": "简历准备",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7939,7 +7797,7 @@
             "event_id": "88560",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -7995,7 +7853,7 @@
             "event_id": "88589",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -8011,7 +7869,7 @@
             "event_id": "88591",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -8019,7 +7877,7 @@
             "event_id": "88592",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -8041,9 +7899,11 @@
           },
           {
             "event_id": "88606",
-            "primary_entity": "KeyPulse",
-            "secondary_entities": [],
-            "confidence": 0.95,
+            "primary_entity": "CorpusFlow",
+            "secondary_entities": [
+              "KeyPulse"
+            ],
+            "confidence": 0.6,
             "needs_review": false,
             "review_reason": ""
           },
@@ -8083,7 +7943,7 @@
             "event_id": "88617",
             "primary_entity": "KeyPulse",
             "secondary_entities": [],
-            "confidence": 0.95,
+            "confidence": 0.9,
             "needs_review": false,
             "review_reason": ""
           },
@@ -8104,9 +7964,7 @@
             "review_reason": ""
           }
         ],
-        "cross_entity_warning": [
-          "event 88503 内容模糊，无法明确归属实体；event 88555 本地回调URL可能与KeyPulse相关但证据较弱；event 88556 金融数据集网站浏览未明确项目关联；event 88557 招聘页面浏览未明确项目关联"
-        ]
+        "cross_entity_warning": []
       },
       "capped_events": [
         {
@@ -8942,88 +8800,61 @@
           {
             "entity_name": "KeyPulse",
             "entity_purity": {
-              "score": 0.98,
-              "wrong_event_ids": [
-                "88555"
-              ],
-              "reasoning": "event 88555为本地回调URL，仅可能与KeyPulse相关但证据较弱，归为KeyPulse存在错误；其余48个归属事件均明确涉及KeyPulse项目开发、代码修改或文档编写"
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "所有归属事件（如88477、88478、88480等）的file_paths均指向keypulse项目路径，content_text涉及案件墙设计、daily prompt优化、代码实现等KeyPulse相关内容，归属准确"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "所有实际属于KeyPulse的事件（work_unit为keypulse或file_paths含keypulse项目路径）均被正确归到该实体"
+              "reasoning": "当天所有涉及KeyPulse的事件（如88495、88502、88506等）均被正确归到该实体，无漏归"
             }
           },
           {
-            "entity_name": "简历准备",
+            "entity_name": "CorpusFlow",
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属的4个事件（53414、53419、53438、53440）均为简历文件复制或工作经历信息，与简历准备强相关"
+              "reasoning": "归属事件88606的content_text明确提到“关注CorpusFlow的算法实现”，与实体强相关，归属正确"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天所有简历相关事件均被归到该实体，无遗漏"
+              "reasoning": "当天仅事件88606涉及CorpusFlow，已被正确归属，无其他相关事件漏归"
             }
           },
           {
-            "entity_name": "泰晶科技分析",
+            "entity_name": "泰晶科技",
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属的事件88497内容明确为“帮我分析一下泰晶科技”，与实体主题完全匹配"
+              "reasoning": "归属事件88497的content_text为“帮我分析一下泰晶科技”，直接提及该实体，归属准确"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天仅1个泰晶科技分析相关事件，已被正确归属"
-            }
-          },
-          {
-            "entity_name": "unknown",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属的事件53425（idle状态）和88560（新邮件提醒）均无法明确关联其他实体，归属正确"
-            },
-            "entity_completeness": {
-              "score": 0.4,
-              "missing_event_ids": [
-                "88503",
-                "88556",
-                "88557"
-              ],
-              "reasoning": "真实属于unknown的事件共5个（53425、88560、88503、88556、88557），其中3个未被归到该实体，漏归率60%"
+              "reasoning": "当天仅事件88497涉及泰晶科技，已被正确归属，无其他相关事件漏归"
             }
           }
         ],
         "per_day": {
           "cross_entity_warning_precision": {
             "score": 1.0,
-            "extractor_reported_event_ids": [
-              "88503",
-              "88555",
-              "88556",
-              "88557"
-            ],
-            "true_positive_event_ids": [
-              "88503",
-              "88555",
-              "88556",
-              "88557"
-            ],
+            "extractor_reported_event_ids": [],
+            "true_positive_event_ids": [],
             "false_positive_event_ids": [],
-            "reasoning": "extractor报告的4个事件均存在归属模糊或证据不足问题，需人工review，全部为真阳性"
+            "reasoning": "extractor未报告任何跨实体告警（cross_entity_warning为空），无错误报告，分母为0时保守计1.0"
           },
           "cross_entity_warning_recall": {
-            "score": 1.0,
-            "missed_event_ids": [],
-            "reasoning": "当天所有需review的事件（88503、88555、88556、88557）均被extractor标记，无遗漏"
+            "score": 0.0,
+            "missed_event_ids": [
+              "88606"
+            ],
+            "reasoning": "事件88606的primary_entity为CorpusFlow，secondary_entities包含KeyPulse，属于真实跨实体事件，但extractor未标记needs_review=true，导致漏报"
           },
           "overall_quality": {
-            "score": 0.95,
-            "reasoning": "核心实体（KeyPulse、简历准备、泰晶科技分析）纯度和完整性高，跨实体告警准确且无遗漏；仅unknown实体存在漏归，但不影响主要业务实体的抽取质量"
+            "score": 0.85,
+            "reasoning": "实体纯度和完整性表现优异，所有实体归属准确且无遗漏；但存在跨实体事件（88606）未被检测并标记的问题，影响整体告警召回率"
           }
         }
       }
@@ -9047,7 +8878,6 @@
               "98408",
               "98425",
               "98438",
-              "98431",
               "98449",
               "98459",
               "98465",
@@ -9063,24 +8893,17 @@
               "98977",
               "98981",
               "98993",
-              "99056",
               "99096",
               "99101"
             ]
           },
           {
-            "name": "奇趣宝",
+            "name": "座舱实时语音 Agent 产品化",
             "type": "project",
-            "aliases": [],
-            "confidence": 0.7,
-            "evidence_event_ids": [
-              "98438"
-            ]
-          },
-          {
-            "name": "座舱实时语音 Agent 产品化（奇瑞）",
-            "type": "project",
-            "aliases": [],
+            "aliases": [
+              "座舱实时语音 Agent Runtime 产品化",
+              "奇瑞语音项目"
+            ],
             "confidence": 0.9,
             "evidence_event_ids": [
               "98423",
@@ -9092,28 +8915,14 @@
             ]
           },
           {
-            "name": "郝朗简历",
-            "type": "workflow",
+            "name": "CHAT-0410",
+            "type": "project",
             "aliases": [],
             "confidence": 0.85,
             "evidence_event_ids": [
-              "98419",
-              "98420",
-              "98455",
-              "98492"
-            ]
-          },
-          {
-            "name": "CHAT-0410",
-            "type": "project",
-            "aliases": [
-              "Chat项目"
-            ],
-            "confidence": 0.85,
-            "evidence_event_ids": [
-              "98547",
               "98540",
               "98541",
+              "98547",
               "98641",
               "98642",
               "98686",
@@ -9128,40 +8937,41 @@
             ]
           },
           {
+            "name": "奇趣宝",
+            "type": "project",
+            "aliases": [
+              "奇趣宝管家服务"
+            ],
+            "confidence": 0.7,
+            "evidence_event_ids": [
+              "98438"
+            ]
+          },
+          {
             "name": "Longfellow1",
             "type": "project",
             "aliases": [],
-            "confidence": 0.75,
+            "confidence": 0.8,
             "evidence_event_ids": [
               "98619"
             ]
           },
           {
-            "name": "unknown",
-            "type": "unknown",
+            "name": "corpusflow-deploy",
+            "type": "project",
             "aliases": [],
-            "confidence": 0.5,
+            "confidence": 0.6,
             "evidence_event_ids": [
-              "98483",
-              "98484",
-              "98527",
-              "98867",
-              "98868",
-              "98892",
-              "98893",
-              "98894",
-              "98909",
-              "98926",
-              "99124"
+              "98894"
             ]
           }
         ],
         "event_entity_map": [
           {
             "event_id": "98400",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9175,17 +8985,17 @@
           },
           {
             "event_id": "98419",
-            "primary_entity": "郝朗简历",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "98420",
-            "primary_entity": "郝朗简历",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9199,7 +9009,7 @@
           },
           {
             "event_id": "98423",
-            "primary_entity": "座舱实时语音 Agent 产品化（奇瑞）",
+            "primary_entity": "座舱实时语音 Agent 产品化",
             "secondary_entities": [],
             "confidence": 0.9,
             "needs_review": false,
@@ -9207,7 +9017,7 @@
           },
           {
             "event_id": "98428",
-            "primary_entity": "座舱实时语音 Agent 产品化（奇瑞）",
+            "primary_entity": "座舱实时语音 Agent 产品化",
             "secondary_entities": [],
             "confidence": 0.9,
             "needs_review": false,
@@ -9215,7 +9025,7 @@
           },
           {
             "event_id": "98429",
-            "primary_entity": "座舱实时语音 Agent 产品化（奇瑞）",
+            "primary_entity": "座舱实时语音 Agent 产品化",
             "secondary_entities": [],
             "confidence": 0.9,
             "needs_review": false,
@@ -9223,9 +9033,9 @@
           },
           {
             "event_id": "98432",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.8,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9235,15 +9045,15 @@
             "secondary_entities": [
               "奇趣宝"
             ],
-            "confidence": 0.5,
+            "confidence": 0.55,
             "needs_review": true,
             "review_reason": "同一事件包含KeyPulse和奇趣宝两个独立项目活动"
           },
           {
             "event_id": "98431",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9265,9 +9075,9 @@
           },
           {
             "event_id": "98454",
-            "primary_entity": "座舱实时语音 Agent 产品化（奇瑞）",
+            "primary_entity": "座舱实时语音 Agent 产品化",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.7,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9281,9 +9091,9 @@
           },
           {
             "event_id": "98455",
-            "primary_entity": "郝朗简历",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9297,7 +9107,7 @@
           },
           {
             "event_id": "98475",
-            "primary_entity": "座舱实时语音 Agent 产品化（奇瑞）",
+            "primary_entity": "座舱实时语音 Agent 产品化",
             "secondary_entities": [],
             "confidence": 0.9,
             "needs_review": false,
@@ -9305,7 +9115,7 @@
           },
           {
             "event_id": "98476",
-            "primary_entity": "座舱实时语音 Agent 产品化（奇瑞）",
+            "primary_entity": "座舱实时语音 Agent 产品化",
             "secondary_entities": [],
             "confidence": 0.9,
             "needs_review": false,
@@ -9315,7 +9125,7 @@
             "event_id": "98483",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9323,7 +9133,7 @@
             "event_id": "98484",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9337,9 +9147,9 @@
           },
           {
             "event_id": "98492",
-            "primary_entity": "郝朗简历",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9355,7 +9165,7 @@
             "event_id": "98527",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9379,7 +9189,7 @@
             "event_id": "98541",
             "primary_entity": "CHAT-0410",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9387,7 +9197,7 @@
             "event_id": "98619",
             "primary_entity": "Longfellow1",
             "secondary_entities": [],
-            "confidence": 0.75,
+            "confidence": 0.8,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9467,7 +9277,7 @@
             "event_id": "98867",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9475,7 +9285,7 @@
             "event_id": "98868",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9491,7 +9301,7 @@
             "event_id": "98892",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9499,15 +9309,15 @@
             "event_id": "98893",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
           {
             "event_id": "98894",
-            "primary_entity": "unknown",
+            "primary_entity": "corpusflow-deploy",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.6,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9515,7 +9325,7 @@
             "event_id": "98909",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9523,7 +9333,7 @@
             "event_id": "98926",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9585,9 +9395,9 @@
           },
           {
             "event_id": "99056",
-            "primary_entity": "KeyPulse",
+            "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.85,
+            "confidence": 0.3,
             "needs_review": false,
             "review_reason": ""
           },
@@ -9635,7 +9445,7 @@
             "event_id": "99124",
             "primary_entity": "unknown",
             "secondary_entities": [],
-            "confidence": 0.5,
+            "confidence": 0.4,
             "needs_review": false,
             "review_reason": ""
           }
@@ -10446,38 +10256,25 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "所有归属 events 均涉及 KeyPulse 项目开发、配置或日报相关内容，如代码提交、路径引用、功能修复等，语义一致"
+              "reasoning": "所有归属 events 均涉及 KeyPulse 项目路径、代码开发或 git 操作，语义一致"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天涉及 KeyPulse 的事件（如 git 操作、代码片段、配置问题）均被正确归到该实体，无漏归情况"
+              "reasoning": "当天所有 KeyPulse 相关 events 均被正确归到该实体"
             }
           },
           {
-            "entity_name": "奇趣宝",
+            "entity_name": "座舱实时语音 Agent 产品化",
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "唯一归属事件 98438 明确提到“奇趣宝管家服务”，语义匹配"
+              "reasoning": "所有归属 events 均为该项目的简历描述、成果总结或 PRD 文件，语义匹配"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天仅事件 98438 涉及奇趣宝，已被正确归属，无其他相关事件漏归"
-            }
-          },
-          {
-            "entity_name": "座舱实时语音 Agent 产品化（奇瑞）",
-            "entity_purity": {
-              "score": 1.0,
-              "wrong_event_ids": [],
-              "reasoning": "归属 events 均为项目描述、简历修改、PRD 文件等，与座舱语音产品化主题直接相关"
-            },
-            "entity_completeness": {
-              "score": 1.0,
-              "missing_event_ids": [],
-              "reasoning": "所有涉及该项目的事件（如需求讨论、成果总结）均被正确归属，无遗漏"
+              "reasoning": "当天所有座舱语音项目相关 events 均被正确归到该实体"
             }
           },
           {
@@ -10485,12 +10282,25 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events 涉及项目代码、git 提交、配置等，均与 CHAT-0410 项目直接相关"
+              "reasoning": "所有归属 events 涉及 CHAT-0410 项目路径、代码调试或 git 提交，语义一致"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "所有 CHAT-0410 相关开发事件均被正确归属，无遗漏"
+              "reasoning": "当天所有 CHAT-0410 相关 events 均被正确归到该实体"
+            }
+          },
+          {
+            "entity_name": "奇趣宝",
+            "entity_purity": {
+              "score": 1.0,
+              "wrong_event_ids": [],
+              "reasoning": "归属 event 98438 明确提及奇趣宝管家服务，语义匹配"
+            },
+            "entity_completeness": {
+              "score": 1.0,
+              "missing_event_ids": [],
+              "reasoning": "当天仅 event 98438 涉及奇趣宝，已被正确归属"
             }
           },
           {
@@ -10498,25 +10308,25 @@
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "唯一归属事件 98619 为该项目的 git 提交，语义匹配"
+              "reasoning": "归属 event 98619 为该项目 git 日志，语义匹配"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "当天仅事件 98619 涉及 Longfellow1，已被正确归属"
+              "reasoning": "当天仅 event 98619 涉及 Longfellow1，已被正确归属"
             }
           },
           {
-            "entity_name": "unknown",
+            "entity_name": "corpusflow-deploy",
             "entity_purity": {
               "score": 1.0,
               "wrong_event_ids": [],
-              "reasoning": "归属 events 内容为通用工程问题、评测模式讨论等，无明确实体指向，归为 unknown 合理"
+              "reasoning": "归属 event 98894 为该项目锚点文件，语义匹配"
             },
             "entity_completeness": {
               "score": 1.0,
               "missing_event_ids": [],
-              "reasoning": "无明确归属其他实体的事件被漏归到 unknown"
+              "reasoning": "当天仅 event 98894 涉及 corpusflow-deploy，已被正确归属"
             }
           }
         ],
@@ -10530,16 +10340,16 @@
               "98438"
             ],
             "false_positive_event_ids": [],
-            "reasoning": "extractor 报告的事件 98438 确实同时涉及 KeyPulse 和奇趣宝两个独立项目，告警准确"
+            "reasoning": "extractor 报告的 98438 经检视确实同时涉及 KeyPulse 和奇趣宝两个项目活动"
           },
           "cross_entity_warning_recall": {
             "score": 1.0,
             "missed_event_ids": [],
-            "reasoning": "当天唯一跨实体事件 98438 已被 extractor 标记，无其他真实跨实体事件漏标"
+            "reasoning": "当天所有跨实体事件（仅 98438）均被 extractor 正确标记"
           },
           "overall_quality": {
             "score": 0.98,
-            "reasoning": "各实体归属准确率高，跨实体告警精准，仅少量事件归为 unknown 但语义合理，整体抽取质量优秀"
+            "reasoning": "各实体归属准确无错漏，跨实体告警精准完整，整体抽取质量优异"
           }
         }
       }
@@ -10551,37 +10361,37 @@
         "date": "2026-05-19",
         "avg_entity_purity": 1.0,
         "avg_entity_completeness": 1.0,
-        "overall_quality": 0.98
+        "overall_quality": 1.0
       },
       {
         "date": "2026-05-07",
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 0.8296333333333333,
-        "overall_quality": 0.65
+        "avg_entity_purity": 0.875,
+        "avg_entity_completeness": 0.875,
+        "overall_quality": 0.85
       },
       {
         "date": "2026-05-13",
         "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 0.8300000000000001,
-        "overall_quality": 0.9
+        "avg_entity_completeness": 1.0,
+        "overall_quality": 1.0
       },
       {
         "date": "2026-05-21",
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 0.9630000000000001,
-        "overall_quality": 0.92
+        "avg_entity_purity": 0.95,
+        "avg_entity_completeness": 0.9099999999999999,
+        "overall_quality": 0.95
       },
       {
         "date": "2026-05-06",
-        "avg_entity_purity": 0.9914285714285713,
-        "avg_entity_completeness": 0.99,
-        "overall_quality": 0.95
+        "avg_entity_purity": 1.0,
+        "avg_entity_completeness": 1.0,
+        "overall_quality": 0.98
       },
       {
         "date": "2026-05-11",
-        "avg_entity_purity": 0.995,
-        "avg_entity_completeness": 0.85,
-        "overall_quality": 0.95
+        "avg_entity_purity": 1.0,
+        "avg_entity_completeness": 1.0,
+        "overall_quality": 0.85
       },
       {
         "date": "2026-05-20",
@@ -10592,13 +10402,7 @@
     ],
     "per_entity": [
       {
-        "entity_name": "Agent系统",
-        "days": 1,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 1.0
-      },
-      {
-        "entity_name": "Assistant",
+        "entity_name": "Agent_Runtime_PoC",
         "days": 1,
         "avg_entity_purity": 1.0,
         "avg_entity_completeness": 1.0
@@ -10622,28 +10426,34 @@
         "avg_entity_completeness": 1.0
       },
       {
+        "entity_name": "Carmind",
+        "days": 1,
+        "avg_entity_purity": 1.0,
+        "avg_entity_completeness": 1.0
+      },
+      {
         "entity_name": "Carmind_code",
         "days": 1,
         "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 0.83
+        "avg_entity_completeness": 0.8
       },
       {
         "entity_name": "Chat Agent",
-        "days": 1,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 0.67
-      },
-      {
-        "entity_name": "ChatGPT Atlas",
         "days": 1,
         "avg_entity_purity": 1.0,
         "avg_entity_completeness": 1.0
       },
       {
         "entity_name": "CorpusFlow",
-        "days": 3,
+        "days": 6,
         "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 0.91
+        "avg_entity_completeness": 1.0
+      },
+      {
+        "entity_name": "Finance",
+        "days": 1,
+        "avg_entity_purity": 1.0,
+        "avg_entity_completeness": 1.0
       },
       {
         "entity_name": "GitNexus",
@@ -10653,13 +10463,7 @@
       },
       {
         "entity_name": "KeyPulse",
-        "days": 6,
-        "avg_entity_purity": 0.9866666666666667,
-        "avg_entity_completeness": 0.9700000000000001
-      },
-      {
-        "entity_name": "Lark Helper",
-        "days": 1,
+        "days": 7,
         "avg_entity_purity": 1.0,
         "avg_entity_completeness": 1.0
       },
@@ -10685,22 +10489,10 @@
         "entity_name": "RAGFlow",
         "days": 1,
         "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 0.6667
-      },
-      {
-        "entity_name": "RAG项目",
-        "days": 1,
-        "avg_entity_purity": 1.0,
         "avg_entity_completeness": 1.0
       },
       {
-        "entity_name": "finance",
-        "days": 1,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 1.0
-      },
-      {
-        "entity_name": "keypulse",
+        "entity_name": "corpusflow-deploy",
         "days": 1,
         "avg_entity_purity": 1.0,
         "avg_entity_completeness": 1.0
@@ -10720,20 +10512,8 @@
       {
         "entity_name": "unknown",
         "days": 4,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 0.6
-      },
-      {
-        "entity_name": "个人事务",
-        "days": 1,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 1.0
-      },
-      {
-        "entity_name": "奇瑞股价分析",
-        "days": 1,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 1.0
+        "avg_entity_purity": 0.625,
+        "avg_entity_completeness": 0.625
       },
       {
         "entity_name": "奇趣宝",
@@ -10742,93 +10522,28 @@
         "avg_entity_completeness": 1.0
       },
       {
-        "entity_name": "工具使用",
+        "entity_name": "座舱实时语音 Agent 产品化",
         "days": 1,
         "avg_entity_purity": 1.0,
         "avg_entity_completeness": 1.0
       },
       {
-        "entity_name": "座舱实时语音 Agent 产品化（奇瑞）",
-        "days": 1,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 1.0
-      },
-      {
-        "entity_name": "比赛项目",
-        "days": 1,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 1.0
-      },
-      {
-        "entity_name": "泰晶科技分析",
-        "days": 1,
-        "avg_entity_purity": 1.0,
-        "avg_entity_completeness": 1.0
-      },
-      {
-        "entity_name": "简历准备",
+        "entity_name": "泰晶科技",
         "days": 1,
         "avg_entity_purity": 1.0,
         "avg_entity_completeness": 1.0
       }
     ],
     "cross_entity_warning": {
-      "extractor_reported_total": 67,
-      "judge_true_cross_total": 8,
-      "overlap_total": 7,
-      "overlap_rate": 0.10294117647058823,
-      "precision": 0.1044776119402985,
-      "recall": 0.875,
+      "extractor_reported_total": 2,
+      "judge_true_cross_total": 4,
+      "overlap_total": 2,
+      "overlap_rate": 0.5,
+      "precision": 1.0,
+      "recall": 0.5,
       "per_day": [
         {
           "date": "2026-05-19",
-          "extractor_reported_count": 22,
-          "judge_true_cross_count": 1,
-          "overlap_count": 1,
-          "precision": 1.0,
-          "recall": 1.0,
-          "false_positive_event_ids": [],
-          "missed_event_ids": []
-        },
-        {
-          "date": "2026-05-07",
-          "extractor_reported_count": 4,
-          "judge_true_cross_count": 1,
-          "overlap_count": 0,
-          "precision": 0.0,
-          "recall": 0.0,
-          "false_positive_event_ids": [
-            "30534",
-            "30885",
-            "31005",
-            "33535"
-          ],
-          "missed_event_ids": [
-            "28141"
-          ]
-        },
-        {
-          "date": "2026-05-13",
-          "extractor_reported_count": 22,
-          "judge_true_cross_count": 1,
-          "overlap_count": 1,
-          "precision": 1.0,
-          "recall": 1.0,
-          "false_positive_event_ids": [],
-          "missed_event_ids": []
-        },
-        {
-          "date": "2026-05-21",
-          "extractor_reported_count": 14,
-          "judge_true_cross_count": 0,
-          "overlap_count": 0,
-          "precision": 0.0,
-          "recall": 0.0,
-          "false_positive_event_ids": [],
-          "missed_event_ids": []
-        },
-        {
-          "date": "2026-05-06",
           "extractor_reported_count": 0,
           "judge_true_cross_count": 0,
           "overlap_count": 0,
@@ -10838,14 +10553,58 @@
           "missed_event_ids": []
         },
         {
-          "date": "2026-05-11",
-          "extractor_reported_count": 4,
-          "judge_true_cross_count": 4,
-          "overlap_count": 4,
+          "date": "2026-05-07",
+          "extractor_reported_count": 0,
+          "judge_true_cross_count": 1,
+          "overlap_count": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "false_positive_event_ids": [],
+          "missed_event_ids": [
+            "28141"
+          ]
+        },
+        {
+          "date": "2026-05-13",
+          "extractor_reported_count": 0,
+          "judge_true_cross_count": 0,
+          "overlap_count": 0,
           "precision": 1.0,
           "recall": 1.0,
           "false_positive_event_ids": [],
           "missed_event_ids": []
+        },
+        {
+          "date": "2026-05-21",
+          "extractor_reported_count": 0,
+          "judge_true_cross_count": 0,
+          "overlap_count": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "false_positive_event_ids": [],
+          "missed_event_ids": []
+        },
+        {
+          "date": "2026-05-06",
+          "extractor_reported_count": 1,
+          "judge_true_cross_count": 1,
+          "overlap_count": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "false_positive_event_ids": [],
+          "missed_event_ids": []
+        },
+        {
+          "date": "2026-05-11",
+          "extractor_reported_count": 0,
+          "judge_true_cross_count": 1,
+          "overlap_count": 0,
+          "precision": 1.0,
+          "recall": 0.0,
+          "false_positive_event_ids": [],
+          "missed_event_ids": [
+            "88606"
+          ]
         },
         {
           "date": "2026-05-20",
@@ -10862,54 +10621,23 @@
     "failure_cases": [
       {
         "date": "2026-05-07",
-        "entity_name": "RAGFlow",
-        "entity_purity": 1.0,
-        "entity_completeness": 0.6667,
-        "wrong_event_ids": [],
-        "missing_event_ids": [
-          "28141"
-        ],
-        "purity_reasoning": "归属 events（30853 提及 RAGFLOW 切块方案、31236 讨论 RAG 方案）均属于 RAGFlow",
-        "completeness_reasoning": "event 28141 窗口标题含 RAGFlow 优化指南但未被归属，true_related_count=3，missing_count=1"
-      },
-      {
-        "date": "2026-05-07",
         "entity_name": "unknown",
-        "entity_purity": 1.0,
+        "entity_purity": 0.0,
         "entity_completeness": 0.0,
         "wrong_event_ids": [],
         "missing_event_ids": [],
-        "purity_reasoning": "归属 events 均为无法明确项目的通用操作（如 34545 使用 Chrome），无错误归属",
-        "completeness_reasoning": "unknown 为兜底类别，无明确“应属于 unknown”的事件定义，分母为 0，保守给分"
+        "purity_reasoning": "无归属事件（分母为0），保守赋值0.0",
+        "completeness_reasoning": "无明确属于 unknown 的事件（分母为0），保守赋值0.0"
       },
       {
-        "date": "2026-05-11",
+        "date": "2026-05-21",
         "entity_name": "unknown",
-        "entity_purity": 1.0,
-        "entity_completeness": 0.4,
+        "entity_purity": 0.5,
+        "entity_completeness": 0.5,
         "wrong_event_ids": [],
-        "missing_event_ids": [
-          "88503",
-          "88556",
-          "88557"
-        ],
-        "purity_reasoning": "归属的事件53425（idle状态）和88560（新邮件提醒）均无法明确关联其他实体，归属正确",
-        "completeness_reasoning": "真实属于unknown的事件共5个（53425、88560、88503、88556、88557），其中3个未被归到该实体，漏归率60%"
-      },
-      {
-        "date": "2026-05-13",
-        "entity_name": "Chat Agent",
-        "entity_purity": 1.0,
-        "entity_completeness": 0.67,
-        "wrong_event_ids": [],
-        "missing_event_ids": [
-          "53921",
-          "89898",
-          "54038",
-          "54044"
-        ],
-        "purity_reasoning": "所有归属 events 的 content_text 明确提及 Chat Agent 能力、测试或项目路径（CHAT-0410），无错误归属",
-        "completeness_reasoning": "event 53921 明确整理 Chat Agent 项目结构，89898 讨论 Chat Agent 相关的 slot 解析，54038/54044 讨论 Chat Agent 评测集设计与边界案例，但均未被归到 Chat Agent 的 evidence_event_ids 中。true_related_count=12，missing_count=4，completeness=1-4/12≈0.67"
+        "missing_event_ids": [],
+        "purity_reasoning": "evidence_event_ids 为空，分母为 0，保守给分",
+        "completeness_reasoning": "无明确属于 unknown 的事件，true_related_count 为 0，保守给分"
       }
     ],
     "spotlight_2026_05_19": {
@@ -10919,9 +10647,9 @@
         "KeyPulse",
         "CHAT-0410",
         "奇趣宝",
-        "Agent系统",
-        "ChatGPT Atlas",
         "Mindbones",
+        "CorpusFlow",
+        "Carmind",
         "unknown"
       ],
       "key_mappings": [
@@ -10929,14 +10657,14 @@
           "event_id": "96881",
           "primary_entity": "奇趣宝",
           "secondary_entities": [],
-          "confidence": 0.95,
+          "confidence": 0.9,
           "needs_review": false
         },
         {
           "event_id": "97799",
-          "primary_entity": "KeyPulse",
+          "primary_entity": "unknown",
           "secondary_entities": [],
-          "confidence": 0.7,
+          "confidence": 0.4,
           "needs_review": false
         },
         {
@@ -10948,16 +10676,16 @@
         },
         {
           "event_id": "96364",
-          "primary_entity": "Agent系统",
+          "primary_entity": "unknown",
           "secondary_entities": [],
-          "confidence": 0.9,
+          "confidence": 0.4,
           "needs_review": false
         },
         {
           "event_id": "96374",
           "primary_entity": "KeyPulse",
           "secondary_entities": [],
-          "confidence": 0.85,
+          "confidence": 0.8,
           "needs_review": false
         },
         {
@@ -10971,7 +10699,7 @@
           "event_id": "96387",
           "primary_entity": "CHAT-0410",
           "secondary_entities": [],
-          "confidence": 0.9,
+          "confidence": 0.85,
           "needs_review": false
         },
         {
@@ -10985,7 +10713,7 @@
           "event_id": "96518",
           "primary_entity": "CHAT-0410",
           "secondary_entities": [],
-          "confidence": 0.95,
+          "confidence": 0.85,
           "needs_review": false
         },
         {
