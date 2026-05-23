@@ -1,0 +1,55 @@
+{
+  "type": "object",
+  "required": ["date", "events"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "description": "ISO 8601 日期 (YYYY-MM-DD)"
+    },
+    "events": {
+      "type": "array",
+      "description": "来自 raw_events 的真实事件（source-aware capped）",
+      "items": {
+        "type": "object",
+        "required": ["eid", "t", "a", "c", "sp", "win", "wu", "fp"],
+        "properties": {
+          "eid": {
+            "type": "string",
+            "description": "raw_events.id"
+          },
+          "t": {
+            "type": "string",
+            "description": "本地时间 HH:MM"
+          },
+          "a": {
+            "type": "string",
+            "description": "app_name"
+          },
+          "c": {
+            "type": "string",
+            "description": "content_text"
+          },
+          "sp": {
+            "type": "string",
+            "description": "speaker"
+          },
+          "win": {
+            "type": "string",
+            "description": "window_title"
+          },
+          "wu": {
+            "type": "string",
+            "description": "work_unit"
+          },
+          "fp": {
+            "type": "array",
+            "description": "file_paths",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
