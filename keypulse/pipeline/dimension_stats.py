@@ -187,7 +187,7 @@ def render_key_data_section(dims: FiveDimensions, style: str) -> str:
     if style != "exec":
         return ""
 
-    new_starts = ", ".join(dims.new_starts) if dims.new_starts else "无"
+    new_starts = f"{len(dims.new_starts)} 个" if dims.new_starts else "无"
     collab_parts = []
     if dims.collaborations.get("claude", 0) > 0:
         collab_parts.append(f"Claude × {dims.collaborations['claude']}")
