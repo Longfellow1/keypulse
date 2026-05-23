@@ -15,8 +15,13 @@ from keypulse.pipeline.model import ModelGateway
 
 @pytest.fixture
 def model_gateway(tmp_path):
-    """Mock ModelGateway for testing"""
+    """ModelGateway for testing with initialized database"""
     from keypulse.config import Config
+    from keypulse.store.db import init_db
+
+    # Initialize the database (uses ~/.keypulse/keypulse.db)
+    db_path = Path.home() / ".keypulse" / "keypulse.db"
+    init_db(db_path)
 
     config = Config()
     return ModelGateway(config)
@@ -54,10 +59,9 @@ class TestEntityExtractionResult:
 
 
 class TestEntityExtractor:
-    """Test entity extraction from 5/19 data"""
+    """Test entity extraction logic with mocked LLM"""
 
-    @pytest.mark.slow
-    def test_5_19_separates_keypulse_and_qiqubao(self, model_gateway):
+    def test_5_19_separates_keypulse_and_qiqubao_mock(self, model_gateway):
         """
         Test that extraction from 2026-05-19 data correctly separates
         KeyPulse and 奇趣宝 projects, especially handling the
