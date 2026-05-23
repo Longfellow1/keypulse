@@ -1,0 +1,69 @@
+{
+  "type": "object",
+  "required": ["date", "events"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "ISO 8601 日期 (YYYY-MM-DD)"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["eid"],
+        "additionalProperties": true,
+        "properties": {
+          "eid": {
+            "type": "string",
+            "description": "事件唯一 ID"
+          },
+          "t": {
+            "type": "string",
+            "description": "本地时间 HH:MM"
+          },
+          "a": {
+            "type": "string",
+            "description": "应用名"
+          },
+          "c": {
+            "type": "string",
+            "description": "事件内容文本"
+          },
+          "sp": {
+            "type": "string",
+            "enum": ["user", "ai", "system"],
+            "description": "发言者"
+          },
+          "sid": {
+            "type": "string",
+            "description": "会话 ID"
+          },
+          "win": {
+            "type": "string",
+            "description": "窗口标题"
+          },
+          "wu": {
+            "type": "string",
+            "description": "知识工作单元"
+          },
+          "fp": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "文件路径片段"
+          },
+          "url": {
+            "type": "string",
+            "description": "相关 URL"
+          },
+          "code_symbols": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "代码符号"
+          }
+        }
+      },
+      "description": "日内工作事件列表（最多 60 条）"
+    }
+  }
+}
