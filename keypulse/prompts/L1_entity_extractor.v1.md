@@ -40,14 +40,56 @@ temperature: 0.1
 4. **低置信度不是失败**  
    不确定时应保留不确定性：降低 `confidence`，必要时 `needs_review=true` 并写明原因。
 
+## 实体命名规范（canonical name）
+
+为了跨天聚合稳定，**同一项目必须用同一个 canonical name**。从输入证据里推导 canonical name 时按以下优先级：
+
+1. **仓库名形式（驼峰或短横）优先于路径/小写形式**：`KeyPulse` > `keypulse`，`GitNexus` > `gitnexus`。如果同一天输入里既出现 `keypulse` 又出现 `KeyPulse`，统一用 `KeyPulse`，把 `keypulse` 放进 `aliases`。
+2. **正式名优先于代号或描述短语**：`Carmind`（仓库名）> `座舱实时语音 Agent 产品化（奇瑞）`（描述短语）。后者放 `aliases`。
+3. **英文项目名保留英文不译**：`RAGFlow` 不要写成 `RAG项目`。如证据里同时出现两种写法，用更具体的那个，另一个放 `aliases`。
+4. **避免泛词当实体名**：`Assistant`、`Chat Agent`、`工具使用`、`Agent系统` 这种泛词不是独立实体——除非输入证据明确指向一个具体项目，否则归 `unknown` 或合并到能定位的实体上。
+5. **同一 canonical name 在 `entities[]` 中只出现一次**，所有别名拼写都进 `aliases`。
+
+如果你不确定 canonical name 该用哪个写法，优先选 **最像 GitHub 仓库名 / 代码里实际出现的标识符** 的那个。
+
 ## 实体边界判定
 
 - 独立项目/产品/系统（如 KeyPulse、奇趣宝）应拆为独立实体。
-- 若某 event 同时包含两个或以上独立实体的具体活动（规划、设计、决策、实现），视为跨实体 event：
-  - `confidence` 必须 `< 0.6`
-  - `needs_review` 必须 `true`
-  - `review_reason` 说明冲突点
 - 若只是工具/依赖/API 被调用，不应自动当作独立项目实体。
+
+### `needs_review` 的精确语义（重要）
+
+`needs_review=true` **只**用于一种情形：**同一条 event 内同时出现两个或以上明确独立项目的具体活动**（规划、设计、决策、代码、对话内容）。这是给"用户审跨项目冲突"用的，不是"我不确定归哪"的兜底。
+
+判 `needs_review=true` 必须**全部**满足：
+1. event 内容/上下文明确出现 **≥2 个具体项目名或可定位的实体名**（不是泛词，不是工具名）
+2. 这些实体在该 event 里**各自都有具体活动证据**（不是其中一个只是被顺带提及一下）
+3. 真的存在归属冲突——不能简单判一个 primary
+
+如果不满足，**即使你不确定主实体，也要 `needs_review=false`**，并通过其他字段表达不确定性：
+- 实体不明确 → `primary_entity="unknown"` + `confidence` 低（0.2-0.5）+ `needs_review=false`
+- 内容是噪音/系统提示/单字符/乱码 → `primary_entity="unknown"` + `confidence` 低 + `needs_review=false`
+- 仅工具/Terminal/浏览器使用 → `primary_entity="unknown"` + `confidence` 低 + `needs_review=false`
+- 单一项目活动但实体名不确定（如 "CorpusFlow 仅出现一次"）→ `primary_entity=CorpusFlow` + `confidence` 中（0.5-0.7）+ `needs_review=false`
+
+### 反例（这些**不应**触发 `needs_review=true`）
+
+| 输入特征 | 错误判定 | 正确判定 |
+|---|---|---|
+| content 为空，wu="项目情况认知构建" | needs_review=true, "无具体指向" | primary=unknown, conf=0.4, needs_review=false |
+| wu="使用 Terminal（18s）" | needs_review=true, "仅工具调用" | primary=unknown, conf=0.3, needs_review=false |
+| content="r"（单字符） | needs_review=true, "未明确实体" | primary=unknown, conf=0.3, needs_review=false |
+| wu="CorpusFlow"，content 是命令片段 | needs_review=true, "CorpusFlow 仅出现一次" | primary=CorpusFlow, conf=0.55, needs_review=false |
+| 浏览小红书/微信/Chrome 主页 | needs_review=true, "仅网页浏览" | primary=unknown, conf=0.3, needs_review=false |
+| 架构讨论但未点名项目 | needs_review=true, "可能涉及多个项目" | primary=unknown 或最可能主实体, conf=0.4, needs_review=false |
+
+### 正例（这些**应该**触发 `needs_review=true`）
+
+| 输入特征 | 判定 |
+|---|---|
+| event 内容同时讨论 "把 KeyPulse 的 entity_extractor 接到奇趣宝管道" | needs_review=true，两个项目都有具体活动 |
+| URL 同时出现 corpusflow-demo 且 app=ChatGPT Atlas 且窗口在讨论 Atlas 浏览 corpus | needs_review=true，浏览器实体与被浏览项目实体冲突 |
+| commit message 同时改 GitNexus 和 KeyPulse 两个仓库的文件 | needs_review=true |
 
 ## 输出要求
 
@@ -117,6 +159,8 @@ temperature: 0.1
 2. `primary_entity` 必须能在 `entities[].name` 中找到对应实体（或可直接归并到同名）。
 3. 置信度范围 0.0-1.0。
 4. 跨实体 event 置信度必须 `<0.6` 且 `needs_review=true`。
+5. **`needs_review=true` 的条目数应该是少数**。如果一天里超过 5 条 needs_review，自检是否把"实体不确定"误判成了"跨实体冲突"——按上文反例表重审。
+6. `cross_entity_warning` 数组里的描述条目数应该 = `needs_review=true` 的 event 数，且每条都必须能讲清"哪两个具体项目同时有具体活动"。
 
 ## 严禁
 
