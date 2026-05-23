@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "required": ["date", "daily_markdown", "topics"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "description": "ISO 8601 日期 (YYYY-MM-DD)"
+    },
+    "daily_markdown": {
+      "type": "string",
+      "description": "完整 vault 渲染的日报 markdown 内容"
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic_display", "narrative"],
+        "properties": {
+          "topic_display": {
+            "type": "string",
+            "description": "主题名称"
+          },
+          "narrative": {
+            "type": "string",
+            "description": "主题对应的叙述文本"
+          }
+        }
+      },
+      "description": "日报中提取的所有主题及其叙述"
+    }
+  }
+}

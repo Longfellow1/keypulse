@@ -1,0 +1,62 @@
+{
+  "type": "object",
+  "required": ["date", "topics_judged", "overall_pollution_score"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "description": "ISO 8601 日期 (YYYY-MM-DD)"
+    },
+    "topics_judged": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic_display", "is_polluted", "confidence", "primary_entity", "intruder_entities", "polluted_sentences", "reasoning"],
+        "properties": {
+          "topic_display": {
+            "type": "string",
+            "description": "主题名称"
+          },
+          "is_polluted": {
+            "type": "boolean",
+            "description": "是否判定为污染"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "置信度（0-1），≤0.6 视为待人审"
+          },
+          "primary_entity": {
+            "type": "string",
+            "description": "主实体识别结果"
+          },
+          "intruder_entities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "入侵实体列表"
+          },
+          "polluted_sentences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "包含污染的完整句子"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "判定理由"
+          }
+        }
+      },
+      "description": "各主题的评测结果"
+    },
+    "overall_pollution_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "全日平均污染率"
+    }
+  }
+}
