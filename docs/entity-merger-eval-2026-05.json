@@ -1,0 +1,289 @@
+{
+  "canonical_entities": [
+    {
+      "canonical_name": "KeyPulse",
+      "type": "project",
+      "aliases": [
+        "keypulse",
+        "homebrew-keypulse"
+      ],
+      "appears_on_dates": [
+        "2026-05-19",
+        "2026-05-07",
+        "2026-05-13",
+        "2026-05-21",
+        "2026-05-06",
+        "2026-05-11",
+        "2026-05-20"
+      ],
+      "merge_reasoning": "大小写变体（KeyPulse/keypulse）及相关项目路径（homebrew-keypulse），证据上下文均指向/Users/Harland/Go/keypulse仓库，work_unit多次出现keypulse，属于同一项目"
+    },
+    {
+      "canonical_name": "CHAT-0410",
+      "type": "project",
+      "aliases": [
+        "Chat Agent",
+        "chat agent"
+      ],
+      "appears_on_dates": [
+        "2026-05-19",
+        "2026-05-13",
+        "2026-05-21",
+        "2026-05-20"
+      ],
+      "merge_reasoning": "Chat Agent是CHAT-0410的描述短语，证据上下文显示file_paths为/Users/Harland/Go/Chat/CHAT-0410，work_unit包含CHAT-0410，属于同一项目"
+    },
+    {
+      "canonical_name": "奇趣宝",
+      "type": "project",
+      "aliases": [
+        "奇趣宝管家服务"
+      ],
+      "appears_on_dates": [
+        "2026-05-19",
+        "2026-05-20"
+      ],
+      "merge_reasoning": "奇趣宝管家服务是奇趣宝项目的功能描述，证据上下文均涉及跨场景管家服务规划，属于同一项目"
+    },
+    {
+      "canonical_name": "Mindbones",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-19",
+        "2026-05-21"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立项目"
+    },
+    {
+      "canonical_name": "CorpusFlow",
+      "type": "project",
+      "aliases": [
+        "CorpusFlow-",
+        "corpusflow"
+      ],
+      "appears_on_dates": [
+        "2026-05-19",
+        "2026-05-07",
+        "2026-05-13",
+        "2026-05-21",
+        "2026-05-06",
+        "2026-05-11",
+        "2026-05-20"
+      ],
+      "merge_reasoning": "大小写变体（CorpusFlow/corpusflow）及仓库名变体（CorpusFlow-），GitHub路径及work_unit均指向同一数据生成平台项目"
+    },
+    {
+      "canonical_name": "Carmind",
+      "type": "project",
+      "aliases": [
+        "Carmind_code"
+      ],
+      "appears_on_dates": [
+        "2026-05-19",
+        "2026-05-21"
+      ],
+      "merge_reasoning": "Carmind_code是Carmind项目的代码仓库路径，属于同一项目的别名"
+    },
+    {
+      "canonical_name": "GitNexus",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-07",
+        "2026-05-06"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立项目"
+    },
+    {
+      "canonical_name": "RAGFlow",
+      "type": "project",
+      "aliases": [
+        "RAGFLOW"
+      ],
+      "appears_on_dates": [
+        "2026-05-07"
+      ],
+      "merge_reasoning": "大小写变体（RAGFlow/RAGFLOW），属于同一RAG项目"
+    },
+    {
+      "canonical_name": "migration_package",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-07"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立项目"
+    },
+    {
+      "canonical_name": "C_Agents",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-07"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立项目"
+    },
+    {
+      "canonical_name": "my-slide",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-07"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立项目"
+    },
+    {
+      "canonical_name": "Log_analysis",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-21"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立项目"
+    },
+    {
+      "canonical_name": "Career_harness",
+      "type": "project",
+      "aliases": [
+        "MCP-Boss",
+        "boss-agent-cli"
+      ],
+      "appears_on_dates": [
+        "2026-05-21"
+      ],
+      "merge_reasoning": "MCP-Boss和boss-agent-cli是Career_harness项目的子模块，属于同一项目的功能别名"
+    },
+    {
+      "canonical_name": "Agent_Runtime_PoC",
+      "type": "project",
+      "aliases": [
+        "Agent_Runtime_PoC_工程"
+      ],
+      "appears_on_dates": [
+        "2026-05-21"
+      ],
+      "merge_reasoning": "Agent_Runtime_PoC_工程是项目的完整描述，属于同一PoC项目的别名"
+    },
+    {
+      "canonical_name": "Finance",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-21"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立项目"
+    },
+    {
+      "canonical_name": "Longfellow1",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-20"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立项目"
+    },
+    {
+      "canonical_name": "corpusflow-deploy",
+      "type": "project",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-20"
+      ],
+      "merge_reasoning": "无其他变体或别名，证据上下文指向独立部署项目"
+    },
+    {
+      "canonical_name": "泰晶科技",
+      "type": "unknown",
+      "aliases": [],
+      "appears_on_dates": [
+        "2026-05-11"
+      ],
+      "merge_reasoning": "无其他变体或别名，类型未知且证据不足"
+    },
+    {
+      "canonical_name": "座舱实时语音 Agent 产品化",
+      "type": "project",
+      "aliases": [
+        "座舱实时语音 Agent Runtime 产品化",
+        "奇瑞语音项目"
+      ],
+      "appears_on_dates": [
+        "2026-05-20"
+      ],
+      "merge_reasoning": "座舱实时语音 Agent Runtime 产品化和奇瑞语音项目是同一产品的不同描述，属于同一项目的别名"
+    }
+  ],
+  "merge_decisions": [
+    {
+      "from": "keypulse",
+      "to": "KeyPulse",
+      "reason": "大小写变体，证据上下文均指向/Users/Harland/Go/keypulse仓库"
+    },
+    {
+      "from": "homebrew-keypulse",
+      "to": "KeyPulse",
+      "reason": "KeyPulse项目的Homebrew相关路径，属于同一实体"
+    },
+    {
+      "from": "Chat Agent",
+      "to": "CHAT-0410",
+      "reason": "项目描述短语，证据上下文指向CHAT-0410代码仓库"
+    },
+    {
+      "from": "chat agent",
+      "to": "CHAT-0410",
+      "reason": "Chat Agent的小写变体，同属CHAT-0410项目"
+    },
+    {
+      "from": "奇趣宝管家服务",
+      "to": "奇趣宝",
+      "reason": "奇趣宝项目的功能描述，属于同一项目别名"
+    },
+    {
+      "from": "CorpusFlow-",
+      "to": "CorpusFlow",
+      "reason": "GitHub仓库名变体，项目定位一致"
+    },
+    {
+      "from": "corpusflow",
+      "to": "CorpusFlow",
+      "reason": "大小写变体，证据上下文均指向数据生成平台"
+    },
+    {
+      "from": "Carmind_code",
+      "to": "Carmind",
+      "reason": "Carmind项目的代码仓库路径，属于同一实体"
+    },
+    {
+      "from": "RAGFLOW",
+      "to": "RAGFlow",
+      "reason": "大小写变体，属于同一RAG项目"
+    },
+    {
+      "from": "MCP-Boss",
+      "to": "Career_harness",
+      "reason": "Career_harness项目的子模块，功能相关"
+    },
+    {
+      "from": "boss-agent-cli",
+      "to": "Career_harness",
+      "reason": "Career_harness项目的CLI工具，属于同一实体"
+    },
+    {
+      "from": "Agent_Runtime_PoC_工程",
+      "to": "Agent_Runtime_PoC",
+      "reason": "项目完整描述，属于同一PoC项目"
+    },
+    {
+      "from": "座舱实时语音 Agent Runtime 产品化",
+      "to": "座舱实时语音 Agent 产品化",
+      "reason": "同一产品的不同版本描述，核心功能一致"
+    },
+    {
+      "from": "奇瑞语音项目",
+      "to": "座舱实时语音 Agent 产品化",
+      "reason": "项目业务场景描述，属于同一产品别名"
+    }
+  ]
+}

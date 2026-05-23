@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "required": ["canonical_entities", "merge_decisions"],
+  "properties": {
+    "canonical_entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["canonical_name", "type", "aliases", "appears_on_dates", "merge_reasoning"],
+        "properties": {
+          "canonical_name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "appears_on_dates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "merge_reasoning": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "merge_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "reason"],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

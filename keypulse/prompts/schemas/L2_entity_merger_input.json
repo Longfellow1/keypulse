@@ -1,0 +1,135 @@
+{
+  "type": "object",
+  "required": ["day_count", "entity_count", "days", "entity_mentions"],
+  "properties": {
+    "day_count": {
+      "type": "integer"
+    },
+    "entity_count": {
+      "type": "integer"
+    },
+    "days": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["date", "entities"],
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type", "aliases", "evidence_event_ids", "evidence_event_count", "evidence_context"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "aliases": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "evidence_event_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "evidence_event_count": {
+                  "type": "integer"
+                },
+                "evidence_context": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "event_id",
+                      "time",
+                      "app_name",
+                      "work_unit",
+                      "window_title",
+                      "content_excerpt",
+                      "file_paths",
+                      "urls"
+                    ],
+                    "properties": {
+                      "event_id": {
+                        "type": "string"
+                      },
+                      "time": {
+                        "type": "string"
+                      },
+                      "app_name": {
+                        "type": "string"
+                      },
+                      "work_unit": {
+                        "type": "string"
+                      },
+                      "window_title": {
+                        "type": "string"
+                      },
+                      "content_excerpt": {
+                        "type": "string"
+                      },
+                      "file_paths": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "urls": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "entity_mentions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["date", "name", "type", "aliases", "evidence_event_ids", "evidence_event_count"],
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_event_count": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}
