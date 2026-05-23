@@ -1773,12 +1773,8 @@ def _render_exec_weekly_markdown(
     in_progress = sum(1 for item in top_topics if str(item.get("state") or "") == "in_progress")
     started = sum(1 for item in top_topics if str(item.get("state") or "") == "started")
     total_entries = sum(_weekly_entry_count(item) for item in top_topics)
-    tldr = "本周主线集中在" + "、".join(str(item.get("name") or item.get("slug")) for item in top_topics[:2]) if top_topics else "本周没有形成足够主题。"
     lines = [
         f"# 本周工作汇报 ({week_str}, {start.month}/{start.day}-{end.month}/{end.day})",
-        "",
-        "## TL;DR",
-        tldr,
     ]
     if key_data_section.strip():
         lines.extend(["", *key_data_section.strip().splitlines(), ""])
@@ -1803,7 +1799,7 @@ def _render_exec_weekly_markdown(
         outputs = [str(item).strip() for item in (payload.get("outputs") or []) if str(item).strip()]
         blockers = [str(item).strip() for item in (payload.get("blockers") or []) if str(item).strip()]
         meaning = str(payload.get("meaning") or "").strip()
-        lines.append(f"### {_exec_state_icon(state)} {name} | {_exec_state_label(state)}")
+        lines.append(f"### {name}")
         lines.append(narrative)
         if meaning:
             lines.append(f"→ 这意味着: {meaning}")
@@ -1828,12 +1824,10 @@ def _render_exec_weekly_markdown(
                 text = str(risk or "").strip()
                 if text:
                     valid_risks.append((text, "", ""))
-    lines.extend(["## 本周风险", "| # | 风险 | 影响 | 处理方向 |", "|---|---|---|---|"])
     if valid_risks:
+        lines.extend(["## 本周风险", "| # | 风险 | 影响 | 处理方向 |", "|---|---|---|---|"])
         for idx, (r, i, d) in enumerate(valid_risks, start=1):
             lines.append(f"| {idx} | {r} | {i or '—'} | {d or '—'} |")
-    else:
-        lines.append("| — | （无） | — | — |")
     dropped = l6_output.get("dropped_balls") if isinstance(l6_output, dict) else []
     if not dropped:
         dropped = l6_output.get("missed_balls") if isinstance(l6_output, dict) else []
@@ -1861,7 +1855,7 @@ def _render_exec_weekly_markdown(
         for line in valid_dropped:
             lines.append(f"- {line}")
     else:
-        lines.append("- （无）")
+        lines.append("- 本周没有掉球")
     observation = l6_output.get("observation") if isinstance(l6_output, dict) else {}
     lines.extend(["", "## 一个观察"])
     if isinstance(observation, dict) and str(observation.get("text") or "").strip():

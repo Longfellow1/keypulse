@@ -184,7 +184,7 @@ def test_run_weekly_stub_gateway_full_chain(tmp_path, monkeypatch):
     assert weekly_path.exists()
     body = weekly_path.read_text(encoding="utf-8")
     assert "# 本周工作汇报 (2026-W18" in body
-    assert "## TL;DR" in body
+    assert "## TL;DR" not in body  # M5: 删 TL;DR 死代码模板拼接
     assert "## 本周关键进展" in body
     assert "## 没接住的球" in body
     assert "生成信息:" in body
