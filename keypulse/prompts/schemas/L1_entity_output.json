@@ -1,0 +1,76 @@
+{
+  "type": "object",
+  "required": ["date", "entities", "event_entity_map", "cross_entity_warning"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "description": "ISO 8601 日期 (YYYY-MM-DD)"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "aliases", "confidence", "evidence_event_ids"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "evidence_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "event_entity_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["event_id", "primary_entity", "secondary_entities", "confidence"],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "primary_entity": {
+            "type": "string"
+          },
+          "secondary_entities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "needs_review": {
+            "type": "boolean"
+          },
+          "review_reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "cross_entity_warning": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
