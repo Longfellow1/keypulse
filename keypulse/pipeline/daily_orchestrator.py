@@ -41,6 +41,7 @@ from keypulse.pipeline.daily_validator import _DECISION_RE, _OUTPUT_RE
 from keypulse.pipeline.anchor_gateway import AnchorGateway, AnchorGatewayError
 from keypulse.pipeline.artifact_writer import write_artifact
 from keypulse.pipeline.event_intake import cap_events_by_source
+from keypulse.pipeline.event_scoring import _CJK_RE, _event_value_density, _flagship_event_score, _source_kind
 from keypulse.pipeline.llm_errors import classify_llm_error
 from keypulse.pipeline.weekly_topic_anchor import (
     anchor_today_clusters,
@@ -68,7 +69,6 @@ _INPUT_MARKER_BEGIN = "<<INPUT_JSON>>"
 _INPUT_MARKER_END = "<<END_INPUT_JSON>>"
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{2,40}$")
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
-_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
 _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 _ANCHOR_TIMELINE_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
@@ -230,49 +230,6 @@ def _estimate_token_count(text: str) -> int:
     return cjk_count + tokenish_count
 
 
-def _source_kind(event: Mapping[str, Any]) -> str:
-    speaker = str(event.get("speaker") or "").strip().lower()
-    source = str(event.get("source") or "").strip().lower()
-    if speaker in {"ai", "assistant"}:
-        return "assistant_msg"
-    if source in _CONTEXT_SOURCES:
-        return "context"
-    if speaker == "user" or source in _USER_MESSAGE_SOURCES:
-        return "user_msg"
-    if source in _TOOL_ECHO_SOURCES or speaker == "system":
-        return "tool_echo"
-    return "default"
-
-
-def _event_value_density(event: Mapping[str, Any], settings: Any | None = None) -> float:
-    cfg = settings or Config().pipeline.value_density
-    if not bool(getattr(cfg, "enabled", True)):
-        return 0.0
-
-    text = " ".join(
-        str(part or "").strip()
-        for part in (event.get("content_text"), event.get("window_title"))
-        if str(part or "").strip()
-    )
-    token_target = max(int(getattr(cfg, "token_target", 80) or 80), 1)
-    base = min(_estimate_token_count(text) / token_target, 1.0)
-    weights = getattr(cfg, "source_weights", {}) or {}
-    kind = _source_kind(event)
-    fallback_weight = 0.85 if kind == "context" else weights.get("default", 0.6)
-    weight = float(weights.get(kind, fallback_weight) or 0.0)
-    score = base * max(weight, 0.0)
-
-    decision_regex = str(getattr(cfg, "decision_regex", "") or "").strip()
-    if decision_regex:
-        try:
-            if re.search(decision_regex, text):
-                score += max(float(getattr(cfg, "decision_bonus", 0.0) or 0.0), 0.0)
-        except re.error:
-            pass
-
-    return round(min(max(score, 0.0), 1.0), 4)
-
-
 def _component_size_score(event_count: int) -> float:
     return round(min(max(event_count, 0) / 5.0, 0.7), 4)
 
@@ -285,24 +242,6 @@ def _component_density_metadata(component_events: list[dict[str, Any]], settings
         "size_score": size_score,
         "peak_event_density": peak,
     }
-
-
-def _flagship_event_score(event: Mapping[str, Any]) -> float:
-    text = " ".join(
-        str(part or "").strip()
-        for part in (event.get("content_text"), event.get("window_title"), event.get("app_name"))
-        if str(part or "").strip()
-    )
-    score = _event_value_density(event)
-    if _CJK_RE.search(text):
-        score += 0.3
-    if 12 <= len(str(event.get("content_text") or "").strip()) <= 260:
-        score += 0.15
-    if _source_kind(event) == "context":
-        win = str(event.get("window_title") or "")
-        if win and (" - " in win or " — " in win or " – " in win):
-            score += 0.4
-    return round(score, 4)
 
 
 def _event_hour_key(event: Mapping[str, Any]) -> str:

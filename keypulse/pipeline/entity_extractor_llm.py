@@ -16,7 +16,8 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from keypulse.config import Config
-from keypulse.pipeline.daily_orchestrator import _flagship_event_score, cap_events_by_source
+from keypulse.pipeline.event_intake import cap_events_by_source
+from keypulse.pipeline.event_scoring import _flagship_event_score
 from keypulse.pipeline.daily_strategy import build_prompt, extract_work_unit
 from keypulse.pipeline.model import ModelGateway, load_model_gateway
 from keypulse.prompts.loader import load_prompt
