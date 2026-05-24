@@ -408,12 +408,71 @@ class DailyStrategy(abc.ABC):
         events: list[dict[str, Any]],
         gateway: ModelGateway,
         repair_hint: str = "",
+        entity_output: Mapping[str, Any] | None = None,
     ) -> DailyGenerationResult:
         """Turn full-day events into a daily.md markdown + structural metadata.
 
         Implementations may raise DailyStrategyError on unrecoverable failure.
         """
         ...
+
+
+def _clamp_confidence(value: Any) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, numeric))
+
+
+def _prepare_flagship_entity_payload(entity_output: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(entity_output, Mapping):
+        return {}
+
+    entities_out: list[dict[str, Any]] = []
+    entities_raw = entity_output.get("entities")
+    if isinstance(entities_raw, list):
+        for item in entities_raw:
+            if not isinstance(item, Mapping):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            entity_type = str(item.get("type") or "").strip() or "unknown"
+            event_ids = _list_of_strings(item.get("event_ids") or item.get("evidence_event_ids"))
+            entities_out.append(
+                {
+                    "name": name,
+                    "type": entity_type,
+                    "event_ids": event_ids,
+                    "confidence": _clamp_confidence(item.get("confidence")),
+                }
+            )
+
+    event_entity_map_out: list[dict[str, Any]] = []
+    mapping_raw = entity_output.get("event_entity_map")
+    if isinstance(mapping_raw, list):
+        for item in mapping_raw:
+            if not isinstance(item, Mapping):
+                continue
+            event_id = str(item.get("event_id") or "").strip()
+            if not event_id:
+                continue
+            event_entity_map_out.append(
+                {
+                    "event_id": event_id,
+                    "primary_entity": str(item.get("primary_entity") or "").strip(),
+                    "confidence": _clamp_confidence(item.get("confidence")),
+                    "needs_review": bool(item.get("needs_review", False)),
+                }
+            )
+
+    payload: dict[str, Any] = {}
+    if entities_out:
+        payload["entities"] = entities_out
+    if event_entity_map_out:
+        payload["event_entity_map"] = event_entity_map_out
+    return payload
 
 
 class FlagshipSingleStepStrategy(DailyStrategy):
@@ -432,6 +491,7 @@ class FlagshipSingleStepStrategy(DailyStrategy):
         events: list[dict[str, Any]],
         gateway: ModelGateway,
         repair_hint: str = "",
+        entity_output: Mapping[str, Any] | None = None,
     ) -> DailyGenerationResult:
         from keypulse.prompts.loader import load_prompt
 
@@ -445,6 +505,7 @@ class FlagshipSingleStepStrategy(DailyStrategy):
         if self._cluster_components is not None:
             clusters = [_flagship_cluster_payload(component) for component in self._cluster_components(events)]
             payload["clusters"] = [cluster for cluster in clusters if cluster]
+        payload.update(_prepare_flagship_entity_payload(entity_output))
 
         try:
             spec = load_prompt(self.capability)
@@ -502,9 +563,10 @@ class BudgetTwoStepStrategy(DailyStrategy):
         events: list[dict[str, Any]],
         gateway: ModelGateway,
         repair_hint: str = "",
+        entity_output: Mapping[str, Any] | None = None,
     ) -> DailyGenerationResult:
         from keypulse.prompts.loader import load_prompt
-        del repair_hint
+        del repair_hint, entity_output
 
         component_payloads = self._deps.cluster_components(events)
         merge_candidates = self._deps.detect_merges(component_payloads)

@@ -1,6 +1,9 @@
 {
   "type": "object",
-  "required": ["date", "events"],
+  "required": [
+    "date",
+    "events"
+  ],
   "additionalProperties": false,
   "properties": {
     "date": {
@@ -11,26 +14,97 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["t", "s", "c"],
+        "required": [
+          "t",
+          "s",
+          "c"
+        ],
         "additionalProperties": true,
         "properties": {
-          "t": {"type": "string"},
-          "s": {"type": "string"},
-          "a": {"type": "string"},
-          "c": {"type": "string"},
-          "sp": {"type": "string"},
-          "eid": {"type": "string"},
-          "sid": {"type": "string"},
-          "win": {"type": "string"},
-          "wu": {"type": "string"},
+          "t": {
+            "type": "string"
+          },
+          "s": {
+            "type": "string"
+          },
+          "a": {
+            "type": "string"
+          },
+          "c": {
+            "type": "string"
+          },
+          "sp": {
+            "type": "string"
+          },
+          "eid": {
+            "type": "string"
+          },
+          "sid": {
+            "type": "string"
+          },
+          "win": {
+            "type": "string"
+          },
+          "wu": {
+            "type": "string"
+          },
           "fp": {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {
+              "type": "string"
+            }
           },
-          "url": {"type": "string"},
+          "url": {
+            "type": "string"
+          },
           "code_symbols": {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "event_entity_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "primary_entity": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "needs_review": {
+            "type": "boolean"
           }
         }
       }
@@ -41,14 +115,26 @@
         "type": "object",
         "additionalProperties": true,
         "properties": {
-          "display_name": {"type": "string"},
-          "dwell_minutes": {"type": "number"},
-          "revisit_count": {"type": "integer"},
-          "cross_app_count": {"type": "integer"},
-          "event_count": {"type": "integer"},
+          "display_name": {
+            "type": "string"
+          },
+          "dwell_minutes": {
+            "type": "number"
+          },
+          "revisit_count": {
+            "type": "integer"
+          },
+          "cross_app_count": {
+            "type": "integer"
+          },
+          "event_count": {
+            "type": "integer"
+          },
           "time_range": {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {
+              "type": "string"
+            }
           },
           "key_excerpts": {
             "type": "array",
