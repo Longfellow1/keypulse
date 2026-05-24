@@ -449,6 +449,33 @@ def _load_gateway() -> ModelGateway:
     return gateway
 
 
+def _extract_entities_for_flagship(capped_events: list[dict[str, Any]], date_str: str) -> dict[str, Any] | None:
+    """Extract entities from already-capped flagship events.
+
+    Failures are non-fatal and should fallback to the legacy no-entity path.
+    """
+
+    try:
+        from keypulse.pipeline.entity_extractor_llm import extract_entities as extract_entities_llm
+
+        result = extract_entities_llm(capped_events)
+        if hasattr(result, "to_dict"):
+            payload = result.to_dict()  # type: ignore[assignment]
+        else:
+            payload = result
+        if isinstance(payload, dict):
+            return payload
+        raise ValueError(f"entity_extractor returned non-dict payload: {type(payload)}")
+    except Exception as exc:
+        _logger.warning(
+            "daily_orchestrator entity_extract failed date=%s events=%s error=%s",
+            date_str,
+            len(capped_events),
+            exc,
+        )
+        return None
+
+
 def _state_path() -> Path:
     return get_data_dir() / "daily-orchestrator-state.json"
 
@@ -1487,9 +1514,28 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
                     "capped_count": len(flagship_events),
                 }
             )
+        with recorder.stage("entity_extract"):
+            entity_output = _extract_entities_for_flagship(flagship_events, date_str)
+        if entity_output is None:
+            _append_log(
+                {
+                    "ts": _now_iso(),
+                    "capability": "daily_orchestrator",
+                    "date": date_str,
+                    "trigger": trigger,
+                    "decision": "entity_extract_failed",
+                    "reason": "fallback_to_legacy_flagship_input",
+                }
+            )
+
         try:
             with recorder.stage("flagship_call", failure_reason="flagship_failed"):
-                result = strategy.generate(date_str=date_str, events=flagship_events, gateway=gateway)
+                result = strategy.generate(
+                    date_str=date_str,
+                    events=flagship_events,
+                    gateway=gateway,
+                    entity_output=entity_output,
+                )
         except DailyStrategyError as exc:
             llm_exc = exc.__cause__ if isinstance(exc.__cause__, BaseException) else exc
             recorder.set_degraded("flagship_failed", kind=classify_llm_error(llm_exc).value)
@@ -1523,6 +1569,7 @@ def _run_daily_recorded(date_str: str, *, trigger: str, recorder: RunRecorder) -
                         events=flagship_events,
                         gateway=gateway,
                         repair_hint=repair_hint,
+                        entity_output=entity_output,
                     )
             except DailyStrategyError as exc:
                 llm_exc = exc.__cause__ if isinstance(exc.__cause__, BaseException) else exc

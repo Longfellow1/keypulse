@@ -261,6 +261,10 @@ def _patch_io(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: list[dict[s
         "keypulse.pipeline.daily_orchestrator.resolve_active_sink",
         lambda _cfg, persist=False: SimpleNamespace(output_dir=tmp_path / "vault"),
     )
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator._extract_entities_for_flagship",
+        lambda _events, _date: None,
+    )
 
 
 def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
@@ -293,6 +297,77 @@ def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
     assert "clusters" in flagship_input
     assert flagship_input["clusters"][0]["dwell_minutes"] == 3.0
     assert flagship_input["clusters"][0]["cross_app_count"] == 1
+    assert "entities" not in flagship_input
+    assert "event_entity_map" not in flagship_input
+
+
+def test_flagship_path_injects_entity_payload_when_extractor_returns_data(tmp_path, monkeypatch):
+    _write_config(tmp_path, cloud_model="doubao-seed-1-6-250615")
+    _patch_io(monkeypatch, tmp_path, _rows())
+    monkeypatch.setattr(
+        "keypulse.pipeline.daily_orchestrator._extract_entities_for_flagship",
+        lambda _events, _date: {
+            "entities": [
+                {
+                    "name": "KeyPulse",
+                    "type": "project",
+                    "evidence_event_ids": ["1", "2"],
+                    "confidence": 0.92,
+                    "aliases": ["keypulse"],
+                }
+            ],
+            "event_entity_map": [
+                {
+                    "event_id": "1",
+                    "primary_entity": "KeyPulse",
+                    "confidence": 0.95,
+                    "needs_review": False,
+                    "secondary_entities": [],
+                    "review_reason": "",
+                }
+            ],
+        },
+    )
+
+    gateway = FakeGateway(
+        "doubao-seed-1-6-250615",
+        {
+            "daily_flagship": {"markdown": FLAGSHIP_OK_MARKDOWN},
+            "L0_anchor": {"assignments": {"keypulse-daily-strategy": "weekly-v3-rollout"}, "new_anchors": []},
+        },
+    )
+    monkeypatch.setattr("keypulse.pipeline.daily_orchestrator._load_gateway", lambda: gateway)
+
+    run_daily("2026-05-01", trigger="18:00")
+
+    flagship_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "daily_flagship")
+    assert flagship_input["entities"] == [
+        {
+            "name": "KeyPulse",
+            "type": "project",
+            "event_ids": ["1", "2"],
+            "confidence": 0.92,
+        }
+    ]
+    assert flagship_input["event_entity_map"] == [
+        {
+            "event_id": "1",
+            "primary_entity": "KeyPulse",
+            "confidence": 0.95,
+            "needs_review": False,
+        }
+    ]
+
+
+def test_extract_entities_for_flagship_returns_none_on_extractor_error(monkeypatch):
+    monkeypatch.setattr(
+        "keypulse.pipeline.entity_extractor_llm.extract_entities",
+        lambda _events: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    from keypulse.pipeline.daily_orchestrator import _extract_entities_for_flagship
+
+    assert _extract_entities_for_flagship([{"id": "1", "ts_start": "2026-05-01T01:00:00+00:00"}], "2026-05-01") is None
 
 
 def test_budget_path_calls_l1_l2_once_and_l3_for_new_topic(tmp_path, monkeypatch):

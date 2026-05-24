@@ -101,6 +101,59 @@ def test_flagship_strategy_calls_daily_flagship_once_and_returns_markdown():
     assert result.clusters == ()
 
 
+def test_flagship_strategy_injects_entity_output_only_when_present():
+    gateway = FakeGateway({"daily_flagship": {"markdown": MARKDOWN}})
+
+    FlagshipSingleStepStrategy().generate(
+        date_str="2026-05-01",
+        events=_events(),
+        gateway=gateway,
+        entity_output={
+            "entities": [
+                {
+                    "name": "KeyPulse",
+                    "type": "project",
+                    "evidence_event_ids": ["1", "2"],
+                    "confidence": 0.91,
+                    "aliases": ["keypulse"],
+                }
+            ],
+            "event_entity_map": [
+                {
+                    "event_id": "1",
+                    "primary_entity": "KeyPulse",
+                    "confidence": 0.88,
+                    "needs_review": False,
+                    "review_reason": "",
+                }
+            ],
+        },
+    )
+
+    first_payload = gateway.calls[0][1]
+    assert first_payload["entities"] == [
+        {
+            "name": "KeyPulse",
+            "type": "project",
+            "event_ids": ["1", "2"],
+            "confidence": 0.91,
+        }
+    ]
+    assert first_payload["event_entity_map"] == [
+        {
+            "event_id": "1",
+            "primary_entity": "KeyPulse",
+            "confidence": 0.88,
+            "needs_review": False,
+        }
+    ]
+
+    FlagshipSingleStepStrategy().generate(date_str="2026-05-01", events=_events(), gateway=gateway)
+    second_payload = gateway.calls[1][1]
+    assert "entities" not in second_payload
+    assert "event_entity_map" not in second_payload
+
+
 def test_flagship_strategy_prepends_repair_hint_before_prompt_body():
     gateway = FakeGateway({"daily_flagship": {"markdown": MARKDOWN}})
 

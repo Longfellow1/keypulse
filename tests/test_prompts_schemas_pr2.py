@@ -114,6 +114,22 @@ def test_daily_flagship_input_schema_accepts_scene_fingerprint_and_clusters():
                 "key_excerpts": ["补日报现场指纹", "把 session_id 接到 prompt"],
             }
         ],
+        "entities": [
+            {
+                "name": "KeyPulse",
+                "type": "project",
+                "event_ids": ["e1"],
+                "confidence": 0.95,
+            }
+        ],
+        "event_entity_map": [
+            {
+                "event_id": "e1",
+                "primary_entity": "KeyPulse",
+                "confidence": 0.95,
+                "needs_review": False,
+            }
+        ],
         "yesterday_anchor": "",
         "recent_topic_history": [],
     }
