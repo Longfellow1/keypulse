@@ -296,7 +296,8 @@ def test_flagship_path_calls_one_llm_and_skips_topics(tmp_path, monkeypatch):
     flagship_input = next(item["input_data"] for item in gateway.inputs if item["capability"] == "daily_flagship")
     assert "clusters" in flagship_input
     assert flagship_input["clusters"][0]["dwell_minutes"] == 3.0
-    assert flagship_input["clusters"][0]["cross_app_count"] == 1
+    assert "cross_app_count" not in flagship_input["clusters"][0]
+    assert "revisit_count" not in flagship_input["clusters"][0]
     assert "entities" not in flagship_input
     assert "event_entity_map" not in flagship_input
 

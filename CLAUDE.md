@@ -61,6 +61,7 @@ This project is indexed by GitNexus as **keypulse** (10292 symbols, 17189 relati
 
 ### 现有 gold set
 
-- `daily` — `docs/golden-daily/2026-05-06.md`（黄金 baseline，validator score ≥ 97 不退化）+ `2026-05-09.md`
+- `daily` v3 — `docs/golden-daily/2026-05-06.md`（validator score ≥ 97 不退化）+ `2026-05-09.md`
+- `daily` v4 — `docs/golden-daily/2026-05-06-v4.md`（**当前线上 baseline**：entity 维度按项目组织 + intensity 标签 schema deep-fix，B5_run2，2026-05-25 拍板）
 - `weekly` — `docs/golden-weekly/2026-W19-exec.md` + `2026-W19-plain.md`（M5 内容修后会重起 baseline）
 - `skill propose` — 待 v0 hello world 跑通后建立
