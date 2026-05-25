@@ -5,13 +5,14 @@ import os
 import re
 import hashlib
 import time
+import logging
 import tomllib
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from keypulse.config import Config
 from keypulse.i18n import current_lang
@@ -74,6 +75,7 @@ _STATUS_PRIORITY = {
     "steady": 4,
     "declining": 5,
 }
+_logger = logging.getLogger(__name__)
 
 
 class WeeklyOrchestratorError(RuntimeError):
@@ -747,6 +749,164 @@ def _daily_event_counts(daily_summaries: list[dict[str, Any]]) -> list[int]:
         )
         values.append(cluster_total)
     return values
+
+
+def _l1_entity_cache_dir() -> Path:
+    return Path.home() / ".keypulse" / "cache" / "llm"
+
+
+def _load_week_daily_entity_outputs(week_str: str) -> list[dict[str, Any]]:
+    cache_dir = _l1_entity_cache_dir()
+    if not cache_dir.exists():
+        return []
+
+    week_dates = _week_dates(week_str)
+    pending_dates = set(week_dates)
+    payload_by_date: dict[str, dict[str, Any]] = {}
+    cache_files = sorted(cache_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+    for cache_file in cache_files:
+        if not pending_dates:
+            break
+        try:
+            payload = json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+
+        capability = str(payload.get("capability") or "").strip()
+        input_payload = payload.get("input")
+        if isinstance(input_payload, dict):
+            if not capability:
+                capability = str(input_payload.get("capability") or "").strip()
+            input_data = input_payload.get("input_data")
+        else:
+            input_data = None
+        if capability != "L1_entity_extractor" or not isinstance(input_data, Mapping):
+            continue
+
+        date_text = str(input_data.get("date") or "").strip()
+        if date_text not in pending_dates:
+            continue
+        parsed_output = _parse_llm_json_robust(str(payload.get("output") or ""))
+        if not isinstance(parsed_output, Mapping):
+            continue
+
+        entities = parsed_output.get("entities")
+        event_entity_map = parsed_output.get("event_entity_map")
+        normalized = {
+            "date": date_text,
+            "entities": list(entities) if isinstance(entities, list) else [],
+            "event_entity_map": list(event_entity_map) if isinstance(event_entity_map, list) else [],
+        }
+        if not normalized["entities"] and not normalized["event_entity_map"]:
+            continue
+        payload_by_date[date_text] = normalized
+        pending_dates.discard(date_text)
+
+    return [payload_by_date[day] for day in week_dates if day in payload_by_date]
+
+
+def _resolve_merged_entity_name(name: str, alias_map: Mapping[str, str]) -> str:
+    current = str(name or "").strip()
+    seen: set[str] = set()
+    while current and current in alias_map and current not in seen:
+        seen.add(current)
+        current = str(alias_map.get(current) or "").strip() or current
+    return current
+
+
+def _clamp_unit_float(value: Any) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, numeric))
+
+
+def _build_weekly_event_entity_map(
+    *,
+    daily_outputs: list[Mapping[str, Any]],
+    merge_decisions: Any,
+) -> list[dict[str, Any]]:
+    alias_map: dict[str, str] = {}
+    if isinstance(merge_decisions, list):
+        for item in merge_decisions:
+            if not isinstance(item, Mapping):
+                continue
+            from_name = str(item.get("from") or "").strip()
+            to_name = str(item.get("to") or "").strip()
+            if from_name and to_name and from_name != to_name:
+                alias_map[from_name] = to_name
+
+    mapped_by_event_id: dict[str, dict[str, Any]] = {}
+    for day_payload in daily_outputs:
+        if not isinstance(day_payload, Mapping):
+            continue
+        date_text = str(day_payload.get("date") or "").strip()
+        mapping_raw = day_payload.get("event_entity_map")
+        if not isinstance(mapping_raw, list):
+            continue
+        for item in mapping_raw:
+            if not isinstance(item, Mapping):
+                continue
+            event_id = str(item.get("event_id") or "").strip()
+            primary_entity = str(item.get("primary_entity") or "").strip()
+            if not event_id or not primary_entity:
+                continue
+            canonical = _resolve_merged_entity_name(primary_entity, alias_map) or primary_entity
+            normalized = {
+                "event_id": event_id,
+                "primary_entity": canonical,
+                "confidence": _clamp_unit_float(item.get("confidence")),
+                "needs_review": bool(item.get("needs_review", False)),
+            }
+            if date_text:
+                normalized["date"] = date_text
+            previous = mapped_by_event_id.get(event_id)
+            if previous is None or float(normalized.get("confidence") or 0.0) >= float(previous.get("confidence") or 0.0):
+                mapped_by_event_id[event_id] = normalized
+
+    return sorted(
+        mapped_by_event_id.values(),
+        key=lambda item: (str(item.get("date") or ""), str(item.get("event_id") or "")),
+    )
+
+
+def _prepare_weekly_entity_payload(week_str: str) -> dict[str, Any] | None:
+    daily_outputs = _load_week_daily_entity_outputs(week_str)
+    if not daily_outputs:
+        return None
+
+    try:
+        from keypulse.pipeline.entity_merger_llm import merge_entities as merge_entities_llm
+
+        merged = merge_entities_llm(daily_outputs)
+        merged_payload = merged.to_dict() if hasattr(merged, "to_dict") else merged
+        if not isinstance(merged_payload, Mapping):
+            raise ValueError(f"entity_merger returned non-dict payload: {type(merged_payload)}")
+        canonical_entities = merged_payload.get("canonical_entities")
+        merge_decisions = merged_payload.get("merge_decisions")
+        output: dict[str, Any] = {}
+        if isinstance(canonical_entities, list) and canonical_entities:
+            output["canonical_entities"] = [dict(item) for item in canonical_entities if isinstance(item, Mapping)]
+        event_entity_map = _build_weekly_event_entity_map(
+            daily_outputs=daily_outputs,
+            merge_decisions=merge_decisions,
+        )
+        if event_entity_map:
+            output["event_entity_map"] = event_entity_map
+        if output:
+            return output
+        return None
+    except Exception as exc:
+        _logger.warning(
+            "weekly_orchestrator entity_merge failed week=%s cached_days=%s error=%s",
+            week_str,
+            len(daily_outputs),
+            exc,
+        )
+        return None
 
 
 def _load_week_daily_summaries(week_str: str) -> list[dict[str, Any]]:
@@ -2607,6 +2767,30 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
             }
         ]
 
+    weekly_entity_payload: dict[str, Any] | None = None
+    with recorder.stage("entity_merge"):
+        weekly_entity_payload = _prepare_weekly_entity_payload(week_str)
+    if weekly_entity_payload is None:
+        _append_log(
+            {
+                "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                "capability": "weekly_orchestrator",
+                "week": week_str,
+                "decision": "entity_merge_skipped",
+            }
+        )
+    else:
+        _append_log(
+            {
+                "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                "capability": "weekly_orchestrator",
+                "week": week_str,
+                "decision": "entity_merge_ok",
+                "canonical_entities": len(weekly_entity_payload.get("canonical_entities") or []),
+                "event_entity_map": len(weekly_entity_payload.get("event_entity_map") or []),
+            }
+        )
+
     l6_input = {
         "scope_week": week_str,
         "weekly_dailies": [
@@ -2691,6 +2875,8 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
                 "daily_shipped": daily_signals["daily_shipped"],
                 "daily_anchor_states": daily_signals["daily_anchor_states"],
             }
+            if isinstance(weekly_entity_payload, dict):
+                l5_input.update(weekly_entity_payload)
             l5_prompt = _build_prompt(l5_spec_body, "L5_weekly_main_narrative", l5_input)
             l5_key = _sha1_json(l5_input)
 

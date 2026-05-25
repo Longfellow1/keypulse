@@ -78,6 +78,48 @@ def test_l5_schema_valid_and_invalid():
         validate(invalid_output, _schema("L5_output.json"))
 
 
+def test_l5_input_schema_accepts_optional_weekly_entity_fields_and_keeps_legacy_shape():
+    legacy_input = {
+        "scope_week": "2026-W18",
+        "topic": {
+            "slug": "keypulse-weekly",
+            "name": "Weekly 主线",
+            "state": "in_progress",
+            "weekly_entries": [{"date": "2026-05-04", "narrative_one_line": "推进 weekly"}],
+        },
+        "evidence": [{"date": "2026-05-04", "text": "推进 weekly"}],
+        "previous_week_narrative": None,
+        "cross_week_diff": [{"topic": "Weekly 主线", "from_state": "started", "to_state": "in_progress"}],
+        "key_decisions": [{"date": "2026-05-04", "text": "决定按主线写周报", "source": "tag"}],
+        "visible_outputs": [{"date": "2026-05-04", "text": "weekly markdown 初稿", "source": "tag"}],
+        "tagged_blockers": [{"date": "2026-05-04", "text": "卡在 schema 校验", "source": "tag"}],
+    }
+    validate(legacy_input, _schema("L5_input.json"))
+
+    with_entities = {
+        **legacy_input,
+        "canonical_entities": [
+            {
+                "canonical_name": "KeyPulse",
+                "type": "project",
+                "aliases": ["keypulse"],
+                "appears_on_dates": ["2026-05-04"],
+                "merge_reasoning": "same workspace and context",
+            }
+        ],
+        "event_entity_map": [
+            {
+                "event_id": "1",
+                "primary_entity": "KeyPulse",
+                "confidence": 0.93,
+                "needs_review": False,
+                "date": "2026-05-04",
+            }
+        ],
+    }
+    validate(with_entities, _schema("L5_input.json"))
+
+
 def test_l6_schema_valid_and_invalid():
     valid_input = {
         "scope_week": "2026-W18",
