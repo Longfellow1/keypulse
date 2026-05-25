@@ -151,47 +151,56 @@ class BrowserAutomationCapability(Capability):
     label_when_failed = "采集建议"
     error_codes = {"browser_automation_denied"}
 
-    _HINT = (
-        "浏览器自动化权限未授权，请前往系统设置 → 隐私与安全性 → 自动化，"
-        "勾选 KeyPulse 对 Safari/Google Chrome/Arc/Edge/Brave 的控制权限"
-    )
+    _HINT_PREFIX = "浏览器自动化权限未授权，请前往系统设置 → 隐私与安全性 → 自动化，勾选 KeyPulse 对 "
+    _HINT_SUFFIX = " 的控制权限"
 
     def precheck(self) -> CheckResult:
         return CheckResult(ok=True, code="skipped")
 
     def monitor(self) -> HealthState:
-        denied = _load_denied_browsers()
-        if denied:
-            detail = f"{self._HINT}（已拒绝: {', '.join(sorted(denied))}）"
-            return HealthState(
-                ok=False,
-                code="browser_automation_denied",
-                last_checked=now_ts(),
-                detail=detail,
-            )
+        # Lazy import: discover lives in capture/watchers and pulls AppKit.
+        from keypulse.capture.watchers.browser_discovery import discover_http_handler_apps
 
-        script = 'tell application "Safari" to count of windows'
         try:
-            result = subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=1.0,
-            )
+            relevant = tuple(discover_http_handler_apps())
         except Exception:
+            relevant = ()
+
+        if not relevant:
             return HealthState(ok=True, code="ok", last_checked=now_ts(), detail=None)
 
-        stderr = (result.stderr or "").strip()
-        if is_browser_automation_denied(stderr, result.returncode):
-            mark_browser_automation_denied("Safari")
-            return HealthState(
-                ok=False,
-                code="browser_automation_denied",
-                last_checked=now_ts(),
-                detail=self._HINT,
-            )
-        return HealthState(ok=True, code="ok", last_checked=now_ts(), detail=None)
+        denied = _load_denied_browsers()
+        for browser in relevant:
+            if browser in denied:
+                continue
+            script = f'tell application "{browser}" to count of windows'
+            try:
+                result = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=1.0,
+                )
+            except Exception:
+                continue
+            stderr = (result.stderr or "").strip()
+            if is_browser_automation_denied(stderr, result.returncode):
+                mark_browser_automation_denied(browser)
+                continue
+            if result.returncode == 0:
+                return HealthState(ok=True, code="ok", last_checked=now_ts(), detail=None)
+
+        relevant_denied = sorted(set(_load_denied_browsers()) & set(relevant))
+        if not relevant_denied:
+            return HealthState(ok=True, code="ok", last_checked=now_ts(), detail=None)
+        detail = f"{self._HINT_PREFIX}{', '.join(relevant_denied)}{self._HINT_SUFFIX}"
+        return HealthState(
+            ok=False,
+            code="browser_automation_denied",
+            last_checked=now_ts(),
+            detail=detail,
+        )
 
     def diagnose(self, state: HealthState) -> Signal:
         if state.ok:
@@ -200,7 +209,7 @@ class BrowserAutomationCapability(Capability):
             return Signal(
                 level="warn",
                 label="采集建议",
-                hint=state.detail or self._HINT,
+                hint=state.detail or f"{self._HINT_PREFIX}已安装浏览器{self._HINT_SUFFIX}",
                 action=_AUTOMATION_ACTION,
             )
         return Signal(level="warn", label="采集建议", hint="浏览器自动化权限异常", action=None)
