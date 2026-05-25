@@ -98,6 +98,19 @@ def test_l5_input_schema_accepts_optional_weekly_entity_fields_and_keeps_legacy_
 
     with_entities = {
         **legacy_input,
+        "topic": {
+            "slug": "keypulse-weekly",
+            "name": "Weekly 主线",
+            "state": "in_progress",
+            "weekly_entries": [
+                {
+                    "date": "2026-05-04",
+                    "event_count": 4,
+                    "narrative_one_line": "推进 weekly",
+                    "activity_intensity": "medium",
+                }
+            ],
+        },
         "canonical_entities": [
             {
                 "canonical_name": "KeyPulse",
@@ -118,6 +131,33 @@ def test_l5_input_schema_accepts_optional_weekly_entity_fields_and_keeps_legacy_
         ],
     }
     validate(with_entities, _schema("L5_input.json"))
+
+
+def test_l5_input_schema_rejects_unknown_activity_intensity():
+    payload = {
+        "scope_week": "2026-W18",
+        "topic": {
+            "slug": "keypulse-weekly",
+            "name": "Weekly 主线",
+            "state": "in_progress",
+            "weekly_entries": [
+                {
+                    "date": "2026-05-04",
+                    "event_count": 2,
+                    "narrative_one_line": "推进 weekly",
+                    "activity_intensity": "extreme",
+                }
+            ],
+        },
+        "evidence": [{"date": "2026-05-04", "text": "推进 weekly"}],
+        "previous_week_narrative": None,
+        "cross_week_diff": [],
+        "key_decisions": [],
+        "visible_outputs": [],
+        "tagged_blockers": [],
+    }
+    with pytest.raises(ValidationError):
+        validate(payload, _schema("L5_input.json"))
 
 
 def test_l6_schema_valid_and_invalid():
