@@ -199,6 +199,35 @@ class CapturingGateway:
         return {}
 
 
+def test_weekly_activity_intensity_boundaries():
+    assert weekly_orchestrator._weekly_activity_intensity(0) == ""
+    assert weekly_orchestrator._weekly_activity_intensity(1) == "low"
+    assert weekly_orchestrator._weekly_activity_intensity(2) == "low"
+    assert weekly_orchestrator._weekly_activity_intensity(3) == "medium"
+    assert weekly_orchestrator._weekly_activity_intensity(5) == "medium"
+    assert weekly_orchestrator._weekly_activity_intensity(6) == "high"
+
+
+def test_prepare_l5_topic_payload_adds_intensity_and_preserves_event_count():
+    payload = weekly_orchestrator._prepare_l5_topic_payload(
+        {
+            "slug": "alpha-topic",
+            "weekly_entries": [
+                {"date": "2026-04-27", "event_count": 2, "narrative_one_line": "alpha"},
+                {"date": "2026-04-28", "event_count": 5, "narrative_one_line": "beta"},
+                {"date": "2026-04-29", "event_count": 7, "narrative_one_line": "gamma"},
+            ],
+        }
+    )
+    entries = payload["weekly_entries"]
+    assert entries[0]["event_count"] == 2
+    assert entries[0]["activity_intensity"] == "low"
+    assert entries[1]["event_count"] == 5
+    assert entries[1]["activity_intensity"] == "medium"
+    assert entries[2]["event_count"] == 7
+    assert entries[2]["activity_intensity"] == "high"
+
+
 def test_run_weekly_stub_gateway_full_chain(tmp_path, monkeypatch):
     _reset_weekly_runtime_state()
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -511,6 +540,20 @@ def test_run_weekly_injects_entity_merge_payload_into_l5_input(tmp_path, monkeyp
     assert l5_inputs
     assert all("canonical_entities" in payload for payload in l5_inputs if isinstance(payload, dict))
     assert all("event_entity_map" in payload for payload in l5_inputs if isinstance(payload, dict))
+    for payload in l5_inputs:
+        if not isinstance(payload, dict):
+            continue
+        topic = payload.get("topic")
+        if not isinstance(topic, dict):
+            continue
+        weekly_entries = topic.get("weekly_entries")
+        if not isinstance(weekly_entries, list):
+            continue
+        for entry in weekly_entries:
+            if not isinstance(entry, dict):
+                continue
+            assert "event_count" in entry
+            assert entry.get("activity_intensity") in {"low", "medium", "high"}
 
     run_record_path = tmp_path / ".keypulse" / "run_records" / "2026-W18.json"
     run_record = json.loads(run_record_path.read_text(encoding="utf-8"))

@@ -1197,6 +1197,44 @@ def _normalize_l4_output(output: Any, daily_summaries: list[dict[str, Any]]) -> 
     return result or list(fallback_by_slug.values())
 
 
+def _coerce_non_negative_int(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(parsed, 0)
+
+
+def _weekly_activity_intensity(event_count: Any) -> str:
+    count = _coerce_non_negative_int(event_count)
+    if count >= 6:
+        return "high"
+    if count >= 3:
+        return "medium"
+    if count >= 1:
+        return "low"
+    return ""
+
+
+def _prepare_l5_topic_payload(topic: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(topic)
+    weekly_entries = topic.get("weekly_entries")
+    if not isinstance(weekly_entries, list):
+        return payload
+
+    entries_out: list[dict[str, Any]] = []
+    for item in weekly_entries:
+        if not isinstance(item, Mapping):
+            continue
+        entry = dict(item)
+        intensity = _weekly_activity_intensity(entry.get("event_count"))
+        if intensity:
+            entry["activity_intensity"] = intensity
+        entries_out.append(entry)
+    payload["weekly_entries"] = entries_out
+    return payload
+
+
 def _weekly_entry_count(topic: dict[str, Any]) -> int:
     return sum(int(entry.get("event_count") or 1) for entry in (topic.get("weekly_entries") or []) if isinstance(entry, dict))
 
@@ -2864,7 +2902,7 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
             daily_signals = _collect_daily_topic_signals(topic, daily_summaries)
             l5_input = {
                 "scope_week": week_str,
-                "topic": topic,
+                "topic": _prepare_l5_topic_payload(topic),
                 "evidence": _topic_evidence(topic, daily_summaries),
                 "previous_week_narrative": None,
                 "cross_week_diff": topic_cross_week_diff,
