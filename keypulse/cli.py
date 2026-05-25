@@ -883,8 +883,17 @@ def install_onboard(non_interactive: bool):
                 f"点击「➕」选择 /Applications/KeyPulse.app[/yellow]"
             )
 
-    console.print("\n[bold]权限引导完成。[/bold]后续生效需 daemon 重启：")
-    console.print("  launchctl kickstart -k gui/$(id -u)/com.keypulse.daemon")
+    console.print("\n[bold]权限引导完成，正在重启 daemon 让 TCC 缓存刷新...[/bold]")
+    try:
+        subprocess.run(
+            ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.keypulse.daemon"],
+            check=False,
+            capture_output=True,
+        )
+        console.print("[green]daemon 已重启。[/green]运行 `keypulse healthcheck` 验证各项状态。")
+    except Exception as exc:
+        console.print(f"[yellow]daemon 重启失败：{exc}[/yellow]")
+        console.print("  请手动执行：launchctl kickstart -k gui/$(id -u)/com.keypulse.daemon")
 
 
 @install_group.command("uninstall", help="Uninstall launchd jobs and optionally remove runtime/data.")
