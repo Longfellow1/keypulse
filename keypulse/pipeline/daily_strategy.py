@@ -195,11 +195,15 @@ def extract_work_unit(event: Mapping[str, Any]) -> str:
 
 def _flagship_cluster_payload(component: Mapping[str, Any]) -> dict[str, Any]:
     event_ids = [str(item) for item in (component.get("event_ids") or []) if str(item).strip()]
+    revisit_raw = int(_payload_float(component, "revisit_count", 0.0))
+    cross_app_raw = int(_payload_float(component, "cross_app_count", 0.0))
+    revisit_intensity = "high" if revisit_raw >= 4 else ("medium" if revisit_raw >= 2 else "")
+    cross_app_intensity = "high" if cross_app_raw >= 4 else ("medium" if cross_app_raw >= 3 else "")
     payload: dict[str, Any] = {
         "display_name": str(component.get("display_name") or component.get("component_id") or "").strip(),
         "dwell_minutes": _payload_float(component, "dwell_minutes", 0.0),
-        "revisit_count": int(_payload_float(component, "revisit_count", 0.0)),
-        "cross_app_count": int(_payload_float(component, "cross_app_count", 0.0)),
+        "revisit_intensity": revisit_intensity,
+        "cross_app_intensity": cross_app_intensity,
         "event_count": int(component.get("event_count") or len(event_ids)),
         "time_range": list(component.get("time_range") or []),
         "key_excerpts": [
