@@ -822,6 +822,71 @@ def _remove_keypulse_path(path: Path) -> bool:
     return _unlink_if_exists(target)
 
 
+@install_group.command(
+    "onboard",
+    help=T(
+        "首次安装/重打包后引导授予 macOS 权限（辅助功能 / 输入监控）。",
+        "Guide the user through granting macOS permissions after first install or repack.",
+    ),
+)
+@click.option("--non-interactive", is_flag=True, default=False, help="Skip interactive prompts (for CI / automation)")
+def install_onboard(non_interactive: bool):
+    """Drive the user through TCC permission grants."""
+    if sys.platform != "darwin":
+        raise click.ClickException("install onboard is macOS-only.")
+
+    from keypulse.permissions import (
+        PERMISSION_SPECS,
+        PermissionStatus,
+        open_settings_pane,
+    )
+
+    console.print("[bold]KeyPulse 权限引导[/bold]\n")
+    console.print(
+        "重新打包后 macOS 会撤销以下权限，需要重新授权。"
+        "我会按顺序检查每一项，缺失时打开系统设置对应面板。\n"
+    )
+
+    for spec in PERMISSION_SPECS:
+        status = spec.check()
+        if status == PermissionStatus.GRANTED:
+            console.print(f"[green]✓[/green] {spec.label}: 已授权")
+            continue
+        if status == PermissionStatus.UNAVAILABLE:
+            console.print(f"[yellow]?[/yellow] {spec.label}: API 不可用（跳过）")
+            continue
+
+        console.print(f"[red]✗[/red] {spec.label}: 未授权")
+
+        # Trigger native prompt (will only show if state is undetermined).
+        prompt_result = spec.request()
+        if prompt_result == PermissionStatus.GRANTED:
+            console.print(f"  [green]→ 已通过原生授权框完成[/green]")
+            continue
+
+        # State is denied → native prompt won't show, must open settings.
+        console.print(f"  打开系统设置面板：{spec.settings_pane}")
+        open_settings_pane(spec)
+        if non_interactive:
+            console.print("  [yellow]non-interactive 模式：跳过等待，请稍后重跑此命令验证[/yellow]")
+            continue
+        console.print(f"  请在系统设置里勾选 KeyPulse 对此项的授权。")
+        click.confirm("  完成后回车继续 →", default=True, show_default=False)
+
+        # Re-check
+        recheck = spec.check()
+        if recheck == PermissionStatus.GRANTED:
+            console.print(f"  [green]✓ 已确认授权[/green]")
+        else:
+            console.print(
+                f"  [yellow]仍未授权——如系统设置里没有 KeyPulse 条目，"
+                f"点击「➕」选择 /Applications/KeyPulse.app[/yellow]"
+            )
+
+    console.print("\n[bold]权限引导完成。[/bold]后续生效需 daemon 重启：")
+    console.print("  launchctl kickstart -k gui/$(id -u)/com.keypulse.daemon")
+
+
 @install_group.command("uninstall", help="Uninstall launchd jobs and optionally remove runtime/data.")
 @click.option("--remove-runtime", is_flag=True, default=False, help="Remove logs, pid files, health state, and other runtime files")
 @click.option("--remove-data", is_flag=True, default=False, help="Remove config, database, and state files (requires --force)")
