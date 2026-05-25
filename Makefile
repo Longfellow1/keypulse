@@ -1,4 +1,4 @@
-.PHONY: bootstrap app app-clean app-alias install reload preflight install-plists tcc-reset onboard
+.PHONY: bootstrap app app-clean app-alias install reload preflight install-plists tcc-reset onboard post-onboard-kick
 
 PYTHON := /Users/Harland/Go/keypulse/.venv/bin/python
 BOOTSTRAP_PYTHON := python3
@@ -58,6 +58,7 @@ install: app preflight
 	$(MAKE) tcc-reset
 	$(MAKE) reload
 	$(MAKE) onboard
+	$(MAKE) post-onboard-kick
 
 # tcc-reset: clear TCC entries that get invalidated by bundle re-signing.
 # Without this, macOS keeps the old "denied" record and silently refuses to
@@ -75,6 +76,14 @@ tcc-reset:
 onboard:
 	@echo "--- permission onboard ---"
 	-$(APP_DEST)/Contents/MacOS/KeyPulse install onboard || true
+
+# post-onboard-kick: macOS daemons cache TCC state at process start. After the
+# user grants permissions during onboard, the still-running daemon won't see
+# the new state — capability monitor keeps reporting ax_denied even though
+# watchers can emit. A second kickstart forces the daemon to re-read TCC.
+post-onboard-kick:
+	@echo "--- post-onboard daemon kick (refresh TCC cache) ---"
+	-@launchctl kickstart -k gui/$$(id -u)/com.keypulse.daemon 2>/dev/null && echo "  daemon kicked" || true
 
 reload:
 	@for plist in $(LAUNCH_AGENTS); do \
