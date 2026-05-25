@@ -4,6 +4,7 @@ import json
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import keypulse.i18n as i18n
 from click.testing import CliRunner
@@ -161,6 +162,41 @@ class FailingGateway:
         if self.mode == "http400":
             raise RuntimeError("HTTP 400 bad request")
         raise RuntimeError("all failed")
+
+
+class CapturingGateway:
+    def __init__(self) -> None:
+        self.inputs: list[dict[str, Any]] = []
+
+    def call(self, capability: str, prompt: str, *, input_data: Any = None, **_kwargs):
+        _ = prompt
+        self.inputs.append({"capability": capability, "input_data": input_data})
+        if capability == "L4_weekly_reconcile":
+            return input_data.get("topics") if isinstance(input_data, dict) else []
+        if capability == "L5_weekly_main_narrative":
+            topic = input_data.get("topic") if isinstance(input_data, dict) and isinstance(input_data.get("topic"), dict) else {}
+            slug = str(topic.get("slug") or "topic")
+            return {
+                "slug": slug,
+                "narrative": f"本周 {slug} 继续推进并形成阶段结论 [[2026-04-27]]。",
+                "anchors": ["[[2026-04-27]]"],
+                "decisions": [],
+                "outputs": [],
+                "blockers": [],
+            }
+        if capability == "L6_explorer":
+            return {
+                "dropped_balls": [],
+                "observation": {
+                    "text": "本周有连续推进。",
+                    "anchor_link": "[[2026-04-27]]",
+                    "anchor_quote": "本周有连续推进。",
+                },
+                "risks": [],
+            }
+        if capability == "L7_anchor_derivation":
+            return {"derived_from": None, "confidence": 0.0, "reason": ""}
+        return {}
 
 
 def test_run_weekly_stub_gateway_full_chain(tmp_path, monkeypatch):
@@ -424,6 +460,81 @@ def test_run_weekly_exec_style_contains_mainline_echo_and_cross_week_diff(tmp_pa
     assert "## 一个观察" in body
     assert "## 跨周差异" in body
     close()
+
+
+def test_run_weekly_injects_entity_merge_payload_into_l5_input(tmp_path, monkeypatch):
+    _reset_weekly_runtime_state()
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator.resolve_active_sink",
+        lambda _cfg, persist=False: SimpleNamespace(output_dir=tmp_path / "vault"),
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator.validate_weekly_output",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator._prepare_weekly_entity_payload",
+        lambda _week: {
+            "canonical_entities": [
+                {
+                    "canonical_name": "KeyPulse",
+                    "type": "project",
+                    "aliases": ["keypulse"],
+                    "appears_on_dates": ["2026-04-27"],
+                    "merge_reasoning": "same repo context",
+                }
+            ],
+            "event_entity_map": [
+                {
+                    "event_id": "1",
+                    "primary_entity": "KeyPulse",
+                    "confidence": 0.92,
+                    "needs_review": False,
+                    "date": "2026-04-27",
+                }
+            ],
+        },
+    )
+    gateway = CapturingGateway()
+    monkeypatch.setattr("keypulse.pipeline.weekly_orchestrator._load_gateway", lambda: gateway)
+    monkeypatch.setenv("KEYPULSE_WEEKLY_RETRY_SLEEP", "0")
+
+    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    _seed_topics(tmp_path)
+    _seed_daily_summaries(tmp_path, week="2026-W18", days=7)
+
+    output_path = run_weekly("2026-W18", style="exec")
+    assert output_path
+
+    l5_inputs = [item["input_data"] for item in gateway.inputs if item.get("capability") == "L5_weekly_main_narrative"]
+    assert l5_inputs
+    assert all("canonical_entities" in payload for payload in l5_inputs if isinstance(payload, dict))
+    assert all("event_entity_map" in payload for payload in l5_inputs if isinstance(payload, dict))
+
+    run_record_path = tmp_path / ".keypulse" / "run_records" / "2026-W18.json"
+    run_record = json.loads(run_record_path.read_text(encoding="utf-8"))
+    assert run_record["stage_status"].get("entity_merge") == "ok"
+    close()
+
+
+def test_prepare_weekly_entity_payload_returns_none_when_merger_fails(monkeypatch):
+    monkeypatch.setattr(
+        "keypulse.pipeline.weekly_orchestrator._load_week_daily_entity_outputs",
+        lambda _week: [
+            {
+                "date": "2026-04-27",
+                "entities": [{"name": "KeyPulse", "type": "project", "evidence_event_ids": ["1"]}],
+                "event_entity_map": [{"event_id": "1", "primary_entity": "KeyPulse", "confidence": 0.9, "needs_review": False}],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "keypulse.pipeline.entity_merger_llm.merge_entities",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    assert weekly_orchestrator._prepare_weekly_entity_payload("2026-W18") is None
 
 
 def test_run_weekly_writes_frontmatter_tags_for_plain_and_exec_styles(tmp_path, monkeypatch):

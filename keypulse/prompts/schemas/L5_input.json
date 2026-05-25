@@ -9,7 +9,33 @@
     "cross_week_diff": {"type": "array"},
     "key_decisions": {"type": "array"},
     "visible_outputs": {"type": "array"},
-    "tagged_blockers": {"type": "array"}
+    "tagged_blockers": {"type": "array"},
+    "canonical_entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "canonical_name": {"type": "string"},
+          "type": {"type": "string"},
+          "aliases": {"type": "array", "items": {"type": "string"}},
+          "appears_on_dates": {"type": "array", "items": {"type": "string"}},
+          "merge_reasoning": {"type": "string"}
+        }
+      }
+    },
+    "event_entity_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "event_id": {"type": "string"},
+          "primary_entity": {"type": "string"},
+          "confidence": {"type": "number"},
+          "needs_review": {"type": "boolean"},
+          "date": {"type": "string"}
+        }
+      }
+    }
   },
   "additionalProperties": false
 }
