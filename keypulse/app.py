@@ -352,6 +352,13 @@ def run(config: Optional[Config] = None):
         logger.error(f"Another KeyPulse instance is already running (PID {lock.get_pid()})")
         sys.exit(1)
 
+    try:
+        from keypulse.permissions import trigger_required_prompts
+        prompt_results = trigger_required_prompts()
+        logger.info("permission prompt results: %s", prompt_results)
+    except Exception as exc:
+        logger.warning("permission prompt trigger failed: %s", exc)
+
     init_db(config.db_path_expanded)
     cleared_denied = clear_browser_automation_denied_browsers_on_startup()
     logger.info(

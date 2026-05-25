@@ -1,4 +1,4 @@
-.PHONY: bootstrap app app-clean app-alias install reload preflight install-plists
+.PHONY: bootstrap app app-clean app-alias install reload preflight install-plists tcc-reset onboard
 
 PYTHON := /Users/Harland/Go/keypulse/.venv/bin/python
 BOOTSTRAP_PYTHON := python3
@@ -55,7 +55,26 @@ install: app preflight
 	cp -R $(ROOT)/dist/KeyPulse.app $(APP_DEST)
 	rm -rf $(ROOT)/dist/KeyPulse.app
 	$(MAKE) install-plists
+	$(MAKE) tcc-reset
 	$(MAKE) reload
+	$(MAKE) onboard
+
+# tcc-reset: clear TCC entries that get invalidated by bundle re-signing.
+# Without this, macOS keeps the old "denied" record and silently refuses to
+# re-prompt — leaving the user stuck with no obvious recovery path.
+# AppleEvents (browser automation) is NOT reset here: it stays valid across
+# repacks, and resetting it forces the user to re-grant Chrome control.
+tcc-reset:
+	@echo "--- tcc reset (Accessibility / Input Monitoring) ---"
+	-@tccutil reset Accessibility com.keypulse.app 2>/dev/null && echo "  reset Accessibility" || true
+	-@tccutil reset ListenEvent com.keypulse.app 2>/dev/null && echo "  reset ListenEvent" || true
+	-@tccutil reset PostEvent com.keypulse.app 2>/dev/null && echo "  reset PostEvent" || true
+
+# onboard: launch interactive permission walkthrough using the installed .app
+# binary, so prompt API runs under the correct bundle identity.
+onboard:
+	@echo "--- permission onboard ---"
+	-$(APP_DEST)/Contents/MacOS/KeyPulse install onboard || true
 
 reload:
 	@for plist in $(LAUNCH_AGENTS); do \
