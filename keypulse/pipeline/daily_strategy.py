@@ -35,6 +35,25 @@ from keypulse.utils.dates import local_timezone
 _INPUT_MARKER_BEGIN = "<<INPUT_JSON>>"
 _INPUT_MARKER_END = "<<END_INPUT_JSON>>"
 
+# Sources whose content_text is rich enough to anchor LLM narrative.
+# Shallow sources (keyboard_chunk fragments, window titles, spotlight queries,
+# raw URLs, zsh history one-liners) still drive clustering and trace metadata
+# but are filtered out of the events array given to the flagship LLM, because
+# they only provide noise to narrative writing — they have no substantive
+# content for the LLM to anchor a real sentence on.
+_NARRATIVE_RICH_SOURCES = frozenset({
+    "claude_code",
+    "clipboard",
+    "codex_cli",
+    "ax_text",
+    "git_log",
+    "manual",
+})
+
+
+def _is_rich_source(event: Mapping[str, Any]) -> bool:
+    return str(event.get("source") or "") in _NARRATIVE_RICH_SOURCES
+
 
 class DailyStrategyError(RuntimeError):
     """Raised when a strategy cannot complete; orchestrator translates this
@@ -502,7 +521,7 @@ class FlagshipSingleStepStrategy(DailyStrategy):
     ) -> DailyGenerationResult:
         from keypulse.prompts.loader import load_prompt
 
-        compact = [to_compact_event(event) for event in events]
+        compact = [to_compact_event(event) for event in events if _is_rich_source(event)]
         payload: dict[str, Any] = {
             "date": date_str,
             "events": compact,
