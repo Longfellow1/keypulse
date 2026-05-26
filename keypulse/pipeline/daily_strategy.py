@@ -222,13 +222,16 @@ def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     full-day prompt within tokens budget while preserving signal density.
     """
     ts = str(event.get("ts_start") or "")
+    # Hour-only precision (HH) on purpose — minute-level timestamps lure the
+    # LLM into "9:21 ... 9:24 ... 11:17" timestamp-as-narrative-spine pattern.
+    # Cluster-level time_range still provides段-level time anchor for the prompt.
     try:
         parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        hhmm = parsed.astimezone(local_timezone()).strftime("%H:%M")
+        hour = parsed.astimezone(local_timezone()).strftime("%H")
     except ValueError:
-        hhmm = ts[11:16] if len(ts) >= 16 and ts[10] == "T" else ts[:5]
+        hour = ts[11:13] if len(ts) >= 13 and ts[10] == "T" else ts[:2]
     out: dict[str, Any] = {
-        "t": hhmm,
+        "t": hour,
         "s": str(event.get("source") or "ax_text"),
         "c": (str(event.get("content_text") or "").strip())[:320],
     }
