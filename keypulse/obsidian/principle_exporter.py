@@ -55,6 +55,16 @@ def export_principles(
     principles_dir = Path(vault_path).expanduser() / _PRINCIPLES_DIR
     principles_dir.mkdir(parents=True, exist_ok=True)
 
+    # Build a dedupe index from existing principles (same vault, all dates).
+    # LLM is asked to dedupe via known_principles but doesn't always honor it
+    # (esp. for cross-language paraphrases). This is the defensive backstop.
+    existing_keys: set[str] = set()
+    for existing_path in principles_dir.glob("*.md"):
+        frontmatter = _read_frontmatter(existing_path)
+        distilled = str(frontmatter.get("distilled") or "").strip()
+        if distilled:
+            existing_keys.add(_normalize_distilled(distilled))
+
     written: list[Path] = []
     skipped: list[Path] = []
     errors: list[str] = []
@@ -62,6 +72,10 @@ def export_principles(
     for raw in candidates:
         normalized = _normalize_candidate(raw)
         if normalized is None:
+            continue
+        dedupe_key = _normalize_distilled(normalized["distilled"])
+        if dedupe_key and dedupe_key in existing_keys:
+            skipped.append(principles_dir / f"{date_str}-{normalized['slug']}.md")
             continue
         target = principles_dir / f"{date_str}-{normalized['slug']}.md"
         if target.exists():
@@ -73,12 +87,28 @@ def export_principles(
             errors.append(f"{target}: {type(exc).__name__}:{exc}")
             continue
         written.append(target)
+        if dedupe_key:
+            existing_keys.add(dedupe_key)
 
     return PrincipleExportResult(
         written_paths=tuple(written),
         skipped_paths=tuple(skipped),
         errors=tuple(errors),
     )
+
+
+_NORMALIZE_STRIP_RE = re.compile(r"[\s　\W_]+", re.UNICODE)
+
+
+def _normalize_distilled(text: str) -> str:
+    """Lowercase + strip punctuation/whitespace for cross-language fuzzy dedupe.
+
+    NOTE: this only catches *near-identical* paraphrases — cross-language
+    semantic equivalence (e.g. "避免过度工程化" vs "Avoid over-engineering")
+    requires the LLM to honor v2 prompt's hard-dedupe rule. This backstop
+    only stops obvious duplicates that slip through.
+    """
+    return _NORMALIZE_STRIP_RE.sub("", str(text or "").lower())
 
 
 def list_week_principles(
