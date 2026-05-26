@@ -37,7 +37,7 @@ from keypulse.pipeline.daily_summary import (
     render_daily_markdown,
     write_daily_summary,
 )
-from keypulse.pipeline.daily_validator import _DECISION_RE, _OUTPUT_RE
+from keypulse.pipeline.daily_validator import _DECISION_RE, _OUTPUT_RE  # noqa: F401 — kept for back-compat consumers
 from keypulse.pipeline.anchor_gateway import AnchorGateway, AnchorGatewayError
 from keypulse.pipeline.artifact_writer import write_artifact
 from keypulse.pipeline.event_intake import cap_events_by_source
@@ -72,6 +72,26 @@ _WORD_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
 _TOKENISH_RE = re.compile(r"[a-zA-Z0-9_./:-]+")
 _TOPIC_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
 _ANCHOR_TIMELINE_SENTENCE_SPLIT_RE = re.compile(r"[。；;.!?\n]+")
+
+# Narrow regexes for narrative→decisions/shipped inference.
+# Validator's _DECISION_RE/_OUTPUT_RE are intentionally LOOSE (they ask
+# "does the whole markdown body mention decision-like words at all"),
+# but using them to extract per-sentence decisions misfires badly —
+# verbs like 提出/采用/确认/明确/方案/规划/策略/设计 appear in nearly every
+# narrative sentence, so decisions[] ends up as a verbatim copy of the
+# first 2-3 narrative sentences. Weekly L5 then repeats that copy →
+# "→ 关键决策: [流水句]" pattern. These narrow regexes only fire on
+# concrete decision/output verb-phrases.
+_NARRATIVE_DECISION_RE = re.compile(
+    r"决定不|放弃.+转.+|从.+切到.+|选.+而不是.+|最终采用|回滚到|"
+    r"敲定|拍板|定调|暂停.+保留|放弃.+(?:路线|方案|路径)|改走.+路线"
+)
+_NARRATIVE_SHIPPED_RE = re.compile(
+    r"提交了「|push 了|commit(?:\s|了|ed)|merge 了|"
+    r"上线了|发布了|接通了|跑通了|已落地|已完成.+并|"
+    r"已合并|合并到 main|成功复现",
+    re.IGNORECASE,
+)
 # === OCR watcher 已下线 2026-05-14 ===
 # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
 # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
@@ -1170,18 +1190,23 @@ def _unique_keep_order(items: list[str], limit: int = 3) -> list[str]:
 
 
 def _infer_decisions_shipped(narrative: str) -> tuple[list[str], list[str]]:
+    """Extract concrete decisions/shipped sentences from narrative.
+
+    Uses NARROW phrase-level regexes (see _NARRATIVE_DECISION_RE /
+    _NARRATIVE_SHIPPED_RE). Returns empty lists when narrative has no
+    real decision/output verb-phrases — better empty than wrong, since
+    weekly L5 then has nothing to repeat into "→ 关键决策" slot.
+    """
     sentences = [part.strip() for part in _TOPIC_SENTENCE_SPLIT_RE.split(str(narrative or "")) if part.strip()]
     decisions: list[str] = []
     shipped: list[str] = []
     for sentence in sentences:
-        if _DECISION_RE.search(sentence) or re.search(r"决定不|放弃.+转.+|从.+切到.+|选.+而不是.+|最终采用|回滚到|敲定|拍板", sentence):
+        if _NARRATIVE_DECISION_RE.search(sentence):
             decisions.append(sentence)
-        if _OUTPUT_RE.search(sentence):
+        if _NARRATIVE_SHIPPED_RE.search(sentence):
             shipped.append(sentence)
     decisions = _unique_keep_order(decisions, limit=3)
     shipped = _unique_keep_order(shipped, limit=3)
-    if not decisions and not shipped and sentences:
-        decisions = [sentences[0]]
     return decisions, shipped
 
 
