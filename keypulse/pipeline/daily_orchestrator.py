@@ -744,10 +744,13 @@ def _component_time_range(component_events: list[dict[str, Any]]) -> tuple[str, 
 
 
 def _component_activity_metadata(component_events: list[dict[str, Any]]) -> dict[str, Any]:
+    from keypulse.pipeline.daily_strategy import _is_rich_source
+
     event_times: list[datetime] = []
     app_windows: dict[str, list[datetime]] = {}
     app_names: set[str] = set()
-    key_excerpts: list[str] = []
+    rich_excerpts: list[str] = []
+    fallback_excerpts: list[str] = []
 
     for event in component_events:
         parsed = _to_local_datetime(str(event.get("ts_start") or ""))
@@ -760,8 +763,13 @@ def _component_activity_metadata(component_events: list[dict[str, Any]]) -> dict
         if app:
             app_names.add(app)
         excerpt = " ".join(str(event.get("content_text") or "").split()).strip()
-        if excerpt and len(key_excerpts) < 3:
-            key_excerpts.append(excerpt[:80])
+        if excerpt:
+            bucket = rich_excerpts if _is_rich_source(event) else fallback_excerpts
+            bucket.append(excerpt[:80])
+
+    # Rich-source excerpts win — fall back to shallow only when cluster lacks
+    # any rich content, so LLM gets the most signal-dense lines first.
+    key_excerpts = (rich_excerpts + fallback_excerpts)[:3]
 
     dwell_minutes = 0.0
     if event_times:
