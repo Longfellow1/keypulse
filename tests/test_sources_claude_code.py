@@ -54,7 +54,18 @@ def test_read_claude_jsonl_handles_dict_and_stringified_message(monkeypatch, tmp
             "timestamp": "2026-04-28T01:10:00Z",
             "message": {
                 "role": "assistant",
-                "content": [{"type": "text", "text": "tests passed with fixes"}],
+                "content": [
+                    {"type": "text", "text": "tests passed with fixes"},
+                    {
+                        "type": "tool_result",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "1\t- [大道至简](feedback_dadao_zhijian.md) — should be ignored",
+                            }
+                        ],
+                    },
+                ],
             },
         },
         {
@@ -63,6 +74,13 @@ def test_read_claude_jsonl_handles_dict_and_stringified_message(monkeypatch, tmp
             "parentUuid": "a-1",
             "timestamp": "2026-04-28T01:20:00Z",
             "message": "{'role': 'user', 'content': 'string payload'}",
+        },
+        {
+            "type": "assistant",
+            "uuid": "a-2",
+            "parentUuid": "u-2",
+            "timestamp": "2026-04-28T01:25:00Z",
+            "message": {"role": "assistant", "content": "a" * 2300},
         },
         {
             "type": "assistant",
@@ -90,11 +108,13 @@ def test_read_claude_jsonl_handles_dict_and_stringified_message(monkeypatch, tmp
         )
     )
 
-    assert len(events) == 3
-    assert [event.actor for event in events] == ["user", "assistant", "user"]
+    assert len(events) == 4
+    assert [event.actor for event in events] == ["user", "assistant", "user", "assistant"]
     assert events[0].intent == "run tests now"
     assert events[1].intent == "tests passed with fixes"
     assert events[2].intent == "string payload"
+    assert events[1].intent != "1\t- [大道至简](feedback_dadao_zhijian.md) — should be ignored"
+    assert len(events[3].intent) == 2000
     assert events[0].artifact == "claude:session:abc-session:msg:u-1"
     assert events[1].metadata["parent_uuid"] == "u-1"
     assert events[2].raw_ref.endswith(":3")

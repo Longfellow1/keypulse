@@ -50,6 +50,16 @@ _NARRATIVE_RICH_SOURCES = frozenset({
     "manual",
 })
 
+_CONTENT_CAP_BY_SOURCE = {
+    "git_log": 2000,
+    "claude_code": 1200,
+    "codex_cli": 1200,
+    "clipboard": 1000,
+    "ax_text": 600,
+    "manual": 1500,
+}
+_CONTENT_CAP_DEFAULT = 320
+
 
 def _is_rich_source(event: Mapping[str, Any]) -> bool:
     return str(event.get("source") or "") in _NARRATIVE_RICH_SOURCES
@@ -237,8 +247,8 @@ def _flagship_cluster_payload(component: Mapping[str, Any]) -> dict[str, Any]:
 def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
     """Orchestrator payload → flagship/budget L2 compact form `{t, s, a, c, sp}`.
 
-    Truncates content to 320 chars — keeps the
-    full-day prompt within tokens budget while preserving signal density.
+    Truncates content by source-specific caps to keep prompt size bounded while
+    preserving enough context for deep sources.
     """
     ts = str(event.get("ts_start") or "")
     # Hour-only precision (HH) on purpose — minute-level timestamps lure the
@@ -249,10 +259,12 @@ def to_compact_event(event: Mapping[str, Any]) -> dict[str, Any]:
         hour = parsed.astimezone(local_timezone()).strftime("%H")
     except ValueError:
         hour = ts[11:13] if len(ts) >= 13 and ts[10] == "T" else ts[:2]
+    source = str(event.get("source") or "ax_text")
+    cap = _CONTENT_CAP_BY_SOURCE.get(source, _CONTENT_CAP_DEFAULT)
     out: dict[str, Any] = {
         "t": hour,
-        "s": str(event.get("source") or "ax_text"),
-        "c": (str(event.get("content_text") or "").strip())[:320],
+        "s": source,
+        "c": (str(event.get("content_text") or "").strip())[:cap],
     }
     event_id = str(event.get("id") or event.get("event_id") or "").strip()
     if event_id:
@@ -475,30 +487,38 @@ def _prepare_flagship_entity_payload(entity_output: Mapping[str, Any] | None) ->
                 }
             )
 
-    event_entity_map_out: list[dict[str, Any]] = []
-    mapping_raw = entity_output.get("event_entity_map")
-    if isinstance(mapping_raw, list):
-        for item in mapping_raw:
-            if not isinstance(item, Mapping):
-                continue
-            event_id = str(item.get("event_id") or "").strip()
-            if not event_id:
-                continue
-            event_entity_map_out.append(
-                {
-                    "event_id": event_id,
-                    "primary_entity": str(item.get("primary_entity") or "").strip(),
-                    "confidence": _clamp_confidence(item.get("confidence")),
-                    "needs_review": bool(item.get("needs_review", False)),
-                }
-            )
-
     payload: dict[str, Any] = {}
     if entities_out:
         payload["entities"] = entities_out
-    if event_entity_map_out:
-        payload["event_entity_map"] = event_entity_map_out
     return payload
+
+
+def _build_event_entity_index(entity_output: Mapping[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Build event_id -> primary entity mapping from entity extractor output."""
+    if not isinstance(entity_output, Mapping):
+        return {}
+
+    index: dict[str, dict[str, Any]] = {}
+    mapping_raw = entity_output.get("event_entity_map")
+    if not isinstance(mapping_raw, list):
+        return {}
+
+    for item in mapping_raw:
+        if not isinstance(item, Mapping):
+            continue
+        event_id = str(item.get("event_id") or "").strip()
+        if not event_id:
+            continue
+        confidence = _clamp_confidence(item.get("confidence"))
+        candidate = {
+            "primary_entity": str(item.get("primary_entity") or "").strip(),
+            "confidence": confidence,
+            "needs_review": bool(item.get("needs_review", False)),
+        }
+        existing = index.get(event_id)
+        if existing is None or confidence >= float(existing.get("confidence") or 0.0):
+            index[event_id] = candidate
+    return index
 
 
 class FlagshipSingleStepStrategy(DailyStrategy):
@@ -521,7 +541,23 @@ class FlagshipSingleStepStrategy(DailyStrategy):
     ) -> DailyGenerationResult:
         from keypulse.prompts.loader import load_prompt
 
-        compact = [to_compact_event(event) for event in events if _is_rich_source(event)]
+        event_entity_index = _build_event_entity_index(entity_output)
+        compact: list[dict[str, Any]] = []
+        for event in events:
+            if not _is_rich_source(event):
+                continue
+            compact_event = to_compact_event(event)
+            event_id = str(compact_event.get("eid") or "").strip()
+            entity_assignment = event_entity_index.get(event_id) if event_id else None
+            if entity_assignment is not None:
+                confidence = _clamp_confidence(entity_assignment.get("confidence"))
+                compact_event["entity_conf"] = round(confidence, 2)
+                primary_entity = str(entity_assignment.get("primary_entity") or "").strip()
+                if confidence >= 0.5 and primary_entity:
+                    compact_event["entity"] = primary_entity
+                if bool(entity_assignment.get("needs_review", False)):
+                    compact_event["entity_review"] = True
+            compact.append(compact_event)
         payload: dict[str, Any] = {
             "date": date_str,
             "events": compact,

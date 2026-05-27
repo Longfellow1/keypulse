@@ -139,14 +139,13 @@ def test_flagship_strategy_injects_entity_output_only_when_present():
             "confidence": 0.91,
         }
     ]
-    assert first_payload["event_entity_map"] == [
-        {
-            "event_id": "1",
-            "primary_entity": "KeyPulse",
-            "confidence": 0.88,
-            "needs_review": False,
-        }
-    ]
+    assert "event_entity_map" not in first_payload
+    assert first_payload["events"][0]["eid"] == "1"
+    assert first_payload["events"][0]["entity"] == "KeyPulse"
+    assert first_payload["events"][0]["entity_conf"] == 0.88
+    assert "entity_review" not in first_payload["events"][0]
+    assert "entity" not in first_payload["events"][1]
+    assert "entity_conf" not in first_payload["events"][1]
 
     FlagshipSingleStepStrategy().generate(date_str="2026-05-01", events=_events(), gateway=gateway)
     second_payload = gateway.calls[1][1]
@@ -180,7 +179,7 @@ def test_to_compact_event_keeps_scene_fingerprint_fields():
             "speaker": "user",
             "app_name": "Codex",
             "window_title": "KeyPulse P1 daily pipeline现场指纹扩展" * 4,
-            "content_text": "x" * 400,
+            "content_text": "x" * 1600,
             "metadata_json": {
                 "entities": {
                     "session_id": "metadata-session",
@@ -206,7 +205,7 @@ def test_to_compact_event_keeps_scene_fingerprint_fields():
         "/Users/Harland/Go/keypulse/tests/test_pipeline_daily_strategy"[:60],
     ]
     assert compact["url"] == "https://github.com/example/keypulse"
-    assert len(compact["c"]) == 320
+    assert len(compact["c"]) == 1200
 
 
 def test_extract_work_unit_prefers_window_title_and_decodes_claude_project_paths():

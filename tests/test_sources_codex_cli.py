@@ -13,10 +13,11 @@ def test_codex_cli_discover_and_read(monkeypatch, tmp_path: Path) -> None:
 
     history = home / ".codex" / "history.jsonl"
     history.parent.mkdir(parents=True, exist_ok=True)
+    long_prompt = "first prompt " + ("x" * 2300)
     history.write_text(
         "\n".join(
             [
-                json.dumps({"session_id": "s-1", "ts": 1774855914, "text": "first prompt"}),
+                json.dumps({"session_id": "s-1", "ts": 1774855914, "text": long_prompt}),
                 "{bad json}",
                 json.dumps({"session_id": "s-2", "ts": 1774856914, "text": "second prompt"}),
             ]
@@ -45,7 +46,8 @@ def test_codex_cli_discover_and_read(monkeypatch, tmp_path: Path) -> None:
     event = events[0]
     assert event.source == "codex_cli"
     assert event.actor == "user"
-    assert event.intent == "first prompt"
+    assert event.intent == long_prompt[:2000]
+    assert len(event.intent) == 2000
     assert event.artifact == "codex:session:s-1"
     assert event.raw_ref == "codex:history:1"
     assert event.metadata == {"session_id": "s-1"}
