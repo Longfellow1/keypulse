@@ -92,6 +92,39 @@ def test_read_parses_git_log_events(git_repo: Path) -> None:
     assert event.metadata["repo_path"] == str(git_repo)
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_read_includes_commit_body(tmp_path: Path) -> None:
+    repo = tmp_path / "body-repo"
+    repo.mkdir()
+    _run_git(["init"], cwd=repo)
+    _run_git(["config", "user.name", "KeyPulse Tester"], cwd=repo)
+    _run_git(["config", "user.email", "tester@example.com"], cwd=repo)
+
+    (repo / "a.txt").write_text("a", encoding="utf-8")
+    env = os.environ.copy()
+    env["GIT_AUTHOR_DATE"] = "2026-04-28T11:00:00+00:00"
+    env["GIT_COMMITTER_DATE"] = "2026-04-28T11:00:00+00:00"
+    _run_git(["add", "a.txt"], cwd=repo)
+    body = "Why: fixes flow X.\nHow: refactor module Y.\nNotes: see issue #42."
+    _run_git(["commit", "-m", "fix: subject line", "-m", body], cwd=repo, env=env)
+
+    source = GitLogSource(search_roots=[repo], cwd=repo)
+    instance = DataSourceInstance(plugin="git_log", locator=str(repo), label="body-repo")
+    events = list(
+        source.read(
+            instance,
+            datetime(2026, 4, 28, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 28, 23, 59, tzinfo=timezone.utc),
+        )
+    )
+
+    assert len(events) == 1
+    intent = events[0].intent
+    assert intent.startswith("fix: subject line\n\n")
+    assert "Why: fixes flow X." in intent
+    assert "Notes: see issue #42." in intent
+
+
 def test_read_returns_empty_when_git_call_fails(monkeypatch) -> None:
     source = GitLogSource(search_roots=[Path("/")], cwd=Path("/"))
     instance = DataSourceInstance(plugin="git_log", locator="/tmp/no-repo", label="no-repo")

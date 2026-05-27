@@ -76,7 +76,7 @@ class GitLogSource(DataSource):
             "log",
             f"--since={since_utc.isoformat()}",
             f"--until={until_utc.isoformat()}",
-            "--pretty=format:%H%x09%aI%x09%an%x09%s",
+            "--pretty=format:%H%x09%aI%x09%an%x09%s%x09%b%x00",
             "--no-merges",
         ]
 
@@ -99,22 +99,31 @@ class GitLogSource(DataSource):
 
     def _parse_git_log(self, instance: DataSourceInstance, raw: str) -> Iterator[SemanticEvent]:
         repo_name = Path(instance.locator).name
-        for line in raw.splitlines():
-            if not line.strip():
+        # NUL-separated commits because %b body contains real newlines that
+        # would break splitlines(). Tab-separated 5 fields per commit:
+        # hash, author_time, author_name, subject, body.
+        for chunk in raw.split("\x00"):
+            chunk = chunk.strip()
+            if not chunk:
                 continue
-            parts = line.split("\t", 3)
-            if len(parts) != 4:
+            parts = chunk.split("\t", 4)
+            if len(parts) < 4:
                 continue
-            commit_hash, author_time, author_name, subject = parts
+            commit_hash = parts[0]
+            author_time = parts[1]
+            author_name = parts[2]
+            subject = parts[3]
+            body = parts[4].strip() if len(parts) == 5 else ""
             try:
                 event_time = datetime.fromisoformat(author_time).astimezone(timezone.utc)
             except ValueError:
                 continue
+            intent = (f"{subject}\n\n{body}" if body else subject)[:1500]
             yield SemanticEvent(
                 time=event_time,
                 source=self.name,
                 actor=author_name,
-                intent=subject,
+                intent=intent,
                 artifact=f"commit:{commit_hash[:7]}",
                 raw_ref=f"git:{repo_name}:{commit_hash}",
                 privacy_tier=self.privacy_tier,
