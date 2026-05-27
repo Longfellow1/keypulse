@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.plugins.claude_code import ClaudeCodeSource
+from keypulse.sources.plugins.claude_code import ClaudeCodeSource, _infer_self_project_slugs
 from keypulse.sources.types import DataSourceInstance
 
 
@@ -127,3 +127,38 @@ def test_discover_claude_projects_returns_empty_when_missing(monkeypatch, tmp_pa
     source = ClaudeCodeSource()
 
     assert source.discover() == []
+
+
+def test_self_exclude_skips_keypulse_own_project_dir(monkeypatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    skip_dir = home / ".claude" / "projects" / "-Users-Harland-Go-keypulse"
+    keep_dir = home / ".claude" / "projects" / "-Users-someone-Work-other-app"
+    _write_jsonl(skip_dir / "s1.jsonl", [{"type": "user", "timestamp": "2026-04-28T01:00:00Z"}])
+    _write_jsonl(keep_dir / "s1.jsonl", [{"type": "user", "timestamp": "2026-04-28T01:00:00Z"}])
+
+    source = ClaudeCodeSource(self_exclude_dirs={"-Users-Harland-Go-keypulse"})
+
+    instances = source.discover()
+    assert len(instances) == 1
+    assert instances[0].locator == str(keep_dir.resolve())
+
+    # read() also returns empty when called on an excluded instance directly
+    excluded_instance = DataSourceInstance(
+        plugin="claude_code", locator=str(skip_dir.resolve()), label="keypulse"
+    )
+    events = list(
+        source.read(
+            excluded_instance,
+            datetime(2026, 4, 28, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 28, 23, 59, tzinfo=timezone.utc),
+        )
+    )
+    assert events == []
+
+
+def test_infer_self_project_slugs_returns_keypulse_repo_slug() -> None:
+    slugs = _infer_self_project_slugs()
+    # When tests run from the keypulse repo, slug should contain "keypulse"
+    assert any("keypulse" in s.lower() for s in slugs)
