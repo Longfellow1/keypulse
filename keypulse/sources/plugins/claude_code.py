@@ -8,6 +8,8 @@ from typing import Any, Iterator
 
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
+_SKIP_CONTENT_TYPES = {"tool_use", "tool_result", "thinking", "image"}
+
 
 class ClaudeCodeSource(DataSource):
     name = "claude_code"
@@ -82,7 +84,7 @@ class ClaudeCodeSource(DataSource):
                             time=event_time,
                             source=self.name,
                             actor=str(row_type),
-                            intent=intent_text[:200],
+                            intent=intent_text[:2000],
                             artifact=f"claude:session:{session_id}:msg:{message_id}",
                             raw_ref=(
                                 f"claude:projects:{project_dir.name}:{jsonl_file.name}:{line_idx}"
@@ -153,9 +155,13 @@ def _coerce_text(value: object) -> str:
     if isinstance(value, list):
         parts: list[str] = []
         for item in value:
-            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
-                parts.append(item["text"].strip())
-                continue
+            if isinstance(item, dict):
+                item_type = item.get("type")
+                if item_type == "text" and isinstance(item.get("text"), str):
+                    parts.append(item["text"].strip())
+                    continue
+                if item_type in _SKIP_CONTENT_TYPES:
+                    continue
             nested = _coerce_text(item)
             if nested:
                 parts.append(nested)

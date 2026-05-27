@@ -25,7 +25,7 @@ def test_markdown_vault_discover_and_read(tmp_path: Path) -> None:
     vault = tmp_path / "Knowledge"
     (vault / ".obsidian").mkdir(parents=True, exist_ok=True)
 
-    note = vault / "Daily" / "2026-04-28.md"
+    note = vault / "Projects" / "sprint-1.5.md"
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text(
         "---\ntags: [daily, keypulse]\n---\n# Sprint 1.5 progress\nBody should not be read\n",
@@ -52,8 +52,8 @@ def test_markdown_vault_discover_and_read(tmp_path: Path) -> None:
     assert event.source == "markdown_vault"
     assert event.actor == "user"
     assert event.intent == "Sprint 1.5 progress"
-    assert event.artifact == "Daily/2026-04-28.md"
-    assert event.raw_ref == "markdown_vault:Knowledge:Daily/2026-04-28.md"
+    assert event.artifact == "Projects/sprint-1.5.md"
+    assert event.raw_ref == "markdown_vault:Knowledge:Projects/sprint-1.5.md"
     assert event.privacy_tier == "yellow"
     assert event.metadata["shape"] == "document_file"
 
@@ -77,13 +77,36 @@ def test_markdown_vault_read_filters_by_time(tmp_path: Path) -> None:
     note = vault / "task.md"
     note.write_text("# recent note\n", encoding="utf-8")
 
-    source = MarkdownVaultSource(roots=[vault])
-    instance = source.discover()[0]
+    source = MarkdownVaultSource(roots=[vault], approval_store=ApprovalStore(path=tmp_path / "sources-approval.json"))
+    instance = next(item for item in source.discover() if Path(item.locator) == vault.resolve())
     past = datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
     before = datetime(2020, 1, 2, 0, 0, tzinfo=timezone.utc)
 
     events = list(source.read(instance, past, before))
     assert events == []
+
+
+def test_markdown_vault_excludes_keypulse_generated_directories(tmp_path: Path) -> None:
+    vault = tmp_path / "Vault"
+    (vault / "Daily").mkdir(parents=True, exist_ok=True)
+    (vault / "principles").mkdir(parents=True, exist_ok=True)
+    (vault / ".claude" / "projects" / "x" / "memory").mkdir(parents=True, exist_ok=True)
+    (vault / "projects").mkdir(parents=True, exist_ok=True)
+
+    (vault / "Daily" / "2026-05-26.md").write_text("# ignored daily\n", encoding="utf-8")
+    (vault / "principles" / "focus.md").write_text("# ignored principle\n", encoding="utf-8")
+    (vault / ".claude" / "projects" / "x" / "memory" / "state.md").write_text("# ignored memory\n", encoding="utf-8")
+    kept = vault / "projects" / "active.md"
+    kept.write_text("# active\n", encoding="utf-8")
+
+    source = MarkdownVaultSource(roots=[vault], approval_store=ApprovalStore(path=tmp_path / "sources-approval.json"))
+    instances = source.discover()
+    instance = next(item for item in instances if Path(item.locator) == vault.resolve())
+    assert instance.metadata["note_count"] == 1
+
+    now = datetime.now(timezone.utc)
+    events = list(source.read(instance, now - timedelta(days=1), now + timedelta(days=1)))
+    assert [event.artifact for event in events] == ["projects/active.md"]
 
 
 def test_markdown_vault_uses_filename_when_h1_missing(tmp_path: Path) -> None:
@@ -92,8 +115,8 @@ def test_markdown_vault_uses_filename_when_h1_missing(tmp_path: Path) -> None:
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("plain text body\n", encoding="utf-8")
 
-    source = MarkdownVaultSource(roots=[vault])
-    instance = source.discover()[0]
+    source = MarkdownVaultSource(roots=[vault], approval_store=ApprovalStore(path=tmp_path / "sources-approval.json"))
+    instance = next(item for item in source.discover() if Path(item.locator) == vault.resolve())
     now = datetime.now(timezone.utc)
 
     events = list(source.read(instance, now - timedelta(days=1), now + timedelta(days=1)))

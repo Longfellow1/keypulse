@@ -7,6 +7,17 @@ from typing import Iterator
 from keypulse.sources.approval import ApprovalStore
 from keypulse.sources.types import ContentShape, DataSource, DataSourceInstance, SemanticEvent
 
+_VAULT_EXCLUDE_DIRS = frozenset({
+    ".obsidian",
+    "principles",
+    "Daily",
+    "Weekly",
+    "anchors",
+    ".claude",
+    ".trash",
+    ".obsidian-sync",
+})
+
 
 class MarkdownVaultSource(DataSource):
     name = "markdown_vault"
@@ -85,7 +96,7 @@ class MarkdownVaultSource(DataSource):
             patterns = ("*.md", "*.txt")
             for pattern in patterns:
                 for path in sorted(vault_root.rglob(pattern)):
-                    if ".obsidian" in path.parts:
+                    if any(part in _VAULT_EXCLUDE_DIRS for part in path.parts):
                         continue
                     try:
                         stat = path.stat()
@@ -128,7 +139,7 @@ class MarkdownVaultSource(DataSource):
         count = 0
         for pattern in ("*.md", "*.txt"):
             for path in vault_root.rglob(pattern):
-                if ".obsidian" in path.parts:
+                if any(part in _VAULT_EXCLUDE_DIRS for part in path.parts):
                     continue
                 count += 1
         return count

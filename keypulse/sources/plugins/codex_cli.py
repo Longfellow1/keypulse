@@ -68,7 +68,7 @@ class CodexCliSource(DataSource):
                         time=event_time,
                         source=self.name,
                         actor="user",
-                        intent=text[:200],
+                        intent=text[:2000],
                         artifact=f"codex:session:{session_id}",
                         raw_ref=f"codex:history:{line_idx}",
                         privacy_tier=self.privacy_tier,

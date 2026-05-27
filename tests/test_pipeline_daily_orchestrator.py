@@ -350,14 +350,11 @@ def test_flagship_path_injects_entity_payload_when_extractor_returns_data(tmp_pa
             "confidence": 0.92,
         }
     ]
-    assert flagship_input["event_entity_map"] == [
-        {
-            "event_id": "1",
-            "primary_entity": "KeyPulse",
-            "confidence": 0.95,
-            "needs_review": False,
-        }
-    ]
+    assert "event_entity_map" not in flagship_input
+    first_event = next(event for event in flagship_input["events"] if event.get("eid") == "1")
+    assert first_event["entity"] == "KeyPulse"
+    assert first_event["entity_conf"] == 0.95
+    assert "entity_review" not in first_event
 
 
 def test_extract_entities_for_flagship_returns_none_on_extractor_error(monkeypatch):
