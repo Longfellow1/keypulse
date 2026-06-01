@@ -61,15 +61,18 @@ install: app preflight
 	$(MAKE) post-onboard-kick
 
 # tcc-reset: clear TCC entries that get invalidated by bundle re-signing.
-# Without this, macOS keeps the old "denied" record and silently refuses to
-# re-prompt — leaving the user stuck with no obvious recovery path.
-# AppleEvents (browser automation) is NOT reset here: it stays valid across
-# repacks, and resetting it forces the user to re-grant Chrome control.
+# Without this, macOS keeps the old csreq (cdhash) record. User toggling the
+# Settings switch alone does NOT refresh csreq — the only ways to refresh are
+# (a) tccutil reset + native prompt, or (b) manually removing the entry from
+# the Settings list with "-" and re-adding it. We choose (a) here.
+# AppleEvents (browser automation) is NOT reset: it stays valid across repacks,
+# and resetting forces the user to re-grant Chrome control.
 tcc-reset:
-	@echo "--- tcc reset (Accessibility / Input Monitoring) ---"
+	@echo "--- tcc reset (Accessibility / Input Monitoring / Screen Recording) ---"
 	-@tccutil reset Accessibility com.keypulse.app 2>/dev/null && echo "  reset Accessibility" || true
 	-@tccutil reset ListenEvent com.keypulse.app 2>/dev/null && echo "  reset ListenEvent" || true
 	-@tccutil reset PostEvent com.keypulse.app 2>/dev/null && echo "  reset PostEvent" || true
+	-@tccutil reset ScreenCapture com.keypulse.app 2>/dev/null && echo "  reset ScreenCapture" || true
 
 # onboard: launch interactive permission walkthrough using the installed .app
 # binary, so prompt API runs under the correct bundle identity.

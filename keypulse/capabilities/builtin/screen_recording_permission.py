@@ -12,12 +12,10 @@ _SCREEN_RECORDING_ACTION = (
 class ScreenRecordingPermissionCapability(Capability):
     """Surface macOS Screen Recording permission status.
 
-    Affects OCR / window screenshot capture. Like accessibility, macOS
-    caches `CGPreflightScreenCaptureAccess()` per process — so a fresh
-    grant doesn't reflect until the daemon process restarts. We still
-    expose the action URL so the user can grant the permission in one
-    click; supervisor surfaces a "restart daemon" CTA via the existing
-    HUD restart button.
+    Affects OCR / window screenshot capture. Same TCC csreq pitfall as
+    Accessibility: toggling the Settings switch alone won't refresh the
+    cdhash record after a .app repack. Use `make install` (tcc-reset +
+    onboard) or remove-and-re-add the entry from the Settings list.
     """
 
     name = "screen_recording_permission"
@@ -27,7 +25,11 @@ class ScreenRecordingPermissionCapability(Capability):
 
     _HINTS = {
         "missing_screen_capture": "Quartz framework 缺失，无法检查屏幕录制权限",
-        "screen_capture_denied": "屏幕录制权限未授权（OCR 不可用），请前往系统设置 → 隐私 → 屏幕录制",
+        "screen_capture_denied": (
+            "屏幕录制权限失效（OCR 不可用）。请运行 make install 重新授权，"
+            "或在系统设置 → 隐私 → 屏幕录制 里点 - 删除 KeyPulse 后再 + "
+            "添加回（toggle 开关不会刷新签名记录）"
+        ),
     }
 
     def _probe(self) -> CheckResult:
