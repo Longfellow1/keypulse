@@ -53,8 +53,8 @@ class AnchorGateway:
                 for cluster in today_clusters
                 if str(cluster.get("cluster_id") or "").strip()
             ],
-            "weekly_anchors": [anchor.to_dict() for anchor in weekly_anchors],
-            "known_anchors": [anchor.to_dict() for anchor in known_anchor_list],
+            "weekly_anchors": [self._compact_anchor_for_prompt(anchor) for anchor in weekly_anchors],
+            "known_anchors": [self._compact_anchor_for_prompt(anchor) for anchor in known_anchor_list],
         }
         prompt = build_prompt(spec.body, "L0_anchor", input_data)
 
@@ -88,7 +88,51 @@ class AnchorGateway:
         return {"assignments": assignments, "new_anchors": new_anchors}
 
     @staticmethod
-    def _select_known_anchors(anchors: list[WeeklyAnchor], *, max_items: int = 100) -> list[WeeklyAnchor]:
+    def _compact_anchor_for_prompt(
+        anchor: WeeklyAnchor,
+        *,
+        max_progress: int = 1,
+        narrative_chars: int = 100,
+    ) -> dict[str, Any]:
+        """Dump anchor for L0_anchor prompt with daily_progress truncated.
+
+        Why: anchors.json accumulates daily_progress entries indefinitely
+        (~2KB per anchor × 90 anchors = 200KB raw → ~70k tokens). The L0_anchor
+        prompt itself does not read daily_progress — it only matches today's
+        cluster narratives against anchor slug/display. Keeping only the most
+        recent progress entry with a truncated narrative collapses the input
+        from ~120k tokens to ~5k tokens. Without this, the LLM returns empty
+        responses and every cluster falls back to unanchored → things=0.
+        """
+        payload = anchor.to_dict()
+        progress = payload.get("daily_progress") or []
+        if isinstance(progress, list) and progress:
+            tail = progress[-max_progress:]
+            compacted: list[dict[str, Any]] = []
+            for item in tail:
+                if not isinstance(item, dict):
+                    continue
+                entry: dict[str, Any] = {}
+                date_val = str(item.get("date") or "").strip()
+                if date_val:
+                    entry["date"] = date_val
+                cluster_id = str(item.get("cluster_id") or "").strip()
+                if cluster_id:
+                    entry["cluster_id"] = cluster_id
+                narrative = str(item.get("narrative") or "").strip()
+                if narrative:
+                    if len(narrative) > narrative_chars:
+                        narrative = narrative[:narrative_chars].rstrip() + "…"
+                    entry["narrative"] = narrative
+                if entry:
+                    compacted.append(entry)
+            payload["daily_progress"] = compacted
+        else:
+            payload["daily_progress"] = []
+        return payload
+
+    @staticmethod
+    def _select_known_anchors(anchors: list[WeeklyAnchor], *, max_items: int = 30) -> list[WeeklyAnchor]:
         def _parse_date(value: str) -> date:
             try:
                 return date.fromisoformat(str(value or "").strip())
