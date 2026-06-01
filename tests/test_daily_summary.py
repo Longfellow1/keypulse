@@ -183,6 +183,54 @@ def test_build_cluster_stubs_from_narrative_h3_sections():
     assert clusters[1]["event_count"] >= 1
 
 
+def test_build_cluster_stubs_from_narrative_h3_slug_collision_keeps_unique():
+    # 同前缀+中文后缀的 H3 标题，原 _slugify_narrative_topic 只取 ASCII
+    # 词会都坍缩成 "corpusflow"，下游 cluster_id 唯一键退化导致 things
+    # 坍缩。这里断言 stub slug 必须互不相同。
+    markdown = """
+# 2026-05-29
+
+## 今天做的事
+
+### CorpusFlow 专利材料
+09:25 讨论"专利去 AI 味"，敲定 repo public/private 时间表。
+
+### CorpusFlow 代码调整
+14:10 normalize_generation_frame 改 semantic_status=no_reply_expec。
+
+### 奇趣宝 Demo
+16:00 排期剧本对齐。
+"""
+    clusters = build_cluster_stubs_from_narrative("2026-05-29", markdown)
+    slugs = [c["slug"] for c in clusters]
+    assert len(slugs) == len(set(slugs)), f"slug collisions: {slugs}"
+    assert clusters[0]["slug"] == "corpusflow"
+    assert clusters[1]["slug"] == "corpusflow-2"
+    assert clusters[0]["display_name"] == "CorpusFlow 专利材料"
+    assert clusters[1]["display_name"] == "CorpusFlow 代码调整"
+
+
+def test_build_topic_status_snapshot_h3_slug_collision_keeps_unique():
+    markdown = """
+# 2026-05-29
+
+## 今天做的事
+
+### CorpusFlow 专利材料
+完成专利去 AI 味第一轮。
+
+### CorpusFlow 代码调整
+推进 normalize_generation_frame 重构。
+"""
+    snapshot = build_topic_status_snapshot_from_narrative("2026-05-29", markdown)
+    # 两个 H3 必须各占一条，不能被同 slug 后写覆盖
+    assert len(snapshot) == 2
+    names = {item["name"] for item in snapshot.values()}
+    assert names == {"CorpusFlow 专利材料", "CorpusFlow 代码调整"}
+    assert "corpusflow" in snapshot
+    assert "corpusflow-2" in snapshot
+
+
 def test_merge_topic_status_snapshot_single_topic_across_days():
     day1 = {
         "keypulse-weekly": {

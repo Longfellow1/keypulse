@@ -45,6 +45,29 @@ def test_mark_browser_automation_denied_resets_count_on_new_day(monkeypatch):
     assert failures["Safari"]["count"] == 1
 
 
+def test_is_browser_automation_denied_only_on_explicit_permission_marker():
+    # 真权限拒绝：stderr 含明确 marker
+    assert browser_automation.is_browser_automation_denied(
+        "execution error: Not allowed to send Apple events to Google Chrome. (-1743)", 1
+    )
+    assert browser_automation.is_browser_automation_denied(
+        "execution error: Not authorized to send Apple events to Safari.", 1
+    )
+    assert browser_automation.is_browser_automation_denied(
+        "Apple events permission required", 1
+    )
+    # 非权限错误：不能再误判为 denied（修复 silent bug 的核心）
+    assert not browser_automation.is_browser_automation_denied(
+        "Application isn't running.", 1
+    )
+    assert not browser_automation.is_browser_automation_denied(
+        "Can't get front window of application", 1
+    )
+    assert not browser_automation.is_browser_automation_denied("", 1)
+    # 正常成功
+    assert not browser_automation.is_browser_automation_denied("", 0)
+
+
 def test_clear_browser_automation_denied_browsers_on_startup_preserves_failures(monkeypatch):
     state = _state_repo(monkeypatch)
 
