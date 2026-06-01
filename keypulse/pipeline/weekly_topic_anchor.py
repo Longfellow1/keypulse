@@ -420,6 +420,19 @@ def update_anchors_with_assignments(
     new_anchors: list[dict] = assignment_result.get("new_anchors", [])
     final_mapping: dict[str, str] = {}
 
+    # 反索引: new_anchor slug → 首个映射到它的 cluster_id（按 assignments 出现序）。
+    # 用来给新 anchor 取 display 时复用 cluster.display_name（第一层 LLM 已产出的
+    # 准确段名），不再用 L0_anchor 输出的 display —— 那个字段被 few-shot 误导成
+    # 「项目-完成时动词+宾语」格式，且 LLM 重写时引入幻觉（"qualityReport" /
+    # "failure-stack" 这类原 events 里不存在的词）。事故复盘见 2026-06-01 chat。
+    new_slug_first_cluster: dict[str, str] = {}
+    for cluster_id, target in assignments.items():
+        if not isinstance(target, str) or not target.startswith("new_anchor:"):
+            continue
+        slug = target.split(":", 1)[1]
+        if slug and slug not in new_slug_first_cluster:
+            new_slug_first_cluster[slug] = cluster_id
+
     for new_def in new_anchors:
         slug = new_def.get("slug")
         if not slug:
@@ -432,9 +445,11 @@ def update_anchors_with_assignments(
                     existing.state = "active"
             existing.last_active = date_str
         else:
+            cluster_for_display = cluster_by_id.get(new_slug_first_cluster.get(slug, ""), {})
+            display_from_cluster = str(cluster_for_display.get("display_name") or "").strip()
             by_slug[slug] = WeeklyAnchor(
                 slug=slug,
-                display=new_def.get("display", slug),
+                display=display_from_cluster or new_def.get("display", slug),
                 started=new_def.get("started", date_str),
                 last_active=date_str,
                 state="candidate",
