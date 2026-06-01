@@ -551,9 +551,22 @@ def split_topics_and_unanchored(
     for slug, clusters in by_anchor.items():
         anchor = anchor_lookup.get(slug)
         narratives = [c.get("narrative_one_line", "") for c in clusters if c.get("narrative_one_line")]
+        # 段名优先用今天 cluster 的 display_name（daily_flagship 第一层产出的真实段名），
+        # 而不是 anchor.display —— 历史 anchor.display 累积了 30+ 条「完成 XX」格式
+        # （L0_anchor 旧 prompt 误导 LLM 强行套完成时动词 + 自由命名引入幻觉，事故复盘
+        # 见 2026-06-01）。即便 L0_anchor 复用了旧 anchor，渲染层也用今天的 cluster
+        # display_name 覆盖 —— anchor.slug 还是稳定跨日 ID（双链跳转用），display 只
+        # 影响当天 MD H3 文本。多 cluster 映射到同一 anchor 时取首个 cluster 的名字。
+        cluster_display = ""
+        for cluster in clusters:
+            name = str(cluster.get("display_name") or "").strip()
+            if name:
+                cluster_display = name
+                break
+        fallback_display = anchor.display if anchor else slug
         topics.append({
             "anchor": slug,
-            "anchor_display": anchor.display if anchor else slug,
+            "anchor_display": cluster_display or fallback_display,
             "narrative": " ".join(narratives),
             "decisions": [],
             "shipped": [],
