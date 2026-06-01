@@ -13,7 +13,9 @@ note 文件名 / aliases / weekly 输入仍带「完成」字眼。本脚本做�
 
 跑法：
     python scripts/migrate_anchor_display.py            # dry-run，只打印 diff
-    python scripts/migrate_anchor_display.py --apply    # 真写入，自动备份
+    python scripts/migrate_anchor_display.py --apply    # 真写入 anchors.json + 自动备份
+    python scripts/migrate_anchor_display.py --archive-stale-notes \
+        --vault /path/to/Knowledge   # 把含「完成XX」前缀的 anchor note 文件移到 archive
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ from datetime import datetime
 from pathlib import Path
 
 ANCHORS_PATH = Path("/Users/Harland/.keypulse/anchors.json")
+DEFAULT_VAULT = Path("/Users/Harland/Go/Knowledge")
+ANCHOR_NOTE_SUBDIR = "Anchors"
 
 # 完成时动词
 _VERBS = r"(?:完成了?|打通了?|上线了?|收官|定稿)"
@@ -61,10 +65,54 @@ def load_anchors_payload() -> tuple[dict | list, list[dict]]:
     raise ValueError(f"unexpected anchors.json shape: {type(payload).__name__}")
 
 
+_STALE_NOTE_PATTERN = re.compile(rf"(?:^|-){_VERBS}")
+
+
+def archive_stale_anchor_notes(vault_root: Path, *, apply: bool) -> int:
+    notes_dir = vault_root / ANCHOR_NOTE_SUBDIR
+    if not notes_dir.is_dir():
+        print(f"[archive] anchors notes dir not found: {notes_dir}")
+        return 0
+    candidates = sorted(
+        path
+        for path in notes_dir.glob("*.md")
+        if _STALE_NOTE_PATTERN.search(path.stem)
+    )
+    if not candidates:
+        print("[archive] no stale anchor note files found.")
+        return 0
+    print(f"[archive] would move {len(candidates)} stale anchor note files:")
+    for path in candidates:
+        print(f"  {path.name}")
+    if not apply:
+        print("[archive] dry-run only. add --apply to move into archive dir.")
+        return 0
+    archive_dir = vault_root / f"_anchors-archive-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    archive_dir.mkdir(parents=True, exist_ok=False)
+    for path in candidates:
+        shutil.move(str(path), str(archive_dir / path.name))
+    print(f"[archive] moved {len(candidates)} files to {archive_dir}")
+    return len(candidates)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="真写入（默认仅 dry-run）")
+    parser.add_argument(
+        "--archive-stale-notes",
+        action="store_true",
+        help="将 vault 里含「完成XX」前缀的 anchor note 文件移到 archive 子目录",
+    )
+    parser.add_argument(
+        "--vault",
+        type=Path,
+        default=DEFAULT_VAULT,
+        help=f"Obsidian vault 根目录（默认 {DEFAULT_VAULT}）",
+    )
     args = parser.parse_args()
+
+    if args.archive_stale_notes:
+        return 0 if archive_stale_anchor_notes(args.vault, apply=args.apply) >= 0 else 1
 
     payload, anchors = load_anchors_payload()
 
