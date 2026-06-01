@@ -17,9 +17,18 @@ class AccessibilityPermissionCapability(Capability):
     label_when_failed = "采集异常"
     error_codes = {"missing_ax", "ax_denied"}
 
+    # 重要：单纯 toggle 系统设置里的 Accessibility 开关不会刷新 TCC 存的
+    # csreq.cdhash —— 重打包 .app 后 cdhash 变了，旧授权对不上新 binary，
+    # daemon 依然判定 denied。两条可靠恢复路径：
+    #   (a) make install（自动跑 tcc-reset + onboard 走原生授权）
+    #   (b) 在系统设置 Accessibility 列表里点 - 删除 KeyPulse 后重新添加
     _HINTS = {
         "missing_ax": "Mac app 安装包缺少辅助功能桥接，请重新打包 (make install)",
-        "ax_denied": "辅助功能权限未授权，请前往系统设置 → 隐私 → 辅助功能 → KeyPulse",
+        "ax_denied": (
+            "辅助功能权限失效。请运行 make install 重新授权，或在系统设置 → "
+            "隐私 → 辅助功能 里点 - 删除 KeyPulse 后再 + 添加回（toggle "
+            "开关不会刷新签名记录）"
+        ),
     }
 
     def _probe(self) -> CheckResult:
