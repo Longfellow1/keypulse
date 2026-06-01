@@ -135,6 +135,13 @@ def mark_browser_automation_denied(browser_name: str, *, daily_limit: int = _DEN
 
 
 def is_browser_automation_denied(stderr: str, returncode: int) -> bool:
+    """是否真权限拒绝（osascript stderr 含明确 marker）。
+
+    历史 bug：原实现把 `returncode != 0` 一概视作 denied，导致浏览器
+    临时报错（"No window" / 启动中 / 切隐身页 / 短暂超时）就被 watcher
+    永久 disable。修复：只认 stderr 含明确权限关键词，其他错误让上层
+    silent skip 下次再试。
+    """
     lowered = str(stderr or "").lower()
     if "not allowed" in lowered:
         return True
@@ -142,7 +149,7 @@ def is_browser_automation_denied(stderr: str, returncode: int) -> bool:
         return True
     if "apple events" in lowered:
         return True
-    return returncode != 0
+    return False
 
 
 class BrowserAutomationCapability(Capability):

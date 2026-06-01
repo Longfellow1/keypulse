@@ -907,8 +907,21 @@ def write_obsidian_bundle(bundle: dict[str, list[dict[str, Any]]], output_dir: s
             should_write_daily,
         )
 
-        ok, reason, new_score, _old_score = should_write_daily(new_text, target)
+        ok, reason, new_score, old_score = should_write_daily(new_text, target)
         if not ok:
+            # 旧 MD 已是健康 daily（≥3 H3 段）时不允许 placeholder 覆盖。
+            # 定时重跑 (obsidian-sync hourly) 遇到 LLM 调用失败/超时会算出
+            # thing_count=0 的 new_text，原逻辑直接 placeholder 覆盖会把
+            # 用户当天能看到的好日报抹掉（如 2026-06-01 12:00 事故）。
+            if old_score and old_score.thing_count >= 3:
+                logger.warning(
+                    "daily write skipped (%s): %s; keeping existing healthy daily (old thing_count=%d)",
+                    target.name,
+                    reason,
+                    old_score.thing_count,
+                )
+                written.append(target)
+                continue
             date_str = target.stem
             placeholder_body = build_quality_gate_placeholder(
                 date_str=date_str,

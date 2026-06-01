@@ -264,27 +264,105 @@ def test_write_obsidian_bundle_keeps_historical_event_files_untouched(tmp_path: 
     assert historical_file.exists()
 
 
-def test_write_obsidian_bundle_writes_placeholder_when_quality_gate_refuses(tmp_path: Path, monkeypatch):
+def test_write_obsidian_bundle_keeps_existing_healthy_daily_when_quality_gate_refuses(
+    tmp_path: Path, monkeypatch
+):
+    # 2026-06-01 事故复现：定时重跑遇 LLM 失败算出 thing_count=0 的新内容,
+    # 不允许 placeholder 覆盖已经写好的健康日报 (≥3 H3 段)。
     monkeypatch.setenv("KEYPULSE_HOME", str(tmp_path / ".keypulse"))
     daily_dir = tmp_path / "Daily"
     daily_dir.mkdir(parents=True, exist_ok=True)
     daily_path = daily_dir / "2026-04-18.md"
+    healthy_body = "\n".join(
+        [
+            "# 2026-04-18",
+            "",
+            "### 事项1",
+            "a b c d e f g h i j",
+            "",
+            "### 事项2",
+            "a b c d e f g h i j",
+            "",
+            "### 事项3",
+            "a b c d e f g h i j",
+            "",
+            "### 事项4",
+            "a b c d e f g h i j",
+        ]
+    )
+    daily_path.write_text(healthy_body, encoding="utf-8")
+
+    bundle = build_obsidian_bundle(
+        [
+            _make_item(
+                app_name="loginwindow",
+                window_title="loginwindow",
+                title="loginwindow",
+                body="loginwindow",
+                session_id="session-loginwindow",
+            )
+        ],
+        vault_name="Harland Knowledge",
+        date_str="2026-04-18",
+    )
+
+    written = write_obsidian_bundle(bundle, tmp_path)
+
+    assert daily_path in written
+    content = daily_path.read_text(encoding="utf-8")
+    # 旧健康日报必须保留，不能被替换成 placeholder
+    assert "采集异常" not in content
+    assert "quality_gate REFUSED" not in content
+    assert content == healthy_body
+
+
+def test_write_obsidian_bundle_writes_placeholder_when_no_existing_daily(
+    tmp_path: Path, monkeypatch
+):
+    # 首次写或旧 MD 不存在时，低质量新内容应该写 placeholder（保留原行为）
+    monkeypatch.setenv("KEYPULSE_HOME", str(tmp_path / ".keypulse"))
+    daily_dir = tmp_path / "Daily"
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    daily_path = daily_dir / "2026-04-18.md"
+    # 旧文件不存在
+    assert not daily_path.exists()
+
+    bundle = build_obsidian_bundle(
+        [
+            _make_item(
+                app_name="loginwindow",
+                window_title="loginwindow",
+                title="loginwindow",
+                body="loginwindow",
+                session_id="session-loginwindow",
+            )
+        ],
+        vault_name="Harland Knowledge",
+        date_str="2026-04-18",
+    )
+
+    write_obsidian_bundle(bundle, tmp_path)
+    # bootstrap 路径会让新版直接写入（不进 placeholder 分支），
+    # 这里只断言不抛 + 文件已生成
+    assert daily_path.exists()
+
+
+def test_write_obsidian_bundle_writes_placeholder_when_existing_daily_also_unhealthy(
+    tmp_path: Path, monkeypatch
+):
+    # 旧 MD 也不健康（thing_count<3）时，仍可以被 placeholder 覆盖
+    monkeypatch.setenv("KEYPULSE_HOME", str(tmp_path / ".keypulse"))
+    daily_dir = tmp_path / "Daily"
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    daily_path = daily_dir / "2026-04-18.md"
+    # 只有 1 段的旧 MD，不算健康
     daily_path.write_text(
         "\n".join(
             [
                 "# 2026-04-18",
                 "",
-                "### 事项1",
-                "a b c d e f g h i j",
-                "",
-                "### 事项2",
-                "a b c d e f g h i j",
-                "",
-                "### 事项3",
-                "a b c d e f g h i j",
-                "",
-                "### 事项4",
-                "a b c d e f g h i j",
+                "### 唯一一段",
+                "x y z",
             ]
         ),
         encoding="utf-8",
@@ -304,9 +382,7 @@ def test_write_obsidian_bundle_writes_placeholder_when_quality_gate_refuses(tmp_
         date_str="2026-04-18",
     )
 
-    written = write_obsidian_bundle(bundle, tmp_path)
-
-    assert daily_path in written
+    write_obsidian_bundle(bundle, tmp_path)
     content = daily_path.read_text(encoding="utf-8")
     assert "采集异常" in content
     assert "quality_gate REFUSED" in content

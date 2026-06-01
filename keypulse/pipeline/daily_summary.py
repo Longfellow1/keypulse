@@ -132,10 +132,18 @@ def build_cluster_stubs_from_narrative(date: str, markdown: str) -> list[dict[st
         return []
 
     stubs: list[dict[str, Any]] = []
+    seen_slugs: dict[str, int] = {}
     for name, body in sections:
         if not name or name in {"其他"}:
             continue
-        slug = _slugify_narrative_topic(name)
+        base_slug = _slugify_narrative_topic(name)
+        # 同日 H3 标题前缀相同会导致 base_slug 碰撞（如 "CorpusFlow-专利"
+        # 与 "CorpusFlow-代码" 都 slug 成 "corpusflow"），下游 cluster_id
+        # 唯一键退化、events_ref 复读、topics 坍缩。此处按出现序加 -2/-3
+        # 后缀保唯一，首个保持原 slug 不破坏 ASCII-only 历史兼容。
+        count = seen_slugs.get(base_slug, 0) + 1
+        seen_slugs[base_slug] = count
+        slug = base_slug if count == 1 else f"{base_slug}-{count}"
         clean_body = " ".join(line.strip() for line in body.splitlines() if line.strip())
         one_line = clean_body[:120] if clean_body else f"{name} 在 {date_text} 有连续推进。"
         times = [match.group(0) for match in _TIME_IN_TEXT_RE.finditer(body)]
@@ -171,10 +179,16 @@ def build_topic_status_snapshot_from_narrative(date: str, markdown: str) -> dict
     sections = _extract_things_sections(markdown)
 
     snapshot: dict[str, dict[str, Any]] = {}
+    seen_slugs: dict[str, int] = {}
     for name, body in sections:
         if not name or name in {"其他"}:
             continue
-        slug = _slugify_narrative_topic(name)
+        base_slug = _slugify_narrative_topic(name)
+        # 同日 base_slug 碰撞按出现序加 -2/-3 后缀，避免后写覆盖前写造成
+        # evidence 丢失；跨日合并仍按首 slug（无后缀）走。
+        count = seen_slugs.get(base_slug, 0) + 1
+        seen_slugs[base_slug] = count
+        slug = base_slug if count == 1 else f"{base_slug}-{count}"
         state = _infer_topic_state(f"{name}\n{body}")
         existing = snapshot.get(slug)
         if existing is None:
