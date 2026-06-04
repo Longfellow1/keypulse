@@ -9,7 +9,6 @@ from keypulse.pipeline.daily_summary import (
     _render_text_table_block,
     build_cluster_stubs_from_narrative,
     build_topic_status_snapshot_from_narrative,
-    filter_daily_event_cards,
     merge_topic_status_snapshots,
     read_daily_summary,
     render_daily_markdown,
@@ -304,7 +303,7 @@ def test_render_daily_markdown_dual_layer_prefers_topics_and_unanchored_desc_tim
         events=[
             {
                 "cluster_id": "c1",
-                "display_name": "daily-v3-m5-phase2",
+                "display_name": "daily v3 M5 phase2 核心收敛",
                 "narrative_one_line": "接通 anchor + 删除错误升格机制",
                 "event_count": 4,
                 "time_range": ["18:00", "20:00"],
@@ -332,7 +331,9 @@ def test_render_daily_markdown_dual_layer_prefers_topics_and_unanchored_desc_tim
     )
     assert "## 今日要点" in body
     assert "## 今天做的事" in body
-    assert "### [[周报 v3 设计与落地]]" in body
+    # 段名单一权威源：取 cluster.display_name，不取 topic.display（见 heading_single_source 契约测试）
+    assert "### [[daily v3 M5 phase2 核心收敛]]" in body
+    assert "周报 v3 设计与落地" not in body
     assert "## 今日 raw events (unanchored)" not in body
     assert "## 今日涉及的主题" not in body
 
@@ -373,6 +374,91 @@ def test_render_daily_markdown_h3_matches_cluster_display_name_when_anchor_displ
     )
     assert "01:08-01:45 你与Claude协作明确周报成功标准" in body
     assert "（120字截断后的索引片段——不应被采用）" not in body
+
+
+def _h3_headings(body: str) -> list[str]:
+    """提取「今天做的事」区块里的 H3 段名（去掉 anchor 链接语法）。"""
+    headings: list[str] = []
+    in_section = False
+    for line in body.splitlines():
+        if line.startswith("## "):
+            in_section = line.strip() == "## 今天做的事"
+            continue
+        if in_section and line.startswith("### "):
+            text = line[4:].strip()
+            # _anchor_link 渲染成 [[anchor|display]] 或 [[anchor]]，取可见 display
+            m = re.match(r"\[\[([^\]]*)\]\]", text)
+            if m:
+                inner = m.group(1)
+                text = inner.split("|", 1)[1] if "|" in inner else inner
+            headings.append(text.strip())
+    return headings
+
+
+def test_render_daily_markdown_heading_single_source_is_cluster_display_name():
+    """契约：段名只能由 clusters[].display_name 产出（确定性、干净）。
+
+    topic.display 由 L0 锚定步 LLM 重写，会带「完成XX」前缀/幻觉——render 必须用 events_ref
+    反查 cluster.display_name 作段名，绝不逐字取 topic.display。任何回到 topic.display 即此测试红。
+    防 docs/refactor-pipeline-dedup.md 第 1 层「完成XX」回归。
+    """
+    body = render_daily_markdown(
+        date="2026-06-03",
+        topics=[
+            {
+                "anchor": "carmind-intent",
+                "anchor_state": "continuing",
+                "narrative": "",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": ["c-1"],
+                "display": "Carmind-完成落域仲裁意图模块架构设计",  # 脏：LLM 锚定步重写
+            },
+            {
+                "anchor": "",
+                "anchor_state": "continuing",
+                "narrative": "",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": ["c-2"],
+                "display": "KeyPulse-完成周报结构问题修复",  # 脏
+            },
+        ],
+        events=[
+            {"cluster_id": "c-1", "display_name": "Carmind 意图判别模块并发架构讨论"},  # 净
+            {"cluster_id": "c-2", "display_name": "KeyPulse W22周报整治提交"},  # 净
+        ],
+        unanchored=[],
+        narrative_markdown="## 今天做的事\n\n### Carmind 意图判别模块并发架构讨论\n\n正文一\n\n### KeyPulse W22周报整治提交\n\n正文二\n",
+    )
+    headings = _h3_headings(body)
+    assert headings == ["Carmind 意图判别模块并发架构讨论", "KeyPulse W22周报整治提交"]
+    # 脏的 topic.display 绝不能出现在段名里
+    assert not any("完成" in h for h in headings)
+    assert "Carmind-完成落域仲裁意图模块架构设计" not in body
+    assert "KeyPulse-完成周报结构问题修复" not in body
+
+
+def test_render_daily_markdown_heading_falls_back_to_topic_display_when_no_cluster():
+    """护栏：cluster.display_name 缺失（events_ref 查不到）时才兜底用 topic.display，不崩。"""
+    body = render_daily_markdown(
+        date="2026-06-03",
+        topics=[
+            {
+                "anchor": "",
+                "anchor_state": "continuing",
+                "narrative": "兜底正文",
+                "decisions": [],
+                "shipped": [],
+                "events_ref": ["missing-ref"],
+                "display": "孤儿主题兜底名",
+            }
+        ],
+        events=[],
+        unanchored=[],
+        narrative_markdown="",
+    )
+    assert "### 孤儿主题兜底名" in body
 
 
 def test_render_daily_markdown_phase_a_section_contract_and_event_cards(tmp_path, monkeypatch):
@@ -700,38 +786,3 @@ def test_render_daily_markdown_omits_blocked_section_when_no_blocked_topics(tmp_
     assert "## 跨日延续" not in body
     assert "## 今天的卡点" not in body
 
-
-def test_filter_daily_event_cards_uses_rule_scores_and_never_calls_gateway():
-    class _Gateway:
-        def call(self, capability, prompt, **kwargs):
-            raise AssertionError("event card filtering must not call LLM")
-
-    cards = [
-        ("export-https-proxy-http-127-7890", "export https_proxy=http://127.0.0.1:7890"),
-        ("https-github-com-example-project", "https://github.com/example/project"),
-        ("1948-obsidian-clipboard-copy-query", "obsidian clipboard copy query"),
-        ("1142-cd-users-harland-go-corpusflow-npm", "cd /Users/Harland/Go/CorpusFlow && npm run keepalive"),
-        ("1521-weekly-v3-review", "周报设计方案迭代与评审"),
-        ("1406-lion-carmind-agent-runtime-项目-brief", "Lion-CarMind / Agent Runtime 项目 Brief"),
-        ("1957-car-agent-product", "座舱实时语音 Agent 产品化"),
-        ("1023-deep-fix-v5-skill", "安装并启动 deep-fix-v5 技能"),
-        ("1445-walking-or-driving", "结论：要看你洗的对象是谁"),
-        ("1924-http-127-7860", "http://127.0.0.1:7860"),
-    ]
-
-    selected = filter_daily_event_cards(cards, model_gateway=_Gateway(), target_count=6)
-
-    assert len(selected) == 6
-    selected_slugs = [slug for slug, _title in selected]
-    assert "1521-weekly-v3-review" in selected_slugs
-    assert "1957-car-agent-product" in selected_slugs
-    assert "export-https-proxy-http-127-7890" not in selected_slugs
-    assert "https-github-com-example-project" not in selected_slugs
-
-
-def test_filter_daily_event_cards_defaults_to_six_representative_items():
-    cards = [(f"event-{index:02d}", f"代表性事件 {index:02d}") for index in range(20)]
-
-    selected = filter_daily_event_cards(cards)
-
-    assert len(selected) == 6
