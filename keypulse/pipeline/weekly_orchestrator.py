@@ -1023,11 +1023,114 @@ def _extract_weekly_signals(week_str: str) -> tuple[list[dict[str, str]], list[d
 
 def _topic_tokens(topic: dict[str, Any]) -> set[str]:
     values = [str(topic.get("slug") or ""), str(topic.get("name") or ""), str(topic.get("display_name") or "")]
+    # \u5b9e\u4f53\u5408\u5e76\u540e\u7684\u4e3b\u9898\u5e26 member_slugs/member_names \u2014\u2014 \u628a\u6210\u5458\u540d\u4e5f\u7eb3\u5165 token\uff0c
+    # \u5426\u5219\u788e\u7247\u5408\u5e76\u6210\u5355\u6bb5\u540e\uff0c\u5168\u5c40\u4fe1\u53f7/\u8de8\u5468 diff \u4ecd\u6309\u6210\u5458\u540d\u547d\u4e2d\u4e0d\u5230\u3002
+    values.extend(str(v or "") for v in (topic.get("member_slugs") or []))
+    values.extend(str(v or "") for v in (topic.get("member_names") or []))
     tokens = {value.strip().lower() for value in values if value.strip()}
     for value in values:
         for token in re.findall(r"[A-Za-z0-9\u4e00-\u9fff]{2,}", value):
             tokens.add(token.lower())
     return {token for token in tokens if token}
+
+
+def _match_canonical_key(
+    topic: dict[str, Any], canonical_index: list[tuple[str, str, list[str]]]
+) -> str | None:
+    """\u628a\u4e00\u4e2a\u5019\u9009\u4e3b\u9898\u6620\u5c04\u5230\u5b83\u6240\u5c5e\u7684 canonical \u5b9e\u4f53\u540d\uff08\u9879\u76ee\uff09\u3002
+
+    \u6df1\u4fee\u5206\u7ec4\u952e\uff1aweekly section \u672c\u5e94\u6309\u300c\u9879\u76ee/\u5b9e\u4f53\u300d\u5206\u7ec4\uff0c\u800c entity_merger \u5df2\u7ecf
+    \u7b97\u51fa\u4e86 canonical \u5b9e\u4f53\uff08Carmind_code \u7684\u522b\u540d agent-runtime \u4e5f\u5f52\u4e00\u4e86\uff09\u3002\u4e24\u7ea7\u5339\u914d\uff1a
+    canonical_name \u547d\u4e2d\u4f18\u5148\u4e8e\u522b\u540d\u547d\u4e2d\u2014\u2014\u5426\u5219\u6cdb\u5316\u522b\u540d\u4f1a\u8bef\u5e76\uff08\u5982 slug
+    "kiro-agent-runtime" \u542b Carmind \u522b\u540d "agent-runtime"\uff0c\u4f46\u5b83\u5176\u5b9e\u662f Kiro\uff09\u3002
+    \u540c\u7ea7\u53d6\u6700\u957f\uff08\u6700\u5177\u4f53\uff09\u3002\u65e0\u547d\u4e2d\u8fd4\u56de None\uff08\u72ec\u7acb\u6210\u6bb5\uff09\u3002
+    """
+    haystack = f"{topic.get('name') or ''} {topic.get('slug') or ''} {topic.get('display_name') or ''}".lower()
+    if not haystack.strip():
+        return None
+    name_key: str | None = None
+    name_len = 0
+    alias_key: str | None = None
+    alias_len = 0
+    for canonical_name, name_term, alias_terms in canonical_index:
+        if name_term and name_term in haystack and len(name_term) > name_len:
+            name_key = canonical_name
+            name_len = len(name_term)
+        for alias in alias_terms:
+            if alias and alias in haystack and len(alias) > alias_len:
+                alias_key = canonical_name
+                alias_len = len(alias)
+    return name_key or alias_key
+
+
+def _collapse_topics_by_canonical_entity(
+    topics: list[dict[str, Any]], canonical_entities: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """\u6309 canonical \u5b9e\u4f53\u628a\u540c\u9879\u76ee\u7684\u788e\u7247\u4e3b\u9898\u5408\u5e76\u6210\u4e00\u6bb5\uff08\u4fdd\u6301\u9996\u6b21\u51fa\u73b0\u987a\u5e8f\uff09\u3002
+
+    \u6cbb W22 topic \u788e\u6bb5\u6839\u56e0\uff1adaily \u628a\u4e00\u4e2a\u9879\u76ee\u62c6\u6210 per-feature cluster\uff08Carmind_code
+    LLM\u9884\u68c0 / m4a / \u524d\u7aef\uff09\uff0cweekly \u6309 cluster-slug \u5206\u7ec4\u5c31\u788e\u6210\u591a\u6bb5\u3002\u6539\u6210\u6309 canonical
+    \u5b9e\u4f53\u5206\u7ec4\u2014\u2014\u4e00\u4e2a\u9879\u76ee\u4e00\u6bb5\uff0c\u8bfb\u8d77\u6765\u5c31\u662f W21 \u91cc KeyPulse \u5355\u6bb5\u90a3\u79cd\u3002\u65e0\u5b9e\u4f53\u6570\u636e\u65f6\u539f\u6837
+    \u8fd4\u56de\uff08\u4f18\u96c5\u964d\u7ea7\uff09\uff0c\u8fd9\u4e5f\u662f `_assign_signals_to_topics` \u4ecd\u4fdd\u7559\u4f5c\u515c\u5e95\u7684\u539f\u56e0\u3002
+    """
+    if not canonical_entities:
+        return topics
+
+    canonical_index: list[tuple[str, str, list[str]]] = []
+    for entity in canonical_entities:
+        if not isinstance(entity, dict):
+            continue
+        name = str(entity.get("canonical_name") or "").strip()
+        etype = str(entity.get("type") or "").strip().lower()
+        if not name or name.lower() == "unknown" or etype == "unknown" or len(name) < 2:
+            continue
+        alias_terms = [str(a or "").strip().lower() for a in (entity.get("aliases") or [])]
+        alias_terms = [t for t in alias_terms if len(t) >= 2 and t != name.lower()]
+        canonical_index.append((name, name.lower(), alias_terms))
+    if not canonical_index:
+        return topics
+
+    merged_order: list[str] = []
+    groups: dict[str, dict[str, Any]] = {}
+    standalone: list[dict[str, Any]] = []
+    for topic in topics:
+        key = _match_canonical_key(topic, canonical_index)
+        if key is None:
+            standalone.append(topic)
+            merged_order.append(f"__standalone__{id(topic)}")
+            groups[f"__standalone__{id(topic)}"] = topic
+            continue
+        if key not in groups:
+            base = dict(topic)
+            base["name"] = key
+            base["member_slugs"] = [str(topic.get("slug") or "")] if topic.get("slug") else []
+            base["member_names"] = [str(topic.get("name") or "")] if topic.get("name") else []
+            base["weekly_entries"] = list(topic.get("weekly_entries") or [])
+            base["_member_states"] = [str(topic.get("state") or "")]
+            groups[key] = base
+            merged_order.append(key)
+        else:
+            base = groups[key]
+            if topic.get("slug"):
+                base["member_slugs"].append(str(topic.get("slug")))
+            if topic.get("name"):
+                base["member_names"].append(str(topic.get("name")))
+            seen_dates = {str(e.get("date") or "") for e in base["weekly_entries"] if isinstance(e, dict)}
+            for entry in topic.get("weekly_entries") or []:
+                if isinstance(entry, dict) and str(entry.get("date") or "") not in seen_dates:
+                    base["weekly_entries"].append(entry)
+                    seen_dates.add(str(entry.get("date") or ""))
+            base["_member_states"].append(str(topic.get("state") or ""))
+
+    result: list[dict[str, Any]] = []
+    for token in merged_order:
+        item = groups.get(token)
+        if item is None:
+            continue
+        if "_member_states" in item:
+            item["state"] = _aggregate_daily_states(item.pop("_member_states"))
+        result.append(item)
+    return result
 
 
 def _signal_matches_topic(signal_text: str, topic: dict[str, Any]) -> bool:
@@ -1041,6 +1144,52 @@ def _signals_for_topic(signals: list[dict[str, str]], topic: dict[str, Any], lim
     if matched:
         return matched[:limit]
     return signals[:limit]
+
+
+def _normalize_signal_text(text: str) -> str:
+    """归一化用于跨段去重：小写 + 去标点空白，只留中英数字。"""
+    return "".join(re.findall(r"[A-Za-z0-9一-鿿]+", str(text or "").lower()))
+
+
+def _assign_signals_to_topics(
+    signals: list[dict[str, str]],
+    top_topics: list[dict[str, Any]],
+    *,
+    limit: int = 3,
+) -> dict[str, list[dict[str, str]]]:
+    """把全局信号池里的每条决策/产出/卡点，分配给「唯一一个」最匹配的主题。
+
+    治 W22 跨段重复 + 决策错配的根因：旧 `_signals_for_topic` 在主题无匹配时
+    回退到全局 top-3（line 1043），且同项目多主题靠 token 命中拿到同一条决策，
+    无跨主题去重。这里改成单趟分配——每条信号只进它最匹配的一个主题，无全局
+    回退（无匹配则丢弃），同一条文本只落一处。
+    """
+    token_map = [(str(topic.get("slug") or ""), _topic_tokens(topic)) for topic in top_topics]
+    assigned: dict[str, list[dict[str, str]]] = {slug: [] for slug, _ in token_map}
+    seen_texts: set[str] = set()
+    for item in signals:
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        norm = _normalize_signal_text(text)
+        if norm and norm in seen_texts:
+            continue
+        lowered = text.lower()
+        best_slug = ""
+        best_score = 0
+        for slug, tokens in token_map:
+            score = sum(1 for token in tokens if token in lowered)
+            if score > best_score:
+                best_score = score
+                best_slug = slug
+        if best_score < 1 or not best_slug:
+            continue
+        if len(assigned[best_slug]) >= limit:
+            continue
+        assigned[best_slug].append(item)
+        if norm:
+            seen_texts.add(norm)
+    return assigned
 
 def _snapshot_week_entries(daily_summaries: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {}
@@ -1406,8 +1555,14 @@ def _collect_daily_topic_signals(
     daily topics[].events_ref 含 cluster.slug；display 与 cluster.display_name 一致。
     返回三个数组（每条带 date），由调用方塞进 L5 input 作为权威事实。
     """
-    cluster_slug = str(topic.get("slug") or "").strip()
-    display = str(topic.get("name") or topic.get("display_name") or "").strip()
+    # 实体合并后主题带 member_slugs/member_names；按全部成员反查，否则合并段
+    # 只能拿到 base 成员那一支的决策/产出。
+    member_slugs = {str(s).strip() for s in (topic.get("member_slugs") or []) if str(s).strip()}
+    member_slugs.add(str(topic.get("slug") or "").strip())
+    member_slugs.discard("")
+    member_displays = {str(n).strip() for n in (topic.get("member_names") or []) if str(n).strip()}
+    member_displays.add(str(topic.get("name") or topic.get("display_name") or "").strip())
+    member_displays.discard("")
     decisions: list[dict[str, str]] = []
     shipped: list[dict[str, str]] = []
     anchor_states: list[dict[str, str]] = []
@@ -1418,9 +1573,9 @@ def _collect_daily_topic_signals(
                 continue
             refs = {str(x or "").strip() for x in (entry.get("events_ref") or [])}
             entry_display = str(entry.get("display") or "").strip()
-            if cluster_slug and cluster_slug in refs:
+            if member_slugs & refs:
                 matched = True
-            elif display and entry_display and display == entry_display:
+            elif entry_display and entry_display in member_displays:
                 matched = True
             else:
                 matched = False
@@ -1616,6 +1771,52 @@ def _build_cross_week_section_lines(cross_week_diff: list[dict[str, str]]) -> li
             lines.append(f"- 跨周状态迁移: {topic} {from_state}->{to_state}")
     lines.append("")
     return lines
+
+
+def _select_weekly_principles(
+    principles: list[dict[str, str]], *, cap: int = 8
+) -> list[dict[str, str]]:
+    """从一周的原则里精选一小撮，治 W22「原则 firehose」（190 条近义重复）。
+
+    周报是精选不是 dump：`list_week_principles` 只按 slug 精确去重，放进来的
+    是大量近义条目（data-input-quality-context / data-quality-context / …）。
+    这里做语义去重（distilled token-set Jaccard + slug 前缀同族）再硬截断到 cap。
+    上游原则抽取过量产出是另一条线的问题（principle vertical），这里只负责消费端
+    不把脏东西铺满整页。
+    """
+    if not principles:
+        return []
+
+    selected: list[dict[str, str]] = []
+    kept_token_sets: list[set[str]] = []
+    seen_families: set[str] = set()
+    for item in principles:
+        slug = str(item.get("slug") or item.get("principle_id") or "").strip()
+        if not slug:
+            continue
+        family = "-".join(slug.split("-")[:3])[:12]
+        if family and family in seen_families:
+            continue
+        distilled = str(item.get("distilled") or "").strip()
+        tokens = set(re.findall(r"[a-z0-9一-鿿]{2,}", distilled.lower()))
+        is_dup = False
+        for kept in kept_token_sets:
+            if not tokens or not kept:
+                continue
+            overlap = len(tokens & kept)
+            union = len(tokens | kept)
+            if union and overlap / union >= 0.6:
+                is_dup = True
+                break
+        if is_dup:
+            continue
+        selected.append(item)
+        kept_token_sets.append(tokens)
+        if family:
+            seen_families.add(family)
+        if len(selected) >= cap:
+            break
+    return selected
 
 
 def _build_principles_section_lines(principles: list[dict[str, str]]) -> list[str]:
@@ -1971,8 +2172,20 @@ def _render_exec_weekly_markdown(
     in_progress = sum(1 for item in top_topics if str(item.get("state") or "") == "in_progress")
     started = sum(1 for item in top_topics if str(item.get("state") or "") == "started")
     total_entries = sum(_weekly_entry_count(item) for item in top_topics)
+    tldr_names = "、".join(
+        str(item.get("name") or item.get("slug") or "").strip()
+        for item in top_topics[:3]
+        if str(item.get("name") or item.get("slug") or "").strip()
+    )
+    tldr_line = (
+        f"本周推进 {len(top_topics)} 个主题（{completed} 完成 · {in_progress} 推进中 · {started} 启动）"
+        + (f"；主线：{tldr_names}。" if tldr_names else "。")
+    )
     lines = [
         f"# 本周工作汇报 ({week_str}, {start.month}/{start.day}-{end.month}/{end.day})",
+        "",
+        "## TL;DR",
+        tldr_line,
     ]
     if key_data_section.strip():
         lines.extend(["", *key_data_section.strip().splitlines(), ""])
@@ -1987,17 +2200,30 @@ def _render_exec_weekly_markdown(
             ]
         )
     lines.append("## 本周关键进展")
+    seen_lines: set[str] = set()
+
+    def _dedup_across_sections(items: list[str]) -> list[str]:
+        kept: list[str] = []
+        for item in items:
+            norm = _normalize_signal_text(item)
+            if norm and norm in seen_lines:
+                continue
+            if norm:
+                seen_lines.add(norm)
+            kept.append(item)
+        return kept
+
     for topic in top_topics:
         slug = str(topic.get("slug") or "")
         name = str(topic.get("name") or slug)
         state = str(topic.get("state") or "in_progress")
         payload = by_slug.get(slug, {})
         narrative = str(payload.get("narrative") or "").strip() or f"本周{name}有记录，见 [[{str((topic.get('weekly_entries') or [{'date': start.isoformat()}])[0].get('date'))}]]。"
-        decisions = [str(item).strip() for item in (payload.get("decisions") or []) if str(item).strip()]
-        outputs = [str(item).strip() for item in (payload.get("outputs") or []) if str(item).strip()]
-        blockers = [str(item).strip() for item in (payload.get("blockers") or []) if str(item).strip()]
+        decisions = _dedup_across_sections([str(item).strip() for item in (payload.get("decisions") or []) if str(item).strip()])
+        outputs = _dedup_across_sections([str(item).strip() for item in (payload.get("outputs") or []) if str(item).strip()])
+        blockers = _dedup_across_sections([str(item).strip() for item in (payload.get("blockers") or []) if str(item).strip()])
         meaning = str(payload.get("meaning") or "").strip()
-        lines.append(f"### {name}")
+        lines.append(f"### {_exec_state_icon(state)} {name} | {_exec_state_label(state)}")
         lines.append(narrative)
         if meaning:
             lines.append(f"→ 这意味着: {meaning}")
@@ -2787,6 +3013,18 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
     candidate_topics = (
         _normalize_l4_output(l4_result.content, daily_summaries) if l4_result.content is not None else list(l4_fallback_topics)
     )
+
+    # 深修分组键：先算 canonical 实体，按实体把同项目碎片主题合并成一段，再排序选 top。
+    # 这是 weekly 内容乱的根 —— 见 _collapse_topics_by_canonical_entity。
+    weekly_entity_payload: dict[str, Any] | None = None
+    with recorder.stage("entity_merge"):
+        weekly_entity_payload = _prepare_weekly_entity_payload(week_str)
+    canonical_entities = (
+        weekly_entity_payload.get("canonical_entities") if isinstance(weekly_entity_payload, dict) else None
+    )
+    pre_collapse_count = len(candidate_topics)
+    candidate_topics = _collapse_topics_by_canonical_entity(candidate_topics, canonical_entities)
+
     candidate_topics.sort(
         key=lambda item: (
             {"completed": 0, "in_progress": 1, "blocked": 2, "started": 3}.get(str(item.get("state") or ""), 9),
@@ -2805,9 +3043,6 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
             }
         ]
 
-    weekly_entity_payload: dict[str, Any] | None = None
-    with recorder.stage("entity_merge"):
-        weekly_entity_payload = _prepare_weekly_entity_payload(week_str)
     if weekly_entity_payload is None:
         _append_log(
             {
@@ -2826,6 +3061,8 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
                 "decision": "entity_merge_ok",
                 "canonical_entities": len(weekly_entity_payload.get("canonical_entities") or []),
                 "event_entity_map": len(weekly_entity_payload.get("event_entity_map") or []),
+                "topics_before_collapse": pre_collapse_count,
+                "topics_after_collapse": len(candidate_topics),
             }
         )
 
@@ -2887,18 +3124,22 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
         else l5_spec.body
     )
     l5_items: list[dict[str, Any]] = []
+    decisions_by_topic = _assign_signals_to_topics(key_decisions, top_topics, limit=3)
+    outputs_by_topic = _assign_signals_to_topics(visible_outputs, top_topics, limit=3)
+    blockers_by_topic = _assign_signals_to_topics(tagged_blockers, top_topics, limit=3)
     with ThreadPoolExecutor(max_workers=max(1, min(4, len(top_topics)))) as executor:
         futures = {}
         for topic in top_topics:
+            topic_slug = str(topic.get("slug") or "")
             topic_cross_week_diff = [
                 item
                 for item in cross_week_diff
                 if str(item.get("topic") or "").strip()
                 and _signal_matches_topic(str(item.get("topic") or ""), topic)
             ][:3]
-            topic_key_decisions = _signals_for_topic(key_decisions, topic, limit=3)
-            topic_visible_outputs = _signals_for_topic(visible_outputs, topic, limit=3)
-            topic_blockers = _signals_for_topic(tagged_blockers, topic, limit=3)
+            topic_key_decisions = decisions_by_topic.get(topic_slug, [])
+            topic_visible_outputs = outputs_by_topic.get(topic_slug, [])
+            topic_blockers = blockers_by_topic.get(topic_slug, [])
             daily_signals = _collect_daily_topic_signals(topic, daily_summaries)
             l5_input = {
                 "scope_week": week_str,
@@ -2975,7 +3216,9 @@ def _run_weekly_recorded(week_str: str, *, style: str, recorder: RunRecorder) ->
     stats.l6_source = l6_result.source
     l6_output_dict = _normalize_l6_output(l6_result.content if l6_result.content is not None else _fallback_l6(l6_input, l6_result.reason))
     sink = resolve_active_sink(Config.load(), persist=False)
-    new_principles = list_week_principles(week_str=week_str, vault_path=sink.output_dir)
+    new_principles = _select_weekly_principles(
+        list_week_principles(week_str=week_str, vault_path=sink.output_dir)
+    )
     validator_attempts = 0
     validator_failures: list[ValidationFailure] = []
     blocking_failures: list[ValidationFailure] = []
