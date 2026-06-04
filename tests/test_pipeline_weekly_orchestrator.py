@@ -249,7 +249,11 @@ def test_run_weekly_stub_gateway_full_chain(tmp_path, monkeypatch):
     assert weekly_path.exists()
     body = weekly_path.read_text(encoding="utf-8")
     assert "# 本周工作汇报 (2026-W18" in body
-    assert "## TL;DR" not in body  # M5: 删 TL;DR 死代码模板拼接
+    # TL;DR 段恢复（validator 强制要求、W19-21 gold 都有），但用实质内容
+    # （主题数 + 完成/推进分布 + 主线名）替代旧的「本周主线集中在…」套话模板。
+    assert "## TL;DR" in body
+    assert "本周主线集中在" not in body
+    assert "本周推进" in body
     assert "## 本周关键进展" in body
     assert "## 没接住的球" in body
     assert "生成信息:" in body
@@ -640,3 +644,107 @@ def test_weekly_alias_switches_with_locale(monkeypatch):
     monkeypatch.setenv("KEYPULSE_LANG", "en")
     monkeypatch.setattr(i18n, "_LANG_CACHE", None)
     assert _weekly_alias("2026-W21") == "2026-W21 (May 18 – May 24)"
+
+
+# --- W22 deep-fix: 原则精选 + 信号单一归属 ---
+
+def test_select_weekly_principles_dedups_and_caps():
+    raw = [
+        {"slug": "data-input-quality-context", "distilled": "Ensure high quality data input avoiding unlabeled platform data"},
+        {"slug": "data-input-quality-importance", "distilled": "Ensure high quality data input avoiding unlabeled platform data lacking context"},
+        {"slug": "data-quality-context", "distilled": "Ensure high quality data input by avoiding unlabeled platform dependent data"},
+    ] + [
+        {"slug": f"distinct-principle-{i}", "distilled": f"完全不同的原则编号{i}专属内容 alpha beta gamma {i}"}
+        for i in range(12)
+    ]
+    selected = weekly_orchestrator._select_weekly_principles(raw, cap=8)
+    slugs = [item["slug"] for item in selected]
+    # 三条 data-* 近义/同族只保留一条
+    data_kept = [s for s in slugs if s.startswith("data-")]
+    assert len(data_kept) == 1
+    # 硬截断到 cap
+    assert len(selected) <= 8
+    assert weekly_orchestrator._select_weekly_principles([], cap=8) == []
+
+
+def test_assign_signals_to_topics_single_home_no_global_fallback():
+    topics = [
+        {"slug": "carmind", "name": "Carmind_code"},
+        {"slug": "keypulse", "name": "KeyPulse"},
+        {"slug": "failure-stack", "name": "failure-stack 文档"},
+    ]
+    signals = [
+        {"text": "Carmind_code 对比 rewrite.py 320->815 行"},
+        {"text": "Carmind_code 接百度 MCP 替代自动抓取"},  # 同主题第二条
+        {"text": "KeyPulse 收紧决策提取正则"},
+        {"text": "与任何主题都不沾边的全局噪声决策"},  # 无 token 命中 -> 丢弃
+    ]
+    assigned = weekly_orchestrator._assign_signals_to_topics(signals, topics, limit=3)
+    carmind_texts = [s["text"] for s in assigned["carmind"]]
+    assert any("rewrite.py" in t for t in carmind_texts)
+    # 无匹配的全局噪声不会回退到任何主题
+    all_assigned = [s["text"] for v in assigned.values() for s in v]
+    assert "与任何主题都不沾边的全局噪声决策" not in all_assigned
+    # failure-stack 不应拿到 Carmind 的决策（旧 bug：全局 top-3 fallback）
+    assert assigned["failure-stack"] == []
+
+
+def test_assign_signals_to_topics_global_text_dedup():
+    topics = [
+        {"slug": "carmind", "name": "Carmind_code"},
+        {"slug": "carmind-ui", "name": "Carmind_code 前端"},
+    ]
+    signals = [
+        {"text": "Carmind_code rewrite.py 320->815"},
+        {"text": "Carmind_code rewrite.py 320->815"},  # 完全重复
+    ]
+    assigned = weekly_orchestrator._assign_signals_to_topics(signals, topics, limit=3)
+    total = sum(len(v) for v in assigned.values())
+    assert total == 1  # 同一条文本只落一处
+
+
+# --- W22 deep-fix: 按 canonical 实体合并碎片主题 ---
+
+_CANON = [
+    {"canonical_name": "Carmind_code", "type": "project", "aliases": ["agent-runtime"]},
+    {"canonical_name": "Kiro", "type": "project", "aliases": []},
+    {"canonical_name": "KeyPulse", "type": "project", "aliases": ["keypulse"]},
+    {"canonical_name": "unknown", "type": "unknown", "aliases": []},
+]
+
+
+def test_collapse_merges_same_project_fragments():
+    topics = [
+        {"slug": "carmind-llm", "name": "Carmind_code LLM 预检", "state": "completed",
+         "weekly_entries": [{"date": "2026-05-27"}]},
+        {"slug": "carmind-m4a", "name": "Carmind_code m4a 推理", "state": "in_progress",
+         "weekly_entries": [{"date": "2026-05-25"}]},
+        {"slug": "keypulse-fix", "name": "KeyPulse 代码修复", "state": "completed",
+         "weekly_entries": [{"date": "2026-05-25"}]},
+    ]
+    out = weekly_orchestrator._collapse_topics_by_canonical_entity(topics, _CANON)
+    names = [t["name"] for t in out]
+    assert names == ["Carmind_code", "KeyPulse"]  # 3 碎片 -> 2 项目, 保序
+    carmind = out[0]
+    assert set(carmind["member_slugs"]) == {"carmind-llm", "carmind-m4a"}
+    # 合并后状态聚合：completed + in_progress -> in_progress
+    assert carmind["state"] == "in_progress"
+    assert {e["date"] for e in carmind["weekly_entries"]} == {"2026-05-27", "2026-05-25"}
+
+
+def test_collapse_canonical_name_beats_alias_no_false_merge():
+    # 回归：slug "kiro-agent-runtime" 含 Carmind 别名 "agent-runtime"，
+    # 但 canonical_name "kiro" 命中应优先 -> 归 Kiro 而非 Carmind_code。
+    topics = [
+        {"slug": "kiro-agent-runtime", "name": "Kiro 单Agent Runtime架构结论", "state": "completed",
+         "weekly_entries": [{"date": "2026-05-26"}]},
+    ]
+    out = weekly_orchestrator._collapse_topics_by_canonical_entity(topics, _CANON)
+    assert len(out) == 1
+    assert out[0]["name"] == "Kiro"
+
+
+def test_collapse_noop_without_entities():
+    topics = [{"slug": "a", "name": "A", "state": "completed"}]
+    assert weekly_orchestrator._collapse_topics_by_canonical_entity(topics, None) == topics
+    assert weekly_orchestrator._collapse_topics_by_canonical_entity(topics, []) == topics
