@@ -1026,111 +1026,6 @@ def _anchor_link(anchor: str, display: str | None = None) -> str:
     return f"[[{str(anchor or '').strip()}]]"
 
 
-def _daily_event_cards(date_text: str) -> list[tuple[str, str]]:
-    event_dir = get_data_dir() / "events" / date_text
-    if not event_dir.exists():
-        return []
-
-    cards: list[tuple[str, str]] = []
-    event_paths = sorted(
-        (path for path in event_dir.glob("*.md") if path.is_file()),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    for path in event_paths:
-        slug = path.stem
-        try:
-            markdown = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        match = _EVENT_H1_RE.search(markdown)
-        title = match.group(1).strip() if match else slug
-        cards.append((slug, title or slug))
-    return cards
-
-
-_EVENT_CARD_NOISE_PREFIXES = (
-    "export-",
-    "https-",
-    "http-",
-    "redacted-shell",
-    "uncategorized",
-    "obsidian-clipboard-copy",
-    "https-github-com-",
-    "https-mp-weixin-",
-)
-_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
-_ASCII_START_RE = re.compile(r"^[0-9A-Za-z]")
-
-
-def _event_card_score(slug: str, title: str) -> int:
-    slug_text = str(slug or "").strip().lower()
-    title_text = " ".join(str(title or "").split()).strip()
-    title_lower = title_text.lower()
-    if (
-        any(slug_text.startswith(prefix) or title_lower.startswith(prefix) for prefix in _EVENT_CARD_NOISE_PREFIXES)
-        or "users-harland-" in slug_text
-        or "/users/harland/" in title_lower
-        or " users/harland/" in title_lower
-    ):
-        return 0
-
-    score = 1
-    if _CJK_RE.search(title_text):
-        score += 3
-    if 8 <= len(title_text) <= 40:
-        score += 2
-    if title_text and _ASCII_START_RE.match(title_text) is None:
-        score += 1
-    return score
-
-
-def filter_daily_event_cards(
-    cards: list[tuple[str, str]],
-    *,
-    model_gateway: Any | None = None,
-    target_count: int = 6,
-) -> list[tuple[str, str]]:
-    if not cards:
-        return []
-
-    del model_gateway
-    limit = min(max(int(target_count or 6), 5), 8, len(cards))
-    ranked = sorted(
-        enumerate(cards),
-        key=lambda item: (-_event_card_score(item[1][0], item[1][1]), item[0]),
-    )
-    selected_indices = sorted(index for index, _card in ranked[:limit])
-    return [cards[index] for index in selected_indices]
-
-
-def _cross_day_continuations(
-    *,
-    date_text: str,
-    snapshot: dict[str, Any],
-    topic_lookup: dict[str, dict[str, Any]],
-) -> list[tuple[str, str]]:
-    previous_date = (date_cls.fromisoformat(date_text) - timedelta(days=1)).isoformat()
-    continuations: list[tuple[str, str]] = []
-    for slug, payload in snapshot.items():
-        if not isinstance(payload, dict):
-            continue
-        evidence_dates = {str(item) for item in (payload.get("evidence_dates") or []) if str(item).strip()}
-        last_seen = str(payload.get("last_seen_date") or "").strip()
-        if previous_date not in evidence_dates or date_text not in evidence_dates and last_seen != date_text:
-            continue
-        topic = topic_lookup.get(str(slug))
-        display = str(
-            (topic or {}).get("display")
-            or (topic or {}).get("title")
-            or payload.get("name")
-            or slug
-        ).strip() or str(slug)
-        anchor = str((topic or {}).get("anchor") or slug).strip() or str(slug)
-        continuations.append((anchor, display))
-    return continuations
-
-
 def _yaml_scalar(value: str) -> str:
     return json.dumps(str(value), ensure_ascii=False)
 
@@ -1283,16 +1178,20 @@ def render_daily_markdown(
     event_lookup = {str(item.get("cluster_id") or ""): item for item in event_list}
     for topic in topic_list:
         anchor = str(topic.get("anchor") or "").strip()
-        display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
+        refs = [str(item) for item in (topic.get("events_ref") or []) if str(item).strip()]
+        # 段名单一权威源：clusters[].display_name（确定性、干净）。topic.display 由 L0 锚定步
+        # LLM 重写，会引入「完成XX」前缀/幻觉，仅作兜底。详见 docs/refactor-pipeline-dedup.md 第 1 层。
+        cluster_displays = [
+            cd
+            for ref in refs
+            if (cd := str((event_lookup.get(ref) or {}).get("display_name") or "").strip())
+        ]
+        fallback_display = str(topic.get("display") or topic.get("title") or anchor).strip() or anchor
+        display = cluster_displays[0] if cluster_displays else fallback_display
         heading = _anchor_link(anchor, display) if anchor else display
         lines.append(f"### {heading}")
         lines.append("")
-        refs = [str(item) for item in (topic.get("events_ref") or []) if str(item).strip()]
-        h3_candidates = [display]
-        for ref in refs:
-            cluster_display = str((event_lookup.get(ref) or {}).get("display_name") or "").strip()
-            if cluster_display:
-                h3_candidates.append(cluster_display)
+        h3_candidates = [display, *cluster_displays, fallback_display]
         narrative = _extract_h3_section(source_markdown, h3_candidates)
         if not narrative:
             narrative = str(topic.get("narrative") or "").strip()
