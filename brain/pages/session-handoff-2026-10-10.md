@@ -5,7 +5,7 @@ category: project
 status: active
 tags: [handoff, state, refactor]
 created: "2026-10-10T11:19:23"
-updated: "2026-10-10T12:14:26"
+updated: "2026-10-10T13:53:29"
 ---
 
 <!-- compiled_truth -->
@@ -15,9 +15,9 @@ updated: "2026-10-10T12:14:26"
 - Tag `legacy-v0` = `f991a98` (frozen baseline; was `66ddd2d`). Pushed.
 - Tag `backup/install-homebrew-clean` = `dbbc6dc` (was the pre-rewrite tag target).
 - Rename-fix commit is `d0cba9f` (was `7ab8641`).
-- Docs: PRD v1.2 with D18 / D19; Eval PRD now **v1.0 / release-judgement baseline**, approved by the owner on 2026-10-10 (`docs/KeyPulse_Eval_PRD.md`). The six owner decisions are recorded in [[eval-prd-separate]].
+- Docs: PRD v1.2 with D18 / D19 / D20-D23 (reuse route, see [[v1-build-by-legacy-extraction]]); Eval PRD now **v1.0 / release-judgement baseline**, approved by the owner on 2026-10-10 (`docs/KeyPulse_Eval_PRD.md`). The six owner decisions are recorded in [[eval-prd-separate]].
 - Refactor is in place in github.com/Longfellow1/keypulse. Planned branch `refactor/core-v1`.
-- Planned contract: import-linter. The core package must not import pipeline / obsidian / hud / quality. Enforced in CI.
+- Planned contract (D21): import-linter, enforced in CI. Core modules (store / search / sources / capture / privacy / hud) must not import pipeline / obsidian / quality / LLM gateway. macOS-only libs are allowed only in capture / hud / startup (D18). There is no new top-level core package.
 - Pre-purge backup bundle (contains the leaked secrets) is at the session scratchpad. Delete it after the owner confirms.
 
 ## Test baseline (HOME redirected to temp dir)
@@ -51,6 +51,7 @@ updated: "2026-10-10T12:14:26"
 ## PRD v1.2 status
 - B1-B8 and conflicts 1-5 are APPROVED. Details in [[v1-development-baseline-prd]]. No owner veto is pending.
 - Windows (D18) and personal-chat capture (D19) are resolved; see [[v1-deferred-undecided-items]].
+- D20-D23 (reuse-first route) are decided 2026-10-10 and reflected in the PRD v1.2 changelog.
 - Still open: camera capture, Cursor data-source format (unspecified in PRD, to confirm).
 
 ## Next steps (in order)
@@ -59,16 +60,14 @@ updated: "2026-10-10T12:14:26"
    - decide on a GitHub Support purge request for the 7 closed PR refs;
    - decide on the exposure of the public golden daily / weekly baselines.
 2. Eval PRD v1.0 is approved and binding ([[eval-prd-separate]]). The "unauthorised-access leakage = 0" HARD release gate stays.
-3. **Next: P0 breakdown**:
-   - core package skeleton + import-linter rules, including the macOS-lib ban;
-   - data model per PRD §3.5;
+3. **In progress: publish the reuse-first P0 breakdown as GitHub issues.** Each issue is tagged extract-from-legacy or new-build, per [[v1-build-by-legacy-extraction]]. Scope:
+   - core skeleton + import-linter rules, including the macOS-lib ban (D18, D21);
+   - migration v20+ on the legacy DB (D20), per PRD §3.5;
+   - P0 control surface: global pause, per-source switch, delete by source and time range (D23);
    - MCP tools `search_context` / `get_timeline` / `get_evidence` + `commit_memory`, with token + allowlist auth ([[mcp-caller-auth-p0]], [[memory-distillation-by-agent]]);
    - eval V0 infra, reusing legacy tests per Eval PRD §1.5, in parallel.
-4. Extraction order unchanged, after unblocking:
-   - store, then search, then privacy / permissions (these need extension per PRD, not as-is), then capture / sources.
-   - Blockers: `pipeline/__init__.py` eager imports; `sources/sink.py:11` imports `quality.entity_extractor`; quality cluster strategies import `obsidian.layout`; capture <-> capabilities cycle; `app.py` / `cli.py` hard-wired to pipeline + obsidian; DB schema ownership split (`store/migrations.py` v19 vs `pipeline/triggers.py` llm_trigger_log, `pipeline/run_record.py` run_records).
-   - `hud` is NOT stay-legacy: PRD §3.9 makes it a P0 trust surface.
-- Full blocker list: [[legacy-extraction-blockers]]. Refactor policy: [[refactor-in-place-with-legacy-tag]]. Decisions: [[keypulse-v1-local-memory-infra]], [[v1-development-baseline-prd]], [[multi-host-mcp-integration]], [[keyboard-capture-p0-experimental]].
+4. Extraction order: store, then search, then privacy / permissions (extended per PRD, not as-is), then capture / sources. `hud` stays in place (D21) but is a P0 trust surface (PRD §3.9). Blockers and cut list: [[legacy-extraction-blockers]].
+- Refactor policy: [[refactor-in-place-with-legacy-tag]]. Decisions: [[keypulse-v1-local-memory-infra]], [[v1-development-baseline-prd]], [[multi-host-mcp-integration]], [[keyboard-capture-p0-experimental]].
 - Structure and dependency analysis: `docs/extraction/structure-tree.md`, `docs/extraction/dependency-map.md`, scripts in `docs/extraction/scripts/`.
 
 
@@ -120,4 +119,10 @@ updated: "2026-10-10T12:14:26"
   kind: decision
   summary: "Next steps updated: Eval PRD v1.0 approved; next is P0 breakdown"
   source: Owner approval 2026-10-10
+  affects: [session-handoff-2026-10-10]
+
+- time: 2026-10-10T13:53:29
+  kind: decision
+  summary: "Next step: reuse-first P0 breakdown as GitHub issues (in progress); importer task removed; import-linter rule aligned to D21"
+  source: Owner decisions D20-D23 2026-10-10
   affects: [session-handoff-2026-10-10]

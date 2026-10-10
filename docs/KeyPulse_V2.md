@@ -10,7 +10,7 @@
 
 ### v1.2 变更记录（2026-10-10，产品负责人拍板）
 
-**A. 产品负责人决策（编号对应决策表 D13–D19）**
+**A. 产品负责人决策（编号对应决策表 D13–D23）**
 
 1. **键盘采集（决策1 / D13）**：F03 保持 P0，统一为「P0 + 用户显式 opt-in 开关（默认关）+ 只存过滤后的文本片段（chunk），不存逐键流」。实验阶段**脱敏/过滤完整度不是 P0 门槛**，所有承诺或度量脱敏完整度的表述改为「尽力而为（best-effort）、非阻断、P1 加固」。涉及：§1.3、§1.4、§3.2.2–3.2.4、§3.4.2–3.4.3、§3.10.3–3.10.4、§4.4、§5.2、AT07、§6.4、D02、D03。AT10 级联删除与 opt-in 开关原样保留。
 2. **记忆抽取归属（决策2 / D14）**：抽取/蒸馏是消费端 AI IDE Agent 的职责；核心只做存储、规则去重/合并、检索。`commit_memory`、`update_memory`（最小写路径）由 P1 升为 **P0**；§3.9.3 Distill Worker 改为仅规则、核心内无 LLM；§3.6.3 候选来源改为「Agent 写入 + 规则捕获」；D06 关闭。涉及：§1.3 F08/F11/F12、§2.3 W04、§3.5.2–3.5.3、§3.6.3、§3.8.2、§3.9.3、§6.1、AT16、D06。
@@ -20,6 +20,10 @@
 6. **多 Host（决策6 / D17）**：Claude、Codex、Cursor 均须在 V1 经**同一 MCP Server** 接入（每 Host 仅薄适配层/配置）；Claude/Codex 会话解析器（采集）与 MCP 消费相互独立。涉及：D05、§1.3 F05、§1.4、§3.3.2、§3.8、§6.1、§6.4、AT12、AT17。
 7. **Windows（D18）**：V1 仍仅 macOS。新增架构约束：核心包不得 import macOS 专属库（AppKit / Quartz / ApplicationServices / objc / IOKit / Vision 等），平台代码仅限采集、HUD、启动/安装三层适配器，CI 以 import-linter 强制。Windows 重评触发条件见 D18。涉及：§1.1、§7.1、§7.3。
 8. **聊天工具采集（D19）**：聊天 App 默认排除；用户可按 App 显式开启，开启后的屏幕（AX）内容入 Private 分桶；禁止本地聊天库解密；飞书/Slack 官方 OAuth 接口为 V1.1 试点。已知限制：V1 无工作聊天历史来源，W01 中的工作聊天部分仅能依赖用户显式开启后的屏幕采集。涉及：§1.3 F05、§1.4、§2.3、§3.3.2、§5.2、§6.1、§6.3 AT20、§7.1–7.2。
+9. **数据库演进（D20）**：在现有 SQLite 库上以迁移 v20+ 演进，不新建 schema、不做一次性导入器；旧版在迁移外创建的表（llm_trigger_log、run_records）保持 legacy 所有，不属于核心 schema。涉及：§3.5.2、§7.1、§7.3。
+10. **代码组织（D21）**：原地瘦身，不新建顶层 core 包；import-linter 禁止核心模块导入 pipeline / obsidian / quality / LLM 网关，并按 D18 禁止 macOS 专属库越界。涉及：§1.1、§7.1、§7.3。
+11. **旧版日报/周报/Obsidian（D22）**：移出后台 daemon，保留为可选独立命令或定时任务，仅修 bug；daemon 只运行核心（采集、源同步、检索、MCP）。涉及：§1.1、§3.9、§4.1、§9.2。
+12. **P0 范围对齐旧版（D23）**：Artifact 推迟 P1，P0 用事件 metadata 中的 artifact 字段；Session P0 仅窗口焦点会话，源派生会话推迟 P1；分桶 P0 按源默认 + 应用规则（复用旧 policies 表），不做内容分类，Temporary 及到期清理推迟 P1；控制面 P0 为全局暂停 + 按源开关，删除按源与时间范围级联，定时暂停与按桶/单条删除推迟 P1；AT10/G4 删除完整性门槛不变。涉及：§3.4.2、§3.5.2、§3.10.2。
 
 **B. 审阅修订（独立判断，产品负责人可否决，逐条标注）**
 
@@ -373,7 +377,7 @@ Source Input
 | 内容归一 | 对话、命令、网页、文件分别规范字段；不要把所有东西转成同一种纯文本 | `event_type`、`source_type`、结构化 payload |
 | 去重 | 优先 external id；次选内容哈希 + 来源 + 时间窗口；不能仅以相同正文认定重复 | 重复导入不膨胀，跨源证据不断链 |
 | 脱敏（尽力而为） | 秘钥、密码、验证码、金融敏感片段等按规则尽力过滤/丢弃/掩码；实验阶段不设完整度门槛，P1 加固 | 敏感处理状态与过滤原因；已识别的原始秘钥不进索引和日志 |
-| 分桶 | 最少支持 Work / Personal / Private / Financial / Temporary；允许用户改分类 | 默认访问策略可按桶独立设置 |
+| 分桶 | 最少支持 Work / Personal / Private / Financial / Temporary；允许用户改分类。**P0 分桶 = 按源默认 + 应用规则（复用旧 policies 表），不做内容分类；Temporary 为 P1（D23）** | 默认访问策略可按桶独立设置 |
 | 项目/人物标记 | P0 基于明确目录/来源映射与用户指定规则；P1 再做跨源推断 | 不确定归属标记 `unclassified` |
 | 数据完整性 | Source → Event → Memory 维持 ID 关联，支持从答案定位原文 | 原文失效后必须可识别 |
 
@@ -381,7 +385,7 @@ Source Input
 
 - `Work`、`Personal`：**仅对明确授权的 Agent/连接器开放**，不是安装后自动外发。
 - `Private`、`Financial`：默认拒绝第三方 AI 查询；用户每次明确授权才允许按范围访问。
-- `Temporary`：按用户设置的到期时间清理，清理涵盖索引与其派生对象。
+- `Temporary`：按用户设置的到期时间清理，清理涵盖索引与其派生对象。**P1 能力（D23）**，P0 不实现 Temporary 到期清理。
 - 无法识别的高敏内容：采用更严格默认权限；来源不确定的文本不得自动放到低敏可共享桶。
 
 #### 3.4.3 异常处理及验收
@@ -408,6 +412,8 @@ Source Input
 | `Memory` | id、type、subject、assertion、status、valid_from/to、updated_at、confidence、bucket_id、evidence_ids、created_by（principal / rule） | 具有生命周期的事实/状态/经验 |
 | `AccessGrant` | principal、client_id（白名单项）、token_hash、scope（Bucket/Source/操作，含 read / write）、purpose、created_at、expires_at、revoked_at | AI Host/用户授予的权限；每 Host 一条，绑定该 Host 的本地 token（仅存哈希），见 §3.8.3 |
 | `SyncCursor` | source_id、cursor、last_success、last_error | 增量同步与重试 |
+
+> **实现映射（D20）**：在现有 SQLite 库上以迁移 v20+ 演进；Event 对应现有 raw_events（补 source_id / external_id / bucket / kind），Session 对应现有 sessions（P0 仅窗口级），Artifact 为 P1（P0 用事件 metadata 中的 artifact 字段），Source / Evidence / Memory / AccessGrant / SyncCursor / 审计为新增表。
 
 `Memory.assertion` 与 `Evidence` 必须**分离**：用户修改记忆解释不应篡改历史事件；证据变更必须可追溯。
 
@@ -590,13 +596,13 @@ HUD 是 KeyPulse 长期留在用户电脑上的**状态与信任入口**：让�
 
 | 子功能 | 触发/处理 | 预期结果 |
 |---|---|---|
-| Pause / Resume | 用户点击 → 修改全局采集状态 → 停止/恢复允许的源 | 状态立即可见，历史数据不会因暂停丢失 |
+| Pause / Resume | 用户点击 → 修改全局采集状态 → 停止/恢复允许的源。**P0 = 全局暂停 + 按源开关；定时暂停 P1（D23）** | 状态立即可见，历史数据不会因暂停丢失 |
 | Source 开关 | 关掉某 Source → 终止监听与同步 → 更新状态 | 不影响其它源；历史数据按保留设置处理 |
 | App/域名排除 | 设置黑名单 → 对新事件入库前过滤 | 不在正文、索引和日志中留下排除内容 |
 | Bucket 管理 | 查看/修改分类和敏感等级 → 权限过滤生效 | 私人信息不被未授权 Host 读走 |
 | AI 访问权限 | 查看/创建/撤销 Grant → 实时修改访问策略 | 独立 Host、可按范围授权 |
 | 调用审计 | AI 调用后写本地审计记录 | 时间、Host、工具、允许/拒绝、范围；避免存敏感查询全文 |
-| 删除数据 | 选 Source / 日期 / Bucket / 单条 → 预览影响 → 确认删除 | 原文、索引、派生记忆和缓存按规则清理 |
+| 删除数据 | 选 Source / 时间范围 → 预览影响 → 确认删除。**P0 = 按源与时间范围级联；按 Bucket / 单条删除 P1（D23）** | 原文、索引、派生记忆和缓存按规则清理 |
 | 数据导出 | 用户选择范围 → 导出结构化数据与出处 | **P1**；确保不会额外外发 |
 
 #### 3.10.3 不可接受的边界
@@ -885,7 +891,7 @@ P0 只有在以下条件**全部达成**时才能宣布完成：
 | D07 | Work/Personal/Private/Financial 默认权限怎么定？ | 全部先按 Host 授权；高敏桶默认拒绝 | 产品+安全待审 |
 | D08 | 原始片段/历史事件/长期 Memory 默认保留多久？ | 分层保留，不一刀切无限期；用户可删除 | 产品待定 |
 | D09 | HUD 采用菜单栏/浮窗/小窗口哪种组合？ | 菜单栏常驻 + 按需展开；避免强占桌面 | 交互待定 |
-| D10 | 现有仓库哪些基建可直接复用？ | 用源码/测试报告给出 Keep / Refactor / Replace 清单 | 工程待核验 |
+| D10 | 现有仓库哪些基建可直接复用？ | 用源码/测试报告给出 Keep / Refactor / Replace 清单 | 复用路线已定（D20–D22）；Keep / Refactor / Replace 清单工程待核验 |
 | D11 | 微信、飞书数据接入方式是否合法可行？ | P1 调研验证，不能纳入首发必成承诺 | 产品+法务/工程待定；本地库解密已排除，官方接口可行性待 V1.1 验证（见 D19 b/c） |
 | D12 | 种子测试是否收集匿名遥测？ | 用户明确 opt-in；默认不回传个人内容 | 产品+安全待审 |
 | D13 | Keyboard 采集与脱敏定位？ | F03 保持 P0：显式 opt-in 开关（默认关）+ 只存过滤后文本片段；实验阶段脱敏/过滤完整度为 best-effort、非阻断、P1 加固；AT10 级联删除保留 | 产品负责人 2026-10-10 已定 |
@@ -895,6 +901,10 @@ P0 只有在以下条件**全部达成**时才能宣布完成：
 | D17 | V1 Host 范围？ | Claude、Codex、Cursor 经同一 MCP Server 全部可接入；会话解析器与 MCP 消费分离 | 产品负责人 2026-10-10 已定 |
 | D18 | V1 是否支持 Windows？ | V1 仅 macOS 不变；架构约束：核心包不得 import macOS 专属库，平台代码仅限采集 / HUD / 启动安装三层，import-linter 在 CI 强制；重评触发：V1.0 通过 Eval PRD 后，种子用户明确 Windows 需求 ≥30%，首步做“Windows lite”（结构化源 + MCP，无动态采集/HUD） | 产品负责人 2026-10-10 已定 |
 | D19 | 聊天工具采集边界？ | (a) 聊天 App 默认排除，用户可按 App 显式开启，开启后的屏幕（AX）内容默认入 Private 分桶；(b) 不做本地聊天库解密（ToS、脆弱、违背信任定位），产品宣传不得声称可读取聊天历史；(c) 官方开放接口（飞书/Slack，用户 OAuth）为 V1.1 试点；(d) 已知限制：V1 无工作聊天历史来源，W01 受限 | 产品负责人 2026-10-10 已定 |
+| D20 | V1 数据库如何演进？ | 在现有 SQLite 库上以迁移 v20+ 演进（raw_events 补 source_id / external_id / bucket / kind；新增 Source、Evidence、Memory、AccessGrant、SyncCursor、审计表）；不新建 schema，不做一次性导入器；迁移外创建的 llm_trigger_log、run_records 保持 legacy 所有 | 产品负责人 2026-10-10 已定 |
+| D21 | 代码如何组织？ | 原地瘦身：store / search / sources / capture / privacy / hud 保留，切断约 10 处 pipeline / obsidian / quality / LLM 耦合；import-linter 禁止核心模块导入上述模块，并禁止 macOS 专属库越界（D18）；新能力（MCP、授权、记忆、审计）放新模块；不建顶层 core 包 | 产品负责人 2026-10-10 已定 |
+| D22 | 旧版日报/周报/Obsidian 如何处理？ | 移出后台 daemon，保留为可选独立命令或定时任务，仅修 bug；daemon 只运行核心（采集、源同步、检索、MCP） | 产品负责人 2026-10-10 已定 |
+| D23 | P0 范围是否对齐旧版？ | (1) Artifact 推迟 P1，P0 用事件 metadata 的 artifact 字段；(2) Session P0 仅窗口焦点会话，源派生会话推迟 P1；(3) 分桶 P0 按源默认 + 应用规则，不做内容分类，Temporary 及到期清理推迟 P1；(4) 控制面 P0 为全局暂停 + 按源开关，删除按源与时间范围级联（并修复旧版 purge --app 误删其它应用数据的问题），定时暂停与按桶/单条删除推迟 P1；AT10/G4 不变 | 产品负责人 2026-10-10 已定 |
 
 ### 7.2 主要风险
 
@@ -925,6 +935,8 @@ P0 只有在以下条件**全部达成**时才能宣布完成：
 | Tests | 单测覆盖、E2E、隐私阻断用例、性能样本 | V1 Test Plan |
 
 > **架构约束（D18）**：核心包不得 import macOS 专属库（AppKit / Quartz / ApplicationServices / objc / IOKit / Vision 等）；平台代码仅限采集、HUD、启动/安装三层适配器，差距审计需核验该边界。
+
+复用原则：从旧版抽取并与新目标两头拉齐；仅 MCP、授权、证据、记忆、审计为新建（D20–D22）。
 
 ---
 

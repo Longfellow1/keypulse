@@ -5,7 +5,7 @@ category: project
 status: active
 tags: [refactor, boundary, analysis]
 created: "2026-10-10T10:51:09"
-updated: "2026-10-10T10:51:09"
+updated: "2026-10-10T13:53:19"
 ---
 
 <!-- compiled_truth -->
@@ -37,3 +37,9 @@ Isolation between new core and legacy is enforced by an import-boundary contract
   summary: "Initial analysis recorded (facts from code analysis)"
   source: Code analysis 2026-10-10
   affects: [legacy-extraction-blockers]
+
+- time: 2026-10-10T13:53:19
+  kind: evidence
+  summary: "2026-10-10 reuse audit: store, search, privacy, cleaning and capture manager have no pipeline coupling. Cut list: pipeline/__init__.py eager imports; sources/sink.py quality import; sources/__init__.py eager registry; app.py pipeline/obsidian jobs; hud/summary.py and approval_window.py; health/self_heal.py and check.py; services/export.py obsidian import; capabilities/builtin/__init__.py llm/obsidian checks; capture/watchers/browser_url.py <-> capabilities/builtin/browser_automation.py cycle. Legacy bugs to fix in extraction: purge --app over-deletes other apps' sessions and search docs; source events are never FTS-indexed; search --since filters on ingest time; Claude/Codex/Git intents are not desensitised at ingest; sync cursor only in memory."
+  source: Code audit 2026-10-10
+  affects: [legacy-extraction-blockers, v1-build-by-legacy-extraction]
