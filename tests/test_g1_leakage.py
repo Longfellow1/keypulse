@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcp_helpers import search, server_for
+from mcp_helpers import client_of, search, server_for
 from keypulse.mcp import auth, tools
 from keypulse.mcp.server import build_server
 from keypulse.store.db import close, get_conn, init_db
@@ -38,13 +40,23 @@ def _isolated_home(tmp_path, monkeypatch):
 
 
 # ── coverage list: UPDATE THIS (and the batteries) when the MCP surface changes ──────────────
-G1_COVERED_TOOLS = {"search_context": {"keywords", "time_range", "sources", "limit"}}
+G1_COVERED_TOOLS = {
+    "search_context": {"keywords", "time_range", "sources", "limit"},
+    "get_evidence": {"evidence_id"},
+    "get_timeline": {"start", "end", "sources", "limit", "cursor"},
+}
 G1_COVERED_RESPONSE_FIELDS = {
     "status", "reason_code", "message", "next_action",
     "results", "results[].id", "results[].snippet", "results[].occurred_at", "results[].source",
-    "results[].bucket", "results[].evidence_id", "results[].match", "results[].match_reason",
+    "results[].bucket", "results[].evidence_id", "results[].evidence_available", "results[].match", "results[].match_reason",
     "coverage", "coverage.partial", "coverage.note", "coverage.time_range",
     "coverage.time_range.start", "coverage.time_range.end", "coverage.buckets", "coverage.sources",
+    # get_timeline (results[].* above are shared)
+    "has_more", "next_cursor",
+    # get_evidence
+    "evidence", "evidence.id", "evidence.event_id", "evidence.source", "evidence.bucket", "evidence.occurred_at",
+    "evidence.excerpt", "evidence.available", "evidence.locator", "evidence.locator.type", "evidence.locator.path",
+    "evidence.locator.line", "evidence.locator.repo", "evidence.locator.commit",
 }
 
 # ── synthetic corpus ─────────────────────────────────────────────────────────────────────────
@@ -242,6 +254,89 @@ def test_g1_canary_scan_through_mcp_transport(canary_db, scope) -> None:
         _assert_no_canary(text, repr(args)[:80], scope)
 
 
+def _evidence_ids_all() -> list[str]:
+    """Every evidence id in the DB (in AND out of scope), then guesses past them."""
+    top = get_conn().execute("SELECT COALESCE(MAX(id), 0) FROM evidence").fetchone()[0]
+    return [f"evd_{i}" for i in range(0, top + 40)]
+
+
+def _evidence_junk() -> list:
+    junk = ["", "evd_", "evd_-1", "evd_0", "evd_1e3", "evd_1.0", "evd_ 1", "evd_1 OR 1=1", "1", "evd_" + "9" * 30,
+            "../etc/passwd", "evt_1", "EVD_1", "\x00", "evd_\u0663", " evd_1", "evd_1\n", 5, None, ["evd_1"]]
+    return junk + [f"evd_{c}" for c in CANARIES] + CANARIES
+
+
+def _timeline_battery(with_id_cursors: bool = True) -> list[dict]:
+    wide = {"start": "1970-01-01", "end": "2999-12-31"}
+    qs: list[dict] = [
+        dict(wide), dict(wide, limit=1), dict(wide, limit=200), dict(wide, limit=5000), dict(wide, limit=0),
+        dict(wide, sources=OUT_SOURCES), dict(wide, sources=OUT_SOURCES + ["claude_code"]), dict(wide, sources=[]),
+        dict(wide, sources=["codex_cli"]), dict(wide, sources=["claude_code"]),
+        {"start": "2026-03-02", "end": "2026-03-02"},
+        {"start": "2026-03-02T10:00:00+00:00", "end": "2026-03-02T10:00:00+00:00"},
+        {"start": "2026-03-04", "end": "2026-03-06"}, {"start": "2026-03-02", "end": "2026-03-01"},
+        {"start": None, "end": None}, {"start": 1, "end": 2}, dict(wide, limit="x"), dict(wide, sources="chrome_history"),
+    ]
+    for c in CANARIES:
+        qs += [dict(wide, sources=[c]), {"start": c, "end": "2999-12-31"}, {"start": "1970-01-01", "end": c},
+               dict(wide, cursor=c), dict(wide, cursor=f"{c}|1")]
+    if with_id_cursors:  # row ids differ between DBs, so these are canary-scan only
+        for ident in (0, 1, 3, 4, 5, 10, 50, 99999):
+            qs.append(dict(wide, limit=2, cursor=f"2026-03-01T00:00:00+00:00|{ident}"))
+            qs.append(dict(wide, limit=2, cursor=f"2026-03-04T09:00:00+00:00|{ident}"))  # inside the out-of-scope bulk range
+    return qs
+
+
+def _run_timeline(token, q: dict, client: str = "host") -> dict:
+    q = dict(q)
+    return tools.get_timeline(token, q.pop("start"), q.pop("end"), client=client, **q)
+
+
+def test_g1_canary_scan_get_evidence_and_get_timeline(canary_db) -> None:
+    for scope_name in GRANT_SCOPES:
+        token = auth.create_grant("host", **GRANT_SCOPES[scope_name])
+        ghost = tools.get_evidence(token, "evd_987654321", client="host")
+        assert ghost["status"] == "not_found"
+        for eid in _evidence_ids_all() + _evidence_junk():
+            resp = tools.get_evidence(token, eid, client="host")
+            _assert_no_canary(json.dumps(resp, ensure_ascii=False), f"get_evidence {eid!r}", scope_name)
+            if resp["status"] in ("ok", "source_unavailable"):
+                assert resp["evidence"]["bucket"] == "Work" and SHARED_WORD in resp["evidence"]["excerpt"]
+            else:
+                assert resp == ghost or resp["status"] == "invalid_argument", (eid, resp)
+        for q in _timeline_battery():
+            resp = _run_timeline(token, q)
+            _assert_no_canary(json.dumps(resp, ensure_ascii=False), f"get_timeline {str(q)[:80]}", scope_name)
+            assert resp["status"] in {"ok", "no_results", "invalid_argument"}
+            if resp["status"] == "ok":
+                assert {r["bucket"] for r in resp["results"]} == {"Work"}
+                assert all(SHARED_WORD in r["snippet"] for r in resp["results"])
+        auth.revoke_grants("host")
+
+
+def test_g1_canary_scan_new_tools_through_mcp_transport(canary_db) -> None:
+    token = auth.create_grant("host", **GRANT_SCOPES["work_claude_only"])
+    server = server_for(token)
+    c = CANARIES[0]
+    calls = [("get_evidence", {"evidence_id": e}) for e in (_evidence_ids_all() + _evidence_junk())[::4]]
+    calls += [("get_evidence", {"evidence_id": c}), ("get_evidence", {"evidence_id": [c]}), ("get_evidence", {"evidence_id": 3}),
+              ("get_evidence", {}), ("get_evidence", {"evidence_id": "evd_1", "unexpected": c})]
+    calls += [("get_timeline", q) for q in _timeline_battery()[::2]]
+    calls += [("get_timeline", {"start": c, "end": c}), ("get_timeline", {"start": [c], "end": "2026-01-01"}),
+              ("get_timeline", {"start": "2026-01-01", "end": "2026-02-01", "limit": c}),
+              ("get_timeline", {"start": "2026-01-01", "end": "2026-02-01", "cursor": {"x": c}}), ("get_timeline", {})]
+
+    async def run():
+        out = []
+        async with create_connected_server_and_client_session(server._mcp_server) as client:
+            for name, args in calls:
+                out.append((await client.call_tool(name, args)).model_dump_json())
+        return out
+
+    for (name, args), text in zip(calls, asyncio.run(run())):
+        _assert_no_canary(text, f"{name} {str(args)[:80]}")
+
+
 def test_g1_canary_scan_denied_and_failure_paths(canary_db, monkeypatch) -> None:
     token = auth.create_grant("host", buckets=["Work"])
     for bad in (None, "", "kp_wrong", CANARIES[0]):
@@ -283,7 +378,7 @@ def test_at05_work_only_host_sees_only_work_in_mixed_hits(canary_db) -> None:
 
 
 # ── 2. differential ──────────────────────────────────────────────────────────────────────────
-_STRIP = {"id", "evidence_id", "occurred_at"}
+_STRIP = {"id", "evidence_id", "occurred_at", "event_id", "next_cursor"}
 
 
 def _normalize(obj):
@@ -298,6 +393,15 @@ def _responses_for(db: Path, with_out_of_scope: bool, scope_name: str) -> list[b
     _seed(db, with_out_of_scope=with_out_of_scope, scope=scope_name)
     token = auth.create_grant("host", **GRANT_SCOPES[scope_name])
     out = [json.dumps(_normalize(_run(token, q)), sort_keys=True, ensure_ascii=False).encode() for q in _differential_queries()]
+    dump = lambda r: json.dumps(_normalize(r), sort_keys=True, ensure_ascii=False).encode()
+    # In-scope rows are inserted first, so their evidence ids match in both DBs; every id beyond them
+    # (extra DB: out-of-scope evidence, clean DB: nonexistent) must be answered identically.
+    in_scope_rows = len(IN_SCOPE) + sum(1 for *_, canary in OUT_OF_SCOPE if _is_in_scope(canary, scope_name))
+    out += [dump(tools.get_evidence(token, f"evd_{i}", client="host")) for i in range(0, in_scope_rows + 80)]
+    out += [dump(tools.get_evidence(token, e, client="host")) for e in _evidence_junk()]
+    out += [dump(_run_timeline(token, q)) for q in _timeline_battery(with_id_cursors=False)]
+    out.append(dump(tools.get_evidence("kp_nope", "evd_1", client="host")))
+    out.append(dump(tools.get_timeline("kp_nope", "2026-01-01", "2026-02-01", client="host")))
     # denied path must also be identical
     out.append(json.dumps(search("kp_nope", [SHARED_WORD]), sort_keys=True).encode())
     close()
@@ -327,6 +431,34 @@ def test_g1_differential_catches_injected_count_leak(tmp_path, monkeypatch) -> N
         return cov
 
     monkeypatch.setattr(tools, "_coverage", leaky)
+    assert _differential_mismatches(tmp_path, "work_all_sources") != []
+
+
+def test_g1_differential_catches_injected_evidence_existence_hint(tmp_path, monkeypatch) -> None:
+    """get_evidence must not answer differently for 'exists but out of scope' vs 'does not exist'."""
+    real = tools.get_evidence
+
+    def hinting(token, evidence_id, **k):
+        resp = real(token, evidence_id, **k)
+        if resp.get("status") == "not_found" and isinstance(evidence_id, str) and evidence_id[4:].isdigit() and len(evidence_id) < 15:
+            n = get_conn().execute("SELECT count(*) FROM evidence WHERE id = ?", (int(evidence_id[4:]),)).fetchone()[0]
+            resp = {**resp, "message": resp["message"] + (" (exists elsewhere)" if n else "")}
+        return resp
+
+    monkeypatch.setattr(tools, "get_evidence", hinting)
+    assert _differential_mismatches(tmp_path, "work_all_sources") != []
+
+
+def test_g1_differential_catches_injected_timeline_count_leak(tmp_path, monkeypatch) -> None:
+    real = tools.get_timeline
+
+    def leaky(*a, **k):
+        resp = real(*a, **k)
+        if "results" in resp:
+            resp["total"] = get_conn().execute("SELECT count(*) FROM raw_events").fetchone()[0]
+        return resp
+
+    monkeypatch.setattr(tools, "get_timeline", leaky)
     assert _differential_mismatches(tmp_path, "work_all_sources") != []
 
 
@@ -361,7 +493,35 @@ def _field_paths(obj, prefix="") -> set[str]:
 
 def _observed_response_fields(monkeypatch=None) -> set[str]:
     token = auth.create_grant("guard", buckets=["Work"], sources=["claude_code"])
+    base = Path(get_conn().execute("PRAGMA database_list").fetchone()[2]).parent
+    real_file = base / "guard.jsonl"
+    real_file.write_text("x\n")
+    file_event = _insert("claude_code", "Work", f"{SHARED_WORD} guard row", "2026-03-09T09:00:00+00:00")
+    add_evidence(file_event, str(real_file), 1, None)
+    repo = base / "guard-repo"
+    repo.mkdir()
+    genv = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    for args in (["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "--allow-empty", "-m", "m"]):
+        subprocess.run(["git", "-c", "user.name=T", "-c", "user.email=t@example.invalid", *args], cwd=repo,
+                       check=True, capture_output=True, env=genv)
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, env=genv).stdout.strip()
+    commit_event = _insert("claude_code", "Work", f"{SHARED_WORD} guard commit", "2026-03-09T10:00:00+00:00")
+    add_evidence(commit_event, f"{repo}@{sha}", None, None)
+
+    def evd(event_id):
+        return "evd_%d" % get_conn().execute("SELECT MAX(id) FROM evidence WHERE event_id = ?", (event_id,)).fetchone()[0]
+
+    unavailable = get_conn().execute("SELECT id FROM evidence WHERE locator LIKE '/synthetic/claude_code%' LIMIT 1").fetchone()[0]
+    ev = lambda i: tools.get_evidence(token, i, client="guard")
+    tl = lambda *a, **k: tools.get_timeline(token, *a, client="guard", **k)
     responses = [
+        ev(evd(file_event)), ev(evd(commit_event)),                   # ok: file locator / repo+commit locator
+        ev(f"evd_{unavailable}"),                                     # source_unavailable
+        ev("evd_99999"), ev(5),                                       # not_found / invalid_argument
+        tl("2026-03-01", "2026-03-10", limit=1),                      # ok with has_more + next_cursor
+        tl("2026-03-01", "2026-03-10"), tl("2030-01-01", "2030-01-02"), tl("bad", "worse"),
+        tools.get_evidence("kp_nope", "evd_1", client="guard"),
+        tools.get_timeline("kp_nope", "2026-01-01", "2026-01-02", client="guard"),
         search(token, [SHARED_WORD]),                                 # ok
         search(token, ["zzz-no-such-thing"]),                         # no_results
         search(token, [SHARED_WORD], time_range={"start": "bad"}),    # invalid_argument

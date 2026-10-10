@@ -6,7 +6,10 @@ from typing import Any, Optional
 
 from keypulse.mcp import audit
 from keypulse.mcp.auth import Grant, check_access
-from keypulse.search.engine import parse_time_bound, search_events
+from keypulse.search.engine import (
+    TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, timeline_events,
+)
+from keypulse.store.evidence import refresh_availability, split_git_locator
 
 # Raw capture streams (keyboard chunks / OCR / clipboard / AX text / window titles) stay OUT of
 # MCP search in P0 even inside a granted bucket: only events ingested through the source plugins
@@ -20,6 +23,11 @@ MAX_KEYWORD_CHARS = 100
 MAX_KEYWORD_CJK_CHARS = 12
 MAX_KEYWORD_WORDS = 6
 TOOL_SEARCH_CONTEXT = "search_context"
+TOOL_GET_EVIDENCE = "get_evidence"
+TOOL_GET_TIMELINE = "get_timeline"
+EXCERPT_CHARS = 400
+EVIDENCE_NOT_FOUND = {"status": "not_found", "message": "No evidence with this id is available to this client."}
+SOURCE_UNAVAILABLE_MESSAGE = "原始出处已不可访问 / original source is no longer accessible"
 
 _MATCH_REASON = "keyword match"
 SENTENCE_KEYWORD_MESSAGE = (
@@ -138,6 +146,11 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
     coverage = _coverage(grant, start, end)
     if not hits:
         return {"status": "no_results", "results": [], "coverage": coverage}
+    availability = refresh_availability(
+        [(h["evidence_id"], h["evidence_locator"], h.get("evidence_line"), h.get("evidence_stored_available", 1))
+         for h in hits if h["evidence_id"] is not None and h.get("evidence_locator")],
+        deep=False,
+    )
     results = [
         {
             "id": f"evt_{h['id']}",
@@ -146,6 +159,8 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
             "source": h["source"],
             "bucket": h["bucket"],
             "evidence_id": f"evd_{h['evidence_id']}" if h["evidence_id"] is not None else None,
+            # Cheap path-existence check only; the line / commit is verified by get_evidence.
+            "evidence_available": bool(availability.get(h["evidence_id"], False)),
             # Two tiers (PRD 3.7.3): "strong" = several keywords co-occur (or the only keyword hit);
             # "weak" = a possible clue. Derived from the caller's own keywords and this one document.
             "match": "strong" if h["matched"] >= 2 or h["keyword_count"] == 1 else "weak",
@@ -155,3 +170,150 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
         for h in hits
     ]
     return {"status": "ok", "results": results, "coverage": coverage}
+
+
+def _gate(token: Optional[str], client: Optional[str], tool: str):
+    decision = check_access(token, client, "read")
+    if decision.grant is None:
+        audit.record(client=decision.client, tool=tool, allowed=False,
+                     reason_code=decision.reason, scope=decision.scope)
+        return decision, permission_denied()
+    return decision, None
+
+
+def _parse_evidence_id(raw: str) -> Optional[int]:
+    body = raw[4:]
+    if raw.startswith("evd_") and body.isascii() and body.isdigit() and len(body) < 19:
+        return int(body)
+    return None
+
+
+def _scope_sources(grant: Grant, sources: Optional[list[str]]) -> Optional[list[str]]:
+    if grant.sources is None:
+        return sources
+    return list(grant.sources) if sources is None else [x for x in sources if x in grant.sources]
+
+
+def get_evidence(token: Optional[str], evidence_id: Any, *, client: Optional[str] = None) -> dict[str, Any]:
+    decision, denied = _gate(token, client, TOOL_GET_EVIDENCE)
+    if denied is not None:
+        return denied
+    payload = _get_evidence(decision.grant, evidence_id)
+    audit.record(client=decision.client, tool=TOOL_GET_EVIDENCE, allowed=True,
+                 reason_code=payload.get("status", "error"), scope=decision.scope,
+                 result_count=1 if "evidence" in payload else 0)
+    return payload
+
+
+def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
+    if not isinstance(evidence_id, str):
+        return {"status": "invalid_argument", "message": "evidence_id must be a string such as evd_123"}
+    # Malformed, nonexistent and out-of-scope ids all get the identical not_found body.
+    numeric = _parse_evidence_id(evidence_id)
+    if numeric is None:
+        return dict(EVIDENCE_NOT_FOUND)
+    try:
+        row = scoped_evidence(numeric, sources=_scope_sources(grant, None), buckets=list(grant.buckets),
+                              event_type=SEARCHABLE_EVENT_TYPE)
+    except sqlite3.Error:
+        return {"status": "error", "message": "evidence lookup failed"}
+    if row is None:
+        return dict(EVIDENCE_NOT_FOUND)
+    available = refresh_availability(
+        [(row["evidence_id"], row["locator"], row["line"], row["stored_available"])], deep=True
+    )[row["evidence_id"]]
+    evidence: dict[str, Any] = {
+        "id": f"evd_{row['evidence_id']}",
+        "event_id": f"evt_{row['event_id']}",
+        "source": row["source"],
+        "bucket": row["bucket"],
+        "occurred_at": row["occurred_at"],
+        # Stored, already-redacted text only. The original file is never read back out.
+        "excerpt": " ".join((row["content_text"] or "").split())[:EXCERPT_CHARS],
+        "available": available,
+        "locator": None,
+    }
+    if not available:
+        # AT21: keep the stored excerpt, give no path / commit that could look openable.
+        return {"status": "source_unavailable", "message": SOURCE_UNAVAILABLE_MESSAGE, "evidence": evidence}
+    parsed = split_git_locator(row["locator"])
+    if parsed is not None:
+        evidence["locator"] = {"type": "git", "repo": parsed[0], "commit": parsed[1]}
+    else:
+        evidence["locator"] = {"type": "file", "path": row["locator"], "line": row["line"]}
+    return {"status": "ok", "evidence": evidence}
+
+
+def _parse_cursor(raw: Any) -> tuple[str, int]:
+    if not isinstance(raw, str) or len(raw) > 80:
+        raise ValueError("cursor")
+    ts, _, ident = raw.rpartition("|")
+    if not ts or not ident.isascii() or not ident.isdigit():
+        raise ValueError("cursor")
+    parsed = parse_time_bound(ts)
+    if parsed is None:
+        raise ValueError("cursor")
+    return ts, int(ident)  # raw: it was issued by us from a stored occurred_at
+
+
+def get_timeline(
+    token: Optional[str],
+    start: Any,
+    end: Any,
+    sources: Any = None,
+    limit: Any = TIMELINE_DEFAULT_LIMIT,
+    cursor: Any = None,
+    *,
+    client: Optional[str] = None,
+) -> dict[str, Any]:
+    decision, denied = _gate(token, client, TOOL_GET_TIMELINE)
+    if denied is not None:
+        return denied
+    payload = _get_timeline(decision.grant, start, end, sources, limit, cursor)
+    audit.record(client=decision.client, tool=TOOL_GET_TIMELINE, allowed=True,
+                 reason_code=payload.get("status", "error"), scope=decision.scope,
+                 result_count=len(payload.get("results") or []))
+    return payload
+
+
+def _get_timeline(grant: Grant, start: Any, end: Any, sources: Any, limit: Any, cursor: Any) -> dict[str, Any]:
+    if sources is not None and not (isinstance(sources, list) and all(isinstance(x, str) for x in sources)):
+        return {"status": "invalid_argument", "message": "sources must be a list of source names"}
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        return {"status": "invalid_argument", "message": f"limit must be an integer between 1 and {TIMELINE_MAX_LIMIT}"}
+    bad_range = {"status": "invalid_argument",
+                 "message": "start and end are required ISO dates or datetimes with start <= end; cursor must come from a previous call"}
+    if not isinstance(start, str) or not isinstance(end, str):
+        return bad_range
+    try:
+        since, until = _parse_time_range({"start": start, "end": end})
+        after = _parse_cursor(cursor) if cursor is not None else None
+    except (ValueError, TypeError):
+        return bad_range
+    if since is None or until is None or since > until:
+        return bad_range
+    try:
+        rows, has_more = timeline_events(
+            since=since, until=until, sources=_scope_sources(grant, sources), buckets=list(grant.buckets),
+            after=after, event_type=SEARCHABLE_EVENT_TYPE, limit=limit,
+        )
+    except sqlite3.Error:
+        return {"status": "error", "message": "timeline failed"}
+    coverage = _coverage(grant, since, until)
+    if not rows:
+        return {"status": "no_results", "results": [], "has_more": False, "coverage": coverage}
+    results = [
+        {
+            "id": f"evt_{r['id']}",
+            "occurred_at": r["occurred_at"],
+            "source": r["source"],
+            "bucket": r["bucket"],
+            "snippet": r["snippet"],
+            "evidence_id": f"evd_{r['evidence_id']}" if r["evidence_id"] is not None else None,
+        }
+        for r in rows
+    ]
+    payload: dict[str, Any] = {"status": "ok", "results": results, "has_more": has_more, "coverage": coverage}
+    if has_more:
+        payload["next_cursor"] = f"{rows[-1]['occurred_at']}|{rows[-1]['id']}"
+    return payload
