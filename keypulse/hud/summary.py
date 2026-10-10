@@ -16,7 +16,7 @@ from keypulse.config import Config
 from keypulse.health.product_delivery import evaluate_delivery_health
 from keypulse.hud.health import read_health
 from keypulse.hud.state import HUDState, read_hud_state
-from keypulse.pipeline.surface import build_surface_snapshot
+from keypulse.hud.surface import build_surface_snapshot
 from keypulse.store.db import init_db
 from keypulse.store.repository import get_state, query_raw_events, set_state
 from keypulse.utils.dates import local_day_bounds, resolve_local_date
@@ -302,7 +302,7 @@ def _build_top_signals(
     跳转走 obsidian:// + heading 锚点，直接落到 daily 那一段。
     主题不足 3 条时由 HUD 渲染层兜底（占位 / 兜底句）。
     """
-    from keypulse.pipeline.surface import build_surface_snapshot
+    from keypulse.hud.surface import build_surface_snapshot
 
     snapshot = build_surface_snapshot(events, top_k=20)
     # 直接读 obsidian 已生成的 daily.md —— 不再重跑生成管线（之前调用没 LLM

@@ -48,7 +48,8 @@ from keypulse.app import start_daemon, daemonize, run
 from keypulse.integrations import resolve_active_sink
 from keypulse.services.timeline import get_timeline_rows
 from keypulse.services.stats import get_stats
-from keypulse.services.export import export_json, export_csv, export_markdown, export_obsidian
+from keypulse.services.export import export_json, export_csv, export_markdown
+from keypulse.obsidian.export_service import export_obsidian
 from keypulse.pipeline.triggers import should_trigger, record_trigger
 from keypulse.services.sessionizer import sessions_for_today, recent_sessions
 from keypulse.search.engine import search, recent_clipboard, recent_manual, recent_sessions_docs

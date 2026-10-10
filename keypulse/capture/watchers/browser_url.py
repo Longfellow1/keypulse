@@ -4,7 +4,7 @@ import queue
 import subprocess
 import time
 
-from keypulse.capabilities.builtin.browser_automation import (
+from keypulse.capture.browser_automation_state import (
     is_browser_automation_denied,
     mark_browser_automation_denied,
 )

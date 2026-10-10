@@ -1,0 +1,21 @@
+name: import-lint
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  import-linter:
+    # pyobjc must be importable so import-linter can see macOS-only libs.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[macos,dev]"
+      - name: Import contracts (core must not depend on legacy / macOS libs)
+        run: lint-imports
+      - name: Core isolation test
+        run: python -m pytest -q tests/test_core_isolation.py

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from keypulse.app import _run_obsidian_sync_core, _t3_tick, _spawn_t2_trigger
+from keypulse.pipeline.sync_triggers import _run_obsidian_sync_core, _t3_tick, _spawn_t2_trigger
 
 
 class TestT3Tick:
@@ -362,7 +362,7 @@ class TestT2Spawn:
         cfg = MagicMock(spec=Config)
         cfg.db_path_expanded = temp_db
 
-        with patch("keypulse.app._run_obsidian_sync_core") as mock_sync:
+        with patch("keypulse.pipeline.sync_triggers._run_obsidian_sync_core") as mock_sync:
             shutdown = threading.Event()
             _spawn_t2_trigger(cfg, shutdown, delay=0.0)
             time.sleep(0.5)  # Let Timer fire
@@ -389,9 +389,9 @@ def test_app_obsidian_sync_core_runs_daily_orchestrator_after_export(tmp_path, m
 
     monkeypatch.setattr("keypulse.integrations.resolve_active_sink", lambda *args, **kwargs: MagicMock(output_dir=tmp_path / "vault"))
     monkeypatch.setattr("keypulse.pipeline.load_model_gateway", lambda cfg: object())
-    monkeypatch.setattr("keypulse.services.export.export_obsidian", lambda *args, **kwargs: [tmp_path / "event.md"])
+    monkeypatch.setattr("keypulse.obsidian.export_service.export_obsidian_notes", lambda *args, **kwargs: [tmp_path / "event.md"])
     monkeypatch.setattr(
-        "keypulse.app.run_daily_after_obsidian_sync",
+        "keypulse.pipeline.sync_triggers.run_daily_after_obsidian_sync",
         lambda date_str, *, db_path: called.append((date_str, db_path)),
     )
 
