@@ -169,10 +169,16 @@ class SourcesConfig(BaseModel):
     scheduler: SourcesSchedulerConfig = Field(default_factory=SourcesSchedulerConfig)
 
 
+class BucketsConfig(BaseModel):
+    # Overrides of the built-in per-source default bucket, e.g. {"markdown_vault": "Work"}.
+    source_defaults: dict[str, str] = Field(default_factory=dict)
+
+
 class PolicyConfig(BaseModel):
     scope_type: str
     scope_value: str
-    mode: str  # allow|deny|metadata-only|redact|truncate
+    mode: str = "allow"  # allow|deny|metadata-only|redact|truncate (ignored when `bucket` is set)
+    bucket: str | None = None  # bucket rule: Work|Personal|Private|Financial (scope_type app|source)
     enabled: bool = True
     priority: int = 100
 
@@ -190,6 +196,7 @@ class Config(BaseModel):
     ocr: OCRConfig = Field(default_factory=OCRConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    buckets: BucketsConfig = Field(default_factory=BucketsConfig)
     policies: list[PolicyConfig] = Field(default_factory=list)
 
     @classmethod

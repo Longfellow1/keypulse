@@ -25,6 +25,11 @@ def insert_raw_event(e: RawEvent) -> int:
     NULL-hash events with identical (source, ts_start) collide.
     """
     conn = get_conn()
+    if e.bucket is None:
+        # P0 bucket assignment (D23): source default + app rules from the policies table.
+        from keypulse.store.buckets import resolve_for_event
+
+        e.bucket = resolve_for_event(conn, e.source, e.app_name, e.process_name)
     cur = conn.execute(
         """INSERT INTO raw_events
            (source, event_type, ts_start, ts_end, app_name, window_title,
@@ -223,13 +228,26 @@ def seed_policies_from_config(policy_configs: list):
     if count > 0:
         return  # already seeded
     for pc in policy_configs:
-        p = Policy(
-            scope_type=pc.scope_type,
-            scope_value=pc.scope_value,
-            mode=pc.mode,
-            enabled=pc.enabled,
-            priority=pc.priority,
-        )
+        bucket = getattr(pc, "bucket", None)
+        if bucket:
+            from keypulse.store.buckets import BUCKET_MODE, normalize_bucket
+
+            p = Policy(
+                scope_type=pc.scope_type,
+                scope_value=pc.scope_value,
+                mode=BUCKET_MODE,
+                config_json=json.dumps({"bucket": normalize_bucket(bucket)}),
+                enabled=pc.enabled,
+                priority=pc.priority,
+            )
+        else:
+            p = Policy(
+                scope_type=pc.scope_type,
+                scope_value=pc.scope_value,
+                mode=pc.mode,
+                enabled=pc.enabled,
+                priority=pc.priority,
+            )
         insert_policy(p)
 
 

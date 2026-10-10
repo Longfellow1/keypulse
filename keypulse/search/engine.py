@@ -95,6 +95,7 @@ def search_events(
     since: str | datetime | None = None,
     until: str | datetime | None = None,
     sources: Optional[list[str]] = None,
+    buckets: Optional[list[str]] = None,
     event_type: Optional[str] = "semantic_event",
     limit: int = 20,
 ) -> list[dict]:
@@ -119,11 +120,11 @@ def search_events(
         from_sql = "raw_events e JOIN raw_events_fts ON raw_events_fts.rowid = e.id"
         where = ["raw_events_fts MATCH ?"]
         params.append(match)
-        order = "bm25(raw_events_fts), e.ts_start DESC"
+        order = "bm25(raw_events_fts), e.ts_start DESC" if buckets is None else "e.ts_start DESC, e.id DESC"
     else:
         from_sql = "raw_events e"
         where = []
-        order = "e.ts_start DESC"
+        order = "e.ts_start DESC, e.id DESC"
     for t in short_terms:
         where.append("e.content_text LIKE ? ESCAPE '\\'")
         params.append("%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
@@ -141,13 +142,18 @@ def search_events(
             return []
         where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
         params.extend(sources)
+    if buckets is not None:
+        if not buckets:
+            return []
+        where.append("e.bucket IN (%s)" % ",".join("?" * len(buckets)))
+        params.extend(buckets)
     params.append(max(1, min(int(limit), 100)))
 
     sql = f"""
         SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.kind, e.content_text,
                (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id
         FROM {from_sql}
-        WHERE {' AND '.join(where)}
+        WHERE {' AND '.join(where) or '1'}
         ORDER BY {order}
         LIMIT ?
     """

@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from keypulse.store.migration_v20 import migrate_v20, rebuild_events_fts  # noqa: F401
+from keypulse.store.migration_v21 import migrate_v21
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 MIGRATIONS = [
     # v1
@@ -198,6 +199,9 @@ MIGRATIONS = [
     # evidence / access grants, FTS5 over raw_events. Python migration so the
     # whole step runs inside one transaction (see migration_v20).
     migrate_v20,
+    # v21 — AccessGrant scope (buckets / sources / operations / purpose / expiry)
+    # + bucket backfill from per-source defaults (see migration_v21).
+    migrate_v21,
 ]
 
 

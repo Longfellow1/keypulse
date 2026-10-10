@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Callable, Optional
+from typing import Annotated, Any, Callable, Optional
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent
+from pydantic import Field
 
 from keypulse.mcp import tools
 from keypulse.mcp.auth import TOKEN_ENV
@@ -20,14 +21,20 @@ def build_server(token_provider: Callable[[], Optional[str]] = _default_token) -
     """`token_provider` is read at call time so a revoked/rotated token takes effect immediately."""
     server = FastMCP("keypulse")
 
+    # Parameters are typed `Any` on purpose: the schema shown to the Host is pinned with
+    # json_schema_extra, but type validation happens in tools.search_context so a wrongly typed
+    # argument produces our fixed `invalid_argument` text instead of pydantic's error, which
+    # echoes the offending input value back (B1: no caller-controlled text in error output).
     @server.tool()
     def search_context(
-        query: str,
-        time_range: Optional[dict[str, str]] = None,
-        sources: Optional[list[str]] = None,
-        limit: int = 10,
+        query: Annotated[Any, Field(json_schema_extra={"type": "string"})],
+        time_range: Annotated[Any, Field(json_schema_extra={
+            "anyOf": [{"type": "object", "additionalProperties": {"type": "string"}}, {"type": "null"}]})] = None,
+        sources: Annotated[Any, Field(json_schema_extra={
+            "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}]})] = None,
+        limit: Annotated[Any, Field(json_schema_extra={"type": "integer"})] = 10,
     ) -> CallToolResult:
-        """Search the user's local KeyPulse history (Claude Code sessions etc.).
+        """Search the user's local KeyPulse history within the scope the user granted this client.
 
         Args:
             query: Words to look for (all must appear). Exact words, not questions.
@@ -37,13 +44,14 @@ def build_server(token_provider: Callable[[], Optional[str]] = _default_token) -
 
         Returns status "ok" with results (id, snippet, occurred_at, source, bucket,
         evidence_id, match_reason) and coverage; "no_results" when nothing matches
-        (never guess content); "permission_denied" when the client token is not valid.
+        (never guess content); "permission_denied" when the client token is not valid,
+        expired, or not allowed to read. Results stay inside the buckets/sources granted to this client.
         """
         payload = tools.search_context(token_provider(), query, time_range, sources, limit)
         return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
             structuredContent=payload,
-            isError=payload.get("status") == "permission_denied",
+            isError=payload.get("status") in ("permission_denied", "error"),
         )
 
     return server

@@ -26,12 +26,6 @@ _SOURCE_WEIGHTS: dict[str, float] = {
     "chrome_history": 0.6,
     "safari_history": 0.6,
 }
-# P0 default bucket by source (D23: "按源默认"); per-app rules / user buckets land with #19.
-_DEFAULT_BUCKETS: dict[str, str] = {
-    "claude_code": "Work",
-    "codex_cli": "Work",
-    "git_log": "Work",
-}
 _COMMIT_RE = re.compile(r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b", re.IGNORECASE)
 _ENTITY_BACKFILL_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="entity-backfill")
 _PENDING_BACKFILL: set[Future[None]] = set()
@@ -99,7 +93,7 @@ def semantic_event_to_raw_event(
         semantic_weight=_SOURCE_WEIGHTS.get(event.source, 0.5),
         source_id=source_id,
         external_id=event.external_id,
-        bucket=_DEFAULT_BUCKETS.get(event.source),
+        bucket=None,  # assigned in insert_raw_event: source default + app rules (store.buckets)
         kind=event.kind or "semantic_event",
     )
 

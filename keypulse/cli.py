@@ -1705,25 +1705,54 @@ def rules_list(plain):
         console.print(table)
 
 
-@rules.command("add", help=T("新增隐私策略。", "Add a new privacy policy."))
-@click.option("--scope-type", required=True, help=T("范围类型（app、window、source、content）", "Scope type (app, window, source, content)"))
+@rules.command("add", help=T("新增隐私策略或分桶规则。", "Add a privacy policy or a bucket rule."))
+@click.option("--scope-type", required=True, help=T("范围类型（app、window、source、content；分桶规则仅 app / source）", "Scope type (app, window, source, content; bucket rules: app or source only)"))
 @click.option("--scope-value", required=True, help=T("范围值（例如 'Safari'、'password'）", "Scope value (e.g., 'Safari', 'password')"))
-@click.option("--mode", required=True, help=T("模式（allow、deny、metadata-only、redact、truncate）", "Mode (allow, deny, metadata-only, redact, truncate)"))
+@click.option("--mode", default=None, help=T("模式（allow、deny、metadata-only、redact、truncate）", "Mode (allow, deny, metadata-only, redact, truncate)"))
+@click.option("--bucket", default=None, help=T("分桶规则：把该 App / 来源的数据归入此桶（Work、Personal、Private、Financial）", "Bucket rule: file data from this app/source into a bucket (Work, Personal, Private, Financial)"))
 @click.option("--priority", type=int, default=100, help=T("优先级（值越小优先级越高）", "Priority (lower = higher priority)"))
-def rules_add(scope_type, scope_value, mode, priority):
+def rules_add(scope_type, scope_value, mode, bucket, priority):
     """Add rule."""
     cfg = get_config()
     require_db(cfg)
+
+    config_json = None
+    if bucket:
+        from keypulse.store.buckets import BUCKET_MODE, normalize_bucket
+
+        if mode:
+            raise click.UsageError("--bucket and --mode are mutually exclusive")
+        if scope_type not in ("app", "source"):
+            raise click.UsageError("bucket rules support --scope-type app or source")
+        try:
+            config_json = json.dumps({"bucket": normalize_bucket(bucket)})
+        except ValueError as exc:
+            raise click.UsageError(str(exc)) from exc
+        mode = BUCKET_MODE
+    elif not mode:
+        raise click.UsageError("one of --mode or --bucket is required")
 
     policy = Policy(
         scope_type=scope_type,
         scope_value=scope_value,
         mode=mode,
         priority=priority,
+        config_json=config_json,
     )
 
     policy_id = insert_policy(policy)
     console.print(f"[green]Policy added (ID: {policy_id})[/green]")
+
+
+@rules.command("rebucket", help=T("按当前分桶规则重新计算已有数据的桶（规则变更不会自动回溯）。", "Re-evaluate buckets of stored events with the current rules (rule changes are not retroactive otherwise)."))
+def rules_rebucket():
+    """Reapply bucket rules to existing rows."""
+    cfg = get_config()
+    require_db(cfg)
+    from keypulse.store.buckets import reapply_buckets
+
+    changed = reapply_buckets(get_conn())
+    console.print(f"[green]Re-bucketed {changed} event(s).[/green]")
 
 
 @rules.command("disable", help=T("禁用某条隐私策略。", "Disable a privacy policy."))
