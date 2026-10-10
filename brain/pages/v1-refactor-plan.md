@@ -1,0 +1,71 @@
+---
+id: v1-refactor-plan
+title: "V1 refactor plan: milestones, acceptance, sign-off"
+category: decision
+status: active
+tags: [v1, refactor, plan]
+created: "2026-10-10T14:19:24"
+updated: "2026-10-10T14:19:30"
+---
+
+<!-- compiled_truth -->
+V1 重构计划（docs/KeyPulse_V1_重构计划.md，v1.0，owner 2026-10-10 批准）。
+
+## 里程碑
+
+| 里程碑 | 范围 (issue) | 验收 / 签字 |
+|---|---|---|
+| M0 decouple | #16 | 技术负责人（Opus）验收 |
+| M1 tracer | #17–#20 | owner 签字：M1 demo |
+| M2 data+hosts | #21–#25 | 技术负责人（Opus）验收 |
+| M3 capture+controls | #26–#31 | owner 签字：M3 HUD review |
+| M4 first-run+release | #32–#33 | owner 签字：M4 release |
+
+技术负责人（Opus）验收 M0 / M2，并发出各里程碑报告。owner 只在 M1 demo、M3 HUD review、M4 release 三处签字。
+
+## 集成方式
+
+- 一个集成分支，每个 issue 一个 PR。
+- 合并条件：CI 通过 + 技术负责人 review。
+
+## 回滚
+
+- 里程碑 tag：v1-m0 … v1-m4，作为回滚点。
+- 最终兜底：legacy-v0 tag。
+
+## 每个任务的门禁
+
+1. 对应 issue 的验收条件全部勾选。
+2. 无新增测试失败（已知 3 个环境失败作为基线）。
+3. import-linter 通过。
+4. 自 M1 起：安全门禁 G1–G5 = 0；eval 回归 ≤ 2pp。
+5. M0 重建 GitNexus 索引，之后每次改动先做 impact analysis。
+6. 仓库内不得出现真实数据。
+7. 技术负责人 review 通过。
+
+## 关联
+
+- [[v1-build-by-legacy-extraction]]：复用优先，新建仅限 legacy 缺失部分。
+- [[eval-prd-separate]]：成功标准与 eval 在独立 Eval PRD 中。
+- [[session-handoff-2026-10-10]]：当前交接状态。
+
+
+## Timeline
+
+- time: 2026-10-10T14:19:24
+  kind: decision
+  summary: "Created this page: V1 refactor plan: milestones, acceptance, sign-off"
+  source: "docs/KeyPulse_V1_重构计划.md v1.0 (owner-approved 2026-10-10)"
+  affects: [v1-refactor-plan]
+
+- time: 2026-10-10T14:19:30
+  kind: decision
+  summary: "Initial truth: V1 refactor plan milestones, per-task gates, sign-off and rollback"
+  source: "docs/KeyPulse_V1_重构计划.md (v1.0, owner-approved 2026-10-10)"
+  affects: [v1-refactor-plan]
+
+- time: 2026-10-10T14:19:30
+  kind: decision
+  summary: "Owner approved V1 refactor plan v1.0 on 2026-10-10; milestones M0-M4 mapped to issues #16-#33"
+  source: "docs/KeyPulse_V1_重构计划.md"
+  affects: [v1-build-by-legacy-extraction, eval-prd-separate, session-handoff-2026-10-10]

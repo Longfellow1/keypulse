@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-10T05:58:02.809Z._
+_Auto-generated. Last updated 2026-10-10T06:19:38.297Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -28,3 +28,4 @@ _Auto-generated. Last updated 2026-10-10T05:58:02.809Z._
 - [v1-build-by-legacy-extraction](pages/v1-build-by-legacy-extraction.md) — category: decision | tags: [v1, refactor, legacy, decision] | ## Principle (owner, 2026-10-10)
 - [v1-deferred-undecided-items](pages/v1-deferred-undecided-items.md) — category: decision | tags: [scope, open-questions] | ## Status: partly resolved (2026-10-10).
 - [v1-development-baseline-prd](pages/v1-development-baseline-prd.md) — category: decision | tags: [prd, v1, baseline] | ## Decision
+- [v1-refactor-plan](pages/v1-refactor-plan.md) — category: decision | tags: [v1, refactor, plan] | V1 重构计划（docs/KeyPulse_V1_重构计划.md，v1.0，owner 2026-10-10 批准）。

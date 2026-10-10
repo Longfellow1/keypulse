@@ -5,7 +5,7 @@ category: project
 status: active
 tags: [handoff, state, refactor]
 created: "2026-10-10T11:19:23"
-updated: "2026-10-10T13:58:02"
+updated: "2026-10-10T14:19:38"
 ---
 
 <!-- compiled_truth -->
@@ -62,7 +62,7 @@ updated: "2026-10-10T13:58:02"
 2. Eval PRD v1.0 is approved and binding ([[eval-prd-separate]]). The "unauthorised-access leakage = 0" HARD release gate stays.
 3. **Published: the reuse-first V1 P0 breakdown is on GitHub as issues #16-#33.** Labels: `v1-p0` plus `afk` or `hitl`; titles prefixed `[P0-01]`..`[P0-18]`. Each issue is tagged extract-from-legacy or new-build, per [[v1-build-by-legacy-extraction]].
    - HITL (needs owner): #27 HUD redesign review; #33 eval completion + V1.0 release decision.
-   - Execution starts with **#16** (core decoupling, no blockers), then **#17** (tracer bullet: Claude Code → DB v20 → search → MCP `search_context` with token).
+   - Next step: start M0 (#16, core decoupling) after owner go; plan in `docs/KeyPulse_V1_重构计划.md`. Then #17 (tracer bullet: Claude Code → DB v20 → search → MCP `search_context` with token).
    - Working mode: Opus manages and reviews; Haiku/Sonnet subagents implement; key decisions go to the owner as multiple-choice questions.
 4. Extraction order: store, then search, then privacy / permissions (extended per PRD, not as-is), then capture / sources. `hud` stays in place (D21) but is a P0 trust surface (PRD §3.9). Blockers and cut list: [[legacy-extraction-blockers]].
 - Refactor policy: [[refactor-in-place-with-legacy-tag]]. Decisions: [[keypulse-v1-local-memory-infra]], [[v1-development-baseline-prd]], [[multi-host-mcp-integration]], [[keyboard-capture-p0-experimental]].
@@ -135,4 +135,10 @@ updated: "2026-10-10T13:58:02"
   kind: decision
   summary: "P0 breakdown published as GitHub issues #16-#33 (labels v1-p0 + afk/hitl; [P0-01]..[P0-18]); HITL #27 and #33; execution starts #16 then #17; working mode Opus-manages, Haiku/Sonnet-implement, owner decisions as multiple choice"
   source: "Session 2026-10-10 (issues published)"
+  affects: [session-handoff-2026-10-10]
+
+- time: 2026-10-10T14:19:38
+  kind: decision
+  summary: "Next step set: start M0 (#16) after owner go; plan in docs/KeyPulse_V1_重构计划.md"
+  source: "docs/KeyPulse_V1_重构计划.md v1.0"
   affects: [session-handoff-2026-10-10]
