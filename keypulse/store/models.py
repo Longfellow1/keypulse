@@ -33,6 +33,11 @@ class RawEvent:
     user_present: int = 1
     id: Optional[int] = None
     created_at: str = field(default_factory=_now)
+    # v20 provenance (ts_start is the event's real occurred_at)
+    source_id: Optional[int] = None
+    external_id: Optional[str] = None
+    bucket: Optional[str] = None
+    kind: Optional[str] = None
 
 
 @dataclass

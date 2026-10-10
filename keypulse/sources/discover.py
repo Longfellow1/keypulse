@@ -244,6 +244,27 @@ def read_command(source_name: str | None, since: str | None, until: str | None, 
         )
 
 
+@sources_group.command("sync")
+@click.option("--source", "source_name", default=None, help="Only sync one plugin")
+@click.option("--lookback-hours", default=24, show_default=True, type=int,
+              help="Window for plugins without a persistent cursor (cursor plugins resume where they left off)")
+def sync_command(source_name: str | None, lookback_hours: int) -> None:
+    """Pull new events from sources into the local DB (same path as the daemon scheduler)."""
+    from datetime import timedelta
+
+    if source_name and get_source(source_name) is None:
+        raise click.ClickException(f"unknown source: {source_name}")
+    init_db(Config.load().db_path_expanded)
+    now = datetime.now(timezone.utc)
+    counts: dict[str, int] = {}
+    for event in read_all(now - timedelta(hours=lookback_hours), now, source=source_name):
+        counts[event.source] = counts.get(event.source, 0) + 1
+    if not counts:
+        click.echo("no new events")
+    for name, count in sorted(counts.items()):
+        click.echo(f"{name}\t{count}")
+
+
 def _parse_bound(raw: str | None, *, is_since: bool) -> datetime:
     local_tz = local_timezone()
     now_local = datetime.now(local_tz)

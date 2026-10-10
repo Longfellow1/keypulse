@@ -1,7 +1,13 @@
+import logging
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
-SCHEMA_VERSION = 19
+from keypulse.store.migration_v20 import migrate_v20, rebuild_events_fts  # noqa: F401
+
+LOGGER = logging.getLogger("keypulse.store.migrations")
+
+SCHEMA_VERSION = 20
 
 MIGRATIONS = [
     # v1
@@ -188,7 +194,35 @@ MIGRATIONS = [
     DROP TABLE IF EXISTS hourly_summaries;
     DROP TABLE IF EXISTS daily_skeletons;
     """,
+    # v20 — V1 mainline (D20): event provenance columns, sources / cursors /
+    # evidence / access grants, FTS5 over raw_events. Python migration so the
+    # whole step runs inside one transaction (see migration_v20).
+    migrate_v20,
 ]
+
+
+def _db_file(conn: sqlite3.Connection) -> Path | None:
+    for _, name, file in conn.execute("PRAGMA database_list"):
+        if name == "main" and file:
+            return Path(file)
+    return None
+
+
+def _backup_before_migration(conn: sqlite3.Connection, current: int) -> Path | None:
+    """Copy an existing non-empty DB next to itself before schema changes."""
+    path = _db_file(conn)
+    if path is None or not path.exists() or path.stat().st_size == 0:
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    target = path.with_name(f"{path.name}.v{current}-{stamp}.bak")
+    # sqlite3 online backup API: consistent even with WAL contents pending.
+    dst = sqlite3.connect(str(target))
+    try:
+        conn.backup(dst)
+    finally:
+        dst.close()
+    LOGGER.info("db backup written before migration: %s", target.name)
+    return target
 
 
 def run_migrations(conn: sqlite3.Connection):
@@ -203,11 +237,37 @@ def run_migrations(conn: sqlite3.Connection):
     conn.commit()
     row = conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()
     current = row[0] if row[0] is not None else 0
-    for i, sql in enumerate(MIGRATIONS, start=1):
-        if i > current:
-            conn.executescript(sql.strip())
+    if 0 < current < len(MIGRATIONS):
+        _backup_before_migration(conn, current)
+    for i, step in enumerate(MIGRATIONS, start=1):
+        if i <= current:
+            continue
+        if callable(step):
+            _apply_transactional(conn, i, step)
+            continue
+        conn.executescript(step.strip())
+        conn.execute(
+            "INSERT INTO _schema_version(version, applied_at) VALUES (?, ?)",
+            (i, datetime.now(timezone.utc).isoformat())
+        )
+        conn.commit()
+
+
+def _apply_transactional(conn: sqlite3.Connection, version: int, step) -> None:
+    """Run a Python migration atomically together with its version stamp."""
+    previous_isolation = conn.isolation_level
+    conn.isolation_level = None  # manual transaction control
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            step(conn)
             conn.execute(
                 "INSERT INTO _schema_version(version, applied_at) VALUES (?, ?)",
-                (i, datetime.now(timezone.utc).isoformat())
+                (version, datetime.now(timezone.utc).isoformat()),
             )
-            conn.commit()
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.isolation_level = previous_isolation

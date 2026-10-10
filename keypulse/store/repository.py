@@ -16,7 +16,9 @@ def insert_raw_event(e: RawEvent) -> int:
     """Idempotent insert.
 
     A unique index on (source, ts_start, IFNULL(content_hash,'')) blocks
-    duplicate emissions from the same watcher. On conflict the existing
+    duplicate emissions from the same watcher; since v20 a second unique
+    index on (source_id, external_id) blocks re-imports of the same
+    upstream record. On conflict the existing
     row's id is returned so callers keep working with a stable id even
     after a retry. NULL content_hash is normalised to '' so two
     NULL-hash events with identical (source, ts_start) collide.
@@ -26,17 +28,26 @@ def insert_raw_event(e: RawEvent) -> int:
         """INSERT INTO raw_events
            (source, event_type, ts_start, ts_end, app_name, window_title,
             process_name, content_text, content_hash, metadata_json,
-            sensitivity_level, skipped_reason, session_id, speaker, semantic_weight, user_present, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            sensitivity_level, skipped_reason, session_id, speaker, semantic_weight, user_present, created_at,
+            source_id, external_id, bucket, kind)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT DO NOTHING""",
         (e.source, e.event_type, e.ts_start, e.ts_end, e.app_name,
          e.window_title, e.process_name, e.content_text, e.content_hash,
          e.metadata_json, e.sensitivity_level, e.skipped_reason,
-         e.session_id, e.speaker, e.semantic_weight, e.user_present, e.created_at),
+         e.session_id, e.speaker, e.semantic_weight, e.user_present, e.created_at,
+         e.source_id, e.external_id, e.bucket, e.kind),
     )
     conn.commit()
     if cur.rowcount > 0:
         return cur.lastrowid
+    if e.external_id is not None:
+        row = conn.execute(
+            "SELECT id FROM raw_events WHERE source_id IS ? AND external_id = ?",
+            (e.source_id, e.external_id),
+        ).fetchone()
+        if row:
+            return row[0]
     row = conn.execute(
         """SELECT id FROM raw_events
            WHERE source=? AND ts_start=? AND IFNULL(content_hash,'')=IFNULL(?,'')""",

@@ -1814,6 +1814,10 @@ from keypulse.sources.discover import sources_group
 
 main.add_command(sources_group)
 
+from keypulse.mcp.cli import mcp_group
+
+main.add_command(mcp_group)
+
 
 if __name__ == "__main__":
     main()

@@ -78,6 +78,7 @@ def read_all(
     until_utc = _as_utc(until)
 
     events: list[SemanticEvent] = []
+    persist_failed: set[str] = set()
     discovered = discover_all(source)
     selected = _select_sources(source)
     cleaning_config = load_cleaning_config()
@@ -120,8 +121,20 @@ def read_all(
             try:
                 persist_semantic_event(event)
             except Exception as exc:  # pragma: no cover - defensive
+                persist_failed.add(event.source)
                 LOGGER.warning("persist semantic event failed source=%s ref=%s: %s", event.source, event.raw_ref, exc)
         yield event
+
+    # Incremental plugins advance their resume cursor only after storage.
+    if persist_raw_events:
+        for plugin in selected:
+            commit = getattr(plugin, "commit_cursors", None)
+            if commit is None:
+                continue
+            try:
+                commit(failed=plugin.name in persist_failed)
+            except Exception as exc:  # pragma: no cover - defensive
+                LOGGER.warning("cursor commit failed for %s: %s", plugin.name, exc)
 
 
 def _select_sources(source: str | None) -> list[DataSource]:
@@ -138,7 +151,7 @@ def _as_utc(value: datetime) -> datetime:
 
 
 register(GitLogSource())
-register(ClaudeCodeSource())
+register(ClaudeCodeSource(use_cursor=True))
 register(CodexCliSource())
 register(ApprovedSqliteSource())
 register(ChromeHistorySource())

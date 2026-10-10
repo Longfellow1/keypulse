@@ -56,6 +56,12 @@ class SemanticEvent:
     raw_ref: str
     privacy_tier: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    # v20 provenance (all optional; plugins without stable upstream IDs omit them)
+    external_id: str | None = None       # stable per upstream record, unique within source_locator
+    source_locator: str | None = None    # identifies the `sources` row (e.g. project dir)
+    evidence_locator: str | None = None  # where the original lives (file path)
+    evidence_line: int | None = None     # line / offset inside evidence_locator
+    kind: str | None = None              # e.g. "message", "commit"
 
     def __post_init__(self) -> None:
         if self.time.tzinfo is None or self.time.utcoffset() is None:
