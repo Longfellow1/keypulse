@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from evals import compare
-from evals.fixture_data import BUCKETS, BY_ID, EVENTS
+from evals.fixture_data import BUCKETS, BY_ID, CAPTURE_EVENTS, EVENTS
 
 QUESTIONS_PATH = Path(__file__).parent / "data" / "retrieval_questions.jsonl"
 TOP_K = 5
@@ -56,7 +56,7 @@ def load_questions(path: Path = QUESTIONS_PATH) -> list[dict[str, Any]]:
 
 def question_set_digest(questions: list[dict[str, Any]]) -> str:
     """Hash of questions + fixtures: changes whenever the eval set changes (needs owner approval)."""
-    payload = json.dumps([questions, [e.__dict__ for e in EVENTS]], sort_keys=True, ensure_ascii=False)
+    payload = json.dumps([questions, [e.__dict__ for e in EVENTS], [e.__dict__ for e in CAPTURE_EVENTS]], sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -112,14 +112,39 @@ def _ingest() -> int:
     return n
 
 
+def _ingest_capture() -> int:
+    """Insert the capture fixtures through the capture repository path (normalizer -> insert_raw_event)."""
+    from keypulse.capture import normalizer as n
+    from keypulse.store.repository import insert_raw_event
+
+    count = 0
+    for ev in CAPTURE_EVENTS:
+        ts = datetime.fromisoformat(ev.ts).replace(tzinfo=timezone.utc).isoformat()
+        end = datetime.fromisoformat(ev.ts_end).replace(tzinfo=timezone.utc).isoformat() if ev.ts_end else None
+        if ev.source == "keyboard_chunk":
+            raw = n.normalize_keyboard_chunk_event(ev.text, app_name=ev.app, ts_start=ts)
+        elif ev.source == "clipboard":
+            raw = n.normalize_clipboard_event(ev.text, app_name=ev.app, ts_start=ts)
+        elif ev.source == "ax_text":
+            raw = n.normalize_ax_text_event(ev.text, app_name=ev.app, ts_start=ts)
+        elif ev.source == "browser_url":
+            raw = n.normalize_browser_url_event(ev.url, ev.text, browser_name=ev.app, ts_start=ts)
+        elif ev.source == "window":
+            raw = n.normalize_window_event("window_focus_session", ev.app, ev.title, None, ts_start=ts, ts_end=end)
+        else:
+            raise ValueError(f"unknown capture fixture source {ev.source}")
+        count += 1 if insert_raw_event(raw) > 0 else 0
+    return count
+
+
 def _resolve_fixture_rows() -> tuple[dict[int, str], dict[str, int], dict[str, dict[str, Any]]]:
     """Map DB rows to fixture ids by (source, occurred_at). Returns (row->fx, fx->row, observed)."""
     from keypulse.store.db import get_conn
 
-    by_key = {(e.source, datetime.fromisoformat(e.ts).replace(tzinfo=timezone.utc).isoformat()): e for e in EVENTS}
+    by_key = {(e.source, datetime.fromisoformat(e.ts).replace(tzinfo=timezone.utc).isoformat()): e for e in (*EVENTS, *CAPTURE_EVENTS)}
     row_to_fx: dict[int, str] = {}
     observed: dict[str, dict[str, Any]] = {}
-    for r in get_conn().execute("SELECT id, source, ts_start, bucket FROM raw_events WHERE event_type = 'semantic_event'"):
+    for r in get_conn().execute("SELECT id, source, ts_start, bucket FROM raw_events"):
         ev = by_key.get((r["source"], datetime.fromisoformat(r["ts_start"]).astimezone(timezone.utc).isoformat()))
         if ev is not None:
             row_to_fx[r["id"]] = ev.id
@@ -184,9 +209,9 @@ def run_eval() -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="keypulse-eval-") as tmp, _IsolatedEnv(Path(tmp)):
         from keypulse.mcp import auth
 
-        ingested = _ingest()
+        ingested = _ingest() + _ingest_capture()
         row_to_fx, fx_to_row, observed = _resolve_fixture_rows()
-        missing = [e.id for e in EVENTS if e.expect_ingest and e.id not in fx_to_row]
+        missing = [e.id for e in (*EVENTS, *CAPTURE_EVENTS) if e.expect_ingest and e.id not in fx_to_row]
         if missing:
             raise RuntimeError(f"fixture events were not ingested (fixture/plugin problem, not retrieval): {missing}")
         wired = {BY_ID[fx].source for fx in fx_to_row}

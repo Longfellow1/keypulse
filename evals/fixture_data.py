@@ -30,6 +30,9 @@ class FxEvent:
     group: str = ""  # claude_code: project dir; git: repo name; chrome: profile; markdown: relative dir
     url: str = ""  # browser sources
     expect_ingest: bool = True
+    app: str = ""  # capture events: the app the record was captured in (drives the bucket, D26)
+    title: str = ""  # capture events: window title / page title
+    ts_end: str = ""  # capture window sessions: end of the focus session
 
 
 # Fake credential: matches the sink redaction pattern, must never be searchable.
@@ -108,6 +111,30 @@ EVENTS: tuple[FxEvent, ...] = (
     FxEvent("md-06", MD, "2026-04-26T12:00:00", P, "Tennis string tension log", group="Life"),
 )
 
-BY_ID = {e.id: e for e in EVENTS}
-assert len(BY_ID) == len(EVENTS), "duplicate fixture ids"
-assert len({(e.source, e.ts) for e in EVENTS}) == len(EVENTS), "fixture timestamps must be unique per source"
+# KeyPulse's own capture streams (D26): inserted straight through the capture repository path
+# (normalizer -> insert_raw_event), not through a source plugin. ``source`` is the raw_events source
+# (keyboard_chunk / clipboard / window / ax_text / browser_url); ``bucket`` is the intended bucket,
+# which the app preset table must reproduce. These records exist nowhere else: no transcript, commit
+# or history file contains them, so questions about them are answerable only from KeyPulse capture.
+KB, CB, WN, AX, BU = "keyboard_chunk", "clipboard", "window", "ax_text", "browser_url"
+
+CAPTURE_EVENTS: tuple[FxEvent, ...] = (
+    FxEvent("cp-01", KB, "2026-04-29T02:10:00", W, "drafting the release notes for the beta, mention the new retry budget of 3 attempts", app="Cursor"),
+    FxEvent("cp-02", KB, "2026-04-29T03:00:00", F, "转账备注 房租 四月 给房东老陈", app="支付宝"),
+    FxEvent("cp-03", KB, "2026-04-29T05:00:00", P, "gift ideas for mom's birthday: silk scarf, pottery class voucher", app="Notes"),
+    FxEvent("cp-04", KB, "2026-04-30T01:00:00", W, "git rebase onto the quokka branch before opening the pull request", app="Terminal"),
+    FxEvent("cp-05", CB, "2026-04-29T04:00:00", P, "Tracking number SF1234567890 for the standing desk shipment", app="Safari"),
+    FxEvent("cp-06", CB, "2026-04-30T02:00:00", W, "https://tracker.example.com/issues/KP-482 flaky eval on Friday", app="Slack"),
+    FxEvent("cp-07", CB, "2026-04-30T04:00:00", F, "Order 2026043012345 refund of 89.50 yuan to the original card", app="Alipay"),
+    FxEvent("cp-08", WN, "2026-04-29T06:00:00", W, "", app="Figma", title="Onboarding flow v3 - Design", ts_end="2026-04-29T07:25:00"),
+    FxEvent("cp-09", WN, "2026-04-29T08:00:00", P, "", app="Spotify", title="Spotify", ts_end="2026-04-29T08:40:00"),
+    FxEvent("cp-10", WN, "2026-04-30T03:00:00", W, "", app="Cursor", title="eval_runner.py - keypulse", ts_end="2026-04-30T03:30:00"),
+    FxEvent("cp-11", AX, "2026-04-30T05:00:00", W, "Q2 OKR review: ship capture-to-MCP, keep recall above 90 percent", app="Notion"),
+    FxEvent("cp-12", AX, "2026-04-30T06:00:00", P, "Flight AC088 departs Vancouver 14:35 gate B22", app="Safari"),
+    FxEvent("cp-13", BU, "2026-04-29T09:00:00", P, "Best pour-over coffee grinders compared | BeanReview", app="Safari", url="https://reviews.example.com/coffee-grinders"),
+    FxEvent("cp-14", BU, "2026-04-30T07:00:00", P, "Postgres partial indexes explained - DB Notes", app="Chrome", url="https://db.example.org/partial-indexes"),
+)
+
+BY_ID = {e.id: e for e in (*EVENTS, *CAPTURE_EVENTS)}
+assert len(BY_ID) == len(EVENTS) + len(CAPTURE_EVENTS), "duplicate fixture ids"
+assert len({(e.source, e.ts) for e in (*EVENTS, *CAPTURE_EVENTS)}) == len(EVENTS) + len(CAPTURE_EVENTS), "fixture timestamps must be unique per source"

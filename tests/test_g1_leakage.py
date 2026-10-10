@@ -25,6 +25,7 @@ from mcp_helpers import client_of, search, server_for
 from keypulse.mcp import auth, tools
 from keypulse.mcp.server import build_server
 from keypulse.store.db import close, get_conn, init_db
+from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES
 from keypulse.store.models import RawEvent
 from keypulse.store.repository import insert_raw_event
 from keypulse.store.sync_repo import add_evidence
@@ -57,15 +58,19 @@ G1_COVERED_RESPONSE_FIELDS = {
     "evidence", "evidence.id", "evidence.event_id", "evidence.source", "evidence.bucket", "evidence.occurred_at",
     "evidence.excerpt", "evidence.available", "evidence.locator", "evidence.locator.type", "evidence.locator.path",
     "evidence.locator.line", "evidence.locator.repo", "evidence.locator.commit",
+    # capture events (D26): locator {"type": "keypulse", "event_id": ...}
+    "evidence.locator.event_id",
 }
 
 # ── synthetic corpus ─────────────────────────────────────────────────────────────────────────
 SHARED_WORD = "pelican"  # present in-scope AND out-of-scope, so queries on it exercise the filter
 
-IN_SCOPE = [  # (source, bucket, text, ts)
+IN_SCOPE = [  # (source, bucket, text, ts[, event_type])
     ("claude_code", "Work", f"{SHARED_WORD} migration plan for the billing service", "2026-03-01T09:00:00+00:00"),
     ("claude_code", "Work", f"follow-up on {SHARED_WORD} rollout checklist", "2026-03-02T09:00:00+00:00"),
     ("git_log", "Work", f"fix {SHARED_WORD} retry loop", "2026-03-03T09:00:00+00:00"),
+    # a capture-stream row (D26) inside the granted scope: reachable, with keypulse evidence
+    ("claude_code", "Work", f"typed {SHARED_WORD} outline in the editor", "2026-03-03T11:00:00+00:00", "keyboard_chunk"),
 ]
 
 # Each out-of-scope row carries its own canary. (source, bucket, event_type, canary)
@@ -75,32 +80,43 @@ OUT_OF_SCOPE = [
     ("knowledgec", "Financial", "semantic_event", "KPCANARY3bankstatement"),
     ("mystery_source", None, "semantic_event", "KPCANARY4nobucketrow"),
     ("codex_cli", "Work", "semantic_event", "KPCANARY5workothersource"),   # in bucket, out of source scope
-    ("claude_code", "Work", "keyboard_chunk", "KPCANARY6rawstreamwork"),   # raw stream: never searchable
+    ("ocr_text", "Work", "ocr_text_capture", "KPCANARY6ocrneversearchable"),  # not a searchable capture type
     ("claude_code", "Personal", "semantic_event", "KPCANARY7samesrcotherbucket"),
+    # capture streams (D26) in buckets / sources the grant does not cover
+    ("keyboard_chunk", "Financial", "keyboard_chunk", "KPCANARY8keyboardbank"),    # typing in a banking app
+    ("keyboard_chunk", "Work", "keyboard_chunk", "KPCANARY9keyboardwork"),         # in bucket, out of source scope
+    ("clipboard", "Personal", "clipboard_copy", "KPCANARY10clipboardpersonal"),
+    ("window", "Financial", "window_focus_session", "KPCANARY11windowbank"),
+    ("ax_text", "Private", "ax_text_capture", "KPCANARY12axprivate"),
+    ("browser_url", "Personal", "browser_url_capture", "KPCANARY13browserpersonal"),
+    ("keyboard_chunk", None, "keyboard_chunk", "KPCANARY14capturenobucket"),       # capture row with no bucket
 ]
 CANARIES = [c for *_, c in OUT_OF_SCOPE]
-SOURCE_DEPENDENT = "KPCANARY5workothersource"  # in-scope for a Work grant with no source list; out-of-scope otherwise
+SOURCE_DEPENDENT = {"KPCANARY5workothersource", "KPCANARY9keyboardwork"}  # in-scope for a Work grant with no source list
 OUT_SOURCES = sorted({s for s, *_ in OUT_OF_SCOPE})
 OUT_BUCKETS = ["Personal", "Private", "Financial", "Temporary"]
 
 
 def _insert(source, bucket, text, ts, event_type="semantic_event", n=[0]) -> int:
     n[0] += 1
+    window = event_type == "window_focus_session"  # real window rows carry the text in window_title only
     row_id = insert_raw_event(
         RawEvent(
-            source=source, event_type=event_type, ts_start=ts, content_text=text,
+            source=source, event_type=event_type, ts_start=ts, content_text=None if window else text,
+            window_title=text if window else None, app_name="SomeApp" if event_type != "semantic_event" else None,
             content_hash=f"h{n[0]}-{hash(text) & 0xFFFF}-{source}-{ts}", bucket=bucket or "",
         )
     )
     if bucket is None:  # force a genuinely NULL bucket (insert_raw_event would resolve one)
         get_conn().execute("UPDATE raw_events SET bucket = NULL WHERE id = ?", (row_id,))
         get_conn().commit()
-    add_evidence(row_id, f"/synthetic/{source}.jsonl", 1, None)
+    if event_type not in CAPTURE_SEARCHABLE_EVENT_TYPES:  # capture rows get their keypulse evidence from the repository
+        add_evidence(row_id, f"/synthetic/{source}.jsonl", 1, None)
     return row_id
 
 
 def _is_in_scope(canary: str, scope: str) -> bool:
-    return canary == SOURCE_DEPENDENT and "sources" not in GRANT_SCOPES[scope]
+    return canary in SOURCE_DEPENDENT and "sources" not in GRANT_SCOPES[scope]
 
 
 def _canaries_out_of_scope(scope: str) -> list[str]:
@@ -110,8 +126,8 @@ def _canaries_out_of_scope(scope: str) -> list[str]:
 def _seed(db: Path, *, with_out_of_scope: bool, scope: str) -> None:
     close()
     init_db(db)
-    for source, bucket, text, ts in IN_SCOPE:
-        _insert(source, bucket, text, ts)
+    for source, bucket, text, ts, *event_type in IN_SCOPE:
+        _insert(source, bucket, text, ts, *event_type)
     for source, bucket, event_type, canary in OUT_OF_SCOPE:
         if _is_in_scope(canary, scope):  # identical in both DBs: part of the granted data
             _insert(source, bucket, f"{SHARED_WORD} secret note {canary} end", "2026-03-02T10:00:00+00:00", event_type)
@@ -360,10 +376,12 @@ def test_g1_sanity_canaries_are_findable_with_enough_scope(canary_db) -> None:
     """Guards against a vacuous scan: the planted data IS reachable when the scope allows it."""
     token = auth.create_grant("wide", buckets=["Work", "Personal", "Private", "Financial"])
     for canary in ("KPCANARY1personalbrowse", "KPCANARY2privatechat", "KPCANARY3bankstatement",
-                   "KPCANARY5workothersource", "KPCANARY7samesrcotherbucket"):
+                   "KPCANARY5workothersource", "KPCANARY7samesrcotherbucket", "KPCANARY8keyboardbank",
+                   "KPCANARY9keyboardwork", "KPCANARY10clipboardpersonal", "KPCANARY11windowbank",
+                   "KPCANARY12axprivate", "KPCANARY13browserpersonal"):
         assert search(token, [canary])["status"] == "ok", canary
-    # never reachable by any grant: NULL bucket (unmapped source) and raw capture streams
-    for canary in ("KPCANARY4nobucketrow", "KPCANARY6rawstreamwork"):
+    # never reachable by any grant: NULL bucket (plugin or capture) and capture types outside D26
+    for canary in ("KPCANARY4nobucketrow", "KPCANARY6ocrneversearchable", "KPCANARY14capturenobucket"):
         assert search(token, [canary])["status"] == "no_results", canary
 
 
@@ -372,8 +390,9 @@ def test_at05_work_only_host_sees_only_work_in_mixed_hits(canary_db) -> None:
     resp = search(token, [SHARED_WORD], limit=100)
     assert resp["status"] == "ok"
     assert {r["bucket"] for r in resp["results"]} == {"Work"}
-    assert {r["source"] for r in resp["results"]} == {"claude_code", "git_log", "codex_cli"}
-    assert len(resp["results"]) == 4  # 3 in-scope + the Work/codex_cli row; not the 30 Personal bulk rows
+    assert {r["source"] for r in resp["results"]} == {"claude_code", "git_log", "codex_cli", "keyboard_chunk"}
+    # 4 in-scope + the Work/codex_cli row + the Work keyboard row; not the 30 Personal bulk rows
+    assert len(resp["results"]) == 6
     assert not any("secret note KPCANARY7" in r["snippet"] for r in resp["results"])
 
 
@@ -511,11 +530,13 @@ def _observed_response_fields(monkeypatch=None) -> set[str]:
     def evd(event_id):
         return "evd_%d" % get_conn().execute("SELECT MAX(id) FROM evidence WHERE event_id = ?", (event_id,)).fetchone()[0]
 
+    capture_event = _insert("claude_code", "Work", f"{SHARED_WORD} guard keystrokes", "2026-03-09T11:00:00+00:00", "keyboard_chunk")
     unavailable = get_conn().execute("SELECT id FROM evidence WHERE locator LIKE '/synthetic/claude_code%' LIMIT 1").fetchone()[0]
     ev = lambda i: tools.get_evidence(token, i, client="guard")
     tl = lambda *a, **k: tools.get_timeline(token, *a, client="guard", **k)
     responses = [
         ev(evd(file_event)), ev(evd(commit_event)),                   # ok: file locator / repo+commit locator
+        ev(evd(capture_event)),                                       # ok: keypulse locator (capture event)
         ev(f"evd_{unavailable}"),                                     # source_unavailable
         ev("evd_99999"), ev(5),                                       # not_found / invalid_argument
         tl("2026-03-01", "2026-03-10", limit=1),                      # ok with has_more + next_cursor

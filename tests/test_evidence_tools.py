@@ -177,7 +177,7 @@ def test_out_of_scope_evidence_is_indistinguishable_from_nonexistent(db) -> None
     mine = _event("claude_code", "Work", "alpha work note", "2026-03-01T09:00:00+00:00", str(f))
     other_bucket = _event("chrome_history", "Personal", "alpha personal", "2026-03-01T10:00:00+00:00", str(f))
     other_source = _event("codex_cli", "Work", "alpha codex", "2026-03-01T11:00:00+00:00", str(f))
-    raw_stream = _event("claude_code", "Work", "alpha keyboard", "2026-03-01T12:00:00+00:00", str(f), event_type="keyboard_chunk")
+    raw_stream = _event("claude_code", "Work", "alpha keyboard", "2026-03-01T12:00:00+00:00", str(f), event_type="ocr_text_capture")
     token = auth.create_grant("host", buckets=["Work"], sources=["claude_code"])
     assert get_evidence(token, _evd(mine))["status"] == "ok"
     ghost = get_evidence(token, "evd_99999")
@@ -226,7 +226,7 @@ def test_timeline_is_ordered_by_occurred_at_not_ingest_order_and_scoped(db) -> N
     _event("claude_code", "Work", "first", "2026-03-01T09:00:00+00:00", str(db / "x"))
     _event("git_log", "Work", "second", "2026-03-02T09:00:00+00:00")
     _event("chrome_history", "Personal", "hidden", "2026-03-02T10:00:00+00:00")
-    _event("claude_code", "Work", "raw", "2026-03-02T11:00:00+00:00", event_type="keyboard_chunk")
+    _event("claude_code", "Work", "raw", "2026-03-02T11:00:00+00:00", event_type="ocr_text_capture")
     token = auth.create_grant("host", buckets=["Work"])
     resp = timeline(token, "2026-03-01", "2026-03-03")
     assert resp["status"] == "ok" and resp["has_more"] is False

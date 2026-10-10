@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from evals import compare
-from evals.fixture_data import EVENTS, FAKE_KEY
+from evals.fixture_data import CAPTURE_EVENTS, EVENTS, FAKE_KEY
 from evals.run import load_questions, run_eval
 
 BASELINE = Path(__file__).resolve().parents[1] / "evals" / "baseline.json"
@@ -30,8 +30,10 @@ def test_every_p0_source_and_bucket_is_covered_by_synthetic_fixtures(report) -> 
     assert set(cov) == {"claude_code", "codex_cli", "git_log", "zsh_history", "chrome_history", "safari_history", "markdown_vault"}
     for bucket in ("Work", "Personal", "Private", "Financial"):
         assert sum(row[bucket] for row in cov.values()) >= 3
-    assert report["fixtures"]["ingested_rows"] == len(EVENTS)
-    assert set(report["fixtures"]["sources_wired"]) == set(cov)
+    assert report["fixtures"]["ingested_rows"] == len(EVENTS) + len(CAPTURE_EVENTS)
+    capture = [r for r in report["questions"] if r.get("scenario") == "C01"]
+    assert len(capture) >= 10 and all(r["hit"] for r in capture)  # D26: answerable only from capture streams
+    assert set(report["fixtures"]["sources_wired"]) == set(cov) | {e.source for e in CAPTURE_EVENTS}
 
 
 def test_question_set_has_required_shape() -> None:

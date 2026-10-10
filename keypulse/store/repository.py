@@ -3,6 +3,8 @@ import sqlite3
 import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from keypulse.privacy.desensitizer import redact_secrets
+from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, keypulse_locator
 from keypulse.store.db import get_conn
 from keypulse.store.models import RawEvent, Session, SearchDoc, Policy, AppState
 
@@ -25,6 +27,10 @@ def insert_raw_event(e: RawEvent) -> int:
     NULL-hash events with identical (source, ts_start) collide.
     """
     conn = get_conn()
+    # Credentials must not reach the DB / FTS index / MCP hosts (D26). Idempotent; capture keeps its
+    # own PII filters upstream, this is the secret-class backstop for every writer.
+    e.content_text = redact_secrets(e.content_text)
+    e.window_title = redact_secrets(e.window_title)
     if e.bucket is None:
         # P0 bucket assignment (D23): source default + app rules from the policies table.
         from keypulse.store.buckets import resolve_for_event
@@ -44,6 +50,13 @@ def insert_raw_event(e: RawEvent) -> int:
          e.session_id, e.speaker, e.semantic_weight, e.user_present, e.created_at,
          e.source_id, e.external_id, e.bucket, e.kind),
     )
+    if cur.rowcount > 0 and e.event_type in CAPTURE_SEARCHABLE_EVENT_TYPES:
+        # KeyPulse itself is the original record: evidence points at the event, always available.
+        conn.execute(
+            """INSERT INTO evidence(event_id, locator, offset_or_line, content_hash, available, created_at)
+               VALUES (?,?,?,?,1,?)""",
+            (cur.lastrowid, keypulse_locator(cur.lastrowid), None, e.content_hash, _now()),
+        )
     conn.commit()
     if cur.rowcount > 0:
         return cur.lastrowid

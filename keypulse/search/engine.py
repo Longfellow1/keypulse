@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Iterable, Optional
 
 from keypulse.search.backends import resolve_search_backend
+from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES
 from keypulse.store.db import get_conn
 
 
@@ -89,6 +90,50 @@ def _snippet(text: str, terms: list[str], width: int = 80) -> str:
     return f"{prefix}{text[start:end]}{suffix}"
 
 
+def _types(event_type: "str | Iterable[str] | None") -> list[str]:
+    if event_type is None:
+        return []
+    return [event_type] if isinstance(event_type, str) else list(event_type)
+
+
+def _like(term: str) -> str:
+    return "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _duration(start: Optional[str], end: Optional[str]) -> str:
+    try:
+        seconds = int((datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds())
+    except (TypeError, ValueError):
+        return ""
+    if seconds < 0:
+        return ""
+    if seconds >= 3600:
+        return f"{seconds // 3600}h{seconds % 3600 // 60:02d}m"
+    if seconds >= 60:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def display_text(row: dict) -> str:
+    """Text a Host sees for an event. Capture rows are labelled with their app (a window focus
+    session is app | title | duration) so the Host knows what kind of record it is; other rows are
+    just their content."""
+    content = row.get("content_text") or ""
+    if row.get("event_type") not in CAPTURE_SEARCHABLE_EVENT_TYPES:
+        return content
+    app = (row.get("app_name") or "").strip()
+    if row.get("event_type") == "window_focus_session":
+        parts = [app, (row.get("window_title") or "").strip(), _duration(row.get("occurred_at"), row.get("ts_end"))]
+        return " | ".join(p for p in parts if p)
+    return f"[{app}] {content}" if app else content
+
+
+def _haystack(row) -> str:
+    return " ".join(
+        ((row["content_text"] or "") + " " + (row["window_title"] or "") + " " + (row["app_name"] or "")).lower().split()
+    )
+
+
 _SCOPED_CANDIDATES = 500
 _TF_SATURATION = 1.2   # bm25-style term-frequency saturation
 _LEN_NORM = 0.75       # strength of length normalisation
@@ -98,7 +143,7 @@ _REF_LEN = 200         # fixed reference length in chars (a constant, not a corp
 def _doc_score(row, terms: list[str]) -> float:
     """Relevance from the document alone: term occurrences (saturating), distinct-term coverage,
     length normalisation. No document-frequency / corpus statistics."""
-    text = " ".join(((row["content_text"] or "") + " " + (row["window_title"] or "")).lower().split())
+    text = _haystack(row)
     norm = 1 - _LEN_NORM + _LEN_NORM * (len(text) / _REF_LEN)
     score = 0.0
     matched = 0
@@ -124,7 +169,7 @@ def _normalize_keywords(keywords: list[str]) -> list[str]:
 
 def _matched(row, terms: list[str]) -> list[str]:
     """Distinct keywords that occur in this document (case-insensitive substring, document only)."""
-    text = " ".join(((row["content_text"] or "") + " " + (row["window_title"] or "")).lower().split())
+    text = _haystack(row)
     return [t for t in terms if t.lower() in text]
 
 
@@ -135,7 +180,7 @@ def search_events(
     until: str | datetime | None = None,
     sources: Optional[list[str]] = None,
     buckets: Optional[list[str]] = None,
-    event_type: Optional[str] = "semantic_event",
+    event_type: "str | Iterable[str] | None" = "semantic_event",
     limit: int = 20,
 ) -> list[dict]:
     """Keyword search over raw_events: OR across keywords, ranked by how many distinct keywords a
@@ -169,11 +214,15 @@ def search_events(
         params.append(" OR ".join('"%s"' % t for t in long_terms))
     for t in short_terms:
         any_match.append("e.content_text LIKE ? ESCAPE '\\'")
-        params.append("%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+        params.append(_like(t))
+    for t in terms:  # the app is part of what a capture record is about ("how long in Figma")
+        any_match.append("e.app_name LIKE ? ESCAPE '\\'")
+        params.append(_like(t))
     where = ["(" + " OR ".join(any_match) + ")"]
-    if event_type:
-        where.append("e.event_type = ?")
-        params.append(event_type)
+    types = _types(event_type)
+    if types:
+        where.append("e.event_type IN (%s)" % ",".join("?" * len(types)))
+        params.extend(types)
     if since_ts:
         where.append("e.ts_start >= ?")
         params.append(since_ts)
@@ -195,6 +244,7 @@ def search_events(
 
     sql = f"""
         SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.kind, e.content_text, e.window_title,
+               e.app_name, e.event_type, e.ts_end,
                (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id,
                (SELECT ev.locator FROM evidence ev WHERE ev.event_id = e.id ORDER BY ev.id LIMIT 1) AS evidence_locator,
                (SELECT ev.offset_or_line FROM evidence ev WHERE ev.event_id = e.id ORDER BY ev.id LIMIT 1) AS evidence_line,
@@ -215,8 +265,9 @@ def search_events(
     hits = []
     for coverage, _score, r, found in scored[:limit]:
         d = dict(r)
-        d.pop("window_title", None)
-        d["snippet"] = _snippet(d.pop("content_text") or "", found)
+        d["snippet"] = _snippet(display_text(d), found)
+        for k in ("content_text", "window_title", "app_name", "event_type", "ts_end"):
+            d.pop(k, None)
         d["matched"] = coverage
         d["keyword_count"] = len(terms)
         hits.append(d)
@@ -234,17 +285,18 @@ def timeline_events(
     sources: Optional[list[str]],
     buckets: list[str],
     after: Optional[tuple[str, int]] = None,
-    event_type: str = "semantic_event",
+    event_type: "str | Iterable[str]" = "semantic_event",
     limit: int = TIMELINE_DEFAULT_LIMIT,
 ) -> tuple[list[dict], bool]:
     """Events in real occurred_at order (ascending, id as tiebreak), scope applied in the WHERE
     clause before LIMIT. `after` is a (occurred_at, id) keyset cursor. Returns (rows, has_more);
     has_more is computed from in-scope rows only (fetches limit + 1)."""
     limit = max(1, min(int(limit), TIMELINE_MAX_LIMIT))
-    if not buckets or (sources is not None and not sources):
+    types = _types(event_type)
+    if not buckets or not types or (sources is not None and not sources):
         return [], False
-    where = ["e.event_type = ?", "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
-    params: list = [event_type, *buckets]
+    where = ["e.event_type IN (%s)" % ",".join("?" * len(types)), "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
+    params: list = [*types, *buckets]
     if sources is not None:
         where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
         params.extend(sources)
@@ -260,7 +312,8 @@ def timeline_events(
     params.append(limit + 1)
     rows = get_conn().execute(
         f"""
-        SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.content_text,
+        SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.content_text, e.window_title,
+               e.app_name, e.event_type, e.ts_end,
                (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id
         FROM raw_events e
         WHERE {' AND '.join(where)}
@@ -273,7 +326,9 @@ def timeline_events(
     out = []
     for r in rows[:limit]:
         d = dict(r)
-        d["snippet"] = _snippet(d.pop("content_text") or "", [], width=80)[:160]
+        d["snippet"] = _snippet(display_text(d), [], width=80)[:160]
+        for k in ("content_text", "window_title", "app_name", "event_type", "ts_end"):
+            d.pop(k, None)
         out.append(d)
     return out, has_more
 
@@ -283,24 +338,31 @@ def scoped_evidence(
     *,
     sources: Optional[list[str]],
     buckets: list[str],
-    event_type: str = "semantic_event",
+    event_type: "str | Iterable[str]" = "semantic_event",
 ) -> Optional[dict]:
     """One evidence row joined to its event, only if the event is inside the scope (same WHERE
     rules as search). Out-of-scope and nonexistent ids both return None."""
-    if not buckets or (sources is not None and not sources):
+    types = _types(event_type)
+    if not buckets or not types or (sources is not None and not sources):
         return None
-    where = ["ev.id = ?", "e.event_type = ?", "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
-    params: list = [evidence_id, event_type, *buckets]
+    where = ["ev.id = ?", "e.event_type IN (%s)" % ",".join("?" * len(types)),
+             "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
+    params: list = [evidence_id, *types, *buckets]
     if sources is not None:
         where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
         params.extend(sources)
     row = get_conn().execute(
         f"""
         SELECT ev.id AS evidence_id, ev.event_id, ev.locator, ev.offset_or_line AS line, ev.available AS stored_available,
-               e.source, e.ts_start AS occurred_at, e.bucket, e.content_text
+               e.source, e.ts_start AS occurred_at, e.bucket, e.content_text, e.window_title, e.app_name,
+               e.event_type, e.ts_end
         FROM evidence ev JOIN raw_events e ON e.id = ev.event_id
         WHERE {' AND '.join(where)}
         """,
         params,
     ).fetchone()
-    return dict(row) if row else None
+    if row is None:
+        return None
+    out = dict(row)
+    out["excerpt_text"] = display_text(out)
+    return out

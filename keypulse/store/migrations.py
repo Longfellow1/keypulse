@@ -6,10 +6,11 @@ from pathlib import Path
 from keypulse.store.migration_v20 import migrate_v20, rebuild_events_fts  # noqa: F401
 from keypulse.store.migration_v21 import migrate_v21
 from keypulse.store.migration_v22 import migrate_v22
+from keypulse.store.migration_v23 import migrate_v23
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 MIGRATIONS = [
     # v1
@@ -205,6 +206,8 @@ MIGRATIONS = [
     migrate_v21,
     # v22 — client whitelist, token rotation marker, MCP audit log (see migration_v22).
     migrate_v22,
+    # v23 — D26: capture streams queryable (bucket + secret-redaction + evidence backfill).
+    migrate_v23,
 ]
 
 

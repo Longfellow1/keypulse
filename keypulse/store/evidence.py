@@ -11,6 +11,7 @@ import re
 import subprocess
 from typing import Iterable, Optional
 
+from keypulse.store.capture_events import is_keypulse_locator
 from keypulse.store.db import get_conn
 
 GIT_TIMEOUT_SEC = 2.0
@@ -53,6 +54,8 @@ def _file_has_line(path: str, line: int) -> bool:
 def locator_exists(locator: str, line: Optional[int] = None, *, deep: bool = True) -> bool:
     """True when the original still exists. deep=False is path/directory existence only (cheap,
     used on every search); deep=True also verifies the line (files) or the commit (git)."""
+    if is_keypulse_locator(locator):
+        return True  # KeyPulse's own record (capture events): nothing external to disappear
     git = split_git_locator(locator)
     if git is not None:
         repo, commit = git
