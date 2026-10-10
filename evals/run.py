@@ -12,7 +12,7 @@ Metrics
   M1  evidence recall@5   : answerable questions with >=1 gold fixture event in the top-5 results.
   M2  no-answer false-hit : no-answer questions that returned any result (the tool has no
                             low-certainty flag yet, so any returned result is a false hit).
-Questions that cannot be scored yet (restricted -> needs #19 scopes; conflict -> PRD says record only)
+Questions that cannot be scored yet (conflict -> PRD says record only)
 are reported as skipped / recorded and never counted as failures.
 """
 from __future__ import annotations
@@ -123,7 +123,8 @@ def _resolve_fixture_rows() -> tuple[dict[int, str], dict[str, int], dict[str, d
 
 # -- MCP calls -----------------------------------------------------------------------------------
 
-def _call_all(token: str, questions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _call_all(tokens: dict[str, str], questions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """`tokens` maps question id -> the token to call with (one Host per distinct token)."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     from keypulse.mcp.server import build_server
@@ -131,12 +132,14 @@ def _call_all(token: str, questions: list[dict[str, Any]]) -> dict[str, dict[str
     import logging
 
     logging.getLogger("mcp").setLevel(logging.WARNING)  # per-request INFO lines drown the report
-    server = build_server(token_provider=lambda: token)
+    current = {"token": None}
+    server = build_server(token_provider=lambda: current["token"])
 
     async def run() -> dict[str, dict[str, Any]]:
         out: dict[str, dict[str, Any]] = {}
         async with create_connected_server_and_client_session(server._mcp_server) as client:
             for q in questions:
+                current["token"] = tokens[q["id"]]
                 args: dict[str, Any] = {"query": q["query"], "limit": TOP_K}
                 if q.get("time_range"):
                     args["time_range"] = q["time_range"]
@@ -172,7 +175,17 @@ def run_eval() -> dict[str, Any]:
         wired = {BY_ID[fx].source for fx in fx_to_row}
 
         scored = [q for q in questions if q["variant"] in ("answerable", "no_answer")]
-        responses = _call_all(auth.create_grant("eval"), questions)
+        # Answerable / no-answer / conflict questions span all four buckets, so the eval Host is
+        # granted all of them. Each restricted question gets its own scoped grant (default Work).
+        full = auth.create_grant("eval", buckets=list(BUCKETS))
+        tokens = {}
+        for q in questions:
+            if q["variant"] == "restricted":
+                scope = q.get("grant", {})
+                tokens[q["id"]] = auth.create_grant(f"eval-{q['id']}", buckets=scope.get("buckets"), sources=scope.get("sources"))
+            else:
+                tokens[q["id"]] = full
+        responses = _call_all(tokens, questions)
 
     def top_fx(q: dict[str, Any]) -> list[str | None]:
         results = responses[q["id"]].get("results", [])[:TOP_K]
@@ -182,6 +195,7 @@ def run_eval() -> dict[str, Any]:
     no_answer_rows: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     recorded: list[dict[str, Any]] = []
+    restricted: list[dict[str, Any]] = []
     details: list[dict[str, Any]] = []
 
     for q in questions:
@@ -204,7 +218,15 @@ def run_eval() -> dict[str, Any]:
             no_answer_rows.append(row)
             details.append(row)
         elif q["variant"] == "restricted":
-            skipped.append({"id": q["id"], "variant": "restricted", "reason": "grant scopes (bucket/source) not wired yet (#19)", "needs": []})
+            # G1-style: no forbidden (out-of-scope) evidence may come back.
+            leaked = [fx for fx in top if fx in q["forbidden"]]
+            # A leak is "misbucketed" when the forbidden event's *assigned* bucket is inside the
+            # grant: P0 has no content classification (D23), so e.g. a therapy chat in a Claude Code
+            # session is Work by source default. Otherwise it is a scope-enforcement leak (G1).
+            scope_b = set(q["grant"].get("buckets") or ["Work"])
+            causes = {fx: ("misbucketed" if observed.get(fx, {}).get("bucket") in scope_b else "scope_enforcement") for fx in leaked}
+            restricted.append({**base, "grant": q["grant"], "forbidden": q["forbidden"], "leaked": leaked,
+                               "leak_causes": causes, "hit": bool(leaked)})
         elif q["variant"] == "conflict":
             rank = {fx: i + 1 for i, fx in enumerate(top) if fx}
             recorded.append({**base, "newest_rank": rank.get(q["newest"]), "stale_rank": rank.get(q["stale"]),
@@ -227,6 +249,9 @@ def run_eval() -> dict[str, Any]:
             "questions_total": len(questions),
             "questions_skipped": len(skipped),
             "questions_recorded_only": len(recorded),
+            "restricted_evaluated": len(restricted),
+            "restricted_leaks": sum(r["hit"] for r in restricted),
+            "restricted_enforcement_leaks": sum("scope_enforcement" in r["leak_causes"].values() for r in restricted),
         },
         "by_scenario": _group(answerable_rows, "scenario"),
         "by_source": _group(answerable_rows, "source"),
@@ -245,6 +270,7 @@ def run_eval() -> dict[str, Any]:
         },
         "skipped": skipped,
         "recorded_only": recorded,
+        "restricted": restricted,
         "questions": details,
     }
 
@@ -257,6 +283,7 @@ def _print(report: dict[str, Any]) -> None:
     print(f"  skipped {s['questions_skipped']}, recorded-only {s['questions_recorded_only']}, total {s['questions_total']}")
     for title, key in (("scenario", "by_scenario"), ("source", "by_source"), ("bucket", "by_bucket"), ("no-answer style", "no_answer_by_style")):
         print(f"  by {title}: " + ", ".join(f"{k} {v['hits']}/{v['n']}" for k, v in report[key].items()))
+    print(f"  restricted (scoped grants): {s['restricted_evaluated']} evaluated, {s['restricted_leaks']} returned forbidden evidence ({s['restricted_enforcement_leaks']} by scope enforcement, rest misbucketed by P0 source defaults)")
     for r in report["recorded_only"]:
         print(f"  conflict {r['id']}: newest rank {r['newest_rank']}, stale rank {r['stale_rank']} (recorded only)")
 

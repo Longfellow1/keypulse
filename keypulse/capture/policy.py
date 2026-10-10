@@ -67,6 +67,8 @@ class PolicyEngine:
             scope_type = policy["scope_type"]
             scope_value = policy["scope_value"]
             mode = policy["mode"]
+            if mode == "bucket":  # bucket-assignment rule (store.buckets), not a privacy mode
+                continue
 
             match = False
             if scope_type == "app" and event.app_name:

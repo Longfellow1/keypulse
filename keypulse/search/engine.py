@@ -89,12 +89,34 @@ def _snippet(text: str, terms: list[str], width: int = 80) -> str:
     return f"{prefix}{text[start:end]}{suffix}"
 
 
+_SCOPED_CANDIDATES = 500
+_TF_SATURATION = 1.2   # bm25-style term-frequency saturation
+_LEN_NORM = 0.75       # strength of length normalisation
+_REF_LEN = 200         # fixed reference length in chars (a constant, not a corpus average)
+
+
+def _doc_score(row, terms: list[str]) -> float:
+    """Relevance from the document alone: term occurrences (saturating), distinct-term coverage,
+    length normalisation. No document-frequency / corpus statistics."""
+    text = " ".join(((row["content_text"] or "") + " " + (row["window_title"] or "")).lower().split())
+    norm = 1 - _LEN_NORM + _LEN_NORM * (len(text) / _REF_LEN)
+    score = 0.0
+    matched = 0
+    for t in set(x.lower() for x in terms):
+        tf = text.count(t)
+        if tf:
+            matched += 1
+            score += tf * (_TF_SATURATION + 1) / (tf + _TF_SATURATION * norm)
+    return score * (1 + matched / max(1, len(set(terms))))
+
+
 def search_events(
     query: str,
     *,
     since: str | datetime | None = None,
     until: str | datetime | None = None,
     sources: Optional[list[str]] = None,
+    buckets: Optional[list[str]] = None,
     event_type: Optional[str] = "semantic_event",
     limit: int = 20,
 ) -> list[dict]:
@@ -103,6 +125,12 @@ def search_events(
     `since`/`until` bound the event's real occurred_at (ts_start), never the
     ingestion time. Returns [] for empty queries. Each hit carries the
     `evidence_id` (first evidence row) and the terms that matched.
+
+    `buckets` (None = unrestricted, [] = nothing) and `sources` are applied in
+    the WHERE clause, before LIMIT, never as a post-filter. A bucket-scoped
+    search ranks the newest 500 in-scope candidates by a per-document score
+    (`_doc_score`), recency breaking ties; bm25 depends on corpus-wide
+    statistics, so it would let out-of-scope data change in-scope order.
     """
     terms = [t for t in re.split(r"\s+", (query or "").replace('"', " ").strip()) if t]
     if not terms:
@@ -119,11 +147,11 @@ def search_events(
         from_sql = "raw_events e JOIN raw_events_fts ON raw_events_fts.rowid = e.id"
         where = ["raw_events_fts MATCH ?"]
         params.append(match)
-        order = "bm25(raw_events_fts), e.ts_start DESC"
+        order = "bm25(raw_events_fts), e.ts_start DESC" if buckets is None else "e.ts_start DESC, e.id DESC"
     else:
         from_sql = "raw_events e"
         where = []
-        order = "e.ts_start DESC"
+        order = "e.ts_start DESC, e.id DESC"
     for t in short_terms:
         where.append("e.content_text LIKE ? ESCAPE '\\'")
         params.append("%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
@@ -141,20 +169,32 @@ def search_events(
             return []
         where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
         params.extend(sources)
-    params.append(max(1, min(int(limit), 100)))
+    if buckets is not None:
+        if not buckets:
+            return []
+        where.append("e.bucket IN (%s)" % ",".join("?" * len(buckets)))
+        params.extend(buckets)
+    limit = max(1, min(int(limit), 100))
+    # Scoped search: pull a recency-ordered candidate window (scope filter in SQL), then rank it
+    # in Python with per-document features only. Anything corpus-wide (bm25, IDF, avg length)
+    # would let out-of-scope data change in-scope order.
+    params.append(_SCOPED_CANDIDATES if buckets is not None else limit)
 
     sql = f"""
-        SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.kind, e.content_text,
+        SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.kind, e.content_text, e.window_title,
                (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id
         FROM {from_sql}
-        WHERE {' AND '.join(where)}
+        WHERE {' AND '.join(where) or '1'}
         ORDER BY {order}
         LIMIT ?
     """
     rows = get_conn().execute(sql, params).fetchall()
+    if buckets is not None:
+        rows = sorted(rows, key=lambda r: _doc_score(r, terms), reverse=True)[:limit]  # stable: recency breaks ties
     hits = []
     for r in rows:
         d = dict(r)
+        d.pop("window_title", None)
         d["snippet"] = _snippet(d.pop("content_text") or "", terms)
         d["matched_terms"] = terms
         hits.append(d)
