@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-10T07:31:48.707Z._
+_Auto-generated. Last updated 2026-10-10T09:51:28.523Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -11,6 +11,7 @@ _Auto-generated. Last updated 2026-10-10T07:31:48.707Z._
 - [eval-prd-separate](pages/eval-prd-separate.md) — category: decision | tags: [eval, prd] | ## Decision
 - [gold-set-gated-prompt-changes](pages/gold-set-gated-prompt-changes.md) — category: decision | status: archived | ## Decision
 - [host-does-query-preprocessing](pages/host-does-query-preprocessing.md) — category: decision | tags: [v1, mcp, search, decision] | <current best understanding — replace this with the real content>
+- [irreplaceability-vs-bash](pages/irreplaceability-vs-bash.md) — category: decision | tags: [v1, product, positioning, eval, decision] | <current best understanding — replace this with the real content>
 - [keyboard-capture-p0-experimental](pages/keyboard-capture-p0-experimental.md) — category: decision | tags: [scope, capture, privacy] | ## Decision
 - [keypulse-v1-local-memory-infra](pages/keypulse-v1-local-memory-infra.md) — category: decision | tags: [product, v1, mcp] | ## Decision
 - [knowledge-graph-layer](pages/knowledge-graph-layer.md) — category: project | ## Goal
