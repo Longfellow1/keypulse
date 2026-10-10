@@ -150,9 +150,9 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-register(GitLogSource())
+register(GitLogSource(use_cursor=True))
 register(ClaudeCodeSource(use_cursor=True))
-register(CodexCliSource())
+register(CodexCliSource(use_cursor=True))
 register(ApprovedSqliteSource())
 register(ChromeHistorySource())
 register(KnowledgeCSource())

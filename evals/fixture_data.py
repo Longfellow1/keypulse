@@ -65,18 +65,22 @@ EVENTS: tuple[FxEvent, ...] = (
     FxEvent("cc-16", CC, "2026-04-26T08:00:00", W, "发布 deadline 是 5 月 15 日，评审会安排在 5 月 8 日", group="-tmp-proj-memory-core"),
     FxEvent("cc-17", CC, "2026-04-28T08:00:00", W, "更新一下：发布 deadline 改到 5 月 30 日，评审会不变", group="-tmp-proj-memory-core"),
     FxEvent("cc-18", CC, "2026-04-27T02:00:00", W, "评测集要分有答案、无答案、权限受限三类，每个场景至少八条", group="-tmp-proj-memory-core"),
+    FxEvent("cc-19", CC, "2026-04-27T03:00:00", W, "Codex 会话是按日期分目录的 rollout 文件，扫描要递归 sessions/YYYY/MM/DD", group="-tmp-proj-memory-core"),
     # -- Codex CLI ------------------------------------------------------------
     FxEvent("cx-01", CX, "2026-04-20T09:00:00", W, "refactor the FTS trigram tokenizer config so short CJK terms fall back to LIKE", group="cx-s1"),
     FxEvent("cx-02", CX, "2026-04-21T09:00:00", W, "写一个脚本批量重命名 Obsidian 笔记的 frontmatter tags", group="cx-s2"),
     FxEvent("cx-03", CX, "2026-04-22T09:00:00", W, "continue yesterday's work on the cursor commit fix in the sources registry", group="cx-s3"),
     FxEvent("cx-04", CX, "2026-04-23T09:00:00", F, "calculate the monthly mortgage payment for a 2.4 million yuan loan at 3.1 percent over 30 years", group="cx-s4"),
     FxEvent("cx-05", CX, "2026-04-24T09:00:00", P, "draft a packing list for the Sydney trip in May including adapters and sunscreen", group="cx-s5"),
+    FxEvent("cx-06", CX, "2026-04-25T09:00:00", W, "parse the Codex rollout files recursively under sessions by date and skip developer prompts", group="cx-s6"),
+    FxEvent("cx-07", CX, "2026-04-25T09:05:00", W, "rollout parser keeps only user and assistant messages and drops tool call noise", "assistant", "cx-s6"),
     # -- Git log --------------------------------------------------------------
     FxEvent("gl-01", GL, "2026-04-20T10:00:00", W, "feat(mcp): add search_context tool with token auth\n\nread-only retrieval, every hit carries an evidence id", group="memory-core"),
     FxEvent("gl-02", GL, "2026-04-21T10:00:00", W, "fix(sources): advance the cursor only after persist succeeds", group="memory-core"),
     FxEvent("gl-03", GL, "2026-04-22T10:00:00", W, "refactor(store): migrate schema v19 to v20 with access_grants", group="memory-core"),
     FxEvent("gl-04", GL, "2026-04-23T10:00:00", W, "docs: record why the Redis queue was rejected (local-first)", group="memory-core"),
     FxEvent("gl-05", GL, "2026-04-24T10:00:00", W, "chore: bump pyobjc to 11.0 for the macOS extras", group="memory-core"),
+    FxEvent("gl-06", GL, "2026-04-25T10:00:00", W, "feat(sources): ingest Codex rollout sessions with a byte-offset resume position", group="memory-core"),
     # -- zsh ------------------------------------------------------------------
     FxEvent("zs-01", ZS, "2026-04-21T11:00:00", W, "sqlite3 demo.db 'PRAGMA wal_checkpoint(TRUNCATE)'"),
     FxEvent("zs-02", ZS, "2026-04-22T11:00:00", W, "launchctl kickstart -k gui/501/com.example.daemon"),
