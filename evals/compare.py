@@ -22,6 +22,8 @@ def make_baseline(report: dict[str, Any]) -> dict[str, Any]:
         "question_set_digest": report["question_set_digest"],
         "m1_evidence_recall_at_5": s["m1_evidence_recall_at_5"],
         "m2_no_answer_false_hit_rate": s["m2_no_answer_false_hit_rate"],
+        "m1_nl_subset": s["m1_nl_subset"],
+        "m1_keyword_subset": s["m1_keyword_subset"],
         "answerable_evaluated": s["answerable_evaluated"],
         "no_answer_evaluated": s["no_answer_evaluated"],
         "by_scenario": {k: v["rate"] for k, v in report["by_scenario"].items()},
@@ -37,6 +39,9 @@ def check(report: dict[str, Any], baseline: dict[str, Any]) -> list[str]:
     b1, b2 = baseline["m1_evidence_recall_at_5"], baseline["m2_no_answer_false_hit_rate"]
     if (b1 - m1) > MAX_REGRESSION + _EPS:
         problems.append(f"M1 evidence recall@5 dropped {b1:.1%} -> {m1:.1%} (> 2pp)")
+    for key, label in (("m1_nl_subset", "natural-language"), ("m1_keyword_subset", "keyword")):
+        if key in baseline and (baseline[key] - s[key]) > MAX_REGRESSION + _EPS:
+            problems.append(f"M1 {label} subset dropped {baseline[key]:.1%} -> {s[key]:.1%} (> 2pp)")
     if (m2 - b2) > MAX_REGRESSION + _EPS:
         problems.append(f"M2 no-answer false-hit rate rose {b2:.1%} -> {m2:.1%} (> 2pp)")
     if report["question_set_digest"] != baseline["question_set_digest"]:

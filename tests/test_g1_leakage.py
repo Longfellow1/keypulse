@@ -38,11 +38,11 @@ def _isolated_home(tmp_path, monkeypatch):
 
 
 # ── coverage list: UPDATE THIS (and the batteries) when the MCP surface changes ──────────────
-G1_COVERED_TOOLS = {"search_context": {"query", "time_range", "sources", "limit"}}
+G1_COVERED_TOOLS = {"search_context": {"keywords", "time_range", "sources", "limit"}}
 G1_COVERED_RESPONSE_FIELDS = {
     "status", "reason_code", "message", "next_action",
     "results", "results[].id", "results[].snippet", "results[].occurred_at", "results[].source",
-    "results[].bucket", "results[].evidence_id", "results[].match_reason",
+    "results[].bucket", "results[].evidence_id", "results[].match", "results[].match_reason",
     "coverage", "coverage.partial", "coverage.note", "coverage.time_range",
     "coverage.time_range.start", "coverage.time_range.end", "coverage.buckets", "coverage.sources",
 }
@@ -143,6 +143,19 @@ def _adversarial_queries() -> list[dict]:
         qs.append({"query": SHARED_WORD, "sources": [src]})
     qs.append({"query": SHARED_WORD, "sources": []})
     qs.append({"query": SHARED_WORD, "sources": OUT_SOURCES + ["claude_code"]})
+    # multi-keyword OR: canaries / out-of-scope words mixed with in-scope ones, plus malformed lists
+    for c in CANARIES:
+        qs.append({"keywords": [c, SHARED_WORD]})
+        qs.append({"keywords": [SHARED_WORD, "billing", c, c.lower()]})
+        qs.append({"keywords": [c, "billing"], "sources": OUT_SOURCES})
+        qs.append({"keywords": [c + "?"]})            # sentence-like keyword -> fixed invalid_argument
+        qs.append({"keywords": [f"what is {c} about in the billing notes please tell me"]})
+    qs.append({"keywords": [SHARED_WORD, "billing"]})  # strong tier
+    qs.append({"keywords": [SHARED_WORD, "zzz-none"]})  # single-keyword coverage
+    qs.append({"keywords": []})
+    qs.append({"keywords": [""]})
+    qs.append({"keywords": SHARED_WORD})
+    qs.append({"keywords": [1, None]})
     return qs
 
 
@@ -152,6 +165,7 @@ def _differential_queries() -> list[dict]:
         qs.append({"query": SHARED_WORD, "limit": limit})
     qs += [
         {"query": "billing"}, {"query": "retry loop"}, {"query": "nothing-matches-this"},
+        {"keywords": [SHARED_WORD, "retry", "billing", "rollout"]}, {"keywords": ["retry loop", "checklist"]},
         {"query": SHARED_WORD, "time_range": {"start": "2026-03-02", "end": "2026-03-03"}},
         {"query": SHARED_WORD, "time_range": {"end": "2026-02-01"}},
         {"query": SHARED_WORD, "time_range": {"start": "bad"}},
@@ -161,8 +175,13 @@ def _differential_queries() -> list[dict]:
     return qs
 
 
+def _keywords_of(q: dict) -> list:
+    """Battery entries carry explicit `keywords` or a free-text `query` split on whitespace (as the CLI does)."""
+    return q["keywords"] if "keywords" in q else q["query"].split()
+
+
 def _run(token, q: dict) -> dict:
-    return search(token, q["query"], q.get("time_range"), q.get("sources"), q.get("limit", 10))
+    return search(token, _keywords_of(q), q.get("time_range"), q.get("sources"), q.get("limit", 10))
 
 
 # ── 1. canary scan ───────────────────────────────────────────────────────────────────────────
@@ -198,14 +217,17 @@ def test_g1_canary_scan_through_mcp_transport(canary_db, scope) -> None:
     token = auth.create_grant("host", **GRANT_SCOPES[scope])
     server = server_for(token)
     c = CANARIES[0]
-    calls = [{"query": q["query"], **{k: v for k, v in q.items() if k != "query"}} for q in _adversarial_queries()[::7]]
+    calls = [{"keywords": _keywords_of(q), **{k: v for k, v in q.items() if k not in ("query", "keywords")}}
+             for q in _adversarial_queries()[::7]]
     calls += [
-        {"query": c, "limit": c},                # wrong type carrying the canary
-        {"query": c, "sources": c},
-        {"query": c, "time_range": c},
-        {"query": c, "time_range": {"start": c, "end": c}},
-        {"query": c, "unexpected": c},
-        {"query": [c]},
+        {"keywords": [c], "limit": c},           # wrong type carrying the canary
+        {"keywords": [c], "sources": c},
+        {"keywords": [c], "time_range": c},
+        {"keywords": [c], "time_range": {"start": c, "end": c}},
+        {"keywords": [c], "unexpected": c},
+        {"keywords": c},
+        {"keywords": [[c]]},
+        {"keywords": [c + "?"]},
     ]
 
     async def run():
@@ -223,9 +245,9 @@ def test_g1_canary_scan_through_mcp_transport(canary_db, scope) -> None:
 def test_g1_canary_scan_denied_and_failure_paths(canary_db, monkeypatch) -> None:
     token = auth.create_grant("host", buckets=["Work"])
     for bad in (None, "", "kp_wrong", CANARIES[0]):
-        _assert_no_canary(json.dumps(search(bad, CANARIES[0])), "bad token")
+        _assert_no_canary(json.dumps(search(bad, [CANARIES[0]])), "bad token")
     auth.revoke_grants("host")
-    _assert_no_canary(json.dumps(search(token, CANARIES[0])), "revoked")
+    _assert_no_canary(json.dumps(search(token, [CANARIES[0]])), "revoked")
 
     token2 = auth.create_grant("host2", buckets=["Work"])
 
@@ -233,7 +255,7 @@ def test_g1_canary_scan_denied_and_failure_paths(canary_db, monkeypatch) -> None
         raise sqlite3.OperationalError(f"fts5: syntax error near {CANARIES[0]} in table raw_events_fts")
 
     monkeypatch.setattr(tools, "search_events", boom)
-    resp = search(token2, CANARIES[0])
+    resp = search(token2, [CANARIES[0]])
     assert resp["status"] == "error"
     _assert_no_canary(json.dumps(resp), "sqlite error")
     assert "raw_events" not in json.dumps(resp)
@@ -244,15 +266,15 @@ def test_g1_sanity_canaries_are_findable_with_enough_scope(canary_db) -> None:
     token = auth.create_grant("wide", buckets=["Work", "Personal", "Private", "Financial"])
     for canary in ("KPCANARY1personalbrowse", "KPCANARY2privatechat", "KPCANARY3bankstatement",
                    "KPCANARY5workothersource", "KPCANARY7samesrcotherbucket"):
-        assert search(token, canary)["status"] == "ok", canary
+        assert search(token, [canary])["status"] == "ok", canary
     # never reachable by any grant: NULL bucket (unmapped source) and raw capture streams
     for canary in ("KPCANARY4nobucketrow", "KPCANARY6rawstreamwork"):
-        assert search(token, canary)["status"] == "no_results", canary
+        assert search(token, [canary])["status"] == "no_results", canary
 
 
 def test_at05_work_only_host_sees_only_work_in_mixed_hits(canary_db) -> None:
     token = auth.create_grant("work-host", buckets=["Work"])
-    resp = search(token, SHARED_WORD, limit=100)
+    resp = search(token, [SHARED_WORD], limit=100)
     assert resp["status"] == "ok"
     assert {r["bucket"] for r in resp["results"]} == {"Work"}
     assert {r["source"] for r in resp["results"]} == {"claude_code", "git_log", "codex_cli"}
@@ -277,7 +299,7 @@ def _responses_for(db: Path, with_out_of_scope: bool, scope_name: str) -> list[b
     token = auth.create_grant("host", **GRANT_SCOPES[scope_name])
     out = [json.dumps(_normalize(_run(token, q)), sort_keys=True, ensure_ascii=False).encode() for q in _differential_queries()]
     # denied path must also be identical
-    out.append(json.dumps(search("kp_nope", SHARED_WORD), sort_keys=True).encode())
+    out.append(json.dumps(search("kp_nope", [SHARED_WORD]), sort_keys=True).encode())
     close()
     return out
 
@@ -311,8 +333,9 @@ def test_g1_differential_catches_injected_count_leak(tmp_path, monkeypatch) -> N
 def test_g1_differential_catches_injected_existence_hint(tmp_path, monkeypatch) -> None:
     real = tools.search_context
 
-    def hinting(token, query, *a, **k):
-        resp = real(token, query, *a, **k)
+    def hinting(token, keywords, *a, **k):
+        resp = real(token, keywords, *a, **k)
+        query = keywords[0] if keywords else ""
         if resp["status"] == "no_results":  # "more results exist elsewhere" style hint
             n = get_conn().execute("SELECT count(*) FROM raw_events WHERE content_text LIKE ?", (f"%{query}%",)).fetchone()[0]
             resp["message"] = "no results" if n == 0 else "no results in your scope"
@@ -339,10 +362,10 @@ def _field_paths(obj, prefix="") -> set[str]:
 def _observed_response_fields(monkeypatch=None) -> set[str]:
     token = auth.create_grant("guard", buckets=["Work"], sources=["claude_code"])
     responses = [
-        search(token, SHARED_WORD),                                   # ok
-        search(token, "zzz-no-such-thing"),                           # no_results
-        search(token, SHARED_WORD, time_range={"start": "bad"}),      # invalid_argument
-        search("kp_nope", SHARED_WORD),                               # permission_denied
+        search(token, [SHARED_WORD]),                                 # ok
+        search(token, ["zzz-no-such-thing"]),                         # no_results
+        search(token, [SHARED_WORD], time_range={"start": "bad"}),    # invalid_argument
+        search("kp_nope", [SHARED_WORD]),                               # permission_denied
     ]
     fields: set[str] = set()
     for r in responses:

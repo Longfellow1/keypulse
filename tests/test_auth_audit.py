@@ -43,8 +43,8 @@ def home(tmp_path, monkeypatch):
     buckets.reset_cache()
 
 
-def call(token, client, query=WORD):
-    return tools.search_context(token, query, client=client)
+def call(token, client, keywords=(WORD,)):
+    return tools.search_context(token, [keywords] if isinstance(keywords, str) else list(keywords), client=client)
 
 
 def audit_rows():
@@ -154,7 +154,7 @@ def test_denial_bodies_identical_through_the_mcp_transport(home) -> None:
         for token, client in attempts:
             server = build_server(token_provider=lambda t=token: t, client_provider=lambda c=client: c)
             async with create_connected_server_and_client_session(server._mcp_server) as c:
-                out.append((await c.call_tool("search_context", {"query": WORD})).model_dump_json())
+                out.append((await c.call_tool("search_context", {"keywords": [WORD]})).model_dump_json())
         return out
 
     bodies = asyncio.run(run())
@@ -297,7 +297,7 @@ def test_g5_no_plaintext_token_or_hash_in_db_wal_logs_audit_or_cli_output(home, 
         async def via_transport():
             server = build_server(token_provider=lambda: old_claude, client_provider=lambda: "claude")
             async with create_connected_server_and_client_session(server._mcp_server) as c:
-                await c.call_tool("search_context", {"query": WORD})
+                await c.call_tool("search_context", {"keywords": [WORD]})
 
         asyncio.run(via_transport())
         auth.revoke_grants("codex")

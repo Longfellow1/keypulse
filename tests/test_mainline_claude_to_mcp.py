@@ -109,7 +109,7 @@ def token(env) -> str:
 def test_at01_session_found_by_exact_word_with_provenance(env, token) -> None:
     assert _sync() == 3  # 2 messages + 1 redacted-credential message; summary row skipped
 
-    result = _call(token, query="zebrafish")
+    result = _call(token, keywords=["zebrafish"])
     assert result.isError is False
     data = _payload(result)
     assert result.structuredContent == data
@@ -121,7 +121,7 @@ def test_at01_session_found_by_exact_word_with_provenance(env, token) -> None:
     assert first["source"] == "claude_code"
     assert first["bucket"] == "Work"
     assert "zebrafish" in first["snippet"]
-    assert "zebrafish" in first["match_reason"]
+    assert first["match"] == "strong" and first["match_reason"] == "keyword match: 1 of 1 keywords"
     assert first["id"].startswith("evt_") and first["evidence_id"].startswith("evd_")
     assert data["coverage"]["partial"] is False
 
@@ -135,7 +135,7 @@ def test_at01_session_found_by_exact_word_with_provenance(env, token) -> None:
 
 def test_at02_unknown_word_is_no_results_and_fabricates_nothing(env, token) -> None:
     _sync()
-    data = _payload(_call(token, query="quetzalcoatlus"))
+    data = _payload(_call(token, keywords=["quetzalcoatlus"]))
     assert data["status"] == "no_results"
     assert data["results"] == []
     assert "snippet" not in json.dumps(data["results"])
@@ -143,15 +143,15 @@ def test_at02_unknown_word_is_no_results_and_fabricates_nothing(env, token) -> N
 
 def test_time_filter_uses_occurred_at_not_ingest_time(env, token) -> None:
     _sync()  # ingested "now" (2026+), events occurred 2026-04-28
-    inside = _payload(_call(token, query="zebrafish", time_range={"start": "2026-04-28", "end": "2026-04-28"}))
+    inside = _payload(_call(token, keywords=["zebrafish"], time_range={"start": "2026-04-28", "end": "2026-04-28"}))
     assert inside["status"] == "ok" and len(inside["results"]) == 2
-    before = _payload(_call(token, query="zebrafish", time_range={"end": "2026-04-27"}))
+    before = _payload(_call(token, keywords=["zebrafish"], time_range={"end": "2026-04-27"}))
     assert before["status"] == "no_results"
     narrow = _payload(
-        _call(token, query="zebrafish", time_range={"start": "2026-04-28T01:03:00Z", "end": "2026-04-28T01:30:00Z"})
+        _call(token, keywords=["zebrafish"], time_range={"start": "2026-04-28T01:03:00Z", "end": "2026-04-28T01:30:00Z"})
     )
     assert [r["occurred_at"] for r in narrow["results"]] == ["2026-04-28T01:05:00+00:00"]
-    bad = _payload(_call(token, query="zebrafish", time_range={"start": "not-a-date"}))
+    bad = _payload(_call(token, keywords=["zebrafish"], time_range={"start": "not-a-date"}))
     assert bad["status"] == "invalid_argument"
 
 
@@ -159,10 +159,10 @@ def test_source_filter_and_short_cjk_terms(env, token) -> None:
     with env.session.open("a", encoding="utf-8") as fh:
         fh.write(_line("user", "u-3", "2026-04-28T02:00:00Z", "排查失败恢复流程的原因") + "\n")
     _sync()
-    assert _payload(_call(token, query="失败恢复"))["status"] == "ok"
-    assert _payload(_call(token, query="失败"))["status"] == "ok"  # 2 chars: LIKE fallback
-    assert _payload(_call(token, query="zebrafish", sources=["git_log"]))["status"] == "no_results"
-    assert _payload(_call(token, query="zebrafish", sources=["claude_code"]))["status"] == "ok"
+    assert _payload(_call(token, keywords=["失败恢复"]))["status"] == "ok"
+    assert _payload(_call(token, keywords=["失败"]))["status"] == "ok"  # 2 chars: LIKE fallback
+    assert _payload(_call(token, keywords=["zebrafish"], sources=["git_log"]))["status"] == "no_results"
+    assert _payload(_call(token, keywords=["zebrafish"], sources=["claude_code"]))["status"] == "ok"
 
 
 # ── resume / no duplicates ────────────────────────────────────────────────────
@@ -234,8 +234,8 @@ def test_fake_secret_redacted_in_db_and_fts(env, token) -> None:
         "SELECT count(*) FROM raw_events WHERE metadata_json LIKE '%FAKE0000%'",
     ):
         assert conn.execute(blob).fetchone()[0] == 0
-    assert _payload(_call(token, query="FAKE0000"))["status"] == "no_results"
-    assert _payload(_call(token, query="leak"))["status"] == "ok"
+    assert _payload(_call(token, keywords=["FAKE0000"]))["status"] == "no_results"
+    assert _payload(_call(token, keywords=["leak"]))["status"] == "ok"
 
 
 # ── auth ──────────────────────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ def test_fake_secret_redacted_in_db_and_fts(env, token) -> None:
 @pytest.mark.parametrize("bad", [None, "", "kp_wrong-token"])
 def test_missing_or_wrong_token_is_denied_without_data(env, token, bad) -> None:
     _sync()
-    result = _call(bad, query="zebrafish")
+    result = _call(bad, keywords=["zebrafish"])
     assert result.isError is True
     data = _payload(result)
     assert data == {
@@ -258,15 +258,15 @@ def test_missing_or_wrong_token_is_denied_without_data(env, token, bad) -> None:
 def test_revoked_token_denied_immediately_and_other_client_unaffected(env) -> None:
     _sync()
     t_a, t_b = auth.create_grant("claude"), auth.create_grant("codex")
-    assert _payload(_call(t_a, query="zebrafish"))["status"] == "ok"
+    assert _payload(_call(t_a, keywords=["zebrafish"]))["status"] == "ok"
     assert auth.revoke_grants("claude") == 1
-    assert _payload(_call(t_a, query="zebrafish"))["status"] == "permission_denied"
-    assert _payload(_call(t_b, query="zebrafish"))["status"] == "ok"
+    assert _payload(_call(t_a, keywords=["zebrafish"]))["status"] == "permission_denied"
+    assert _payload(_call(t_b, keywords=["zebrafish"]))["status"] == "ok"
 
 
 def test_token_plaintext_never_stored(env, token) -> None:
     _sync()
-    _call(token, query="zebrafish")
+    _call(token, keywords=["zebrafish"])
     row = get_conn().execute("SELECT * FROM access_grants").fetchone()
     assert token not in tuple(row)
     assert row["token_hash"] == auth.hash_token(token) and len(row["token_hash"]) == 64
@@ -333,7 +333,7 @@ def test_stdio_subprocess_end_to_end(env, token) -> None:
             async with ClientSession(r, w) as s:
                 await s.initialize()
                 tools = await s.list_tools()
-                res = await s.call_tool("search_context", {"query": "zebrafish"})
+                res = await s.call_tool("search_context", {"keywords": ["zebrafish"]})
                 return [t.name for t in tools.tools], json.loads(res.content[0].text)
 
     names, ok = asyncio.run(run({}))
@@ -390,7 +390,7 @@ def test_long_message_tail_is_searchable_but_snippet_stays_short(env, token) -> 
     _sync()
     stored = get_conn().execute("SELECT content_text FROM raw_events WHERE external_id = 'sess-1:u-long'").fetchone()[0]
     assert stored.endswith("narwhalquux tail")
-    data = _payload(_call(token, query="narwhalquux"))
+    data = _payload(_call(token, keywords=["narwhalquux"]))
     assert data["status"] == "ok" and len(data["results"]) == 1
     snippet = data["results"][0]["snippet"]
     assert "narwhalquux" in snippet and len(snippet) < 300
