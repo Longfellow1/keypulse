@@ -409,8 +409,6 @@ def test_healthcheck_does_not_trigger_self_heal_after_two_degraded_checks(monkey
         "keypulse.health.check.evaluate_delivery_health",
         lambda: DeliveryHealth(
             alerts=[render_alert(level="critical", source="daily", message="今日日报未生成", suggested_action="补跑")],
-            run_record_ok=False,
-            run_record_reason="missing",
             watcher_counts={"keyboard_chunk": 0, "clipboard": 0},
             degraded=True,
         ),

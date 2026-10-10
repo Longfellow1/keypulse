@@ -34,17 +34,41 @@ def test_install_launchd_writes_plists_with_absolute_keypulse_path(monkeypatch, 
     launch_agents = tmp_path / "Library" / "LaunchAgents"
     daemon_plist = launch_agents / "com.keypulse.daemon.plist"
     health_plist = launch_agents / "com.keypulse.healthcheck.plist"
-    daily_plist = launch_agents / "com.keypulse.obsidian-sync.plist"
-    hourly_plist = launch_agents / "com.keypulse.obsidian-sync-hourly.plist"
-    for path in (daemon_plist, health_plist, daily_plist, hourly_plist):
+    for path in (daemon_plist, health_plist):
         assert path.exists()
+    assert not (launch_agents / "com.keypulse.obsidian-sync.plist").exists()
+    assert not (launch_agents / "com.keypulse.obsidian-sync-hourly.plist").exists()
 
     payload = plistlib.loads(daemon_plist.read_bytes())
     assert payload["ProgramArguments"] == [str(executable), "serve"]
     assert payload["StandardOutPath"] == str(tmp_path / ".keypulse" / "logs" / "daemon.log")
 
-    hourly = plistlib.loads(hourly_plist.read_bytes())
-    assert hourly["ProgramArguments"] == [str(executable), "obsidian", "sync", "--incremental"]
+
+def test_install_launchd_removes_legacy_obsidian_plists(monkeypatch, tmp_path):
+    executable = tmp_path / "bin" / "keypulse"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+    launch_agents = tmp_path / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True)
+    legacy = [
+        launch_agents / "com.keypulse.obsidian-sync.plist",
+        launch_agents / "com.keypulse.obsidian-sync-hourly.plist",
+    ]
+    for path in legacy:
+        path.write_text("legacy", encoding="utf-8")
+
+    booted_out: list[Path] = []
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr("keypulse.cli._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("keypulse.cli._launchd_bootout", lambda path: booted_out.append(path) or True)
+
+    result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
+
+    assert result.exit_code == 0
+    assert all(not path.exists() for path in legacy)
+    assert sorted(booted_out) == sorted(legacy)
 
 
 def test_install_launchd_preserves_custom_plist_without_force(monkeypatch, tmp_path):
@@ -80,7 +104,6 @@ def test_install_init_creates_runtime_without_overwriting_config(monkeypatch, tm
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr("keypulse.cli._keypulse_executable_path", lambda: executable)
-    monkeypatch.setattr("keypulse.cli.resolve_active_sink", lambda cfg, persist=False: None)
 
     result = CliRunner().invoke(main, ["install", "init", "--no-launchd"])
 
@@ -88,4 +111,4 @@ def test_install_init_creates_runtime_without_overwriting_config(monkeypatch, tm
     assert (tmp_path / ".keypulse" / "logs").exists()
     assert (tmp_path / ".keypulse" / "keypulse.db").exists()
     assert config_path.read_text(encoding="utf-8") == "[app]\nretention_days = 99\n"
-    assert "keypulse setup" in result.output
+    assert "keypulse doctor" in result.output

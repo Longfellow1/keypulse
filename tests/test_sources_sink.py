@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from keypulse.quality.entity_extractor import extract_named_entities
+from keypulse.sources.entity_extractor import extract_named_entities
 from keypulse.sources.sink import semantic_event_to_raw_event
 from keypulse.sources.types import SemanticEvent
 
@@ -105,7 +105,7 @@ def test_safari_history_url_query_is_removed_in_entities(monkeypatch) -> None:
     assert entities["urls"] == ["https://apple.com/cn"]
 
 
-def test_quality_entity_extractor_returns_deduped_named_entities() -> None:
+def test_entity_extractor_returns_deduped_named_entities() -> None:
     event = _event(
         "claude_code",
         intent="实现 timeline cache 并修复 sync bug",

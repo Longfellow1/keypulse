@@ -11,8 +11,6 @@ dependencies = [
     "click>=8.1",
     "rich>=13.7",
     "pydantic>=2.5",
-    "pydantic-settings>=2.0",
-    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

@@ -103,23 +103,6 @@ def _watcher_names(cfg: Config) -> list[str]:
     return names
 
 
-def _latest_daily_sync(vault_path: str, checked_at: datetime) -> tuple[str | None, str | None, bool]:
-    daily_dir = Path(vault_path).expanduser() / "Daily"
-    if not daily_dir.exists():
-        return None, None, True
-
-    files = [path for path in daily_dir.rglob("*") if path.is_file()]
-    if not files:
-        return None, None, True
-
-    latest = max(files, key=lambda path: path.stat().st_mtime)
-    mtime = datetime.fromtimestamp(latest.stat().st_mtime, tz=timezone.utc)
-    date_match = re.search(r"\d{4}-\d{2}-\d{2}", latest.name)
-    age_sec = (checked_at - mtime).total_seconds()
-    is_stale = age_sec > 3 * 3600
-    return _json_iso(mtime), date_match.group(0) if date_match else None, is_stale
-
-
 def _speaker_mislabel_ratio(checked_at: datetime) -> float:
     conn = get_conn()
     cutoff = (checked_at - timedelta(hours=1)).isoformat()
@@ -222,16 +205,6 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
             }
         )
 
-    sync_last_at, sync_last_date, sync_stale = _latest_daily_sync(cfg.obsidian.vault_path, checked_at)
-    if sync_stale:
-        alerts.append(
-            {
-                "severity": "warn",
-                "code": "SYNC_STALE",
-                "message": "Daily 同步文件已久未更新，或 Daily 目录暂无可用文件",
-            }
-        )
-
     if not config_loadable:
         alerts.append(
             {
@@ -241,7 +214,7 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
             }
         )
 
-    capabilities_snapshot, capture_error_code, llm_error_code, paused_flag = _capabilities_snapshot()
+    capabilities_snapshot, capture_error_code, paused_flag = _capabilities_snapshot()
     delivery = evaluate_delivery_health()
     alerts_path = HEALTH_JSON_PATH.parent / "alerts.json"
     try:
@@ -279,14 +252,8 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
             "key_watchers_enabled": watcher_names,
             "speaker_ratio_system_in_user_source_last_1h": ratio,
         },
-        "sync": {
-            "last_daily_sync_at": sync_last_at,
-            "last_daily_file_date": sync_last_date,
-        },
         "alerts": normalized_alerts,
         "product_status": {
-            "run_record_ok": delivery.run_record_ok,
-            "run_record_reason": delivery.run_record_reason,
             "watcher_emit_counts_24h": delivery.watcher_counts,
             "alerts_path": str(alerts_path),
             "degraded_streak": degraded_streak,
@@ -295,7 +262,6 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
         "self_heal": self_heal_result,
         "capabilities": capabilities_snapshot,
         "capture_error_code": capture_error_code,
-        "llm_error_code": llm_error_code,
         "paused": paused_flag,
     }
     write_health_report(HEALTH_JSON_PATH, result)
@@ -359,11 +325,11 @@ def _trigger_self_heal() -> dict[str, Any]:
     }
 
 
-def _capabilities_snapshot() -> tuple[dict[str, Any], str, str, bool]:
+def _capabilities_snapshot() -> tuple[dict[str, Any], str, bool]:
     """Read latest capability states from the state repo and derive compat fields.
 
-    Returns (capabilities_dict, capture_error_code, llm_error_code, paused).
-    Falls back to ({}, "", "", False) on any error so health report generation
+    Returns (capabilities_dict, capture_error_code, paused).
+    Falls back to ({}, "", False) on any error so health report generation
     never fails because of capability bugs.
     """
     from keypulse.store.repository import get_state
@@ -372,19 +338,17 @@ def _capabilities_snapshot() -> tuple[dict[str, Any], str, str, bool]:
         capabilities_raw = load_states_raw()
         states = load_states()
     except Exception:
-        return {}, "", "", False
+        return {}, "", False
 
-    from keypulse.app import _CAPTURE_FACT_CAPS, _LLM_FACT_CAPS
+    from keypulse.app import _CAPTURE_FACT_CAPS
 
     registry = get_default_registry()
     capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS) if states else None
-    llm_failure = registry.select_failure(states, names=_LLM_FACT_CAPS) if states else None
     capture_code = "" if capture_failure is None else capture_failure.state.code
-    llm_code = "" if llm_failure is None else llm_failure.state.code
 
     try:
         paused = str(get_state("status") or "running").strip() == "paused"
     except Exception:
         paused = False
 
-    return capabilities_raw, capture_code, llm_code, paused
+    return capabilities_raw, capture_code, paused

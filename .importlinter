@@ -10,9 +10,10 @@ root_packages =
     CoreFoundation
     Vision
     WebKit
+    requests
 
 [importlinter:contract:core-no-legacy]
-name = Core must not import legacy (pipeline / obsidian / quality / model gateway)
+name = Core must not import an HTTP client (V1 core has no model gateway / LLM client)
 type = forbidden
 source_modules =
     keypulse.app
@@ -26,14 +27,11 @@ source_modules =
     keypulse.hud
     keypulse.capabilities
     keypulse.health
-    keypulse.integrations
     keypulse.observability
     keypulse.services
     keypulse.utils
 forbidden_modules =
-    keypulse.pipeline
-    keypulse.obsidian
-    keypulse.quality
+    requests
 
 [importlinter:contract:macos-libs-only-in-platform-layers]
 name = macOS-only libs (pyobjc) only in capture / hud / startup layers
@@ -44,14 +42,10 @@ source_modules =
     keypulse.sources
     keypulse.privacy
     keypulse.services
-    keypulse.integrations
     keypulse.observability
     keypulse.utils
     keypulse.health
     keypulse.config
-    keypulse.pipeline
-    keypulse.obsidian
-    keypulse.quality
     keypulse.capabilities
 forbidden_modules =
     AppKit

@@ -8,9 +8,7 @@ PLIST_SRC := $(ROOT)/integrations/launchd
 PLIST_DST := $(HOME)/Library/LaunchAgents
 LAUNCH_AGENTS := \
 	$(PLIST_DST)/com.keypulse.daemon.plist \
-	$(PLIST_DST)/com.keypulse.healthcheck.plist \
-	$(PLIST_DST)/com.keypulse.obsidian-sync.plist \
-	$(PLIST_DST)/com.keypulse.obsidian-sync-hourly.plist
+	$(PLIST_DST)/com.keypulse.healthcheck.plist
 
 bootstrap:
 	rm -rf $(ROOT)/.venv

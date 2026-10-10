@@ -41,9 +41,7 @@ _CAPTURE_PROBE_CAPS = {
     # "screen_recording_permission",
     "appkit_runtime",
 }
-_LLM_FACT_CAPS = {"llm_backend"}
 _COMPAT_CAPTURE_CAPS = _CAPTURE_FACT_CAPS
-_COMPAT_LLM_CAPS = _LLM_FACT_CAPS
 _AX_DEPENDENT_FACT_CAPS = {
     "ax_text_watcher",
     "keyboard_chunk_watcher",
@@ -96,9 +94,7 @@ def _run_capability_self_check(registry: CapabilityRegistry) -> None:
     save_capability_states(states)
 
     capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS)
-    llm_failure = registry.select_failure(states, names=_LLM_FACT_CAPS)
     set_state("capture_error_code", "" if capture_failure is None else capture_failure.state.code)
-    set_state("llm_error_code", "" if llm_failure is None else llm_failure.state.code)
 
 
 def _apply_ax_denied_fact_overrides(states: dict[str, HealthState]) -> dict[str, HealthState]:
@@ -206,9 +202,6 @@ def run(config: Optional[Config] = None):
         manager.start()
         logger.info("KeyPulse daemon running")
 
-        # Legacy report / Obsidian triggers (T2/T3) no longer run in the daemon.
-        # They live in keypulse.pipeline.sync_triggers; use `keypulse daily` /
-        # `keypulse obsidian ...` CLI commands instead.
         scheduler.start()
 
         while True:

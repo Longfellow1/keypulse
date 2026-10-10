@@ -57,7 +57,6 @@ OPTIONS = {
     "includes": [
         "click",
         "pydantic",
-        "pydantic_settings",
         "Vision",
     ],
     "excludes": ["tkinter", "matplotlib", "pytest"],

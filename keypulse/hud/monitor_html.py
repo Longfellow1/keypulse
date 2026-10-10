@@ -54,20 +54,7 @@ def _signal_tags(reason: str) -> list[str]:
 def _signal_item(signal: dict[str, object]) -> str:
     title = str(signal.get("title") or "未命名提示")
     reason = str(signal.get("reason") or "")
-    obsidian_url = str(signal.get("obsidian_url") or "")
     tags = "".join(f'<span class="{_tag_class(tag)}">{escape(tag)}</span>' for tag in _signal_tags(reason))
-    if obsidian_url:
-        href = f"keypulse://action/open-url?u={quote(obsidian_url, safe='')}"
-        return f"""
-        <a class="sugg-item" href="{href}" title="在 Obsidian 中打开">
-          <div class="sugg-icon">{escape(_signal_icon(title))}</div>
-          <div class="sugg-text">
-            <div class="sugg-title">{escape(title)}</div>
-            <div class="sugg-tags">{tags}</div>
-          </div>
-          <div class="sugg-arrow">→</div>
-        </a>
-        """
     return f"""
         <div class="sugg-item">
           <div class="sugg-icon">{escape(_signal_icon(title))}</div>
@@ -163,36 +150,13 @@ def _today_card(today_focus: str) -> str:
     """
 
 
-def _weekly_echo_top_banner(snapshot: HUDSnapshot) -> str:
-    text = (snapshot.weekly_echo_text or "").strip()
-    target_url = (snapshot.weekly_echo_url or "").strip()
-    week = (snapshot.weekly_echo_week or "").strip()
-    if not text or not target_url or not week:
-        return ""
-    href = (
-        "keypulse://action/open-weekly-echo"
-        f"?u={quote(target_url, safe='')}"
-        f"&week={quote(week, safe='')}"
-    )
-    return f'<a class="weekly-echo-banner" href="{href}" title="打开本周周报">{escape(text)}</a>'
-
-
-def _weekly_notice_banner(snapshot: HUDSnapshot) -> str:
-    notice = (snapshot.weekly_notice or "").strip()
-    if not notice:
-        return ""
-    return f'<div class="weekly-notice">{escape(notice)}</div>'
-
-
 def build_monitor_data(snapshot: HUDSnapshot, *, capture_status: str) -> dict[str, object]:
     is_running = capture_status != "paused"
     return {
         "dotClass": _dot_class(snapshot.service_status),
         "statusPillClass": _status_pill_class(snapshot.service_status),
         "statusLabel": str(snapshot.status_label or ""),
-        "weeklyEchoHtml": _weekly_echo_top_banner(snapshot),
         "hintHtml": _hint_bar(snapshot.hint_message, snapshot.hint_action),
-        "weeklyNoticeHtml": _weekly_notice_banner(snapshot),
         "todayFocus": str(snapshot.today_focus or ""),
         "todayInputClass": "today-input filled" if snapshot.today_focus else "today-input",
         "statsHtml": (
@@ -211,9 +175,7 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
     dot_class = escape(str(data["dotClass"]))
     status_pill_class = escape(str(data["statusPillClass"]))
     status_label = escape(str(data["statusLabel"]))
-    weekly_echo_html = str(data["weeklyEchoHtml"])
     hint_html = str(data["hintHtml"])
-    weekly_notice_html = str(data["weeklyNoticeHtml"])
     today_focus = str(data["todayFocus"])
     today_input_class = escape(str(data["todayInputClass"]))
     stats_html = str(data["statsHtml"])
@@ -296,27 +258,6 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
     .status-pill.warn {{ color: #b05d00; border-color: #f0c98a; background: #fff5e6; }}
     .status-pill.err  {{ color: #b00020; border-color: #f0a8a8; background: #ffeaea; }}
     .status-pill.gray {{ color: var(--text-tertiary); }}
-    .weekly-echo-banner {{
-      font-size: 11.5px;
-      font-weight: 600;
-      color: #7a4500;
-      padding: 3px 8px;
-      border-radius: 999px;
-      border: 0.5px solid #f0c98a;
-      background: #fff8e8;
-      white-space: nowrap;
-    }}
-    .weekly-echo-banner:hover {{ background: #ffefc9; }}
-    .weekly-notice {{
-      margin: 0 18px 12px;
-      padding: 8px 11px;
-      border-radius: 8px;
-      border: 0.5px solid #f0c98a;
-      background: #fff8e8;
-      color: #7a4500;
-      font-size: 11.5px;
-      line-height: 1.45;
-    }}
 
     /* Hint bar (异常时) */
     .hint-bar {{
@@ -531,13 +472,11 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
         <span class="brand">KeyPulse</span>
       </div>
       <div class="hdr-right">
-        <span id="weeklyEchoSlot">{weekly_echo_html}</span>
         <span class="{status_pill_class}">{status_label}</span>
       </div>
     </div>
 
     <div id="hintSlot">{hint_html}</div>
-    <div id="weeklyNoticeSlot">{weekly_notice_html}</div>
 
     <div class="today-card">
       <span class="today-mark">✦</span>
@@ -582,9 +521,6 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
         var dot = document.querySelector('.dot');
         if (dot) dot.className = safeText(data.dotClass) || 'dot';
 
-        var weeklyEchoSlot = document.getElementById('weeklyEchoSlot');
-        if (weeklyEchoSlot) weeklyEchoSlot.innerHTML = safeText(data.weeklyEchoHtml);
-
         var statusPill = document.querySelector('.status-pill');
         if (statusPill) {{
           statusPill.className = safeText(data.statusPillClass) || 'status-pill';
@@ -593,9 +529,6 @@ def build_monitor_html(snapshot: HUDSnapshot, *, capture_status: str) -> str:
 
         var hintSlot = document.getElementById('hintSlot');
         if (hintSlot) hintSlot.innerHTML = safeText(data.hintHtml);
-
-        var weeklyNoticeSlot = document.getElementById('weeklyNoticeSlot');
-        if (weeklyNoticeSlot) weeklyNoticeSlot.innerHTML = safeText(data.weeklyNoticeHtml);
 
         var input = document.getElementById('todayFocus');
         if (input) {{
