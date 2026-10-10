@@ -352,6 +352,7 @@ def test_dedup_hit_on_legacy_row_backfills_provenance(env) -> None:
     inst = legacy.discover()[0]
     since, until = datetime(2000, 1, 1, tzinfo=timezone.utc), datetime(2100, 1, 1, tzinfo=timezone.utc)
     for ev in legacy.read(inst, since, until):
+        ev.metadata.setdefault("dedup_count", 1)  # what the legacy registry path added
         raw = semantic_event_to_raw_event(ev, include_named_entities=False)
         assert raw.source_id is None and raw.external_id is None
         raw.bucket = raw.kind = None  # legacy-style: no provenance at all
