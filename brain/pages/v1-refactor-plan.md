@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [v1, refactor, plan]
 created: "2026-10-10T14:19:24"
-updated: "2026-10-10T14:19:30"
+updated: "2026-10-10T14:39:39"
 ---
 
 <!-- compiled_truth -->
@@ -69,3 +69,9 @@ V1 重构计划（docs/KeyPulse_V1_重构计划.md，v1.0，owner 2026-10-10 批
   summary: "Owner approved V1 refactor plan v1.0 on 2026-10-10; milestones M0-M4 mapped to issues #16-#33"
   source: "docs/KeyPulse_V1_重构计划.md"
   affects: [v1-build-by-legacy-extraction, eval-prd-separate, session-handoff-2026-10-10]
+
+- time: 2026-10-10T14:39:39
+  kind: evidence
+  summary: "M0 done 2026-10-10: PR #34 merged (3b2f726), tag v1-m0. Daemon no longer runs T2/T3 daily/Obsidian triggers or self-heal daily rerun; daily still produced by launchd 'keypulse obsidian sync'. .importlinter 3 contracts + import-lint CI (macos-latest) green. Deferred to M3: 3 capability permission checks still import pyobjc (ignore_imports). gh OAuth token lacks workflow scope; push workflow-file changes via ssh://git@ssh.github.com:443."
+  source: "PR #34"
+  affects: [v1-refactor-plan]
