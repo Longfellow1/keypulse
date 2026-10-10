@@ -62,14 +62,40 @@ def _write_claude_code(root: Path, events: list[FxEvent]) -> Path:
 
 
 def _write_codex(root: Path, events: list[FxEvent]) -> Path:
-    path = root / "codex" / "history.jsonl"
-    path.parent.mkdir(parents=True)
-    lines = [
-        json.dumps({"session_id": ev.group, "ts": int(_dt(ev.ts).timestamp()), "text": ev.text}, ensure_ascii=False)
-        for ev in sorted(events, key=lambda e: e.ts)
-    ]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return path
+    """Rollout tree (sessions/YYYY/MM/DD/rollout-*.jsonl) in the current Codex shape, with noise records."""
+    sessions = root / "codex" / "sessions"
+    by_session: dict[str, list[FxEvent]] = defaultdict(list)
+    for ev in events:
+        by_session[ev.group].append(ev)
+    for sid, evs in by_session.items():
+        evs = sorted(evs, key=lambda e: e.ts)
+        day = _dt(evs[0].ts)
+        d = sessions / f"{day:%Y}" / f"{day:%m}" / f"{day:%d}"
+        d.mkdir(parents=True, exist_ok=True)
+        counter = [0]
+
+        def rec(ts: str, rtype: str, payload: dict) -> str:
+            counter[0] += 1
+            return json.dumps(
+                {"timestamp": _iso_z(ts), "ordinal": counter[0], "type": rtype, "payload": payload}, ensure_ascii=False
+            )
+
+        def msg(role: str, kind: str, text: str) -> dict:
+            return {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}
+
+        lines = [
+            rec(evs[0].ts, "session_meta", {"session_id": sid, "id": sid, "timestamp": _iso_z(evs[0].ts), "cwd": f"/tmp/proj/{sid}"}),
+            rec(evs[0].ts, "response_item", msg("developer", "input_text", "<permissions instructions> sandbox")),
+            rec(evs[0].ts, "response_item", msg("user", "input_text", "<environment_context><cwd>/tmp</cwd></environment_context>")),
+        ]
+        for ev in evs:
+            lines.append(rec(ev.ts, "turn_context", {"cwd": f"/tmp/proj/{sid}"}))
+            lines.append(rec(ev.ts, "response_item", {"type": "reasoning", "summary": []}))
+            kind = "output_text" if ev.actor == "assistant" else "input_text"
+            lines.append(rec(ev.ts, "response_item", msg(ev.actor, kind, ev.text)))
+            lines.append(rec(ev.ts, "response_item", {"type": "custom_tool_call_output", "output": "ok"}))
+        (d / f"rollout-{day:%Y-%m-%dT%H-%M-%S}-{sid}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return sessions
 
 
 def _write_zsh(root: Path, events: list[FxEvent]) -> Path:
@@ -178,8 +204,8 @@ def build_plugins(root: Path) -> dict[str, object]:
         "claude_code": ClaudeCodeSource(
             projects_root=_write_claude_code(root, grouped["claude_code"]), self_exclude_dirs=set(), use_cursor=True
         ),
-        "codex_cli": CodexCliSource(history_path=_write_codex(root, grouped["codex_cli"])),
-        "git_log": GitLogSource(search_roots=[_write_git(root, grouped["git_log"])], cwd=root),
+        "codex_cli": CodexCliSource(sessions_root=_write_codex(root, grouped["codex_cli"]), use_cursor=True),
+        "git_log": GitLogSource(search_roots=[_write_git(root, grouped["git_log"])], cwd=root, use_cursor=True),
         "zsh_history": ZshHistorySource(history_path=_write_zsh(root, grouped["zsh_history"])),
         "chrome_history": ChromeHistorySource(profiles_root=_write_chrome(root, grouped["chrome_history"])),
         "safari_history": SafariHistorySource(history_path=_write_safari(root, grouped["safari_history"])),

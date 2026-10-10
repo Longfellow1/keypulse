@@ -94,3 +94,9 @@
 {"id":"c01","variant":"conflict","style":"kw","query":"deadline","keywords":["deadline"],"newest":"cc-17","stale":"cc-16"}
 {"id":"c02","variant":"conflict","style":"kw","query":"发布 deadline","keywords":["发布","deadline"],"newest":"cc-17","stale":"cc-16"}
 {"id":"c03","variant":"conflict","style":"kw","query":"评审会","keywords":["评审会"],"newest":"cc-17","stale":"cc-16"}
+{"id":"x01","variant":"answerable","scenario":"cross","style":"kw","query":"rollout","keywords":["rollout"],"gold":["cc-19","cx-06","cx-07","gl-06"]}
+{"id":"x02","variant":"answerable","scenario":"cross","style":"kw","query":"byte-offset resume","keywords":["byte-offset","resume"],"gold":["gl-06"]}
+{"id":"x03","variant":"answerable","scenario":"cross","style":"nl","query":"what did the Codex session parser skip as noise","keywords":["rollout","noise","developer"],"gold":["cx-06","cx-07"]}
+{"id":"x04","variant":"answerable","scenario":"cross","style":"kw","query":"rollout in my codex sessions","keywords":["rollout"],"sources":["codex_cli"],"gold":["cx-06","cx-07"]}
+{"id":"x05","variant":"answerable","scenario":"cross","style":"kw","query":"rollout in my commits","keywords":["rollout"],"sources":["git_log"],"gold":["gl-06"]}
+{"id":"x06","variant":"answerable","scenario":"cross","style":"kw","query":"rollout in Claude sessions","keywords":["rollout"],"sources":["claude_code"],"gold":["cc-19"]}

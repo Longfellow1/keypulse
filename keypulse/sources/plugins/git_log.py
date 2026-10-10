@@ -4,13 +4,16 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
-from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
+from keypulse.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInstance, SemanticEvent
 from keypulse.utils.logging import get_logger
 
 
 LOGGER = get_logger("sources.git_log")
+
+_OVERLAP_SEC = 2 * 86400
+_FIRST_SYNC_MAX_COMMITS = 20000
 
 
 class GitLogSource(DataSource):
@@ -19,7 +22,17 @@ class GitLogSource(DataSource):
     liveness = "always"
     description = "Git commit history scanner"
 
-    def __init__(self, *, search_roots: Iterable[Path] | None = None, cwd: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        search_roots: Iterable[Path] | None = None,
+        cwd: Path | None = None,
+        use_cursor: bool = False,
+    ) -> None:
+        # use_cursor=True: per-repo incremental sync driven by a committer-time
+        # high-water mark in `sync_cursors`; the since/until window is ignored.
+        self._use_cursor = use_cursor
+        self._pending_cursors: dict[int, dict[str, Any]] = {}
         self._cwd = (cwd or Path.cwd()).resolve()
         self._search_roots = list(search_roots) if search_roots is not None else self._default_roots(self._cwd)
 
@@ -67,16 +80,30 @@ class GitLogSource(DataSource):
         if shutil.which("git") is None:
             return iter(())
 
-        since_utc = since.astimezone(timezone.utc)
-        until_utc = until.astimezone(timezone.utc)
+        source_id = None
+        prior_ts: int | None = None
+        if self._use_cursor:
+            from keypulse.store.sync_repo import ensure_source, get_cursor
+
+            source_id = ensure_source(self.name, instance.locator)
+            last = get_cursor(source_id).get("last_commit_ts")
+            prior_ts = last if isinstance(last, int) else None
+            if prior_ts is not None:
+                # overlap so same-second / skewed commits are not missed; external_id dedups
+                range_args = [f"--since=@{max(prior_ts - _OVERLAP_SEC, 0)}"]
+            else:
+                range_args = [f"--max-count={_FIRST_SYNC_MAX_COMMITS}"]
+        else:
+            since_utc = since.astimezone(timezone.utc)
+            until_utc = until.astimezone(timezone.utc)
+            range_args = [f"--since={since_utc.isoformat()}", f"--until={until_utc.isoformat()}"]
         cmd = [
             "git",
             "-C",
             instance.locator,
             "log",
-            f"--since={since_utc.isoformat()}",
-            f"--until={until_utc.isoformat()}",
-            "--pretty=format:%H%x09%aI%x09%an%x09%s%x09%b%x00",
+            *range_args,
+            "--pretty=format:%H%x09%cI%x09%an%x09%s%x09%b%x00",
             "--no-merges",
         ]
 
@@ -95,7 +122,29 @@ class GitLogSource(DataSource):
             )
             return iter(())
 
-        return self._parse_git_log(instance, result.stdout)
+        events = list(self._parse_git_log(instance, result.stdout))
+        if source_id is not None:
+            # `recent` = hashes inside the overlap window, so the overlap re-scan yields only new commits.
+            recent: dict[str, int] = dict(get_cursor(source_id).get("recent") or {})
+            events = [e for e in events if e.external_id not in recent]
+            for e in events:
+                recent[str(e.external_id)] = int(e.time.timestamp())
+            high = max([prior_ts or 0, *recent.values()])
+            recent = {h: t for h, t in recent.items() if t >= high - _OVERLAP_SEC}
+            if high:
+                self._pending_cursors[source_id] = {"last_commit_ts": high, "recent": recent}
+        return iter(events)
+
+    def commit_cursors(self, *, failed: bool = False) -> None:
+        """Persist each repo's high-water mark once the registry has stored the events."""
+        from keypulse.store.sync_repo import record_sync_error, save_cursor
+
+        pending, self._pending_cursors = self._pending_cursors, {}
+        for source_id, cursor in pending.items():
+            if failed:
+                record_sync_error(source_id, "persist failed; cursor not advanced")
+            else:
+                save_cursor(source_id, cursor)
 
     def _parse_git_log(self, instance: DataSourceInstance, raw: str) -> Iterator[SemanticEvent]:
         repo_name = Path(instance.locator).name
@@ -118,7 +167,7 @@ class GitLogSource(DataSource):
                 event_time = datetime.fromisoformat(author_time).astimezone(timezone.utc)
             except ValueError:
                 continue
-            intent = (f"{subject}\n\n{body}" if body else subject)[:1500]
+            intent = (f"{subject}\n\n{body}" if body else subject)[:MAX_INTENT_CHARS]
             yield SemanticEvent(
                 time=event_time,
                 source=self.name,
@@ -130,7 +179,12 @@ class GitLogSource(DataSource):
                 metadata={
                     "repo_path": instance.locator,
                     "full_hash": commit_hash,
+                    "repo_name": repo_name,
                 },
+                external_id=commit_hash,
+                source_locator=instance.locator,
+                evidence_locator=f"{instance.locator}@{commit_hash}",
+                kind="commit",
             )
 
     def _default_roots(self, cwd: Path) -> list[Path]:
