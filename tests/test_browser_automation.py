@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
-from keypulse.capabilities.builtin import browser_automation
+from keypulse.capture import browser_automation_state as browser_automation
 
 
 def _state_repo(monkeypatch):

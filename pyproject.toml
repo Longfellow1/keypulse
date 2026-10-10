@@ -27,6 +27,10 @@ macos = [
 build = [
     "py2app>=0.28",
 ]
+dev = [
+    "pytest>=8.0",
+    "import-linter>=2.0",
+]
 
 [project.scripts]
 keypulse = "keypulse.cli:main"

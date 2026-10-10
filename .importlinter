@@ -1,0 +1,77 @@
+[importlinter]
+include_external_packages = True
+root_packages =
+    keypulse
+    AppKit
+    Foundation
+    Quartz
+    objc
+    ApplicationServices
+    CoreFoundation
+    Vision
+    WebKit
+
+[importlinter:contract:core-no-legacy]
+name = Core must not import legacy (pipeline / obsidian / quality / model gateway)
+type = forbidden
+source_modules =
+    keypulse.app
+    keypulse.config
+    keypulse.permissions
+    keypulse.store
+    keypulse.search
+    keypulse.sources
+    keypulse.capture
+    keypulse.privacy
+    keypulse.hud
+    keypulse.capabilities
+    keypulse.health
+    keypulse.integrations
+    keypulse.observability
+    keypulse.services
+    keypulse.utils
+forbidden_modules =
+    keypulse.pipeline
+    keypulse.obsidian
+    keypulse.quality
+
+[importlinter:contract:macos-libs-only-in-platform-layers]
+name = macOS-only libs (pyobjc) only in capture / hud / startup layers
+type = forbidden
+source_modules =
+    keypulse.store
+    keypulse.search
+    keypulse.sources
+    keypulse.privacy
+    keypulse.services
+    keypulse.integrations
+    keypulse.observability
+    keypulse.utils
+    keypulse.health
+    keypulse.config
+    keypulse.pipeline
+    keypulse.obsidian
+    keypulse.quality
+    keypulse.capabilities
+forbidden_modules =
+    AppKit
+    Foundation
+    Quartz
+    objc
+    ApplicationServices
+    CoreFoundation
+    Vision
+    WebKit
+allow_indirect_imports = True
+ignore_imports =
+    keypulse.capabilities.builtin.accessibility_permission -> ApplicationServices
+    keypulse.capabilities.builtin.appkit_runtime -> AppKit
+    keypulse.capabilities.builtin.screen_recording_permission -> Quartz
+
+[importlinter:contract:capture-below-capabilities]
+name = capture must not import capabilities (capabilities -> capture is one-way; no cycle)
+type = forbidden
+source_modules =
+    keypulse.capture
+forbidden_modules =
+    keypulse.capabilities

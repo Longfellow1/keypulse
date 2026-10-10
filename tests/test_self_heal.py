@@ -21,7 +21,6 @@ def test_self_heal_happy_path(monkeypatch, tmp_path):
     monkeypatch.setattr(self_heal, "step_restart_daemon", lambda **kwargs: _ok_step("step3_restart"))
     monkeypatch.setattr(self_heal, "step_wait_daemon_ready", lambda **kwargs: _ok_step("step4_ready"))
     monkeypatch.setattr(self_heal, "step_wait_core_emit", lambda **kwargs: _ok_step("step5_core_emit"))
-    monkeypatch.setattr(self_heal, "step_rerun_daily_if_needed", lambda **kwargs: _ok_step("step6_daily"))
 
     result = self_heal.run_self_heal(dry_run=True, source="test")
 
@@ -32,7 +31,6 @@ def test_self_heal_happy_path(monkeypatch, tmp_path):
         "step3_restart",
         "step4_ready",
         "step5_core_emit",
-        "step6_daily",
     ]
 
 

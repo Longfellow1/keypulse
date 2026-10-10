@@ -8,7 +8,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from keypulse.quality.entity_extractor import extract_named_entities
+from keypulse.sources.entity_extractor import extract_named_entities
 from keypulse.sources.types import SemanticEvent
 from keypulse.store.models import RawEvent
 from keypulse.store.repository import get_conn

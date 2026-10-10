@@ -14,11 +14,9 @@ from typing import Any
 from keypulse.app import _run_capability_self_check
 from keypulse.capabilities.registry import get_default_registry
 from keypulse.capabilities.store import load_states_raw
-from keypulse.pipeline.daily_orchestrator import run_daily
 from keypulse.store.db import get_conn
 from keypulse.store.repository import get_state, set_state
 from keypulse.utils.atomic_io import atomic_write_text
-from keypulse.utils.dates import resolve_local_date
 from keypulse.utils.paths import get_data_dir
 
 _SELF_HEAL_RUNNING_KEY = "self_heal_running"
@@ -67,10 +65,6 @@ def run_self_heal(*, dry_run: bool = False, source: str = "hud") -> dict[str, An
 
         _publish_progress("自愈进行中：等待核心数据恢复")
         steps.append(step_wait_core_emit(deadline=deadline, baseline_ts=kickstart_ts, dry_run=dry_run))
-        _ensure_ok(steps[-1], deadline)
-
-        _publish_progress("自愈收尾：检查是否需要补跑今日日报")
-        steps.append(step_rerun_daily_if_needed(deadline=deadline, dry_run=dry_run))
         _ensure_ok(steps[-1], deadline)
 
         _publish_progress("自愈完成：系统已恢复")
@@ -182,41 +176,6 @@ def step_wait_core_emit(*, deadline: float, baseline_ts: str, dry_run: bool) -> 
         "核心数据源仍未恢复",
         "请到 System Settings → Privacy & Security → Accessibility / Input Monitoring 检查 KeyPulse 是否开启",
     )
-
-
-def step_rerun_daily_if_needed(*, deadline: float, dry_run: bool) -> StepResult:
-    if time.monotonic() > deadline:
-        return StepResult("step6_daily", False, "超时，未执行日报补跑", "稍后手动执行 keypulse daily")
-    now_local = datetime.now().astimezone()
-    if (now_local.hour, now_local.minute) < (18, 30):
-        return StepResult("step6_daily", True, "当前未到补跑日报窗口")
-    today = resolve_local_date("today")
-    payload = _today_run_record_payload(today)
-    should_run = payload is None or _run_record_degraded(payload)
-    if not should_run:
-        return StepResult("step6_daily", True, "今日日报已就绪，无需补跑")
-    if dry_run:
-        return StepResult("step6_daily", True, "dry-run: 跳过日报补跑")
-    run_daily(today, trigger="18:00")
-    return StepResult("step6_daily", True, "今日日报补跑完成")
-
-
-def _today_run_record_payload(date_str: str) -> dict[str, Any] | None:
-    path = get_data_dir() / "run_records" / f"{date_str}.json"
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _run_record_degraded(payload: dict[str, Any]) -> bool:
-    stage_status = payload.get("stage_status")
-    if not isinstance(stage_status, dict):
-        return False
-    return any(str(value) != "ok" for value in stage_status.values())
 
 
 def _read_pid(path: Path) -> int | None:
