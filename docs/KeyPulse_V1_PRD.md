@@ -1,3 +1,5 @@
+> **已被 `docs/KeyPulse_V2.md`（KeyPulse V1 PRD｜开发基线 v1.2）取代，本文仅作历史参考。**
+
 # KeyPulse V1 PRD
 
 > **版本定位**：产品基线 · V1  

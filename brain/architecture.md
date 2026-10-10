@@ -2,12 +2,17 @@
 slug: architecture
 title: System architecture
 role: system architecture
-updated: "2026-10-10T10:25:44"
+updated: "2026-10-10T10:51:22"
 ---
 
 # System architecture
 
-## Layers
+## Target direction (V1, 2026-10-10)
+- Core = store, search, privacy, permissions (as-is or light touch); capture, sources, config, utils after refactor. Core exposes retrieval over MCP; it does not call an LLM ([[core-no-embedded-llm]]).
+- Legacy `pipeline/`, `obsidian/`, `hud/` are frozen to bug fixes; isolation is enforced by an import-boundary contract, not by repo split ([[refactor-in-place-with-legacy-tag]]).
+- Blockers and candidates: [[legacy-extraction-blockers]]. Product scope: [[keypulse-v1-local-memory-infra]].
+
+## Layers (current legacy state, as of 2026-10-10)
 ```mermaid
 graph LR
   subgraph Capture

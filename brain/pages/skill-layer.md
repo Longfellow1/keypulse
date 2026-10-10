@@ -4,7 +4,7 @@ title: "Skill layer (propose, evaluate, evolve): planned, not implemented"
 category: project
 status: active
 created: "2026-10-10T10:26:13"
-updated: "2026-10-10T10:26:13"
+updated: "2026-10-10T10:51:13"
 ---
 
 <!-- compiled_truth -->
@@ -33,3 +33,9 @@ Order of work: skill v0 first, then the evolution layer. TODO confirm.
   summary: captured from docs and code
   source: "docs/设计-skill-v0-plan.md; docs/设计-openspace-inspired-keypulse-evolution-plan.md; cli.py eval skill and skill propose placeholders"
   affects: [skill-layer]
+
+- time: 2026-10-10T10:51:13
+  kind: reversal
+  summary: "PRD V1 (2026-10-10) demotes daily/weekly/Obsidian and puts skill generation at P2; skill v0 is no longer the next step"
+  source: "docs/KeyPulse_V1_PRD.md; owner decision 2026-10-10"
+  affects: [skill-layer, keypulse-v1-local-memory-infra]
