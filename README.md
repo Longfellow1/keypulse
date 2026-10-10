@@ -1,8 +1,8 @@
 # KeyPulse
 
-> **A local-first Mac companion that turns your daily work traces into private reflective notes.**
+> **KeyPulse 是给 AI Agent 用的本地记忆层：在本机采集你的活动，经 MCP 提供给 Claude / Codex / Cursor，带出处与访问控制。**
 
-KeyPulse quietly observes your work surface — apps, windows, clipboard boundaries, manual notes — forgets sensitive content before it is stored, and writes daily reflection notes into your own Obsidian vault.
+KeyPulse 静静地记录你的工作活动 —— 你切换的应用、窗口、剪贴板边界、手动笔记 —— 并在敏感信息落盘之前就把它丢掉。
 
 Not a productivity dashboard.
 Not a screen-time tracker.
@@ -10,7 +10,7 @@ Not a cloud surveillance assistant.
 
 A private thinking mirror for knowledge workers.
 
-[English](README.en.md) · [Quick start](#快速开始) · [Obsidian workflow](docs/obsidian-workflow.md) · [Privacy](#隐私一览) · [Roadmap](#当前状态)
+[English](README.en.md) · [快速开始](#快速开始) · [隐私一览](#隐私一览) · [当前状态](#当前状态)
 
 ---
 
@@ -20,22 +20,17 @@ Star KeyPulse if you care about:
 
 - local-first personal AI
 - privacy-preserving activity intelligence
-- Obsidian-native daily reflection
 - AI tools that help you think instead of replacing thought
 
 ---
 
 ## 中文介绍
 
-> **KeyPulse·笔友：一个陪你日常输入的笔友 —— 关注你敲下的每一个碎片，但从不记住任何秘密，每天晚上在 Obsidian 给你留一张小纸条。**
-
-KeyPulse 是一个本地优先的 macOS 同行者。它静静地看着你工作的那层表面 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉，然后每天在你自己的 Obsidian 库里，给你写一页今天的小结。不给你打分，也不替你做事。它陪你做的只有三件：**记录、整理、进步** —— 让日子不至于流过去就不见了，让底下那些模式，慢慢浮上来。
-
-一句话愿景：*一个安静的伙伴，看见细节，不留秘密，帮你每天更清楚一点。*
+KeyPulse 是一个本地优先的 macOS 工具。它在你的机器上采集工作活动 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉。采集到的记忆目前可以通过命令行（CLI）与菜单栏 HUD 查看；经 MCP（一种让 AI 工具读取外部数据的标准协议）把记忆提供给 Claude / Codex / Cursor 的能力**开发中**。
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
-[![Tests](https://img.shields.io/badge/tests-800%2B%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-400%2B%20passing-brightgreen.svg)](tests/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ---
@@ -48,11 +43,7 @@ KeyPulse 是一个本地优先的 macOS 同行者。它静静地看着你工作�
 - **量化自我** —— "本周 87 分"（所以呢？）
 - **AI 助理** —— 它替你做事，于是你不再思考
 
-KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗口标题 —— 不是为了给你打分，而是给一个耐心的观察者足够素材，过几天再回过头跟你说：
-
-> *"这三天你反复回到这个终端 —— 是卡住了，还是其实这才是你真正想做的事？"*
-
-这句话不会 Day 1 就出现。它会在 **Day 5** 出现 —— 当系统已经看了足够久，赢得了开口的资格。
+KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗口标题 —— 目的是给你和你的 AI Agent 一份可回查的个人记忆，而不是给你打分。
 
 ---
 
@@ -70,8 +61,6 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 
 出问题的时候，它不会丢一个错误码给你看。HUD 顶上会出现一行黄字 + **一颗按钮**："辅助功能权限未授权 [打开设置]" —— 点一下直接弹到该去的系统面板。**修复路径，不是错误堆栈。**
 
-晚上的小结写到你自己的 Obsidian 库里，那是它和你慢慢长出来的另一面。
-
 ---
 
 ## 它是什么，它拒绝成为什么
@@ -85,24 +74,12 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 
 ---
 
-## 它说话的口气
-
-| ✗ 机器腔 | ✓ 笔友腔 |
-|---|---|
-| `2026-04-21 · 10 events · top theme: terminal` | "今天你盯着终端 11 小时，我有点担心你的腰。" |
-| `本周效率 87/100` | "这周你开心的时候比上周少，要不明天换个节奏？" |
-| `New theme detected` | "你是不是在想一个新东西？我还没看全，但感觉在酝酿。" |
-
-每一句面向用户的文字都过一道关：**这像笔友写信，还是像管家汇报？** 像后者，就重写。
-
----
-
 ## 里面有什么（工程层）
 
 一些比看起来要难的东西：
 
 ### 🧠 人/机 **说话人模型**
-每条事件带 `speaker: user`（键盘、剪贴板、手动记录）或 `speaker: system`（窗口标题、辅助功能树、OCR）。日报分两栏渲染 —— **你做了什么** vs. **系统显示了什么** —— 你的声音始终是主线，机器的信号永远不压过你。
+每条事件都带上来源标记：`speaker: user`（键盘、剪贴板、手动记录）或 `speaker: system`（窗口标题、辅助功能树、OCR）。你的输入与系统信号从一开始就可以被区分，机器的信号不会冒充你的输入。
 
 ### 🔒 隐私写在架构里，不是写在政策文本里
 - **35 个默认黑名单应用** —— 密码管理器、即时通讯、银行 App。事件在写盘之前就丢掉。
@@ -111,26 +88,13 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 - **隐私窗口检测** —— Safari/Chrome/Firefox 的无痕窗口通过 AX 标题识别后排除。
 
 ### ♻️ 出问题给的是修复路径，不是错误码
-后台工具会死、权限会失效、API 会过期。KeyPulse 默认会死，把恢复写进设计：
+后台工具会死、权限会失效。KeyPulse 默认会死，把恢复写进设计：
 
-- **7 个能力域各自体检** —— 辅助功能权限、采集运行时、剪贴板 watcher、健康新鲜度、LLM 后端…… 每 60s 自查一次，互不影响。任何一项异常，HUD 黄条出现"**人话 + 一颗修复按钮**"，不是抛错误码让你 Google。
-- **每小时增量 Obsidian sync** —— 基于 cursor，按事件身份去重，**append-safe**：你写过的 `## 今日主线` 叙事和 `## 明天的锚点` 永远不会被覆盖。
-- **launchd 托管四件套** —— daemon / healthcheck / 每小时 sync / 每日 sync。开机自启，崩了自动拉起。
-
-### 📝 Obsidian 作为阅读面
-日报、事件卡、主题卡。反馈以 checkbox 内嵌（`- [ ] 确认 [ ] 否掉 [ ] 拆分`），watcher 同步回反馈库 —— 零切换，**报告本身就是反馈表**。
-
-KeyPulse 不想替代你的 PKM 系统。它只把每天的工作痕迹写回你已经在用的知识系统：
-
-- 生成纯 Markdown，写入 `Daily/`、`Events/`、`Topics/`、`Anchors/`
-- 使用 YAML frontmatter，方便 Obsidian Properties / Bases / Dataview 读取
-- 保留双链、标签和 checkbox 反馈，让日报继续长成图谱
-- 不需要云同步；如果你使用 Obsidian Sync / iCloud / Git，那是你自己的选择
-
-完整工作流见 [docs/obsidian-workflow.md](docs/obsidian-workflow.md)。
+- **多个能力域各自体检** —— 辅助功能权限、采集运行时、剪贴板 watcher、健康新鲜度…… 每 60s 自查一次，互不影响。任何一项异常，HUD 黄条出现"**人话 + 一颗修复按钮**"，不是抛错误码让你 Google。
+- **launchd 托管两件套** —— daemon（开机自启，崩了自动拉起）与 healthcheck（每 10 分钟一次）。
 
 ### 🧪 质量保障
-一套**黄金集**（Golden Set）标注日记录，作为叙事 pipeline 的回归基线，防止调阈值时静默退化。800+ 个测试全绿 —— 包括那次把 2341 条用户事件错标成系统事件的迁移事故的回归覆盖，以及 capability 框架的架构不变量测试。
+800+ 个测试全绿 —— 包括那次把 2341 条用户事件错标成系统事件的迁移事故的回归覆盖，以及 capability 框架的架构不变量测试。
 
 ---
 
@@ -154,29 +118,21 @@ KeyPulse 不想替代你的 PKM 系统。它只把每天的工作痕迹写回你
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Pipeline                                                     │
-│  • Session 化 → 工作块聚合（人机双栏）                        │
-│  • 主题抽取（只看 user 事件）                                 │
-│  • 叙事渲染（LLM + 确定性兜底）                               │
-└────────────────────────────┬─────────────────────────────────┘
-                             ▼
-┌──────────────────────────────────────────────────────────────┐
 │  呈现面                                                       │
-│  • Obsidian vault（Daily / Events / Topics / Dashboard）      │
 │  • 菜单栏 HUD（WKWebView · 今日重点 + 异常即修复入口）         │
 │  • CLI（timeline / search / stats / export）                  │
+│  • MCP 服务（开发中）→ Claude / Codex / Cursor                 │
 └──────────────────────────────────────────────────────────────┘
 
-       ↑ Capability 自检层（60s 一轮，7 个能力域各自体检）
-       ↑ launchd 编排四件套：
-         daemon  •  healthcheck (10m)  •  obsidian-sync-hourly  •  obsidian-sync-daily
+       ↑ Capability 自检层（60s 一轮，多个能力域各自体检）
+       ↑ launchd 编排两件套：daemon  •  healthcheck (10m)
 ```
 
 ---
 
 ## 快速开始
 
-三步装完，之后它就一直在那。
+两步装完，之后它就一直在那。
 
 ```bash
 # 1. 装 — Homebrew 安装 CLI，并由 KeyPulse 初始化 runtime
@@ -187,19 +143,11 @@ brew tap Longfellow1/keypulse
 brew install keypulse
 keypulse install init
 
-# 2. 配 — 三选一交互向导（约 2 分钟）
-keypulse setup
-#   ├─ 本地 Ollama  ── 离线优先 / 不想花钱
-#   ├─ 本地 LM Studio ── 想跑本地、UI 用着舒服
-#   └─ 云 API       ── 豆包 / DeepSeek / OpenAI 任选，Key 写进 Keychain
-
-# 3. 授权 —「辅助功能」+「屏幕录制」（系统设置里勾一下 KeyPulse）
+# 2. 授权 —「辅助功能」+「屏幕录制」（系统设置里勾一下 KeyPulse）
 #    HUD 黄条会告诉你下一步该点哪
 ```
 
-装完它就常驻菜单栏。重启电脑会自动起来，崩了 launchd 帮你拉起来。**一天后**，打开你的 Obsidian 库看 `Daily/<今天>.md`。
-
-> **没配模型也能起**——daemon 照常采集，只是叙事 / 日报先按下不表，等你想起来跑 `keypulse setup` 就接上。
+装完它就常驻菜单栏。重启电脑会自动起来，崩了 launchd 帮你拉起来。**过一会儿**，运行 `keypulse timeline --today` 看今天的会话。
 
 ### 常用命令
 
@@ -207,12 +155,10 @@ keypulse setup
 |---|---|
 | `keypulse timeline --today` | 查看今日会话 |
 | `keypulse search "<query>"` | 全文搜索你的记忆 |
-| `keypulse obsidian sync --incremental` | 把新事件追加到今日报告（每小时自动） |
-| `keypulse obsidian sync --yesterday` | 生成昨天的完整叙事（每日 09:05 自动） |
 | `keypulse healthcheck` | 原子健康报告（launchd 每 10 分钟自动跑） |
 | `keypulse purge --app Slack --confirm` | 彻底删除某个应用的全部数据 |
 
-完整命令参考：`keypulse --help`。安装细节看 [docs/homebrew-install.md](docs/homebrew-install.md)，首次配置看 [docs/setup-onboarding.md](docs/setup-onboarding.md)。
+完整命令参考：`keypulse --help`。安装细节看 [docs/说明-homebrew-install.md](docs/说明-homebrew-install.md)，首次配置看 [docs/说明-setup-onboarding.md](docs/说明-setup-onboarding.md)。
 
 ---
 
@@ -241,39 +187,16 @@ keypulse setup
 
 ---
 
-## 要去哪里 —— 从笔记走到方法论
-
-今天，KeyPulse 每天给你写一张小纸条。**它真正想去的地方**是更大的东西：**读懂你和它一起在 Obsidian 里慢慢长出来的那张图，帮你把「模式」变成「方法」。**
-
-Obsidian 不只是一个笔记本，它是一张图。当日报、主题卡、事件卡不断累积、互相链接，它们慢慢构成的不是「你做过什么」，而是**「你是怎么工作的」**。KeyPulse 未来会坐在这张图的上面，像一个有耐心的读者 —— 注意那些反复出现的边、提出关于"你怎么做事"的小假设，然后邀请你去命名它们。
-
-方向上，有点像 Karpathy 提过的 *auto-research*，但不是"让模型替你做研究"，而是**"让模型给你提出关于你自己的小问题，由你来回答"**。时间久了，你的答案本身，就成了产出。
-
-具体会长成这样：
-
-| 你做了什么 | KeyPulse 最终会说 | 它会变成什么 |
-|---|---|---|
-| 这周五次会话都反复打开同一个文件 | *"这更像是你**思考**的地方，而不是你**改代码**的地方。"* | 你工作流里一个被命名的位置 |
-| 每次都是 docs → 终端 → 编辑器 的顺序 | *"这可能是你进入深度工作的热身仪式。"* | 一个你可以保留、打破、或进一步研究的模式 |
-| 每次 debug 结束都会把一段复制到小本本里 | *"你好像在把 fix 提炼成 lesson —— 要不要为这一类给一个方法论文件？"* | 一个**属于你自己**的方法论库，肉眼可见 |
-
-终态：KeyPulse 不只是帮你记住你做过什么，它帮你看见**你是怎么把事情做好的**，然后把这件事变成一个你可以回看、甚至可以分享的东西。
-
-不是通用的效率 tips。是一座**由你命名、由你塑造、和你一起长**的个人模式库。
-
-> **Obsidian 的图是土壤。KeyPulse 是让这张图变得可读的那个观察者。**
-
----
-
 ## 当前状态
 
 - **平台：** macOS 12+（Apple Silicon + Intel）
 - **测试：** 800+ passing（pytest，含 capability 框架架构不变量）
 - **安装：** Homebrew 安装 CLI，`keypulse install init` 初始化 runtime + launchd
-- **首次配置：** `keypulse setup` 三选一向导，约 2 分钟
-- **Roadmap：** 季度 / 年度回忆录式整理 · 多设备合并 · 语音反思对话
+- **首次配置：** 无需模型配置，装完按 HUD 黄条提示授权即可
+- **MCP 服务：** 开发中 —— 让 Claude / Codex / Cursor 通过 MCP 读取你的记忆，带出处与访问控制
+- **Roadmap：** 多设备合并
 
-KeyPulse 还在早期。笔友现在能跟你聊今天，还不能跟你聊今年 —— 这是下一步。
+KeyPulse 还在早期：采集、搜索、时间线与菜单栏 HUD 已可用，MCP 服务在开发中。
 
 ---
 

@@ -2,9 +2,9 @@
 id: gold-set-gated-prompt-changes
 title: Prompt changes must pass the Gold Set validators before merge
 category: decision
-status: active
+status: archived
 created: "2026-10-10T10:26:12"
-updated: "2026-10-10T10:26:12"
+updated: "2026-10-10T14:52:53"
 ---
 
 <!-- compiled_truth -->
@@ -35,4 +35,10 @@ Prompt bloat and silent regressions kept recurring (see the commit log: many "de
   kind: decision
   summary: captured from project history
   source: "CLAUDE.md (gold set section); commit bf5b71f (2026-05-25); docs/golden-daily/, docs/golden-weekly/"
+  affects: [gold-set-gated-prompt-changes]
+
+- time: 2026-10-10T14:52:53
+  kind: reversal
+  summary: "Obsolete: daily/weekly reports removed from V1 (D24). Output quality now governed by docs/KeyPulse_Eval_PRD.md."
+  source: brain archive-page
   affects: [gold-set-gated-prompt-changes]

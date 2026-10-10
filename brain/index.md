@@ -1,15 +1,15 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-10T06:39:39.100Z._
+_Auto-generated. Last updated 2026-10-10T06:53:00.792Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
 - [capability-fact-vs-probe](pages/capability-fact-vs-probe.md) — category: decision | ## Decision
 - [core-no-embedded-llm](pages/core-no-embedded-llm.md) — category: decision | tags: [core, llm, privacy] | ## Decision
-- [daily-single-render-entry](pages/daily-single-render-entry.md) — category: decision | ## Decision
+- [daily-single-render-entry](pages/daily-single-render-entry.md) — category: decision | status: archived | ## Decision
 - [db-direct-read-over-screen-capture](pages/db-direct-read-over-screen-capture.md) — category: decision | ## Decision
 - [eval-prd-separate](pages/eval-prd-separate.md) — category: decision | tags: [eval, prd] | ## Decision
-- [gold-set-gated-prompt-changes](pages/gold-set-gated-prompt-changes.md) — category: decision | ## Decision
+- [gold-set-gated-prompt-changes](pages/gold-set-gated-prompt-changes.md) — category: decision | status: archived | ## Decision
 - [keyboard-capture-p0-experimental](pages/keyboard-capture-p0-experimental.md) — category: decision | tags: [scope, capture, privacy] | ## Decision
 - [keypulse-v1-local-memory-infra](pages/keypulse-v1-local-memory-infra.md) — category: decision | tags: [product, v1, mcp] | ## Decision
 - [knowledge-graph-layer](pages/knowledge-graph-layer.md) — category: project | ## Goal
