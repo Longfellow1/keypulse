@@ -290,7 +290,8 @@ def _to_local_hhmm(ts_iso: str) -> str:
 
 
 def _default_eval_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "docs" / "entity-extractor-eval-2026-05.json"
+    # Real captured data: kept outside the repo (never commit real-data eval artifacts).
+    return Path.home() / ".keypulse" / "eval" / "entity-extractor-eval-2026-05.json"
 
 
 def _load_eval_days(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:

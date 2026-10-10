@@ -62,3 +62,6 @@ config.toml.bak*
 .claude/
 .keypulse/
 Go/
+
+# Real-data eval artifacts must never be committed (see docs/KeyPulse_Eval_PRD.md)
+docs/*-eval-*.json

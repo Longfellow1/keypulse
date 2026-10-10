@@ -36,7 +36,7 @@ TARGET_DATES: list[str] = [
     "2026-05-11",
     "2026-05-20",
 ]
-DEFAULT_JSON_OUT = Path("docs/entity-extractor-eval-2026-05.json")
+DEFAULT_JSON_OUT = Path.home() / ".keypulse" / "eval" / "entity-extractor-eval-2026-05.json"  # real data, keep out of repo
 DEFAULT_MD_OUT = Path("docs/评测-entity-extractor-eval-2026-05.md")
 EVAL_EVENT_CAP = 60
 FAIL_THRESHOLD = 0.7
