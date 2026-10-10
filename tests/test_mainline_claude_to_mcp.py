@@ -17,7 +17,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from keypulse.config import Config
 from keypulse.mcp import auth
 from keypulse.mcp.cli import mcp_group
-from keypulse.mcp.server import build_server
+from mcp_helpers import server_for
 from keypulse.sources import registry
 from keypulse.sources.cleaning.config import CleaningConfig
 from keypulse.sources.discover import sources_group
@@ -86,7 +86,7 @@ def _count_events() -> int:
 
 def _call(token, **args):
     """Call search_context through the MCP server layer (SDK in-memory client/session)."""
-    server = build_server(token_provider=lambda: token)
+    server = server_for(token)
 
     async def run():
         async with create_connected_server_and_client_session(server._mcp_server) as client:
@@ -308,7 +308,7 @@ def test_cli_grant_prints_token_once_and_stores_hash(env, cli_config) -> None:
     out = CliRunner().invoke(mcp_group, ["grant", "claude"])
     assert out.exit_code == 0, out.output
     token = next(w for w in out.output.split() if w.startswith("kp_"))
-    assert f"claude mcp add keypulse -e KEYPULSE_TOKEN={token} -- " in out.output
+    assert f"claude mcp add keypulse -e KEYPULSE_TOKEN={token} -e KEYPULSE_CLIENT=claude -- " in out.output
     assert '"mcpServers"' in out.output and "mcp" in out.output and "serve" in out.output
     assert auth.authenticate(token).client_id == "claude"
     assert token not in tuple(get_conn().execute("SELECT * FROM access_grants").fetchone())
@@ -322,7 +322,7 @@ def test_cli_grant_prints_token_once_and_stores_hash(env, cli_config) -> None:
 
 def test_stdio_subprocess_end_to_end(env, token) -> None:
     _sync()
-    child_env = {**os.environ, "KEYPULSE_TOKEN": token, "KP_TEST_DB": str(env.db)}
+    child_env = {**os.environ, "KEYPULSE_TOKEN": token, "KEYPULSE_CLIENT": "claude", "KP_TEST_DB": str(env.db)}
     code = (
         "import os; from pathlib import Path; from keypulse.store.db import init_db; "
         "from keypulse.mcp.server import serve_stdio; init_db(Path(os.environ['KP_TEST_DB'])); serve_stdio()"

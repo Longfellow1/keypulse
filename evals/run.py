@@ -133,7 +133,18 @@ def _call_all(tokens: dict[str, str], questions: list[dict[str, Any]]) -> dict[s
 
     logging.getLogger("mcp").setLevel(logging.WARNING)  # per-request INFO lines drown the report
     current = {"token": None}
-    server = build_server(token_provider=lambda: current["token"])
+
+    def client_of() -> str | None:
+        # The eval Host presents its own grant's client id, like a real Host config would.
+        from keypulse.mcp.auth import hash_token
+        from keypulse.store.db import get_conn
+
+        row = get_conn().execute(
+            "SELECT client_id FROM access_grants WHERE token_hash = ?", (hash_token(current["token"]),)
+        ).fetchone()
+        return row["client_id"] if row else None
+
+    server = build_server(token_provider=lambda: current["token"], client_provider=client_of)
 
     async def run() -> dict[str, dict[str, Any]]:
         out: dict[str, dict[str, Any]] = {}

@@ -4,7 +4,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Optional
 
-from keypulse.mcp.auth import Grant, authenticate
+from keypulse.mcp import audit
+from keypulse.mcp.auth import Grant, check_access
 from keypulse.search.engine import parse_time_bound, search_events
 
 # Raw capture streams (keyboard chunks / OCR / clipboard / AX text / window titles) stay OUT of
@@ -14,12 +15,14 @@ from keypulse.search.engine import parse_time_bound, search_events
 # hand to a third-party AI. Revisit in P1 together with sensitivity tags.
 SEARCHABLE_EVENT_TYPE = "semantic_event"
 MAX_QUERY_CHARS = 1000
+TOOL_SEARCH_CONTEXT = "search_context"
 
 _MATCH_REASON = "keyword match"
 
 
 def permission_denied() -> dict[str, Any]:
-    """Identical for missing / wrong / revoked tokens; carries no data, counts or hints."""
+    """One body for EVERY deny reason (missing / wrong / revoked / rotated / expired token, bad or
+    non-whitelisted client, no read right): no data, counts or hints. Reasons live in the audit log only."""
     return {
         "status": "permission_denied",
         "reason_code": "TOKEN_INVALID",
@@ -57,10 +60,22 @@ def search_context(
     time_range: Any = None,
     sources: Any = None,
     limit: Any = 10,
+    *,
+    client: Optional[str] = None,
 ) -> dict[str, Any]:
-    grant: Optional[Grant] = authenticate(token)
-    if grant is None or not grant.allows("read"):
+    decision = check_access(token, client, "read")
+    if decision.grant is None:
+        audit.record(client=decision.client, tool=TOOL_SEARCH_CONTEXT, allowed=False,
+                     reason_code=decision.reason, scope=decision.scope)
         return permission_denied()
+    payload = _search(decision.grant, query, time_range, sources, limit)
+    count = len(payload.get("results") or [])
+    audit.record(client=decision.client, tool=TOOL_SEARCH_CONTEXT, allowed=True,
+                 reason_code=payload.get("status", "error"), scope=decision.scope, result_count=count)
+    return payload
+
+
+def _search(grant: Grant, query: Any, time_range: Any, sources: Any, limit: Any) -> dict[str, Any]:
 
     # Fixed-text validation: caller-supplied values are never echoed back.
     if sources is not None and not (isinstance(sources, list) and all(isinstance(x, str) for x in sources)):

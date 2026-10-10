@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from keypulse.capture.policy import ALLOW, DENY, PolicyEngine
 from keypulse.config import Config
+from mcp_helpers import search, server_for
 from keypulse.mcp import auth, tools
 from keypulse.mcp.cli import mcp_group
 from keypulse.store import buckets
@@ -145,7 +146,7 @@ def test_v21_adds_grant_scope_backfills_buckets_and_is_idempotent(tmp_path: Path
     conn.commit()
 
     run_migrations(conn)
-    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 21
+    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 22
     g = conn.execute("SELECT buckets, sources, operations, purpose, expires_at FROM access_grants").fetchone()
     assert (g["buckets"], g["sources"], g["operations"]) == ('["Work"]', None, '["read"]')  # legacy grant -> least privilege
     got = {r["source"]: r["bucket"] for r in conn.execute("SELECT source, bucket FROM raw_events")}
@@ -177,11 +178,11 @@ def test_grant_validation(db) -> None:
 def test_expired_grant_is_rejected_like_an_unknown_token(db) -> None:
     token = auth.create_grant("host", expires_at=datetime.now(timezone.utc) + timedelta(days=1))
     _ev("claude_code", "pelican plan")
-    assert tools.search_context(token, "pelican")["status"] == "ok"
+    assert search(token, "pelican")["status"] == "ok"
     get_conn().execute("UPDATE access_grants SET expires_at = ?", ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),))
     get_conn().commit()
     assert auth.authenticate(token) is None
-    assert tools.search_context(token, "pelican") == tools.search_context("kp_unknown", "pelican")
+    assert search(token, "pelican") == search("kp_unknown", "pelican")
 
 
 def test_malformed_scope_fails_closed(db) -> None:
@@ -194,7 +195,7 @@ def test_malformed_scope_fails_closed(db) -> None:
 def test_grant_without_read_operation_is_denied(db) -> None:
     token = auth.create_grant("host", operations=["write"])
     _ev("claude_code", "pelican plan")
-    assert tools.search_context(token, "pelican")["status"] == "permission_denied"
+    assert search(token, "pelican")["status"] == "permission_denied"
 
 
 def test_scope_is_applied_before_limit_not_after(db) -> None:
@@ -202,9 +203,9 @@ def test_scope_is_applied_before_limit_not_after(db) -> None:
     for i in range(5):  # newer out-of-scope hits would fill LIMIT 1 if scope were a post-filter
         _ev("chrome_history", f"pelican newer personal {i}", ts=f"2026-02-0{i + 1}T00:00:00+00:00")
     token = auth.create_grant("host", buckets=["Work"])
-    resp = tools.search_context(token, "pelican", limit=1)
+    resp = search(token, "pelican", limit=1)
     assert resp["status"] == "ok" and [r["bucket"] for r in resp["results"]] == ["Work"]
-    short = tools.search_context(token, "pe", limit=1)  # LIKE path (<3 chars) is scoped too
+    short = search(token, "pe", limit=1)  # LIKE path (<3 chars) is scoped too
     assert [r["bucket"] for r in short["results"]] == ["Work"]
 
 
@@ -212,9 +213,9 @@ def test_source_scope_intersects_requested_sources(db) -> None:
     _ev("claude_code", "pelican a")
     _ev("git_log", "pelican b")
     token = auth.create_grant("host", sources=["claude_code"])
-    assert {r["source"] for r in tools.search_context(token, "pelican")["results"]} == {"claude_code"}
-    assert tools.search_context(token, "pelican", sources=["git_log"])["status"] == "no_results"
-    assert tools.search_context(token, "pelican", sources=["git_log", "claude_code"])["status"] == "ok"
+    assert {r["source"] for r in search(token, "pelican")["results"]} == {"claude_code"}
+    assert search(token, "pelican", sources=["git_log"])["status"] == "no_results"
+    assert search(token, "pelican", sources=["git_log", "claude_code"])["status"] == "ok"
 
 
 def test_multi_bucket_grant_and_cli(db, monkeypatch) -> None:
@@ -226,10 +227,10 @@ def test_multi_bucket_grant_and_cli(db, monkeypatch) -> None:
     out = runner.invoke(mcp_group, ["grant", "claude", "--buckets", "Work,Personal", "--purpose", "demo", "--expires-in-days", "7"])
     assert out.exit_code == 0, out.output
     token = next(line.strip() for line in out.output.splitlines() if line.strip().startswith("kp_"))
-    assert {r["bucket"] for r in tools.search_context(token, "pelican")["results"]} == {"Work", "Personal"}
+    assert {r["bucket"] for r in search(token, "pelican")["results"]} == {"Work", "Personal"}
     default = runner.invoke(mcp_group, ["grant", "plain"])
     token2 = next(line.strip() for line in default.output.splitlines() if line.strip().startswith("kp_"))
-    assert {r["bucket"] for r in tools.search_context(token2, "pelican")["results"]} == {"Work"}
+    assert {r["bucket"] for r in search(token2, "pelican")["results"]} == {"Work"}
     assert runner.invoke(mcp_group, ["grant", "bad", "--buckets", "Temporary"]).exit_code != 0
     listing = runner.invoke(mcp_group, ["list"]).output
     assert "Work" in listing and "expires" in listing and "kp_" not in listing
@@ -240,9 +241,9 @@ def test_scoped_ranking_uses_relevance_not_just_recency_and_ignores_out_of_scope
     _ev("claude_code", "long unrelated notes " * 20 + "pelican", ts="2026-02-01T00:00:00+00:00")
     _ev("claude_code", "pelican", ts="2026-01-15T00:00:00+00:00")
     token = auth.create_grant("host", buckets=["Work"])
-    before = [r["snippet"] for r in tools.search_context(token, "pelican")["results"]]
+    before = [r["snippet"] for r in search(token, "pelican")["results"]]
     assert before[0].startswith("pelican pelican pelican")  # most relevant first although oldest
     assert "unrelated" in before[-1]          # diluted by length, despite being newest
     for i in range(50):  # unrelated out-of-scope corpus must not change in-scope order
         _ev("chrome_history", f"pelican pelican pelican pelican {i}")
-    assert [r["snippet"] for r in tools.search_context(token, "pelican")["results"]] == before
+    assert [r["snippet"] for r in search(token, "pelican")["results"]] == before
