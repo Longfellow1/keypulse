@@ -8,7 +8,9 @@ from keypulse.sources.types import SemanticEvent
 
 
 _COMMIT_RE = re.compile(r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b")
-_FILE_RE = re.compile(r"[\w\-./]+\.(py|ts|tsx|js|jsx|md|json|yaml|toml|sh|go|rs|java|cpp|h|c)\b", re.IGNORECASE)
+# The lookbehind only lets a match start at a token boundary; without it a long run of word
+# characters is rescanned from every offset (quadratic: ~4s on a 32k-char message).
+_FILE_RE = re.compile(r"(?<![\w\-./])[\w\-./]+\.(py|ts|tsx|js|jsx|md|json|yaml|toml|sh|go|rs|java|cpp|h|c)\b", re.IGNORECASE)
 _URL_RE = re.compile(r"https?://([\w\-.]+)(/[\w\-./]*)?(?:\?[^\s]*)?", re.IGNORECASE)
 _ISSUE_RE = re.compile(r"#\d+|(?:GH|JIRA|LIN)[-_]\d+", re.IGNORECASE)
 _INTENT_ENTITY_RE = re.compile(r"(?:修复|实现)\s+([^\n,，。;；]+)")

@@ -5,8 +5,11 @@ Resolution order for an event:
      config_json = {"bucket": "<Name>"}. App scope matches app_name / process_name by
      case-insensitive substring (same semantics as the privacy PolicyEngine); source scope is exact.
   2. config `[buckets.source_defaults]` overrides, then DEFAULT_SOURCE_BUCKETS.
-  3. otherwise None: an unmapped source is never auto-placed in a shareable bucket (PRD: uncertain
-     origin must not default to a low-sensitivity bucket), so no grant can read it.
+  3. KeyPulse's own capture streams (CAPTURE_SOURCES, D26) are classified by app: config
+     `[buckets.app_defaults]` (substring on app / process name), then the preset table in
+     `store.app_categories`, then Personal (unknown apps are Personal).
+  4. otherwise None: an unmapped plugin source is never auto-placed in a shareable bucket (PRD:
+     uncertain origin must not default to a low-sensitivity bucket), so no grant can read it.
 
 The bucket is stamped on the row at ingest; changing rules is not retroactive until
 `reapply_buckets()` (CLI: `keypulse rules rebucket`) is run.
@@ -30,9 +33,16 @@ DEFAULT_SOURCE_BUCKETS: dict[str, str] = {
     "safari_history": "Personal",
     "wechat": "Personal",
     "knowledgec": "Personal",
+    "spotlight": "Personal",
 }
 
+# raw_events.source values written by KeyPulse's own capture (not by source plugins).
+CAPTURE_SOURCES = frozenset(
+    {"keyboard_chunk", "window", "clipboard", "ax_text", "browser_url", "idle", "manual", "ocr_text", "browser"}
+)
+
 _overrides: Optional[dict[str, str]] = None
+_app_overrides: Optional[dict[str, str]] = None
 
 
 def normalize_bucket(name: str) -> str:
@@ -44,8 +54,41 @@ def normalize_bucket(name: str) -> str:
 
 
 def reset_cache() -> None:
-    global _overrides
+    global _overrides, _app_overrides
     _overrides = None
+    _app_overrides = None
+
+
+def _config_app_overrides() -> dict[str, str]:
+    global _app_overrides
+    if _app_overrides is None:
+        found: dict[str, str] = {}
+        try:
+            from keypulse.config import Config
+
+            for app, bucket in Config.load().buckets.app_defaults.items():
+                try:
+                    found[app.strip().lower()] = normalize_bucket(bucket)
+                except ValueError:
+                    continue
+        except Exception:
+            found = {}
+        _app_overrides = found
+    return _app_overrides
+
+
+def classify_capture_app(
+    app_name: Optional[str], process_name: Optional[str] = None, app_overrides: Optional[dict[str, str]] = None
+) -> str:
+    """Capture-stream bucket from the app alone: config overrides > preset table > Personal."""
+    from keypulse.store.app_categories import DEFAULT_APP_BUCKET, classify_app
+
+    merged = _config_app_overrides() if app_overrides is None else app_overrides
+    names = [(n or "").lower() for n in (app_name, process_name)]
+    for key, bucket in merged.items():
+        if key and any(key in n for n in names):
+            return bucket
+    return classify_app(app_name, process_name) or DEFAULT_APP_BUCKET
 
 
 def _config_overrides() -> dict[str, str]:
@@ -97,6 +140,7 @@ def resolve_bucket(
     *,
     rules: list[dict],
     overrides: Optional[dict[str, str]] = None,
+    app_overrides: Optional[dict[str, str]] = None,
 ) -> Optional[str]:
     for rule in rules:
         value = (rule["scope_value"] or "").lower()
@@ -107,7 +151,10 @@ def resolve_bucket(
                 return rule["bucket"]
         elif rule["scope_type"] == "source" and source == rule["scope_value"]:
             return rule["bucket"]
-    return default_bucket_for_source(source, overrides)
+    default = default_bucket_for_source(source, overrides)
+    if default is None and source in CAPTURE_SOURCES:
+        return classify_capture_app(app_name, process_name, app_overrides)
+    return default
 
 
 def resolve_for_event(conn: sqlite3.Connection, source, app_name, process_name=None) -> Optional[str]:
@@ -118,10 +165,11 @@ def reapply_buckets(conn: sqlite3.Connection, *, only_missing: bool = False) -> 
     """Re-evaluate buckets for stored rows with current rules; returns rows changed."""
     rules = load_bucket_rules(conn)
     overrides = _config_overrides()
+    app_overrides = _config_app_overrides()
     where = " WHERE bucket IS NULL" if only_missing else ""
     changed = 0
     for row in conn.execute(f"SELECT id, source, app_name, process_name, bucket FROM raw_events{where}").fetchall():
-        new = resolve_bucket(row["source"], row["app_name"], row["process_name"], rules=rules, overrides=overrides)
+        new = resolve_bucket(row["source"], row["app_name"], row["process_name"], rules=rules, overrides=overrides, app_overrides=app_overrides)
         if new != row["bucket"]:
             conn.execute("UPDATE raw_events SET bucket = ? WHERE id = ?", (new, row["id"]))
             changed += 1

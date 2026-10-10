@@ -100,3 +100,20 @@
 {"id":"x04","variant":"answerable","scenario":"cross","style":"kw","query":"rollout in my codex sessions","keywords":["rollout"],"sources":["codex_cli"],"gold":["cx-06","cx-07"]}
 {"id":"x05","variant":"answerable","scenario":"cross","style":"kw","query":"rollout in my commits","keywords":["rollout"],"sources":["git_log"],"gold":["gl-06"]}
 {"id":"x06","variant":"answerable","scenario":"cross","style":"kw","query":"rollout in Claude sessions","keywords":["rollout"],"sources":["claude_code"],"gold":["cc-19"]}
+{"id":"cap01","variant":"answerable","scenario":"C01","style":"kw","query":"what did I copy about my desk shipment","keywords":["tracking number","desk"],"sources":["clipboard"],"gold":["cp-05"]}
+{"id":"cap02","variant":"answerable","scenario":"C01","style":"nl","query":"which page about coffee grinders did I open","keywords":["coffee grinders","grinder"],"gold":["cp-13"]}
+{"id":"cap03","variant":"answerable","scenario":"C01","style":"nl","query":"what was I typing in Cursor on 2026-04-29","keywords":["Cursor"],"time_range":{"start":"2026-04-29","end":"2026-04-29"},"sources":["keyboard_chunk"],"gold":["cp-01"]}
+{"id":"cap04","variant":"answerable","scenario":"C01","style":"nl","query":"how long was I in Figma on 2026-04-29","keywords":["Figma"],"time_range":{"start":"2026-04-29","end":"2026-04-29"},"gold":["cp-08"]}
+{"id":"cap05","variant":"answerable","scenario":"C01","style":"kw","query":"which flaky issue did I paste into Slack","keywords":["flaky","KP-482"],"gold":["cp-06"]}
+{"id":"cap06","variant":"answerable","scenario":"C01","style":"kw","query":"what flight details was I looking at","keywords":["flight","gate"],"gold":["cp-12"]}
+{"id":"cap07","variant":"answerable","scenario":"C01","style":"kw","query":"what did I type in the terminal about rebasing","keywords":["rebase","quokka"],"gold":["cp-04"]}
+{"id":"cap08","variant":"answerable","scenario":"C01","style":"kw","query":"the Q2 OKR text I was reading in Notion","keywords":["OKR","Notion"],"gold":["cp-11"]}
+{"id":"cap09","variant":"answerable","scenario":"C01","style":"kw","query":"which refund order did I copy","keywords":["refund","original card"],"gold":["cp-07"]}
+{"id":"cap10","variant":"answerable","scenario":"C01","style":"kw","query":"what did I type in Alipay about rent","keywords":["房租"],"gold":["cp-02"]}
+{"id":"cap11","variant":"answerable","scenario":"C01","style":"kw","query":"gift ideas I wrote in Notes","keywords":["gift ideas","birthday"],"gold":["cp-03"]}
+{"id":"cap12","variant":"answerable","scenario":"C01","style":"time","query":"how long was I on Spotify on 2026-04-29","keywords":["Spotify"],"time_range":{"start":"2026-04-29","end":"2026-04-29"},"gold":["cp-09"]}
+{"id":"cap13","variant":"answerable","scenario":"C01","style":"kw","query":"the Postgres page about partial indexes","keywords":["Postgres","partial indexes"],"gold":["cp-14"]}
+{"id":"ncap1","variant":"no_answer","style":"kw","query":"crypto wallet seed phrase I typed","keywords":["seed phrase","ledger nano"],"note":"capture-stream no-answer"}
+{"id":"ncap2","variant":"no_answer","style":"near_miss","query":"Spotify on 2026-04-30","keywords":["Spotify"],"time_range":{"start":"2026-04-30","end":"2026-04-30"},"note":"Spotify was only used on 04-29"}
+{"id":"rcap1","variant":"restricted","style":"kw","query":"房租","keywords":["房租"],"grant":{"buckets":["Work"]},"forbidden":["cp-02"]}
+{"id":"rcap2","variant":"restricted","style":"kw","query":"tracking number","keywords":["tracking number"],"grant":{"buckets":["Work"]},"forbidden":["cp-05"]}

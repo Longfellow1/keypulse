@@ -172,6 +172,9 @@ class SourcesConfig(BaseModel):
 class BucketsConfig(BaseModel):
     # Overrides of the built-in per-source default bucket, e.g. {"markdown_vault": "Work"}.
     source_defaults: dict[str, str] = Field(default_factory=dict)
+    # Capture-stream app overrides (D26), e.g. {"Obsidian": "Personal"}; case-insensitive substring
+    # of the app / process name. Beats the preset app table, loses to user bucket rules.
+    app_defaults: dict[str, str] = Field(default_factory=dict)
 
 
 class PolicyConfig(BaseModel):

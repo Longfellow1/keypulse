@@ -9,14 +9,14 @@ from keypulse.mcp.auth import Grant, check_access
 from keypulse.search.engine import (
     TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, timeline_events,
 )
+from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, is_keypulse_locator
 from keypulse.store.evidence import refresh_availability, split_git_locator
 
-# Raw capture streams (keyboard chunks / OCR / clipboard / AX text / window titles) stay OUT of
-# MCP search in P0 even inside a granted bucket: only events ingested through the source plugins
-# (event_type "semantic_event") are searchable. Their text is best-effort filtered (D13) and their
-# bucket comes from app rules only, so a bucket label is not enough evidence that they are safe to
-# hand to a third-party AI. Revisit in P1 together with sensitivity tags.
-SEARCHABLE_EVENT_TYPE = "semantic_event"
+# What a granted Host can search (D26): source-plugin events plus KeyPulse's own capture streams
+# (keyboard chunks, window focus sessions, clipboard, AX text, browser URLs), all still limited by
+# bucket + source scope. Capture rows are classified by app (store.buckets / store.app_categories)
+# and secret-redacted at write time. idle_* carry no content and OCR / manual notes are out of scope.
+SEARCHABLE_EVENT_TYPES = ("semantic_event", *CAPTURE_SEARCHABLE_EVENT_TYPES)
 MAX_KEYWORDS = 10
 MAX_KEYWORD_CHARS = 100
 # A keyword that looks like a whole sentence means the host skipped the keyword extraction step.
@@ -74,7 +74,7 @@ def _coverage(grant: Grant, start: Optional[str], end: Optional[str]) -> dict[st
     or existence of anything outside it (B1 / G1); no query or requested-source echo either."""
     return {
         "partial": False,
-        "note": "Searched indexed source-plugin history within this client's granted scope.",
+        "note": "Searched indexed history (source plugins and KeyPulse capture) within this client's granted scope.",
         "time_range": {"start": start, "end": end},
         "buckets": list(grant.buckets),
         "sources": list(grant.sources) if grant.sources is not None else None,
@@ -137,7 +137,7 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
             until=end,
             sources=effective_sources,
             buckets=list(grant.buckets),
-            event_type=SEARCHABLE_EVENT_TYPE,
+            event_type=SEARCHABLE_EVENT_TYPES,
             limit=limit,
         )
     except sqlite3.Error:
@@ -214,7 +214,7 @@ def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
         return dict(EVIDENCE_NOT_FOUND)
     try:
         row = scoped_evidence(numeric, sources=_scope_sources(grant, None), buckets=list(grant.buckets),
-                              event_type=SEARCHABLE_EVENT_TYPE)
+                              event_type=SEARCHABLE_EVENT_TYPES)
     except sqlite3.Error:
         return {"status": "error", "message": "evidence lookup failed"}
     if row is None:
@@ -229,7 +229,7 @@ def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
         "bucket": row["bucket"],
         "occurred_at": row["occurred_at"],
         # Stored, already-redacted text only. The original file is never read back out.
-        "excerpt": " ".join((row["content_text"] or "").split())[:EXCERPT_CHARS],
+        "excerpt": " ".join((row["excerpt_text"] or "").split())[:EXCERPT_CHARS],
         "available": available,
         "locator": None,
     }
@@ -237,7 +237,10 @@ def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
         # AT21: keep the stored excerpt, give no path / commit that could look openable.
         return {"status": "source_unavailable", "message": SOURCE_UNAVAILABLE_MESSAGE, "evidence": evidence}
     parsed = split_git_locator(row["locator"])
-    if parsed is not None:
+    if is_keypulse_locator(row["locator"]):
+        # KeyPulse is the original record: point at the event itself, always available.
+        evidence["locator"] = {"type": "keypulse", "event_id": f"evt_{row['event_id']}"}
+    elif parsed is not None:
         evidence["locator"] = {"type": "git", "repo": parsed[0], "commit": parsed[1]}
     else:
         evidence["locator"] = {"type": "file", "path": row["locator"], "line": row["line"]}
@@ -295,7 +298,7 @@ def _get_timeline(grant: Grant, start: Any, end: Any, sources: Any, limit: Any, 
     try:
         rows, has_more = timeline_events(
             since=since, until=until, sources=_scope_sources(grant, sources), buckets=list(grant.buckets),
-            after=after, event_type=SEARCHABLE_EVENT_TYPE, limit=limit,
+            after=after, event_type=SEARCHABLE_EVENT_TYPES, limit=limit,
         )
     except sqlite3.Error:
         return {"status": "error", "message": "timeline failed"}
