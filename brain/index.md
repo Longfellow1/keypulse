@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-10T03:43:20.919Z._
+_Auto-generated. Last updated 2026-10-10T03:56:44.712Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -18,9 +18,10 @@ _Auto-generated. Last updated 2026-10-10T03:43:20.919Z._
 - [mcp-caller-auth-p0](pages/mcp-caller-auth-p0.md) — category: decision | tags: [mcp, security, auth] | ## Decision
 - [memory-distillation-by-agent](pages/memory-distillation-by-agent.md) — category: decision | tags: [core, memory, mcp] | ## Decision
 - [multi-host-mcp-integration](pages/multi-host-mcp-integration.md) — category: decision | tags: [mcp, hosts, v1] | ## Decision
+- [no-real-data-in-repo](pages/no-real-data-in-repo.md) — category: decision | tags: [privacy, eval, git, secrets] | ## Rule
 - [py2app-preflight-smoke-test](pages/py2app-preflight-smoke-test.md) — category: decision | ## Decision
 - [refactor-in-place-with-legacy-tag](pages/refactor-in-place-with-legacy-tag.md) — category: decision | tags: [refactor, repo, legacy] | ## Decision
-- [session-handoff-2026-10-10](pages/session-handoff-2026-10-10.md) — category: project | tags: [handoff, state, refactor] | <!-- compiled_truth -->
+- [session-handoff-2026-10-10](pages/session-handoff-2026-10-10.md) — category: project | tags: [handoff, state, refactor] | ## Repo state
 - [skill-layer](pages/skill-layer.md) — category: project | ## Goal
 - [tcc-permission-refresh-on-install](pages/tcc-permission-refresh-on-install.md) — category: decision | ## Decision
 - [user-curates-llm-proposes](pages/user-curates-llm-proposes.md) — category: decision | ## Decision
