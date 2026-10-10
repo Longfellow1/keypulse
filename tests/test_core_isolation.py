@@ -57,3 +57,14 @@ def test_core_modules_do_not_load_llm_or_http_clients() -> None:
         )
     )
     assert _loaded_forbidden_modules(stmt) == []
+
+
+def test_no_source_file_imports_llm_or_http_clients() -> None:
+    # Catches lazy imports inside functions, which the sys.modules checks miss.
+    import re
+    from pathlib import Path
+
+    pattern = re.compile(rf"^\s*(?:import|from)\s+({'|'.join(FORBIDDEN_PREFIXES)})\b", re.M)
+    root = Path(__file__).resolve().parents[1] / "keypulse"
+    hits = [str(p.relative_to(root)) for p in root.rglob("*.py") if pattern.search(p.read_text(encoding="utf-8"))]
+    assert hits == []
