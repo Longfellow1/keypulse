@@ -233,3 +233,16 @@ def test_multi_bucket_grant_and_cli(db, monkeypatch) -> None:
     assert runner.invoke(mcp_group, ["grant", "bad", "--buckets", "Temporary"]).exit_code != 0
     listing = runner.invoke(mcp_group, ["list"]).output
     assert "Work" in listing and "expires" in listing and "kp_" not in listing
+
+
+def test_scoped_ranking_uses_relevance_not_just_recency_and_ignores_out_of_scope_data(db) -> None:
+    _ev("claude_code", "pelican pelican pelican retry policy for pelican", ts="2026-01-01T00:00:00+00:00")
+    _ev("claude_code", "long unrelated notes " * 20 + "pelican", ts="2026-02-01T00:00:00+00:00")
+    _ev("claude_code", "pelican", ts="2026-01-15T00:00:00+00:00")
+    token = auth.create_grant("host", buckets=["Work"])
+    before = [r["snippet"] for r in tools.search_context(token, "pelican")["results"]]
+    assert before[0].startswith("pelican pelican pelican")  # most relevant first although oldest
+    assert "unrelated" in before[-1]          # diluted by length, despite being newest
+    for i in range(50):  # unrelated out-of-scope corpus must not change in-scope order
+        _ev("chrome_history", f"pelican pelican pelican pelican {i}")
+    assert [r["snippet"] for r in tools.search_context(token, "pelican")["results"]] == before
