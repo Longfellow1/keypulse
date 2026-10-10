@@ -65,3 +65,5 @@ Go/
 
 # Real-data eval artifacts must never be committed (see docs/KeyPulse_Eval_PRD.md)
 docs/*-eval-*.json
+evals/report.json
+eval-report.json

@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    # macOS runner: the suite imports pyobjc-backed capture code.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[macos,dev]"
+      - name: Full test suite
+        run: python -m pytest -q
+      - name: Retrieval eval (E3, synthetic fixtures) + regression gate vs committed baseline
+        # Fails if M1 evidence recall@5 drops, or M2 no-answer false-hit rate rises, by more than 2pp,
+        # or if the eval set changed without a re-approved baseline (Eval PRD §3.3.4).
+        run: python -m evals.run --out eval-report.json --baseline evals/baseline.json
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval-report.json
+          if-no-files-found: ignore

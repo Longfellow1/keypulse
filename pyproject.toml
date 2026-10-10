@@ -37,3 +37,6 @@ keypulse = "keypulse.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["keypulse*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]  # lets tests import the top-level evals/ harness

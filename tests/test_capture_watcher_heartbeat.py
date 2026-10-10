@@ -149,7 +149,7 @@ def test_emit_refreshes_heartbeat() -> None:
         # Manually emit to refresh.
         time.sleep(0.15)
         w.emit(object())  # type: ignore[arg-type]
-        time.sleep(0.1)
+        # Check right after emit: a fixed sleep here exceeded the 0.2s timeout on slow CI runners.
         assert not w.is_heartbeat_dead()
         # Then go silent and trip again.
         assert _wait(lambda: w.is_heartbeat_dead())
