@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
+from keypulse.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInstance, SemanticEvent
 
 _SKIP_CONTENT_TYPES = {"tool_use", "tool_result", "thinking", "image"}
 
@@ -37,7 +37,13 @@ class ClaudeCodeSource(DataSource):
         *,
         projects_root: Path | None = None,
         self_exclude_dirs: set[str] | frozenset[str] | None = None,
+        use_cursor: bool = False,
     ) -> None:
+        # use_cursor=True: incremental sync driven by a persistent per-file
+        # cursor in `sync_cursors` (needs an initialised DB). The since/until
+        # window is ignored in that mode; resume position replaces it.
+        self._use_cursor = use_cursor
+        self._pending_cursors: dict[int, dict[str, Any]] = {}
         self._projects_root = (projects_root or (Path.home() / ".claude" / "projects")).expanduser()
         self._self_exclude_dirs = (
             frozenset(self_exclude_dirs) if self_exclude_dirs is not None else _infer_self_project_slugs()
@@ -79,6 +85,8 @@ class ClaudeCodeSource(DataSource):
             return iter(())
         if project_dir.name in self._self_exclude_dirs:
             return iter(())
+        if self._use_cursor:
+            return self._read_incremental(project_dir)
 
         def _iter_events() -> Iterator[SemanticEvent]:
             for jsonl_file in sorted(project_dir.glob("*.jsonl")):
@@ -111,7 +119,7 @@ class ClaudeCodeSource(DataSource):
                             time=event_time,
                             source=self.name,
                             actor=str(row_type),
-                            intent=intent_text[:2000],
+                            intent=intent_text[:MAX_INTENT_CHARS],
                             artifact=f"claude:session:{session_id}:msg:{message_id}",
                             raw_ref=(
                                 f"claude:projects:{project_dir.name}:{jsonl_file.name}:{line_idx}"
@@ -125,6 +133,105 @@ class ClaudeCodeSource(DataSource):
                         )
 
         return _iter_events()
+
+    # ── incremental (cursor) mode ────────────────────────────────────────────
+
+    def _read_incremental(self, project_dir: Path) -> Iterator[SemanticEvent]:
+        from keypulse.store.sync_repo import ensure_source, get_cursor
+
+        locator = str(project_dir.resolve())
+        source_id = ensure_source(self.name, locator)
+        files_state: dict[str, dict[str, Any]] = dict(get_cursor(source_id).get("files") or {})
+
+        def _iter() -> Iterator[SemanticEvent]:
+            for jsonl_file in sorted(project_dir.glob("*.jsonl")):
+                try:
+                    stat = jsonl_file.stat()
+                    handle = jsonl_file.open("rb")
+                except OSError:
+                    continue
+                prior = files_state.get(jsonl_file.name) or {}
+                offset = int(prior.get("offset", 0))
+                line_no = int(prior.get("line", 0))
+                if stat.st_size < offset:  # truncated / rewritten: start over
+                    offset, line_no = 0, 0
+                if stat.st_size == offset:
+                    handle.close()
+                    continue
+                with handle:
+                    handle.seek(offset)
+                    for raw in handle:
+                        complete = raw.endswith(b"\n")
+                        text = raw.decode("utf-8", errors="replace")
+                        row = _parse_json_line(text)
+                        if not complete and row is None:
+                            break  # partial trailing write: re-read next sync
+                        offset += len(raw)
+                        line_no += 1
+                        if row is None:
+                            continue
+                        event = self._row_to_event(row, project_dir, jsonl_file, line_no)
+                        if event is not None:
+                            yield event
+                files_state[jsonl_file.name] = {
+                    "offset": offset,
+                    "line": line_no,
+                    "mtime": stat.st_mtime,
+                    "size": stat.st_size,
+                }
+            self._pending_cursors[source_id] = {"files": files_state}
+
+        return _iter()
+
+    def commit_cursors(self, *, failed: bool = False) -> None:
+        """Persist resume positions once the registry has stored the events."""
+        from keypulse.store.sync_repo import record_sync_error, save_cursor
+
+        pending, self._pending_cursors = self._pending_cursors, {}
+        for source_id, cursor in pending.items():
+            if failed:
+                record_sync_error(source_id, "persist failed; cursor not advanced")
+            else:
+                save_cursor(source_id, cursor)
+
+    def _row_to_event(
+        self,
+        row: dict[str, Any],
+        project_dir: Path,
+        jsonl_file: Path,
+        line_idx: int,
+    ) -> SemanticEvent | None:
+        row_type = row.get("type")
+        if row_type not in {"user", "assistant"}:
+            return None
+        event_time = _parse_iso8601(row.get("timestamp"))
+        if event_time is None:
+            return None
+        intent_text = _extract_message_text(row).strip()
+        if not intent_text:
+            return None
+        session_id = str(row.get("sessionId") or jsonl_file.stem)
+        uuid = row.get("uuid") or row.get("messageId")
+        message_id = str(uuid or line_idx)
+        return SemanticEvent(
+            time=event_time,
+            source=self.name,
+            actor=str(row_type),
+            intent=intent_text[:MAX_INTENT_CHARS],
+            artifact=f"claude:session:{session_id}:msg:{message_id}",
+            raw_ref=f"claude:projects:{project_dir.name}:{jsonl_file.name}:{line_idx}",
+            privacy_tier=self.privacy_tier,
+            metadata={
+                "session_id": session_id,
+                "parent_uuid": row.get("parentUuid"),
+                "project_dir": str(project_dir.resolve()),
+            },
+            external_id=f"{session_id}:{uuid}" if uuid else f"{jsonl_file.name}:L{line_idx}",
+            source_locator=str(project_dir.resolve()),
+            evidence_locator=str(jsonl_file.resolve()),
+            evidence_line=line_idx,
+            kind="message",
+        )
 
 
 def _parse_json_line(line: str) -> dict[str, Any] | None:

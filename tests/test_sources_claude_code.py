@@ -114,7 +114,7 @@ def test_read_claude_jsonl_handles_dict_and_stringified_message(monkeypatch, tmp
     assert events[1].intent == "tests passed with fixes"
     assert events[2].intent == "string payload"
     assert events[1].intent != "1\t- [大道至简](feedback_dadao_zhijian.md) — should be ignored"
-    assert len(events[3].intent) == 2000
+    assert len(events[3].intent) == 2300
     assert events[0].artifact == "claude:session:abc-session:msg:u-1"
     assert events[1].metadata["parent_uuid"] == "u-1"
     assert events[2].raw_ref.endswith(":3")

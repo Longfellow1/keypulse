@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from keypulse.privacy.detectors import detect, has_sensitive_content
+from keypulse.privacy.detectors import PATTERNS, detect, has_sensitive_content
 
 
 _SHELL_LINE_PATTERNS = (
@@ -100,3 +100,34 @@ def truncate(text: str, max_length: int) -> str:
     if len(text) <= max_length:
         return text
     return text[:max_length] + "...[truncated]"
+
+
+# Secret-class detectors only (no email / phone / uuid / card numbers): used
+# for ingestion where content must stay searchable but credentials must never
+# reach the DB or the FTS index.
+_SECRET_PATTERNS = frozenset({
+    "api_key", "bearer_token", "jwt", "aws_key", "url_token",
+    "private_key", "openai_key", "github_pat", "slack_token",
+})
+_ENABLED_SECRETS = {name: name in _SECRET_PATTERNS for name in PATTERNS}
+# The detector only matches the PEM header line; swallow the whole block.
+_PEM_BLOCK = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.DOTALL
+)
+
+
+def redact_secrets(text: str) -> str:
+    if not text:
+        return text
+    text = _PEM_BLOCK.sub("[REDACTED]", text)
+    detections = detect(text, _ENABLED_SECRETS)
+    if not detections:
+        return text
+    parts: list[str] = []
+    prev = 0
+    for d in detections:
+        parts.append(text[prev:d.start])
+        parts.append("[REDACTED]")
+        prev = d.end
+    parts.append(text[prev:])
+    return "".join(parts)

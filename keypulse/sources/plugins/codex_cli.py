@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
+from keypulse.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInstance, SemanticEvent
 
 
 class CodexCliSource(DataSource):
@@ -68,7 +68,7 @@ class CodexCliSource(DataSource):
                         time=event_time,
                         source=self.name,
                         actor="user",
-                        intent=text[:2000],
+                        intent=text[:MAX_INTENT_CHARS],
                         artifact=f"codex:session:{session_id}",
                         raw_ref=f"codex:history:{line_idx}",
                         privacy_tier=self.privacy_tier,

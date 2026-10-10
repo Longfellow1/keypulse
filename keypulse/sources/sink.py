@@ -5,14 +5,17 @@ import json
 import re
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from keypulse.privacy.desensitizer import redact_secrets
 from keypulse.sources.entity_extractor import extract_named_entities
 from keypulse.sources.types import SemanticEvent
 from keypulse.store.models import RawEvent
 from keypulse.store.repository import get_conn
 from keypulse.store.repository import insert_raw_event
+from keypulse.store.sync_repo import add_evidence, ensure_source
 
 
 _SOURCE_WEIGHTS: dict[str, float] = {
@@ -23,15 +26,40 @@ _SOURCE_WEIGHTS: dict[str, float] = {
     "chrome_history": 0.6,
     "safari_history": 0.6,
 }
+# P0 default bucket by source (D23: "按源默认"); per-app rules / user buckets land with #19.
+_DEFAULT_BUCKETS: dict[str, str] = {
+    "claude_code": "Work",
+    "codex_cli": "Work",
+    "git_log": "Work",
+}
 _COMMIT_RE = re.compile(r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b", re.IGNORECASE)
 _ENTITY_BACKFILL_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="entity-backfill")
 _PENDING_BACKFILL: set[Future[None]] = set()
 _PENDING_LOCK = threading.Lock()
 
 
+def redact_event(event: SemanticEvent) -> SemanticEvent:
+    """Scrub credentials from event text before it can reach the DB / FTS index."""
+    intent = redact_secrets(event.intent or "")
+    if intent == (event.intent or ""):
+        return event
+    return replace(event, intent=intent)
+
+
 def persist_semantic_event(event: SemanticEvent, *, async_named_entities: bool = True) -> int:
-    raw_event = semantic_event_to_raw_event(event, include_named_entities=False)
+    event = redact_event(event)
+    source_id = None
+    if event.external_id or event.source_locator:
+        source_id = ensure_source(event.source, event.source_locator or event.source)
+    raw_event = semantic_event_to_raw_event(event, include_named_entities=False, source_id=source_id)
     row_id = insert_raw_event(raw_event)
+    if row_id > 0 and event.evidence_locator:
+        add_evidence(
+            row_id,
+            event.evidence_locator,
+            event.evidence_line,
+            hashlib.sha256((event.intent or "").encode("utf-8")).hexdigest(),
+        )
     if row_id > 0:
         if async_named_entities:
             _submit_named_entity_backfill(row_id, event)
@@ -47,7 +75,13 @@ def flush_named_entity_backfill(timeout_sec: float = 5.0) -> None:
         future.result(timeout=timeout_sec)
 
 
-def semantic_event_to_raw_event(event: SemanticEvent, *, include_named_entities: bool = True) -> RawEvent:
+def semantic_event_to_raw_event(
+    event: SemanticEvent,
+    *,
+    include_named_entities: bool = True,
+    source_id: int | None = None,
+) -> RawEvent:
+    event = redact_event(event)
     metadata = _metadata_payload(event, include_named_entities=include_named_entities)
     payload = json.dumps(metadata, ensure_ascii=False)
     session_id = metadata.get("entities", {}).get("session_id")
@@ -63,6 +97,10 @@ def semantic_event_to_raw_event(event: SemanticEvent, *, include_named_entities:
         session_id=session_id if isinstance(session_id, str) else None,
         speaker=_speaker_for(event.actor),
         semantic_weight=_SOURCE_WEIGHTS.get(event.source, 0.5),
+        source_id=source_id,
+        external_id=event.external_id,
+        bucket=_DEFAULT_BUCKETS.get(event.source),
+        kind=event.kind or "semantic_event",
     )
 
 
