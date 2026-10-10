@@ -15,7 +15,7 @@ def mcp_group() -> None:
     pass
 
 
-@mcp_group.command("serve", help="Run the MCP server over stdio (token via env KEYPULSE_TOKEN).")
+@mcp_group.command("serve", help="Run the MCP server over stdio (env KEYPULSE_TOKEN + KEYPULSE_CLIENT).")
 def serve_command() -> None:
     from keypulse.mcp.server import serve_stdio
 
@@ -35,7 +35,7 @@ def grant_command(client_id: str, buckets: str, sources: str | None, operations:
                   purpose: str | None, expires_in_days: int | None) -> None:
     from datetime import datetime, timedelta, timezone
 
-    from keypulse.mcp.auth import TOKEN_ENV, create_grant
+    from keypulse.mcp.auth import CLIENT_ENV, TOKEN_ENV, create_grant
 
     init_db(Config.load().db_path_expanded)
     expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days) if expires_in_days else None
@@ -56,16 +56,17 @@ def grant_command(client_id: str, buckets: str, sources: str | None, operations:
     click.echo(f"  {token}\n")
     click.echo("Claude Code (CLI):\n")
     click.echo(
-        f"  claude mcp add keypulse -e {TOKEN_ENV}={token} -- {shlex.quote(exe)} mcp serve\n"
+        f"  claude mcp add keypulse -e {TOKEN_ENV}={token} -e {CLIENT_ENV}={client_id} -- {shlex.quote(exe)} mcp serve\n"
     )
     click.echo(".mcp.json / claude_desktop_config.json snippet:\n")
     snippet = {
         "mcpServers": {
-            "keypulse": {"command": exe, "args": ["mcp", "serve"], "env": {TOKEN_ENV: token}}
+            "keypulse": {"command": exe, "args": ["mcp", "serve"], "env": {TOKEN_ENV: token, CLIENT_ENV: client_id}}
         }
     }
     click.echo(json.dumps(snippet, indent=2))
-    click.echo("\nKeep the config file readable by your user only. Revoke with: keypulse mcp revoke " + client_id)
+    click.echo("\nBoth values are required; a call without the matching client id is denied.")
+    click.echo("Keep the config file readable by your user only. Revoke with: keypulse mcp revoke " + client_id)
 
 
 @mcp_group.command("revoke", help="Revoke all active tokens of a client.")
@@ -88,3 +89,41 @@ def list_command() -> None:
         scope = f"buckets={g['buckets']} sources={g['sources'] or 'all'} ops={g['operations']}"
         expiry = f" expires {g['expires_at']}" if g["expires_at"] else ""
         click.echo(f"{g['id']}\t{g['client_id']}\t{g['created_at']}\t{state}\t{scope}{expiry}")
+
+
+@mcp_group.command("rotate", help="Issue a new token for a client's grant (same scope). The old token stops working at once.")
+@click.argument("client_id")
+def rotate_command(client_id: str) -> None:
+    from keypulse.mcp.auth import CLIENT_ENV, TOKEN_ENV, rotate_grant
+
+    init_db(Config.load().db_path_expanded)
+    try:
+        token = rotate_grant(client_id)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    exe = shutil.which("keypulse") or "keypulse"
+    click.echo(f"Rotated token for '{client_id}'. The previous token is now invalid. New token (shown once):\n")
+    click.echo(f"  {token}\n")
+    click.echo("Claude Code (CLI):\n")
+    click.echo(f"  claude mcp add keypulse -e {TOKEN_ENV}={token} -e {CLIENT_ENV}={client_id} -- {shlex.quote(exe)} mcp serve\n")
+    click.echo(".mcp.json / claude_desktop_config.json snippet:\n")
+    snippet = {
+        "mcpServers": {
+            "keypulse": {"command": exe, "args": ["mcp", "serve"], "env": {TOKEN_ENV: token, CLIENT_ENV: client_id}}
+        }
+    }
+    click.echo(json.dumps(snippet, indent=2))
+
+
+@mcp_group.command("audit", help="Show recent MCP calls (allowed and denied). Never contains queries or tokens.")
+@click.option("--limit", type=click.IntRange(min=1), default=50, show_default=True)
+def audit_command(limit: int) -> None:
+    from keypulse.mcp.audit import recent
+
+    init_db(Config.load().db_path_expanded)
+    for r in recent(limit):
+        count = "" if r["result_count"] is None else f" results={r['result_count']}"
+        click.echo(
+            f"{r['ts']}\t{r['client_id']}\t{r['tool']}\t{r['decision']}\t{r['reason_code']}\t"
+            f"scope={r['scope'] or '-'}{count}"
+        )

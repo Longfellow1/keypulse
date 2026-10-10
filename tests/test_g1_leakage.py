@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from mcp_helpers import search, server_for
 from keypulse.mcp import auth, tools
 from keypulse.mcp.server import build_server
 from keypulse.store.db import close, get_conn, init_db
@@ -161,7 +162,7 @@ def _differential_queries() -> list[dict]:
 
 
 def _run(token, q: dict) -> dict:
-    return tools.search_context(token, q["query"], q.get("time_range"), q.get("sources"), q.get("limit", 10))
+    return search(token, q["query"], q.get("time_range"), q.get("sources"), q.get("limit", 10))
 
 
 # ── 1. canary scan ───────────────────────────────────────────────────────────────────────────
@@ -195,7 +196,7 @@ def test_g1_canary_scan_tools_layer(canary_db, scope) -> None:
 def test_g1_canary_scan_through_mcp_transport(canary_db, scope) -> None:
     """Same scan through the real MCP server: covers error text and protocol-level validation errors."""
     token = auth.create_grant("host", **GRANT_SCOPES[scope])
-    server = build_server(token_provider=lambda: token)
+    server = server_for(token)
     c = CANARIES[0]
     calls = [{"query": q["query"], **{k: v for k, v in q.items() if k != "query"}} for q in _adversarial_queries()[::7]]
     calls += [
@@ -222,9 +223,9 @@ def test_g1_canary_scan_through_mcp_transport(canary_db, scope) -> None:
 def test_g1_canary_scan_denied_and_failure_paths(canary_db, monkeypatch) -> None:
     token = auth.create_grant("host", buckets=["Work"])
     for bad in (None, "", "kp_wrong", CANARIES[0]):
-        _assert_no_canary(json.dumps(tools.search_context(bad, CANARIES[0])), "bad token")
+        _assert_no_canary(json.dumps(search(bad, CANARIES[0])), "bad token")
     auth.revoke_grants("host")
-    _assert_no_canary(json.dumps(tools.search_context(token, CANARIES[0])), "revoked")
+    _assert_no_canary(json.dumps(search(token, CANARIES[0])), "revoked")
 
     token2 = auth.create_grant("host2", buckets=["Work"])
 
@@ -232,7 +233,7 @@ def test_g1_canary_scan_denied_and_failure_paths(canary_db, monkeypatch) -> None
         raise sqlite3.OperationalError(f"fts5: syntax error near {CANARIES[0]} in table raw_events_fts")
 
     monkeypatch.setattr(tools, "search_events", boom)
-    resp = tools.search_context(token2, CANARIES[0])
+    resp = search(token2, CANARIES[0])
     assert resp["status"] == "error"
     _assert_no_canary(json.dumps(resp), "sqlite error")
     assert "raw_events" not in json.dumps(resp)
@@ -243,15 +244,15 @@ def test_g1_sanity_canaries_are_findable_with_enough_scope(canary_db) -> None:
     token = auth.create_grant("wide", buckets=["Work", "Personal", "Private", "Financial"])
     for canary in ("KPCANARY1personalbrowse", "KPCANARY2privatechat", "KPCANARY3bankstatement",
                    "KPCANARY5workothersource", "KPCANARY7samesrcotherbucket"):
-        assert tools.search_context(token, canary)["status"] == "ok", canary
+        assert search(token, canary)["status"] == "ok", canary
     # never reachable by any grant: NULL bucket (unmapped source) and raw capture streams
     for canary in ("KPCANARY4nobucketrow", "KPCANARY6rawstreamwork"):
-        assert tools.search_context(token, canary)["status"] == "no_results", canary
+        assert search(token, canary)["status"] == "no_results", canary
 
 
 def test_at05_work_only_host_sees_only_work_in_mixed_hits(canary_db) -> None:
     token = auth.create_grant("work-host", buckets=["Work"])
-    resp = tools.search_context(token, SHARED_WORD, limit=100)
+    resp = search(token, SHARED_WORD, limit=100)
     assert resp["status"] == "ok"
     assert {r["bucket"] for r in resp["results"]} == {"Work"}
     assert {r["source"] for r in resp["results"]} == {"claude_code", "git_log", "codex_cli"}
@@ -276,7 +277,7 @@ def _responses_for(db: Path, with_out_of_scope: bool, scope_name: str) -> list[b
     token = auth.create_grant("host", **GRANT_SCOPES[scope_name])
     out = [json.dumps(_normalize(_run(token, q)), sort_keys=True, ensure_ascii=False).encode() for q in _differential_queries()]
     # denied path must also be identical
-    out.append(json.dumps(tools.search_context("kp_nope", SHARED_WORD), sort_keys=True).encode())
+    out.append(json.dumps(search("kp_nope", SHARED_WORD), sort_keys=True).encode())
     close()
     return out
 
@@ -338,10 +339,10 @@ def _field_paths(obj, prefix="") -> set[str]:
 def _observed_response_fields(monkeypatch=None) -> set[str]:
     token = auth.create_grant("guard", buckets=["Work"], sources=["claude_code"])
     responses = [
-        tools.search_context(token, SHARED_WORD),                                   # ok
-        tools.search_context(token, "zzz-no-such-thing"),                           # no_results
-        tools.search_context(token, SHARED_WORD, time_range={"start": "bad"}),      # invalid_argument
-        tools.search_context("kp_nope", SHARED_WORD),                               # permission_denied
+        search(token, SHARED_WORD),                                   # ok
+        search(token, "zzz-no-such-thing"),                           # no_results
+        search(token, SHARED_WORD, time_range={"start": "bad"}),      # invalid_argument
+        search("kp_nope", SHARED_WORD),                               # permission_denied
     ]
     fields: set[str] = set()
     for r in responses:

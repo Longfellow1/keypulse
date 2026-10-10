@@ -1,4 +1,4 @@
-"""MCP stdio server exposing KeyPulse tools. Auth: env KEYPULSE_TOKEN checked on every call."""
+"""MCP stdio server exposing KeyPulse tools. Auth: env KEYPULSE_TOKEN + KEYPULSE_CLIENT checked on every call."""
 from __future__ import annotations
 
 import json
@@ -10,15 +10,24 @@ from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
 from keypulse.mcp import tools
-from keypulse.mcp.auth import TOKEN_ENV
+from keypulse.mcp.auth import CLIENT_ENV, TOKEN_ENV
 
 
 def _default_token() -> Optional[str]:
     return os.environ.get(TOKEN_ENV)
 
 
-def build_server(token_provider: Callable[[], Optional[str]] = _default_token) -> FastMCP:
-    """`token_provider` is read at call time so a revoked/rotated token takes effect immediately."""
+def _default_client() -> Optional[str]:
+    return os.environ.get(CLIENT_ENV)
+
+
+def build_server(
+    token_provider: Callable[[], Optional[str]] = _default_token,
+    client_provider: Callable[[], Optional[str]] = _default_client,
+) -> FastMCP:
+    """Token and client id are read at call time and checked against the DB on every call, so a
+    revoked / rotated token takes effect immediately. The client id comes from env KEYPULSE_CLIENT
+    in the Host config; over stdio it is self-declared, not proven (see keypulse.mcp.auth)."""
     server = FastMCP("keypulse")
 
     # Parameters are typed `Any` on purpose: the schema shown to the Host is pinned with
@@ -47,7 +56,9 @@ def build_server(token_provider: Callable[[], Optional[str]] = _default_token) -
         (never guess content); "permission_denied" when the client token is not valid,
         expired, or not allowed to read. Results stay inside the buckets/sources granted to this client.
         """
-        payload = tools.search_context(token_provider(), query, time_range, sources, limit)
+        payload = tools.search_context(
+            token_provider(), query, time_range, sources, limit, client=client_provider()
+        )
         return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
             structuredContent=payload,
