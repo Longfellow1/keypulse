@@ -1,0 +1,74 @@
+{"id":"a01","variant":"answerable","scenario":"W02","style":"kw","query":"检索 只读","gold":["cc-01","cc-02"]}
+{"id":"a02","variant":"answerable","scenario":"W02","style":"nl","query":"这个功能当时边界是怎么定的？","gold":["cc-01","cc-02","md-01"]}
+{"id":"a03","variant":"answerable","scenario":"W02","style":"kw","query":"commit_memory P1","gold":["cc-02"]}
+{"id":"a04","variant":"answerable","scenario":"W02","style":"kw","query":"Redis 队列","gold":["cc-03","cc-04"]}
+{"id":"a05","variant":"answerable","scenario":"W02","style":"nl","query":"我们为什么没用方案 A？","gold":["cc-03","cc-04"]}
+{"id":"a06","variant":"answerable","scenario":"W02","style":"kw","query":"Redis rejected","gold":["gl-04"]}
+{"id":"a07","variant":"answerable","scenario":"W02","style":"kw","query":"SQLite WAL","gold":["cc-04"]}
+{"id":"a08","variant":"answerable","scenario":"W02","style":"kw","query":"sprint planning retrieval boundary","gold":["md-01"]}
+{"id":"a09","variant":"answerable","scenario":"W02","style":"kw","query":"gold set","gold":["md-03"]}
+{"id":"a10","variant":"answerable","scenario":"W02","style":"time","query":"deadline","time_range":{"start":"2026-04-27","end":"2026-04-30"},"gold":["cc-17"]}
+{"id":"a11","variant":"answerable","scenario":"W02","style":"kw","query":"评测集 无答案","gold":["cc-18"]}
+{"id":"a12","variant":"answerable","scenario":"W01","style":"kw","query":"小李 框架","gold":["cc-05"]}
+{"id":"a13","variant":"answerable","scenario":"W01","style":"nl","query":"昨天和小李聊的那个框架叫什么？","gold":["cc-05"]}
+{"id":"a14","variant":"answerable","scenario":"W01","style":"alias","query":"Harbor","gold":["cc-06"]}
+{"id":"a15","variant":"answerable","scenario":"W01","style":"alias","query":"Xiao Li","gold":["cc-06"]}
+{"id":"a16","variant":"answerable","scenario":"W01","style":"kw","query":"LangGraph","gold":["cc-05"]}
+{"id":"a17","variant":"answerable","scenario":"W01","style":"kw","query":"agent 编排","gold":["cc-05"]}
+{"id":"a18","variant":"answerable","scenario":"W01","style":"kw","query":"launchd cursor","gold":["cc-13"]}
+{"id":"a19","variant":"answerable","scenario":"W01","style":"nl","query":"cursor 为什么会丢","gold":["cc-13","cc-14","gl-02"]}
+{"id":"a20","variant":"answerable","scenario":"cross","style":"kw","query":"cursor persist","gold":["gl-02"]}
+{"id":"a21","variant":"answerable","scenario":"cross","style":"kw","query":"cursor","gold":["cc-13","cc-14","cx-03","gl-02"]}
+{"id":"a22","variant":"answerable","scenario":"cross","style":"kw","query":"schema v20","gold":["cc-12","gl-03"]}
+{"id":"a23","variant":"answerable","scenario":"cross","style":"kw","query":"access_grants","gold":["cc-12","gl-03"]}
+{"id":"a24","variant":"answerable","scenario":"cross","style":"kw","query":"trigram tokenizer","gold":["cx-01","ch-04"]}
+{"id":"a25","variant":"answerable","scenario":"cross","style":"kw","query":"brew ripgrep","gold":["zs-03"]}
+{"id":"a26","variant":"answerable","scenario":"cross","style":"nl","query":"I ran docker to start the database yesterday","gold":["zs-04"]}
+{"id":"a27","variant":"answerable","scenario":"cross","style":"kw","query":"launchctl kickstart","gold":["zs-02"]}
+{"id":"a28","variant":"answerable","scenario":"cross","style":"kw","query":"wal_checkpoint","gold":["zs-01"]}
+{"id":"a29","variant":"answerable","scenario":"cross","style":"alias","query":"MCP specification","gold":["ch-06"]}
+{"id":"a30","variant":"answerable","scenario":"cross","style":"kw","query":"Obsidian tags","gold":["cx-02"]}
+{"id":"a31","variant":"answerable","scenario":"L02","style":"kw","query":"subclass 600","gold":["cc-07","ch-01"]}
+{"id":"a32","variant":"answerable","scenario":"L02","style":"kw","query":"签证 材料","gold":["cc-07","cc-08"]}
+{"id":"a33","variant":"answerable","scenario":"L02","style":"nl","query":"上次办澳洲签证用了哪些材料？","gold":["cc-07","cc-08","md-02","ch-02"]}
+{"id":"a34","variant":"answerable","scenario":"L02","style":"kw","query":"visa checklist","gold":["ch-02","md-02"]}
+{"id":"a35","variant":"answerable","scenario":"L02","style":"kw","query":"visa financial evidence","gold":["ch-02"]}
+{"id":"a36","variant":"answerable","scenario":"L02","style":"time","query":"visa","time_range":{"start":"2026-04-22","end":"2026-04-22"},"sources":["chrome_history"],"gold":["ch-01","ch-02"]}
+{"id":"a37","variant":"answerable","scenario":"L02","style":"kw","query":"Sydney","gold":["cx-05","sf-04"]}
+{"id":"a38","variant":"answerable","scenario":"L02","style":"kw","query":"packing list","gold":["cx-05"]}
+{"id":"a39","variant":"answerable","scenario":"L02","style":"kw","query":"银行流水","gold":["cc-08"]}
+{"id":"a40","variant":"answerable","scenario":"L01","style":"kw","query":"Luxilon","gold":["cc-15","ch-03"]}
+{"id":"a41","variant":"answerable","scenario":"L01","style":"nl","query":"之前买过的球线是什么型号？","gold":["cc-15","ch-03","sf-01","md-06"]}
+{"id":"a42","variant":"answerable","scenario":"L01","style":"kw","query":"网球线 型号","gold":["cc-15"]}
+{"id":"a43","variant":"answerable","scenario":"L01","style":"kw","query":"tennis string","gold":["ch-03","sf-01","md-06"]}
+{"id":"a44","variant":"answerable","scenario":"L01","style":"kw","query":"Tennis Warehouse","gold":["cc-15","ch-03"]}
+{"id":"a45","variant":"answerable","scenario":"L01","style":"kw","query":"年费","gold":["cc-09"]}
+{"id":"a46","variant":"answerable","scenario":"L01","style":"kw","query":"信用卡 年费","gold":["cc-09"]}
+{"id":"a47","variant":"answerable","scenario":"L01","style":"kw","query":"mortgage","gold":["cx-04","sf-02"]}
+{"id":"a48","variant":"answerable","scenario":"L01","style":"nl","query":"how much would my monthly home loan payment be","gold":["cx-04","sf-02"]}
+{"id":"a49","variant":"answerable","scenario":"L01","style":"kw","query":"card fees","gold":["md-04"]}
+{"id":"a50","variant":"answerable","scenario":"L01","style":"kw","query":"annual fee","gold":["ch-05"]}
+{"id":"a51","variant":"answerable","scenario":"L01","style":"kw","query":"therapist","gold":["sf-03"]}
+{"id":"a52","variant":"answerable","scenario":"L01","style":"kw","query":"心理咨询","gold":["cc-10"]}
+{"id":"a53","variant":"answerable","scenario":"L01","style":"kw","query":"journal therapy","gold":["md-05"]}
+{"id":"n01","variant":"no_answer","style":"kw","query":"quetzalcoatlus"}
+{"id":"n02","variant":"no_answer","style":"kw","query":"Kubernetes 节点扩容"}
+{"id":"n03","variant":"no_answer","style":"near_miss","query":"护照号码","note":"passport appears in fixtures but no passport number does"}
+{"id":"n04","variant":"no_answer","style":"near_miss","query":"Redis 哨兵","note":"Redis appears, Sentinel does not"}
+{"id":"n05","variant":"no_answer","style":"nl","query":"what did the CFO say about Q3 revenue"}
+{"id":"n06","variant":"no_answer","style":"near_miss","query":"mortgage rate 5.5 percent","note":"mortgage appears, 5.5 percent does not"}
+{"id":"n07","variant":"no_answer","style":"kw","query":"Rust 异步运行时"}
+{"id":"n08","variant":"no_answer","style":"secret","query":"FAKE0000","note":"redacted fake credential must not be searchable"}
+{"id":"n09","variant":"no_answer","style":"filter","query":"Redis","sources":["safari_history"],"note":"Redis exists only outside Safari"}
+{"id":"n10","variant":"no_answer","style":"filter","query":"deadline","time_range":{"start":"2026-03-01","end":"2026-03-31"},"note":"deadline exists only in late April"}
+{"id":"n11","variant":"no_answer","style":"collision","query":"budget","note":"asked about the Q3 marketing budget approval; only a household budget note exists"}
+{"id":"n12","variant":"no_answer","style":"collision","query":"Sydney","note":"asked about the Sydney office headcount; only trip logistics exist"}
+{"id":"r01","variant":"restricted","style":"kw","query":"therapist","grant":{"buckets":["Work"]},"forbidden":["sf-03"]}
+{"id":"r02","variant":"restricted","style":"kw","query":"心理咨询","grant":{"buckets":["Work"]},"forbidden":["cc-10"]}
+{"id":"r03","variant":"restricted","style":"kw","query":"mortgage","grant":{"buckets":["Work"]},"forbidden":["cx-04","sf-02"]}
+{"id":"r04","variant":"restricted","style":"kw","query":"journal therapy","grant":{"buckets":["Work"]},"forbidden":["md-05"]}
+{"id":"r05","variant":"restricted","style":"kw","query":"信用卡 年费","grant":{"buckets":["Work","Personal"]},"forbidden":["cc-09"]}
+{"id":"r06","variant":"restricted","style":"kw","query":"Luxilon","grant":{"sources":["claude_code"]},"forbidden":["ch-03"]}
+{"id":"c01","variant":"conflict","style":"kw","query":"deadline","newest":"cc-17","stale":"cc-16"}
+{"id":"c02","variant":"conflict","style":"kw","query":"发布 deadline","newest":"cc-17","stale":"cc-16"}
+{"id":"c03","variant":"conflict","style":"kw","query":"评审会","newest":"cc-17","stale":"cc-16"}
