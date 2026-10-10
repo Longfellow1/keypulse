@@ -5,17 +5,17 @@ category: project
 status: active
 tags: [handoff, state, refactor]
 created: "2026-10-10T11:19:23"
-updated: "2026-10-10T11:56:40"
+updated: "2026-10-10T12:14:26"
 ---
 
 <!-- compiled_truth -->
 ## Repo state
 - **HISTORY WAS REWRITTEN on 2026-10-10** (git filter-repo + force-push; all branches and tags rewritten). All commit hashes from earlier in this session are obsolete.
-- Branch `main` == `origin/main` at `7ddec56` (privacy commit: real-data eval artifacts kept out of the repo).
+- Branch `main` == `origin/main` at `7ddec56` (privacy commit: real-data eval artifacts kept out of the repo). Eval PRD v1.0 + brain updates are committed on top of it.
 - Tag `legacy-v0` = `f991a98` (frozen baseline; was `66ddd2d`). Pushed.
 - Tag `backup/install-homebrew-clean` = `dbbc6dc` (was the pre-rewrite tag target).
 - Rename-fix commit is `d0cba9f` (was `7ab8641`).
-- Docs committed: PRD v1.2 with D18 / D19 and Eval PRD v0.1 (`8a955c0`). The Eval PRD is no longer untracked, but still awaits owner decisions Q1-Q3.
+- Docs: PRD v1.2 with D18 / D19; Eval PRD now **v1.0 / release-judgement baseline**, approved by the owner on 2026-10-10 (`docs/KeyPulse_Eval_PRD.md`). The six owner decisions are recorded in [[eval-prd-separate]].
 - Refactor is in place in github.com/Longfellow1/keypulse. Planned branch `refactor/core-v1`.
 - Planned contract: import-linter. The core package must not import pipeline / obsidian / hud / quality. Enforced in CI.
 - Pre-purge backup bundle (contains the leaked secrets) is at the session scratchpad. Delete it after the owner confirms.
@@ -58,12 +58,12 @@ updated: "2026-10-10T11:56:40"
    - revoke the leaked third-party API key (anyint.ai) and check the `sk-sp-` key;
    - decide on a GitHub Support purge request for the 7 closed PR refs;
    - decide on the exposure of the public golden daily / weekly baselines.
-2. Owner decides Eval PRD Q1-Q3 ([[eval-prd-separate]]): Q1 real-data labels local-only; Q2 initial thresholds, ratchet-up only; Q3 E2E recall >=70% as V1.0 gate. Then promote `docs/KeyPulse_Eval_PRD.md` to v1.0, commit, and repoint baseline PRD §5.3/§6.2/§6.4 references. The "unauthorised-access leakage = 0" HARD release gate must stay.
-3. P0 breakdown:
-   - core package skeleton + import-linter rules;
+2. Eval PRD v1.0 is approved and binding ([[eval-prd-separate]]). The "unauthorised-access leakage = 0" HARD release gate stays.
+3. **Next: P0 breakdown**:
+   - core package skeleton + import-linter rules, including the macOS-lib ban;
    - data model per PRD §3.5;
    - MCP tools `search_context` / `get_timeline` / `get_evidence` + `commit_memory`, with token + allowlist auth ([[mcp-caller-auth-p0]], [[memory-distillation-by-agent]]);
-   - eval V0 infra, in parallel.
+   - eval V0 infra, reusing legacy tests per Eval PRD §1.5, in parallel.
 4. Extraction order unchanged, after unblocking:
    - store, then search, then privacy / permissions (these need extension per PRD, not as-is), then capture / sources.
    - Blockers: `pipeline/__init__.py` eager imports; `sources/sink.py:11` imports `quality.entity_extractor`; quality cluster strategies import `obsidian.layout`; capture <-> capabilities cycle; `app.py` / `cli.py` hard-wired to pipeline + obsidian; DB schema ownership split (`store/migrations.py` v19 vs `pipeline/triggers.py` llm_trigger_log, `pipeline/run_record.py` run_records).
@@ -115,3 +115,9 @@ updated: "2026-10-10T11:56:40"
   summary: "Leak purge: audit found a real third-party API key, WeChat excerpts and job-search traces in docs/entity-extractor-eval-2026-05.json (public since 2026-05-23) via capture -> eval -> git path. History rewritten with git filter-repo and force-pushed (all branches/tags). Residual: 7 closed PR refs (#3-#8, #15) still hold an sk-sp- key-like string; only GitHub Support can purge. Owner actions pending: key revocation, support purge, golden baseline review."
   source: "Session 2026-10-10 (post-purge)"
   affects: [session-handoff-2026-10-10, no-real-data-in-repo]
+
+- time: 2026-10-10T12:14:26
+  kind: decision
+  summary: "Next steps updated: Eval PRD v1.0 approved; next is P0 breakdown"
+  source: Owner approval 2026-10-10
+  affects: [session-handoff-2026-10-10]
