@@ -352,3 +352,14 @@ def test_g5_no_plaintext_token_or_hash_in_db_wal_logs_audit_or_cli_output(home, 
         mcp_logger.setLevel(old_level)
         kp_logger.removeHandler(handler)
         handler.close()
+
+
+def test_keypulse_token_in_ingested_text_is_redacted() -> None:
+    # A host transcript can contain the `claude mcp add -e KEYPULSE_TOKEN=...` command (B6).
+    import secrets
+
+    from keypulse.privacy.desensitizer import redact_secrets
+
+    token = "kp_" + secrets.token_urlsafe(32)
+    out = redact_secrets(f"claude mcp add keypulse -e KEYPULSE_TOKEN={token} -- keypulse mcp serve")
+    assert token not in out and "[REDACTED]" in out

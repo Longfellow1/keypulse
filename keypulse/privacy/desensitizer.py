@@ -116,10 +116,16 @@ _PEM_BLOCK = re.compile(
 )
 
 
+# KeyPulse's own MCP tokens ("kp_" + token_urlsafe(32)). They end up in host transcripts
+# (e.g. a `claude mcp add -e KEYPULSE_TOKEN=...` command) that KeyPulse itself ingests (B6).
+_KEYPULSE_TOKEN = re.compile(r"\bkp_[A-Za-z0-9_-]{32,}")
+
+
 def redact_secrets(text: str) -> str:
     if not text:
         return text
     text = _PEM_BLOCK.sub("[REDACTED]", text)
+    text = _KEYPULSE_TOKEN.sub("[REDACTED]", text)
     detections = detect(text, _ENABLED_SECRETS)
     if not detections:
         return text
