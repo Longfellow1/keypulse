@@ -46,8 +46,8 @@ def test_codex_cli_discover_and_read(monkeypatch, tmp_path: Path) -> None:
     event = events[0]
     assert event.source == "codex_cli"
     assert event.actor == "user"
-    assert event.intent == long_prompt[:2000]
-    assert len(event.intent) == 2000
+    assert event.intent == long_prompt
+    assert len(event.intent) == len(long_prompt)
     assert event.artifact == "codex:session:s-1"
     assert event.raw_ref == "codex:history:1"
     assert event.metadata == {"session_id": "s-1"}

@@ -1,4 +1,5 @@
 import hashlib
+import sqlite3
 import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -53,7 +54,25 @@ def insert_raw_event(e: RawEvent) -> int:
            WHERE source=? AND ts_start=? AND IFNULL(content_hash,'')=IFNULL(?,'')""",
         (e.source, e.ts_start, e.content_hash),
     ).fetchone()
-    return row[0] if row else 0
+    if not row:
+        return 0
+    if e.source_id is not None or e.external_id is not None or e.bucket or e.kind:
+        # Legacy row hit by the dedup index: fill missing provenance, never overwrite.
+        # (A same-key row already owning this external_id is left alone.)
+        try:
+            conn.execute(
+                """UPDATE raw_events SET
+                     source_id   = COALESCE(source_id, ?),
+                     external_id = COALESCE(external_id, ?),
+                     bucket      = COALESCE(bucket, ?),
+                     kind        = COALESCE(kind, ?)
+                   WHERE id = ?""",
+                (e.source_id, e.external_id, e.bucket, e.kind, row[0]),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+    return row[0]
 
 
 def query_raw_events(

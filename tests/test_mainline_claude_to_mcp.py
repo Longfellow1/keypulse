@@ -340,3 +340,66 @@ def test_stdio_subprocess_end_to_end(env, token) -> None:
     assert names == ["search_context"] and ok["status"] == "ok"
     _, denied = asyncio.run(run({"KEYPULSE_TOKEN": "kp_nope"}))
     assert denied["status"] == "permission_denied" and "results" not in denied
+
+
+# ── lead review fixes ─────────────────────────────────────────────────────────
+
+def test_dedup_hit_on_legacy_row_backfills_provenance(env) -> None:
+    from keypulse.sources.sink import semantic_event_to_raw_event
+    from keypulse.store.repository import insert_raw_event
+
+    legacy = ClaudeCodeSource(projects_root=env.tmp / "claude" / "projects", self_exclude_dirs=set())
+    inst = legacy.discover()[0]
+    since, until = datetime(2000, 1, 1, tzinfo=timezone.utc), datetime(2100, 1, 1, tzinfo=timezone.utc)
+    for ev in legacy.read(inst, since, until):
+        raw = semantic_event_to_raw_event(ev, include_named_entities=False)
+        assert raw.source_id is None and raw.external_id is None
+        raw.bucket = raw.kind = None  # legacy-style: no provenance at all
+        insert_raw_event(raw)
+    assert _count_events() == 3
+    assert get_conn().execute("SELECT count(*) FROM raw_events WHERE source_id IS NOT NULL").fetchone()[0] == 0
+
+    _sync()
+
+    conn = get_conn()
+    assert _count_events() == 3  # still one row per message
+    rows = conn.execute("SELECT source_id, external_id, bucket, kind FROM raw_events").fetchall()
+    assert all(r["source_id"] is not None and r["external_id"] and r["bucket"] == "Work" and r["kind"] == "message" for r in rows)
+    assert conn.execute("SELECT count(*) FROM evidence").fetchone()[0] == 3
+
+
+def test_dedup_backfill_never_overwrites_existing_values(env) -> None:
+    _sync()
+    conn = get_conn()
+    conn.execute("UPDATE raw_events SET bucket = 'Personal'")
+    conn.commit()
+    conn.execute("DELETE FROM sync_cursors")
+    conn.commit()
+    registry._PLUGINS["claude_code"] = env.make_source()
+    _sync()
+    assert {r[0] for r in conn.execute("SELECT bucket FROM raw_events")} == {"Personal"}
+    assert _count_events() == 3
+
+
+def test_long_message_tail_is_searchable_but_snippet_stays_short(env, token) -> None:
+    long_text = ("filler words about nothing " * 190) + " ending with narwhalquux tail"
+    assert 4800 < len(long_text) < 6000
+    with env.session.open("a", encoding="utf-8") as fh:
+        fh.write(_line("user", "u-long", "2026-04-28T05:00:00Z", long_text) + "\n")
+    _sync()
+    stored = get_conn().execute("SELECT content_text FROM raw_events WHERE external_id = 'sess-1:u-long'").fetchone()[0]
+    assert stored.endswith("narwhalquux tail")
+    data = _payload(_call(token, query="narwhalquux"))
+    assert data["status"] == "ok" and len(data["results"]) == 1
+    snippet = data["results"][0]["snippet"]
+    assert "narwhalquux" in snippet and len(snippet) < 300
+
+
+def test_message_over_cap_is_truncated_to_32k(env) -> None:
+    from keypulse.sources.types import MAX_INTENT_CHARS
+
+    with env.session.open("a", encoding="utf-8") as fh:
+        fh.write(_line("user", "u-huge", "2026-04-28T06:00:00Z", "z" * (MAX_INTENT_CHARS + 5000)) + "\n")
+    _sync()
+    n = get_conn().execute("SELECT length(content_text) FROM raw_events WHERE external_id = 'sess-1:u-huge'").fetchone()[0]
+    assert n == MAX_INTENT_CHARS == 32_000

@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping
 
 
+# Upper bound on stored message text per source event (bounds row size, keeps tails searchable).
+MAX_INTENT_CHARS = 32_000
+
 FIELD_HEURISTICS: dict[str, set[str]] = {
     "intent_text": {"text", "content", "body", "message", "prompt", "query", "input", "command"},
     "ai_dialog": {"role", "user", "assistant", "completion", "response", "model"},

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
+from keypulse.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInstance, SemanticEvent
 
 _SKIP_CONTENT_TYPES = {"tool_use", "tool_result", "thinking", "image"}
 
@@ -119,7 +119,7 @@ class ClaudeCodeSource(DataSource):
                             time=event_time,
                             source=self.name,
                             actor=str(row_type),
-                            intent=intent_text[:2000],
+                            intent=intent_text[:MAX_INTENT_CHARS],
                             artifact=f"claude:session:{session_id}:msg:{message_id}",
                             raw_ref=(
                                 f"claude:projects:{project_dir.name}:{jsonl_file.name}:{line_idx}"
@@ -217,7 +217,7 @@ class ClaudeCodeSource(DataSource):
             time=event_time,
             source=self.name,
             actor=str(row_type),
-            intent=intent_text[:2000],
+            intent=intent_text[:MAX_INTENT_CHARS],
             artifact=f"claude:session:{session_id}:msg:{message_id}",
             raw_ref=f"claude:projects:{project_dir.name}:{jsonl_file.name}:{line_idx}",
             privacy_tier=self.privacy_tier,
