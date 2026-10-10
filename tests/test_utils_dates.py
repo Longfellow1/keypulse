@@ -5,8 +5,11 @@ from datetime import datetime, timedelta, timezone
 from keypulse.utils.dates import local_day_bounds, resolve_local_date
 
 
-def test_resolve_local_date_uses_local_day_for_today_and_yesterday():
-    now = datetime(2026, 4, 19, 0, 30, tzinfo=timezone(timedelta(hours=8)))
+def test_resolve_local_date_uses_local_day_for_today_and_yesterday(monkeypatch):
+    tz = timezone(timedelta(hours=8))
+    # Pin the user's local timezone so the test doesn't depend on the machine's (CI runs in UTC).
+    monkeypatch.setattr("keypulse.utils.dates.local_timezone", lambda now=None: tz)
+    now = datetime(2026, 4, 19, 0, 30, tzinfo=tz)
 
     assert resolve_local_date("today", now=now) == "2026-04-19"
     assert resolve_local_date("yesterday", now=now) == "2026-04-18"
