@@ -1342,7 +1342,16 @@ Manual Saves: {stats_data['manual_count']}
 # 11. SEARCH
 # ═════════════════════════════════════════════════════════════════════════════
 
-@main.command(name="search", help=T("搜索历史活动。", "Search historical activity."))
+@main.command(
+    name="search",
+    help=T(
+        "搜索历史活动。QUERY 按空格拆成关键词，不做语义理解：请直接写关键词，不要写整句。"
+        "例如 keypulse search \"签证 visa 材料\"。AI 客户端（MCP）则由客户端自己提取关键词，见 search_context 工具说明。",
+        "Search historical activity. QUERY is split on whitespace into keywords; there is no language "
+        "understanding, so give keywords, not a sentence. Example: keypulse search \"visa checklist\". "
+        "AI hosts (MCP) extract the keywords themselves, see the search_context tool description.",
+    ),
+)
 @click.argument("query")
 @click.option("--app", default=None, help=T("按应用名过滤", "Filter by app name"))
 @click.option("--since", default=None, help=T("时间过滤（7d、24h 或 YYYY-MM-DD）", "Time filter (7d, 24h, or YYYY-MM-DD)"))

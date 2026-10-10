@@ -110,8 +110,26 @@ def _doc_score(row, terms: list[str]) -> float:
     return score * (1 + matched / max(1, len(set(terms))))
 
 
+def _normalize_keywords(keywords: list[str]) -> list[str]:
+    """Collapse whitespace, drop quotes/blanks, de-duplicate case-insensitively (order kept)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in keywords:
+        k = " ".join(str(raw).replace('"', " ").split())
+        if k and k.lower() not in seen:
+            seen.add(k.lower())
+            out.append(k)
+    return out
+
+
+def _matched(row, terms: list[str]) -> list[str]:
+    """Distinct keywords that occur in this document (case-insensitive substring, document only)."""
+    text = " ".join(((row["content_text"] or "") + " " + (row["window_title"] or "")).lower().split())
+    return [t for t in terms if t.lower() in text]
+
+
 def search_events(
-    query: str,
+    keywords: list[str],
     *,
     since: str | datetime | None = None,
     until: str | datetime | None = None,
@@ -120,19 +138,20 @@ def search_events(
     event_type: Optional[str] = "semantic_event",
     limit: int = 20,
 ) -> list[dict]:
-    """Full-text search over raw_events.
+    """Keyword search over raw_events: OR across keywords, ranked by how many distinct keywords a
+    document matches (coverage), then a per-document score, then recency.
 
-    `since`/`until` bound the event's real occurred_at (ts_start), never the
-    ingestion time. Returns [] for empty queries. Each hit carries the
-    `evidence_id` (first evidence row) and the terms that matched.
+    The caller (an AI host) is responsible for turning a question into keywords; no query
+    understanding happens here. `since`/`until` bound the event's real occurred_at (ts_start),
+    never the ingestion time. Returns [] for no usable keywords. Each hit carries `evidence_id`
+    (first evidence row), `matched` (number of distinct keywords found) and `keyword_count`.
 
-    `buckets` (None = unrestricted, [] = nothing) and `sources` are applied in
-    the WHERE clause, before LIMIT, never as a post-filter. A bucket-scoped
-    search ranks the newest 500 in-scope candidates by a per-document score
-    (`_doc_score`), recency breaking ties; bm25 depends on corpus-wide
-    statistics, so it would let out-of-scope data change in-scope order.
+    `buckets` (None = unrestricted, [] = nothing) and `sources` are applied in the WHERE clause,
+    before LIMIT, never as a post-filter. Ranking pulls the newest 500 in-scope candidates and
+    ranks them with per-document features only; bm25 / IDF depend on corpus-wide statistics, so
+    they would let out-of-scope data change in-scope order.
     """
-    terms = [t for t in re.split(r"\s+", (query or "").replace('"', " ").strip()) if t]
+    terms = _normalize_keywords(keywords)
     if not terms:
         return []
     since_ts = parse_time_bound(since)
@@ -141,20 +160,17 @@ def search_events(
     long_terms = [t for t in terms if len(t) >= _MIN_FTS_CHARS]
     short_terms = [t for t in terms if len(t) < _MIN_FTS_CHARS]
 
+    # Any keyword may match (OR). Long keywords go through the trigram index (a phrase when they
+    # contain spaces); 1-2 char keywords cannot be indexed and fall back to LIKE.
     params: list = []
+    any_match: list[str] = []
     if long_terms:
-        match = " AND ".join('"%s"' % t for t in long_terms)
-        from_sql = "raw_events e JOIN raw_events_fts ON raw_events_fts.rowid = e.id"
-        where = ["raw_events_fts MATCH ?"]
-        params.append(match)
-        order = "bm25(raw_events_fts), e.ts_start DESC" if buckets is None else "e.ts_start DESC, e.id DESC"
-    else:
-        from_sql = "raw_events e"
-        where = []
-        order = "e.ts_start DESC, e.id DESC"
+        any_match.append("e.id IN (SELECT rowid FROM raw_events_fts WHERE raw_events_fts MATCH ?)")
+        params.append(" OR ".join('"%s"' % t for t in long_terms))
     for t in short_terms:
-        where.append("e.content_text LIKE ? ESCAPE '\\'")
+        any_match.append("e.content_text LIKE ? ESCAPE '\\'")
         params.append("%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+    where = ["(" + " OR ".join(any_match) + ")"]
     if event_type:
         where.append("e.event_type = ?")
         params.append(event_type)
@@ -175,27 +191,30 @@ def search_events(
         where.append("e.bucket IN (%s)" % ",".join("?" * len(buckets)))
         params.extend(buckets)
     limit = max(1, min(int(limit), 100))
-    # Scoped search: pull a recency-ordered candidate window (scope filter in SQL), then rank it
-    # in Python with per-document features only. Anything corpus-wide (bm25, IDF, avg length)
-    # would let out-of-scope data change in-scope order.
-    params.append(_SCOPED_CANDIDATES if buckets is not None else limit)
+    params.append(_SCOPED_CANDIDATES)
 
     sql = f"""
         SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.kind, e.content_text, e.window_title,
                (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id
-        FROM {from_sql}
-        WHERE {' AND '.join(where) or '1'}
-        ORDER BY {order}
+        FROM raw_events e
+        WHERE {' AND '.join(where)}
+        ORDER BY e.ts_start DESC, e.id DESC
         LIMIT ?
     """
     rows = get_conn().execute(sql, params).fetchall()
-    if buckets is not None:
-        rows = sorted(rows, key=lambda r: _doc_score(r, terms), reverse=True)[:limit]  # stable: recency breaks ties
-    hits = []
+    scored = []
     for r in rows:
+        found = _matched(r, terms)
+        if found:
+            scored.append((len(found), _doc_score(r, terms), r, found))
+    # Stable sort over a recency-ordered list: coverage, then document score, then recency.
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    hits = []
+    for coverage, _score, r, found in scored[:limit]:
         d = dict(r)
         d.pop("window_title", None)
-        d["snippet"] = _snippet(d.pop("content_text") or "", terms)
-        d["matched_terms"] = terms
+        d["snippet"] = _snippet(d.pop("content_text") or "", found)
+        d["matched"] = coverage
+        d["keyword_count"] = len(terms)
         hits.append(d)
     return hits

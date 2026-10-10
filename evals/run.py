@@ -9,9 +9,15 @@ Flow: synthetic fixtures -> temp dir (fake HOME) -> real source plugins -> regis
 through the MCP server layer with a real grant. Nothing outside the temp dir is read or written.
 
 Metrics
-  M1  evidence recall@5   : answerable questions with >=1 gold fixture event in the top-5 results.
-  M2  no-answer false-hit : no-answer questions that returned any result (the tool has no
-                            low-certainty flag yet, so any returned result is a false hit).
+  M1  evidence recall@5   : answerable questions with >=1 gold fixture event in the top-5 results
+                            (either tier: "strong" or "weak"). Also reported for the natural-language
+                            (style "nl") and keyword (all other styles) subsets.
+  M2  no-answer false-hit : no-answer questions that returned a "strong" result. "weak" results are
+                            possible clues (PRD 3.7.3) and are not counted.
+
+Each question carries ``keywords`` = what a compliant AI host would send (the host does the
+natural-language understanding), plus the ``time_range`` / ``sources`` it would derive from the
+question. ``query`` is only the user's original wording, kept for reading the report.
 Questions that cannot be scored yet (conflict -> PRD says record only)
 are reported as skipped / recorded and never counted as failures.
 """
@@ -151,7 +157,7 @@ def _call_all(tokens: dict[str, str], questions: list[dict[str, Any]]) -> dict[s
         async with create_connected_server_and_client_session(server._mcp_server) as client:
             for q in questions:
                 current["token"] = tokens[q["id"]]
-                args: dict[str, Any] = {"query": q["query"], "limit": TOP_K}
+                args: dict[str, Any] = {"keywords": q["keywords"], "limit": TOP_K}
                 if q.get("time_range"):
                     args["time_range"] = q["time_range"]
                 if q.get("sources"):
@@ -224,8 +230,9 @@ def run_eval() -> dict[str, Any]:
             answerable_rows.append(row)
             details.append(row)
         elif q["variant"] == "no_answer":
-            false_hit = resp.get("status") == "ok" and bool(resp.get("results"))
-            row = {**base, "hit": false_hit, "returned": len(resp.get("results", []))}
+            strong = [r for r in resp.get("results", []) if r.get("match") == "strong"]
+            row = {**base, "hit": resp.get("status") == "ok" and bool(strong),
+                   "returned": len(resp.get("results", [])), "returned_strong": len(strong)}
             no_answer_rows.append(row)
             details.append(row)
         elif q["variant"] == "restricted":
@@ -244,6 +251,10 @@ def run_eval() -> dict[str, Any]:
                              "newest_first": rank.get(q["newest"], 99) < rank.get(q["stale"], 99)})
 
     m1 = sum(r["hit"] for r in answerable_rows) / len(answerable_rows) if answerable_rows else 0.0
+    nl_rows = [r for r in answerable_rows if r["style"] == "nl"]
+    kw_rows = [r for r in answerable_rows if r["style"] != "nl"]
+    m1_nl = sum(r["hit"] for r in nl_rows) / len(nl_rows) if nl_rows else 0.0
+    m1_kw = sum(r["hit"] for r in kw_rows) / len(kw_rows) if kw_rows else 0.0
     m2 = sum(r["hit"] for r in no_answer_rows) / len(no_answer_rows) if no_answer_rows else 0.0
 
     coverage = Counter((e.source, e.bucket) for e in EVENTS)
@@ -255,6 +266,10 @@ def run_eval() -> dict[str, Any]:
         "summary": {
             "m1_evidence_recall_at_5": round(m1, 4),
             "m2_no_answer_false_hit_rate": round(m2, 4),
+            "m1_nl_subset": round(m1_nl, 4),
+            "m1_keyword_subset": round(m1_kw, 4),
+            "nl_evaluated": len(nl_rows),
+            "keyword_evaluated": len(kw_rows),
             "answerable_evaluated": len(answerable_rows),
             "no_answer_evaluated": len(no_answer_rows),
             "questions_total": len(questions),
@@ -290,9 +305,11 @@ def _print(report: dict[str, Any]) -> None:
     s = report["summary"]
     print(f"E3 retrieval eval {report['eval_version']} (set {report['question_set_digest']}) in {report['elapsed_sec']}s")
     print(f"  M1 evidence recall@5        : {s['m1_evidence_recall_at_5']:.1%}  ({s['answerable_evaluated']} answerable)")
-    print(f"  M2 no-answer false-hit rate : {s['m2_no_answer_false_hit_rate']:.1%}  ({s['no_answer_evaluated']} no-answer)")
+    print(f"    M1 natural-language subset: {s['m1_nl_subset']:.1%}  ({s['nl_evaluated']} questions)")
+    print(f"    M1 keyword subset         : {s['m1_keyword_subset']:.1%}  ({s['keyword_evaluated']} questions)")
+    print(f"  M2 no-answer false-hit rate : {s['m2_no_answer_false_hit_rate']:.1%}  ({s['no_answer_evaluated']} no-answer; strong results only)")
     print(f"  skipped {s['questions_skipped']}, recorded-only {s['questions_recorded_only']}, total {s['questions_total']}")
-    for title, key in (("scenario", "by_scenario"), ("source", "by_source"), ("bucket", "by_bucket"), ("no-answer style", "no_answer_by_style")):
+    for title, key in (("scenario", "by_scenario"), ("source", "by_source"), ("bucket", "by_bucket"), ("style", "by_style"), ("no-answer style", "no_answer_by_style")):
         print(f"  by {title}: " + ", ".join(f"{k} {v['hits']}/{v['n']}" for k, v in report[key].items()))
     print(f"  restricted (scoped grants): {s['restricted_evaluated']} evaluated, {s['restricted_leaks']} returned forbidden evidence ({s['restricted_enforcement_leaks']} by scope enforcement, rest misbucketed by P0 source defaults)")
     for r in report["recorded_only"]:

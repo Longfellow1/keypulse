@@ -93,7 +93,7 @@ def test_gate_fails_on_a_really_degraded_retriever(baseline, monkeypatch) -> Non
     # and a retriever that answers everything trips M2
     def always_hit(query, **kwargs):
         return [{"id": 1, "source": "claude_code", "occurred_at": "2026-04-20T02:00:00+00:00", "bucket": "Work",
-                 "kind": "message", "evidence_id": 1, "snippet": "x", "matched_terms": [query]}]
+                 "kind": "message", "evidence_id": 1, "snippet": "x", "matched": 2, "keyword_count": 2}]
 
     monkeypatch.setattr(tools, "search_events", always_hit)
     noisy = run_eval()

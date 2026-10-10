@@ -14,10 +14,29 @@ from keypulse.search.engine import parse_time_bound, search_events
 # bucket comes from app rules only, so a bucket label is not enough evidence that they are safe to
 # hand to a third-party AI. Revisit in P1 together with sensitivity tags.
 SEARCHABLE_EVENT_TYPE = "semantic_event"
-MAX_QUERY_CHARS = 1000
+MAX_KEYWORDS = 10
+MAX_KEYWORD_CHARS = 100
+# A keyword that looks like a whole sentence means the host skipped the keyword extraction step.
+MAX_KEYWORD_CJK_CHARS = 12
+MAX_KEYWORD_WORDS = 6
 TOOL_SEARCH_CONTEXT = "search_context"
 
 _MATCH_REASON = "keyword match"
+SENTENCE_KEYWORD_MESSAGE = (
+    "Each keyword must be a short word or phrase, not a sentence or question. "
+    "Split the question into 1-6 distinctive keywords and call again."
+)
+KEYWORDS_MESSAGE = "keywords must be a non-empty list of 1-10 strings"
+
+
+def _looks_like_sentence(keyword: str) -> bool:
+    cjk = sum(1 for ch in keyword if "\u4e00" <= ch <= "\u9fff")
+    return (
+        keyword.endswith(("?", "\uff1f"))
+        or cjk > MAX_KEYWORD_CJK_CHARS
+        or len(keyword.split()) > MAX_KEYWORD_WORDS
+        or len(keyword) > MAX_KEYWORD_CHARS
+    )
 
 
 def permission_denied() -> dict[str, Any]:
@@ -56,7 +75,7 @@ def _coverage(grant: Grant, start: Optional[str], end: Optional[str]) -> dict[st
 
 def search_context(
     token: Optional[str],
-    query: Any,
+    keywords: Any,
     time_range: Any = None,
     sources: Any = None,
     limit: Any = 10,
@@ -68,14 +87,14 @@ def search_context(
         audit.record(client=decision.client, tool=TOOL_SEARCH_CONTEXT, allowed=False,
                      reason_code=decision.reason, scope=decision.scope)
         return permission_denied()
-    payload = _search(decision.grant, query, time_range, sources, limit)
+    payload = _search(decision.grant, keywords, time_range, sources, limit)
     count = len(payload.get("results") or [])
     audit.record(client=decision.client, tool=TOOL_SEARCH_CONTEXT, allowed=True,
                  reason_code=payload.get("status", "error"), scope=decision.scope, result_count=count)
     return payload
 
 
-def _search(grant: Grant, query: Any, time_range: Any, sources: Any, limit: Any) -> dict[str, Any]:
+def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: Any) -> dict[str, Any]:
 
     # Fixed-text validation: caller-supplied values are never echoed back.
     if sources is not None and not (isinstance(sources, list) and all(isinstance(x, str) for x in sources)):
@@ -88,10 +107,14 @@ def _search(grant: Grant, query: Any, time_range: Any, sources: Any, limit: Any)
     except (ValueError, TypeError):
         # Fixed text: never echo caller-supplied strings (or parser internals) back.
         return {"status": "invalid_argument", "message": "time_range must be an object with optional ISO 'start' and 'end'"}
-    if not isinstance(query, str) or not query.strip():
-        return {"status": "invalid_argument", "message": "query must be a non-empty string"}
-    if len(query) > MAX_QUERY_CHARS:
-        return {"status": "invalid_argument", "message": f"query must be at most {MAX_QUERY_CHARS} characters"}
+    if (
+        not isinstance(keywords, list)
+        or not 1 <= len(keywords) <= MAX_KEYWORDS
+        or not all(isinstance(k, str) and k.strip() for k in keywords)
+    ):
+        return {"status": "invalid_argument", "message": KEYWORDS_MESSAGE}
+    if any(_looks_like_sentence(k.strip()) for k in keywords):
+        return {"status": "invalid_argument", "message": SENTENCE_KEYWORD_MESSAGE}
 
     # Scope is enforced inside the SQL WHERE (before LIMIT). A requested source outside the grant
     # simply matches nothing: same answer as a source that does not exist.
@@ -101,7 +124,7 @@ def _search(grant: Grant, query: Any, time_range: Any, sources: Any, limit: Any)
 
     try:
         hits = search_events(
-            query,
+            keywords,
             since=start,
             until=end,
             sources=effective_sources,
@@ -123,7 +146,11 @@ def _search(grant: Grant, query: Any, time_range: Any, sources: Any, limit: Any)
             "source": h["source"],
             "bucket": h["bucket"],
             "evidence_id": f"evd_{h['evidence_id']}" if h["evidence_id"] is not None else None,
-            "match_reason": f"{_MATCH_REASON}: {', '.join(h['matched_terms'])}",
+            # Two tiers (PRD 3.7.3): "strong" = several keywords co-occur (or the only keyword hit);
+            # "weak" = a possible clue. Derived from the caller's own keywords and this one document.
+            "match": "strong" if h["matched"] >= 2 or h["keyword_count"] == 1 else "weak",
+            # Fixed format, no caller text echoed.
+            "match_reason": f"{_MATCH_REASON}: {h['matched']} of {h['keyword_count']} keywords",
         }
         for h in hits
     ]

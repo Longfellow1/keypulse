@@ -1,24 +1,26 @@
 {
   "eval_version": "v0",
-  "question_set_digest": "a8d492c44cf1275e",
-  "m1_evidence_recall_at_5": 0.8302,
-  "m2_no_answer_false_hit_rate": 0.1667,
-  "answerable_evaluated": 53,
+  "question_set_digest": "3ed80621c59cc692",
+  "m1_evidence_recall_at_5": 1.0,
+  "m2_no_answer_false_hit_rate": 0.0,
+  "m1_nl_subset": 1.0,
+  "m1_keyword_subset": 1.0,
+  "answerable_evaluated": 75,
   "no_answer_evaluated": 12,
   "by_scenario": {
-    "L01": 0.8571,
-    "L02": 0.8889,
-    "W01": 0.75,
-    "W02": 0.8182,
-    "cross": 0.8182
+    "L01": 1.0,
+    "L02": 1.0,
+    "W01": 1.0,
+    "W02": 1.0,
+    "cross": 1.0
   },
   "by_source": {
-    "chrome_history": 0.8333,
-    "claude_code": 0.8,
-    "codex_cli": 0.8333,
+    "chrome_history": 1.0,
+    "claude_code": 1.0,
+    "codex_cli": 1.0,
     "git_log": 1.0,
     "markdown_vault": 1.0,
     "safari_history": 1.0,
-    "zsh_history": 0.75
+    "zsh_history": 1.0
   }
 }
