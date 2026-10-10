@@ -289,8 +289,8 @@ def test_judgment_sentence_not_checked_as_objective_claim() -> None:
 
 
 def test_w19_golden_plain_and_exec_regression() -> None:
-    plain = Path("docs/golden-weekly/2026-W19-plain.md").read_text(encoding="utf-8")
-    exec_md = Path("docs/golden-weekly/2026-W19-exec.md").read_text(encoding="utf-8")
+    plain = Path("docs/golden-weekly/评测-2026-W19-plain.md").read_text(encoding="utf-8")
+    exec_md = Path("docs/golden-weekly/评测-2026-W19-exec.md").read_text(encoding="utf-8")
     plain_failures = validate_weekly_output(
         style="plain",
         rendered_markdown=plain,

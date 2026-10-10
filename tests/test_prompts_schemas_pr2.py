@@ -155,7 +155,7 @@ def test_l3_output_schema_valid_and_invalid_keywords_count():
 
 
 def test_daily_flagship_v2_prompt_has_repair_hard_constraints():
-    prompt_body = (_PROMPTS_DIR / "daily_flagship.v2.md").read_text(encoding="utf-8")
+    prompt_body = (_PROMPTS_DIR / "备忘-daily-flagship.v2.md").read_text(encoding="utf-8")
 
     assert "components_count >= 3" in prompt_body
     assert "必须输出 **至少 3 个 `###` 主题段**" in prompt_body

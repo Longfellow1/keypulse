@@ -81,8 +81,8 @@ def test_l6_cache_hit_keeps_dropped_balls(tmp_path, monkeypatch) -> None:
 
 
 def test_w19_plain_exec_golden_regression_zero_failures() -> None:
-    plain = open("docs/golden-weekly/2026-W19-plain.md", "r", encoding="utf-8").read()
-    exec_md = open("docs/golden-weekly/2026-W19-exec.md", "r", encoding="utf-8").read()
+    plain = open("docs/golden-weekly/评测-2026-W19-plain.md", "r", encoding="utf-8").read()
+    exec_md = open("docs/golden-weekly/评测-2026-W19-exec.md", "r", encoding="utf-8").read()
     hud_dates = ["2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08"]
     plain_failures = validate_weekly_output(style="plain", rendered_markdown=plain, dailies_corpus=plain, hud_input_dates=hud_dates)
     exec_failures = validate_weekly_output(style="exec", rendered_markdown=exec_md, dailies_corpus=exec_md, hud_input_dates=hud_dates)

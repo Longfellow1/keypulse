@@ -10,8 +10,8 @@ from keypulse.pipeline.daily_validator import (
     validate_daily_output,
 )
 
-GOLDEN_56 = Path(__file__).parent.parent / "docs" / "golden-daily" / "2026-05-06.md"
-GOLDEN_59 = Path(__file__).parent.parent / "docs" / "golden-daily" / "2026-05-09.md"
+GOLDEN_56 = Path(__file__).parent.parent / "docs" / "golden-daily" / "评测-2026-05-06.md"
+GOLDEN_59 = Path(__file__).parent.parent / "docs" / "golden-daily" / "评测-2026-05-09.md"
 
 
 def _rules(failures: list[DailyValidationFailure]) -> set[str]:

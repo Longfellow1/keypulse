@@ -1,6 +1,6 @@
 """主线锚定层 — daily 与 weekly 之间的运行时状态。
 
-设计文档: docs/golden-daily/SCHEMA.md
+设计文档: docs/golden-daily/评测-SCHEMA.md
 落盘: ~/.keypulse/anchors.json
 
 核心契约：

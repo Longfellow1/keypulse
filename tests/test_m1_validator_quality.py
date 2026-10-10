@@ -66,7 +66,7 @@ def _seed_daily_summaries() -> None:
 
 
 def test_golden_plain_passes_validator() -> None:
-    markdown = Path("docs/golden-weekly/2026-W19-plain.md").read_text(encoding="utf-8")
+    markdown = Path("docs/golden-weekly/评测-2026-W19-plain.md").read_text(encoding="utf-8")
     failures = validate_weekly_output(
         style="plain",
         rendered_markdown=markdown,
@@ -77,7 +77,7 @@ def test_golden_plain_passes_validator() -> None:
 
 
 def test_golden_exec_passes_validator() -> None:
-    markdown = Path("docs/golden-weekly/2026-W19-exec.md").read_text(encoding="utf-8")
+    markdown = Path("docs/golden-weekly/评测-2026-W19-exec.md").read_text(encoding="utf-8")
     failures = validate_weekly_output(
         style="exec",
         rendered_markdown=markdown,

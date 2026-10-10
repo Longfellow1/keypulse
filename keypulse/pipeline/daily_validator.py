@@ -1,7 +1,7 @@
-"""Daily 5 类断言 validator — 设计文档 docs/golden-daily/SCHEMA.md。
+"""Daily 5 类断言 validator — 设计文档 docs/golden-daily/评测-SCHEMA.md。
 
 复用 weekly_validator.classify_sentence / find_evidence。
-配套黄金 docs/golden-daily/2026-05-{06,09}.md。
+配套黄金 docs/golden-daily/评测-2026-05-{06,09}.md。
 """
 
 from __future__ import annotations

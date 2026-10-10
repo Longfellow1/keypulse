@@ -3396,7 +3396,7 @@ def eval_weekly(candidate, style, dailies_dir, fail_only):
 def eval_skill():
     """Eval skill placeholder."""
     click.echo("skill propose eval 暂未实现。前置依赖：")
-    click.echo("  1. V0 hello world 跑通（docs/skill-v0-plan.md §5）")
+    click.echo("  1. V0 hello world 跑通（docs/设计-skill-v0-plan.md §5）")
     click.echo("  2. 至少 2-3 个 skill 候选历史样本")
     click.echo("  3. 候选独特性 / 历史冲突 / 用户保留率拟合三个评估维度的 baseline")
     click.echo("解锁后此命令格式将是：keypulse eval skill --candidate <propose.md>")
