@@ -323,7 +323,8 @@ def _message_text(content: object, role: str) -> str:
         text = part.get("text")
         if not isinstance(text, str) or not text.strip():
             continue
-        if role == "user" and _is_noise_part(text):
+        # Automation blocks (e.g. <heartbeat>) also appear as assistant output_text, so filter both roles.
+        if _is_noise_part(text):
             continue
         out.append(text.strip())
     return "\n".join(out)

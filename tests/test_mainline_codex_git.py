@@ -277,3 +277,12 @@ def test_git_cursor_overlap_does_not_duplicate_and_bucket_default_is_work(env) -
     rows = get_conn().execute("SELECT bucket, kind, ts_start FROM raw_events WHERE source = 'git_log'").fetchall()
     assert len(rows) == 1 and rows[0]["bucket"] == "Work" and rows[0]["kind"] == "commit"
     assert rows[0]["ts_start"] == "2026-05-01T09:00:00+00:00"  # commit time
+
+
+def test_codex_automation_heartbeat_is_dropped_for_both_roles() -> None:
+    from keypulse.sources.plugins.codex_cli import _message_text
+
+    beat = [{"type": "output_text", "text": "<heartbeat>\n  <automation_id>codex-5</automation_id>\n</heartbeat>"}]
+    assert _message_text(beat, "assistant") == ""
+    assert _message_text([{"type": "input_text", "text": beat[0]["text"]}], "user") == ""
+    assert _message_text([{"type": "output_text", "text": "real reply"}], "assistant") == "real reply"
