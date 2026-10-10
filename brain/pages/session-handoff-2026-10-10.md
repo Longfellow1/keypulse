@@ -5,7 +5,7 @@ category: project
 status: active
 tags: [handoff, state, refactor]
 created: "2026-10-10T11:19:23"
-updated: "2026-10-10T13:53:29"
+updated: "2026-10-10T13:58:02"
 ---
 
 <!-- compiled_truth -->
@@ -60,12 +60,10 @@ updated: "2026-10-10T13:53:29"
    - decide on a GitHub Support purge request for the 7 closed PR refs;
    - decide on the exposure of the public golden daily / weekly baselines.
 2. Eval PRD v1.0 is approved and binding ([[eval-prd-separate]]). The "unauthorised-access leakage = 0" HARD release gate stays.
-3. **In progress: publish the reuse-first P0 breakdown as GitHub issues.** Each issue is tagged extract-from-legacy or new-build, per [[v1-build-by-legacy-extraction]]. Scope:
-   - core skeleton + import-linter rules, including the macOS-lib ban (D18, D21);
-   - migration v20+ on the legacy DB (D20), per PRD §3.5;
-   - P0 control surface: global pause, per-source switch, delete by source and time range (D23);
-   - MCP tools `search_context` / `get_timeline` / `get_evidence` + `commit_memory`, with token + allowlist auth ([[mcp-caller-auth-p0]], [[memory-distillation-by-agent]]);
-   - eval V0 infra, reusing legacy tests per Eval PRD §1.5, in parallel.
+3. **Published: the reuse-first V1 P0 breakdown is on GitHub as issues #16-#33.** Labels: `v1-p0` plus `afk` or `hitl`; titles prefixed `[P0-01]`..`[P0-18]`. Each issue is tagged extract-from-legacy or new-build, per [[v1-build-by-legacy-extraction]].
+   - HITL (needs owner): #27 HUD redesign review; #33 eval completion + V1.0 release decision.
+   - Execution starts with **#16** (core decoupling, no blockers), then **#17** (tracer bullet: Claude Code → DB v20 → search → MCP `search_context` with token).
+   - Working mode: Opus manages and reviews; Haiku/Sonnet subagents implement; key decisions go to the owner as multiple-choice questions.
 4. Extraction order: store, then search, then privacy / permissions (extended per PRD, not as-is), then capture / sources. `hud` stays in place (D21) but is a P0 trust surface (PRD §3.9). Blockers and cut list: [[legacy-extraction-blockers]].
 - Refactor policy: [[refactor-in-place-with-legacy-tag]]. Decisions: [[keypulse-v1-local-memory-infra]], [[v1-development-baseline-prd]], [[multi-host-mcp-integration]], [[keyboard-capture-p0-experimental]].
 - Structure and dependency analysis: `docs/extraction/structure-tree.md`, `docs/extraction/dependency-map.md`, scripts in `docs/extraction/scripts/`.
@@ -125,4 +123,16 @@ updated: "2026-10-10T13:53:29"
   kind: decision
   summary: "Next step: reuse-first P0 breakdown as GitHub issues (in progress); importer task removed; import-linter rule aligned to D21"
   source: Owner decisions D20-D23 2026-10-10
+  affects: [session-handoff-2026-10-10]
+
+- time: 2026-10-10T13:58:02
+  kind: decision
+  summary: "Next steps: reuse-first P0 breakdown published as GitHub issues #16-#33; execution order and working mode set"
+  source: "Session 2026-10-10 (issues published)"
+  affects: [session-handoff-2026-10-10]
+
+- time: 2026-10-10T13:58:02
+  kind: decision
+  summary: "P0 breakdown published as GitHub issues #16-#33 (labels v1-p0 + afk/hitl; [P0-01]..[P0-18]); HITL #27 and #33; execution starts #16 then #17; working mode Opus-manages, Haiku/Sonnet-implement, owner decisions as multiple choice"
+  source: "Session 2026-10-10 (issues published)"
   affects: [session-handoff-2026-10-10]
