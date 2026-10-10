@@ -1,0 +1,174 @@
+{
+  "cache_clear": {
+    "enabled": true,
+    "removed_llm_files": 8,
+    "removed_weekly_cache_entries": 11
+  },
+  "candidate": "keypulse/prompts/candidates/L5_weekly_v3_c.md",
+  "candidate_label": "c",
+  "run_index": 1,
+  "styles": [
+    {
+      "antipattern_hits": {},
+      "copied_to": "docs/weekly-prompt-candidates-v3/c_run1_exec.md",
+      "cost": {
+        "by_source": {
+          "degraded": 1,
+          "llm": 9,
+          "unknown": 13
+        },
+        "cost_usd": 0.0,
+        "in_tokens": 129497,
+        "out_tokens": 16046,
+        "rows": 23,
+        "total_tokens": 145543
+      },
+      "l5_topic_metrics": [
+        {
+          "attempts": 1,
+          "narrative_chars": 259,
+          "reason": "",
+          "slug": "corpusflow",
+          "source": "llm"
+        },
+        {
+          "attempts": 1,
+          "narrative_chars": 190,
+          "reason": "",
+          "slug": "hud",
+          "source": "llm"
+        },
+        {
+          "attempts": 1,
+          "narrative_chars": 169,
+          "reason": "",
+          "slug": "topic-ad33131eab",
+          "source": "llm"
+        },
+        {
+          "attempts": 1,
+          "narrative_chars": 338,
+          "reason": "",
+          "slug": "keypulse-hud",
+          "source": "llm"
+        },
+        {
+          "attempts": 1,
+          "narrative_chars": 176,
+          "reason": "",
+          "slug": "gitnexus",
+          "source": "llm"
+        },
+        {
+          "attempts": 1,
+          "narrative_chars": 193,
+          "reason": "",
+          "slug": "topic-41e05b0d3c",
+          "source": "llm"
+        },
+        {
+          "attempts": 1,
+          "narrative_chars": 192,
+          "reason": "",
+          "slug": "keypulse-m5-phase-2",
+          "source": "llm"
+        },
+        {
+          "attempts": 1,
+          "narrative_chars": 211,
+          "reason": "",
+          "slug": "keypulse",
+          "source": "llm"
+        }
+      ],
+      "markdown_chars": 5084,
+      "outcome": "partial",
+      "quality_total": 80,
+      "style": "exec",
+      "validator_failures": 1,
+      "weekly_path": "/Users/Harland/Go/Knowledge/Weekly/2026-W19.md"
+    },
+    {
+      "antipattern_hits": {},
+      "copied_to": "docs/weekly-prompt-candidates-v3/c_run1_plain.md",
+      "cost": {
+        "by_source": {
+          "cache": 9,
+          "degraded": 1,
+          "llm": 2,
+          "unknown": 6
+        },
+        "cost_usd": 0.0,
+        "in_tokens": 50822,
+        "out_tokens": 4656,
+        "rows": 18,
+        "total_tokens": 55478
+      },
+      "l5_topic_metrics": [
+        {
+          "attempts": 0,
+          "narrative_chars": 338,
+          "reason": "",
+          "slug": "keypulse-hud",
+          "source": "cache"
+        },
+        {
+          "attempts": 0,
+          "narrative_chars": 259,
+          "reason": "",
+          "slug": "corpusflow",
+          "source": "cache"
+        },
+        {
+          "attempts": 0,
+          "narrative_chars": 190,
+          "reason": "",
+          "slug": "hud",
+          "source": "cache"
+        },
+        {
+          "attempts": 0,
+          "narrative_chars": 169,
+          "reason": "",
+          "slug": "topic-ad33131eab",
+          "source": "cache"
+        },
+        {
+          "attempts": 0,
+          "narrative_chars": 211,
+          "reason": "",
+          "slug": "keypulse",
+          "source": "cache"
+        },
+        {
+          "attempts": 0,
+          "narrative_chars": 176,
+          "reason": "",
+          "slug": "gitnexus",
+          "source": "cache"
+        },
+        {
+          "attempts": 0,
+          "narrative_chars": 193,
+          "reason": "",
+          "slug": "topic-41e05b0d3c",
+          "source": "cache"
+        },
+        {
+          "attempts": 0,
+          "narrative_chars": 192,
+          "reason": "",
+          "slug": "keypulse-m5-phase-2",
+          "source": "cache"
+        }
+      ],
+      "markdown_chars": 4454,
+      "outcome": "partial",
+      "quality_total": 98,
+      "style": "plain",
+      "validator_failures": 1,
+      "weekly_path": "/Users/Harland/Go/Knowledge/Weekly/2026-W19.md"
+    }
+  ],
+  "week": "2026-W19"
+}
