@@ -195,7 +195,10 @@ def search_events(
 
     sql = f"""
         SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.kind, e.content_text, e.window_title,
-               (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id
+               (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id,
+               (SELECT ev.locator FROM evidence ev WHERE ev.event_id = e.id ORDER BY ev.id LIMIT 1) AS evidence_locator,
+               (SELECT ev.offset_or_line FROM evidence ev WHERE ev.event_id = e.id ORDER BY ev.id LIMIT 1) AS evidence_line,
+               (SELECT ev.available FROM evidence ev WHERE ev.event_id = e.id ORDER BY ev.id LIMIT 1) AS evidence_stored_available
         FROM raw_events e
         WHERE {' AND '.join(where)}
         ORDER BY e.ts_start DESC, e.id DESC
@@ -218,3 +221,86 @@ def search_events(
         d["keyword_count"] = len(terms)
         hits.append(d)
     return hits
+
+
+TIMELINE_DEFAULT_LIMIT = 50
+TIMELINE_MAX_LIMIT = 200
+
+
+def timeline_events(
+    *,
+    since: Optional[str],
+    until: Optional[str],
+    sources: Optional[list[str]],
+    buckets: list[str],
+    after: Optional[tuple[str, int]] = None,
+    event_type: str = "semantic_event",
+    limit: int = TIMELINE_DEFAULT_LIMIT,
+) -> tuple[list[dict], bool]:
+    """Events in real occurred_at order (ascending, id as tiebreak), scope applied in the WHERE
+    clause before LIMIT. `after` is a (occurred_at, id) keyset cursor. Returns (rows, has_more);
+    has_more is computed from in-scope rows only (fetches limit + 1)."""
+    limit = max(1, min(int(limit), TIMELINE_MAX_LIMIT))
+    if not buckets or (sources is not None and not sources):
+        return [], False
+    where = ["e.event_type = ?", "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
+    params: list = [event_type, *buckets]
+    if sources is not None:
+        where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
+        params.extend(sources)
+    if since:
+        where.append("e.ts_start >= ?")
+        params.append(since)
+    if until:
+        where.append("e.ts_start <= ?")
+        params.append(until)
+    if after is not None:
+        where.append("(e.ts_start > ? OR (e.ts_start = ? AND e.id > ?))")
+        params.extend([after[0], after[0], after[1]])
+    params.append(limit + 1)
+    rows = get_conn().execute(
+        f"""
+        SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.content_text,
+               (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id
+        FROM raw_events e
+        WHERE {' AND '.join(where)}
+        ORDER BY e.ts_start ASC, e.id ASC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    has_more = len(rows) > limit
+    out = []
+    for r in rows[:limit]:
+        d = dict(r)
+        d["snippet"] = _snippet(d.pop("content_text") or "", [], width=80)[:160]
+        out.append(d)
+    return out, has_more
+
+
+def scoped_evidence(
+    evidence_id: int,
+    *,
+    sources: Optional[list[str]],
+    buckets: list[str],
+    event_type: str = "semantic_event",
+) -> Optional[dict]:
+    """One evidence row joined to its event, only if the event is inside the scope (same WHERE
+    rules as search). Out-of-scope and nonexistent ids both return None."""
+    if not buckets or (sources is not None and not sources):
+        return None
+    where = ["ev.id = ?", "e.event_type = ?", "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
+    params: list = [evidence_id, event_type, *buckets]
+    if sources is not None:
+        where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
+        params.extend(sources)
+    row = get_conn().execute(
+        f"""
+        SELECT ev.id AS evidence_id, ev.event_id, ev.locator, ev.offset_or_line AS line, ev.available AS stored_available,
+               e.source, e.ts_start AS occurred_at, e.bucket, e.content_text
+        FROM evidence ev JOIN raw_events e ON e.id = ev.event_id
+        WHERE {' AND '.join(where)}
+        """,
+        params,
+    ).fetchone()
+    return dict(row) if row else None

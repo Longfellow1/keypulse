@@ -86,7 +86,7 @@ def test_schema_requires_keywords_and_describes_the_contract(token) -> None:
             return (await client.list_tools()).tools, client.get_server_capabilities()
 
     tool_list, _ = asyncio.run(listing())
-    (tool,) = tool_list
+    tool = next(t for t in tool_list if t.name == "search_context")
     assert tool.inputSchema["required"] == ["keywords"]
     assert tool.inputSchema["properties"]["keywords"]["type"] == "array"
     for must in ("keywords", "Chinese and English", "time_range", "zsh_history", "retry", "签证"):

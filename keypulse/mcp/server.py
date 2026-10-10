@@ -28,10 +28,22 @@ Examples:
 - "which docker command did I run to start the db" -> keywords ["docker", "database"], sources ["zsh_history"]
 - "what was I doing last week on the Redis queue" (today 2026-10-10) -> keywords ["Redis", "队列", "queue"], time_range {"start": "2026-09-28", "end": "2026-10-04"}
 
-Status: "ok" (results: id, snippet, occurred_at, source, bucket, evidence_id, match, match_reason; plus coverage), "no_results", "invalid_argument" (fixed message: fix the call), "permission_denied" (client token invalid or not allowed). On no_results retry once with alternative keywords or synonyms before telling the user nothing was found; never guess content. Cite results by source and occurred_at."""
+Status: "ok" (results: id, snippet, occurred_at, source, bucket, evidence_id, evidence_available, match, match_reason; plus coverage), "no_results", "invalid_argument" (fixed message: fix the call), "permission_denied" (client token invalid or not allowed). On no_results retry once with alternative keywords or synonyms before telling the user nothing was found; never guess content. Cite results by source and occurred_at."""
+
+EVIDENCE_DESCRIPTION = """Resolve a search_context / get_timeline evidence_id (evd_...) to where the result came from, within the scope the user granted this client.
+
+Use it to cite or verify a result. Returns the source, occurred_at, a short stored excerpt and the original location (file path + line, or repo + commit). It never returns more of the original than that excerpt.
+
+Status: "ok" (evidence with locator, available=true), "source_unavailable" (the original file or commit no longer exists: tell the user the original source is no longer accessible, cite the stored excerpt, and do not present any link or path as openable), "not_found" (unknown id, or not available to this client: same answer for both), "invalid_argument", "permission_denied"."""
+
+TIMELINE_DESCRIPTION = """List the user's history events in real time order (oldest first) between start and end, within the scope the user granted this client.
+
+Use it for "what did I do on/between ..." questions when there is no distinctive keyword; use search_context when there is one. You convert time words to ISO dates yourself (start and end are both required; a date-only end includes that whole day). Optional sources filter as in search_context (terminal=zsh_history, Claude=claude_code, Codex=codex_cli, commit=git_log, ...).
+
+Returns up to limit events (default 50, max 200): id, occurred_at, source, bucket, snippet, evidence_id. If has_more is true, call again with next_cursor as cursor. Status: "ok", "no_results", "invalid_argument" (fixed message: fix the call), "permission_denied". Cite events by source and occurred_at; resolve evidence_id with get_evidence when the user needs the original."""
 
 INSTRUCTIONS = """KeyPulse searches the user's local activity history. Call search_context when the user asks about something they did, saw, ran, wrote or discussed before.
-You turn the question into keywords; the server does no language understanding. Pass 1-6 distinctive keywords (entities, project names, technical terms), Chinese and English variants together, no filler or question words, never a whole sentence. Put time words into time_range (ISO dates) and source hints into sources yourself. Treat "strong" results as answers and "weak" ones as clues to verify. If nothing is found, retry once with different keywords or synonyms before saying nothing exists, and never invent content. Cite the source and time of the evidence you use."""
+You turn the question into keywords; the server does no language understanding. Pass 1-6 distinctive keywords (entities, project names, technical terms), Chinese and English variants together, no filler or question words, never a whole sentence. Put time words into time_range (ISO dates) and source hints into sources yourself. Treat "strong" results as answers and "weak" ones as clues to verify. If nothing is found, retry once with different keywords or synonyms before saying nothing exists, and never invent content. Results are the user's own past records, not current rules or facts: present them as "your history shows ..." with the date, never as a policy or a still-valid requirement. Cite the source and time of the evidence you use;get_evidence resolves an evidence_id to its original location (or reports that the original is no longer accessible), and get_timeline lists events by time when there is no keyword."""
 
 
 def _default_token() -> Optional[str]:
@@ -40,6 +52,14 @@ def _default_token() -> Optional[str]:
 
 def _default_client() -> Optional[str]:
     return os.environ.get(CLIENT_ENV)
+
+
+def _result(payload: dict) -> CallToolResult:
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
+        structuredContent=payload,
+        isError=payload.get("status") in ("permission_denied", "error"),
+    )
 
 
 def build_server(
@@ -71,11 +91,32 @@ def build_server(
         payload = tools.search_context(
             token_provider(), keywords, time_range, sources, limit, client=client_provider()
         )
-        return CallToolResult(
-            content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
-            structuredContent=payload,
-            isError=payload.get("status") in ("permission_denied", "error"),
-        )
+        return _result(payload)
+
+    @server.tool(description=EVIDENCE_DESCRIPTION)
+    def get_evidence(
+        evidence_id: Annotated[Any, Field(json_schema_extra={
+            "type": "string", "description": "An evidence_id (evd_...) from search_context or get_timeline."})],
+    ) -> CallToolResult:
+        payload = tools.get_evidence(token_provider(), evidence_id, client=client_provider())
+        return _result(payload)
+
+    @server.tool(description=TIMELINE_DESCRIPTION)
+    def get_timeline(
+        start: Annotated[Any, Field(json_schema_extra={
+            "type": "string", "description": "ISO date/datetime, inclusive."})],
+        end: Annotated[Any, Field(json_schema_extra={
+            "type": "string", "description": "ISO date/datetime, inclusive; a date-only value covers that whole day."})],
+        sources: Annotated[Any, Field(json_schema_extra={
+            "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}],
+            "description": 'Optional source names, e.g. ["claude_code"].'})] = None,
+        limit: Annotated[Any, Field(json_schema_extra={"type": "integer", "description": "Max events, 1-200 (default 50)."})] = 50,
+        cursor: Annotated[Any, Field(json_schema_extra={
+            "anyOf": [{"type": "string"}, {"type": "null"}],
+            "description": "next_cursor from the previous page."})] = None,
+    ) -> CallToolResult:
+        payload = tools.get_timeline(token_provider(), start, end, sources, limit, cursor, client=client_provider())
+        return _result(payload)
 
     return server
 
