@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from keypulse.hud.state import (
     add_attention_item,
-    dismiss_weekly_echo_for_week,
     read_hud_state,
     remove_attention_item,
     set_pending_count,
@@ -40,18 +39,6 @@ def test_hud_state_can_remove_attention_and_clear_focus(tmp_path):
 
     assert state.attention_items == ["模型路由"]
     assert "2026-04-19" not in state.today_focus
-
-
-def test_hud_state_records_weekly_echo_dismissal(tmp_path):
-    state_path = tmp_path / "hud-state.json"
-
-    dismiss_weekly_echo_for_week("2026-W19", state_path)
-    dismiss_weekly_echo_for_week("2026-W19", state_path)
-    dismiss_weekly_echo_for_week("2026-W20", state_path)
-
-    state = read_hud_state(state_path)
-
-    assert state.weekly_echo_dismissed_weeks == ["2026-W19", "2026-W20"]
 
 
 def test_hud_state_persists_pending_count(tmp_path):

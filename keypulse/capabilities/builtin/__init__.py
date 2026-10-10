@@ -27,8 +27,6 @@ from keypulse.capabilities.builtin.appkit_runtime import AppKitRuntimeCapability
 from keypulse.capabilities.builtin.bundle_integrity import BundleIntegrityCapability
 from keypulse.capabilities.builtin.browser_automation import BrowserAutomationCapability
 from keypulse.capabilities.builtin.health_freshness import HealthFreshnessCapability
-from keypulse.capabilities.builtin.llm_backend import LLMBackendCapability
-from keypulse.capabilities.builtin.obsidian_sync_freshness import ObsidianSyncFreshnessCapability
 from keypulse.capabilities.builtin.pause_state import PauseStateCapability
 # from keypulse.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
 
@@ -46,8 +44,6 @@ _DEFAULT_CAPABILITY_FACTORIES: list[Callable[..., Capability]] = [
     # 历史 raw_events 中 ocr_text_capture 数据保留可读
     # ScreenRecordingPermissionCapability,
     HealthFreshnessCapability,
-    LLMBackendCapability,
-    ObsidianSyncFreshnessCapability,
 ]
 
 

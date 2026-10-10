@@ -154,99 +154,6 @@ class PrivacyConfig(BaseModel):
     blacklist_patterns: list[str] = Field(default_factory=lambda: ["com.tencent.*"])
 
 
-class PipelineSignalsConfig(BaseModel):
-    fs_enabled: bool = False
-    fs_watch_paths: list[str] = Field(
-        default_factory=lambda: ["~/Documents", "~/Desktop", "~/Downloads", "~/Go"]
-    )
-    fs_exclude: list[str] = Field(
-        default_factory=lambda: ["node_modules", ".git", "__pycache__", ".venv", "dist", "build"]
-    )
-    browser_enabled: bool = True
-
-
-class ValueDensityConfig(BaseModel):
-    enabled: bool = True
-    token_target: int = 80
-    decision_bonus: float = 0.25
-    decision_regex: str = "是不是|为什么|决定|选择?|选|根因|结论|判断|取舍|方案|建议|应该|必须|确认|拍板|原因"
-    source_weights: dict[str, float] = Field(
-        default_factory=lambda: {
-            "user_msg": 1.25,
-            "assistant_msg": 0.85,
-            "tool_echo": 0.25,
-            "default": 0.6,
-        }
-    )
-
-
-class PipelineConfig(BaseModel):
-    llm_mode: str = "local-first"
-    max_llm_calls_per_run: int = 0
-    max_llm_input_chars_per_run: int = 0
-    feedback_path: str = "~/.keypulse/feedback.jsonl"
-    signals: PipelineSignalsConfig = Field(default_factory=PipelineSignalsConfig)
-    value_density: ValueDensityConfig = Field(default_factory=ValueDensityConfig)
-
-
-class ModelBackendConfig(BaseModel):
-    kind: Literal["lm_studio", "openai_compatible", "anthropic", "ollama", "disabled"] = "disabled"
-    base_url: str = ""
-    model: str = ""
-    tier: str = ""
-    api_key_source: str = ""
-    api_key_env: str = ""
-    timeout_sec: int = 20
-
-
-class ModelConfig(BaseModel):
-    active_profile: Literal[
-        "local-first",
-        "cloud-first",
-        "cloud-only",
-        "local-only",
-        "auto",
-        "privacy-locked",
-    ] = "local-first"
-    state_path: str = "~/.keypulse/model-state.json"
-    local: ModelBackendConfig = Field(
-        default_factory=lambda: ModelBackendConfig(
-            kind="lm_studio",
-            base_url="http://127.0.0.1:1234",
-            model="keypulse-local",
-        )
-    )
-    cloud: ModelBackendConfig = Field(
-        default_factory=lambda: ModelBackendConfig(
-            kind="openai_compatible",
-            base_url="https://api.openai.com/v1",
-            model="keypulse-cloud",
-            api_key_env="OPENAI_API_KEY",
-        )
-    )
-
-
-class LLMConfig(BaseModel):
-    tier: Literal["mini", "standard", "premium"] = "mini"
-    provider: str = ""
-    monthly_budget_usd: float = 5.0
-    local_ollama_url: str = "http://localhost:11434"
-
-
-class ObsidianConfig(BaseModel):
-    vault_path: str = "~/Go/Knowledge"
-    vault_name: str = "KeyPulse"
-    export_hour: int = 9
-    export_minute: int = 5
-    wiki_link_mode: Literal["relative", "absolute_md"] = "relative"
-    humanize_titles: bool = False
-
-
-class IntegrationConfig(BaseModel):
-    standalone_output_path: str = "~/Go/Knowledge"
-    state_path: str = "~/.keypulse/sink-state.json"
-
-
 class MarkdownVaultSourceConfig(BaseModel):
     extra_roots: list[str] = Field(default_factory=list)
 
@@ -282,11 +189,6 @@ class Config(BaseModel):
     browser_history: BrowserHistoryConfig = Field(default_factory=BrowserHistoryConfig)
     ocr: OCRConfig = Field(default_factory=OCRConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
-    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
-    model: ModelConfig = Field(default_factory=ModelConfig)
-    llm: LLMConfig = Field(default_factory=LLMConfig)
-    obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
-    integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
     policies: list[PolicyConfig] = Field(default_factory=list)
 

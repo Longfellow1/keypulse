@@ -136,31 +136,7 @@ keypulse search "keypulse" --plain
 
 ---
 
-## 6. Recall Command (LLM-optimised)
-
-```bash
-keypulse recall "keypulse"
-```
-
-Expected: compact multi-section output:
-
-```
-[搜索: keypulse]
-  今天 14:32 [manual] Terminal: Test note for keypulse
-
-[最近剪贴板]
-  今天 14:28 Terminal: ...
-
-[今日主要活动]
-  今天 09:00 Terminal (5min): keypulse — main.py
-
-[手动保存]
-  今天 14:32 #test: Test note for keypulse
-```
-
----
-
-## 7. Stats & Export
+## 6. Stats & Export
 
 ```bash
 keypulse stats --days 7
@@ -176,7 +152,7 @@ keypulse export --format json --output /tmp/kp_export.json --days 7
 
 ---
 
-## 8. Session Commands
+## 7. Session Commands
 
 ```bash
 keypulse session list
@@ -191,7 +167,7 @@ keypulse session show <session-id>
 
 ---
 
-## 9. Privacy & Policy
+## 8. Privacy & Policy
 
 ### Verify desensitisation
 
@@ -217,7 +193,7 @@ keypulse rules disable <id>
 
 ---
 
-## 10. Purge & Retention
+## 9. Purge & Retention
 
 ```bash
 # Dry-run (shows what would be deleted)
@@ -235,7 +211,7 @@ keypulse purge --today --confirm
 
 ---
 
-## 11. Config
+## 10. Config
 
 ```bash
 keypulse config show
@@ -250,7 +226,7 @@ keypulse stop && keypulse start
 
 ---
 
-## 12. Database Schema Verification
+## 11. Database Schema Verification
 
 ```bash
 sqlite3 ~/.keypulse/keypulse.db ".tables"
@@ -272,7 +248,7 @@ sqlite3 ~/.keypulse/keypulse.db "SELECT * FROM _schema_version;"
 
 ---
 
-## 13. Single Instance Lock
+## 12. Single Instance Lock
 
 ```bash
 keypulse start
@@ -289,7 +265,7 @@ keypulse start   # Should detect stale lock, start normally
 
 ---
 
-## 14. Resource Usage
+## 13. Resource Usage
 
 After 30 minutes of normal use:
 

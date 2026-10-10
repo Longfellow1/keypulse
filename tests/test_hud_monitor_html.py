@@ -31,7 +31,6 @@ def _snapshot(**overrides) -> HUDSnapshot:
                 "reason": "明确表达、新信息、可复用",
                 "score": 1.2,
                 "path": "Daily/2026-05-02.md",
-                "obsidian_url": "obsidian://open?vault=KeyPulse&file=Daily/2026-05-02",
             },
             {
                 "title": "菜单栏 HUD 要不要独立成软件？",
@@ -40,7 +39,6 @@ def _snapshot(**overrides) -> HUDSnapshot:
                 "reason": "信息密度高",
                 "score": 0.9,
                 "path": "Events/hud/2026-05-02.md",
-                "obsidian_url": "obsidian://open?vault=KeyPulse&file=Events/hud/2026-05-02",
             },
         ],
         service_status="ok",
@@ -48,7 +46,6 @@ def _snapshot(**overrides) -> HUDSnapshot:
         hint_message="",
         hint_action="",
         companion_days=5,
-        weekly_notice="",
     )
     base.update(overrides)
     return HUDSnapshot(**base)
@@ -157,29 +154,6 @@ def test_monitor_html_warn_state_shows_hint_bar():
     assert "打开设置" not in html
 
 
-def test_monitor_html_renders_weekly_notice_banner():
-    snap = _snapshot(weekly_notice="本周数据不足，周报跳过")
-    html = build_monitor_html(snap, capture_status="running")
-
-    assert "weekly-notice" in html
-    assert "本周数据不足，周报跳过" in html
-
-
-def test_monitor_html_renders_weekly_echo_and_notice_together():
-    snap = _snapshot(
-        weekly_notice="本周数据不足，周报跳过",
-        weekly_echo_text="本周回声 →",
-        weekly_echo_url="obsidian://open?vault=KeyPulse&file=Weekly/2026-W19",
-        weekly_echo_week="2026-W19",
-    )
-    html = build_monitor_html(snap, capture_status="running")
-
-    assert "💰" not in html
-    assert "weekly-echo-banner" in html
-    assert "open-weekly-echo" in html
-    assert "weekly-notice" in html
-
-
 def test_monitor_html_hint_bar_renders_action_button():
     snap = _snapshot(
         service_status="err",
@@ -228,7 +202,6 @@ def test_monitor_html_escapes_dynamic_text():
                 "reason": "明确表达",
                 "score": 1.0,
                 "path": "Daily/2026-05-02.md",
-                "obsidian_url": "obsidian://open?vault=KeyPulse&file=Daily/2026-05-02",
             }
         ]
     )
@@ -239,28 +212,13 @@ def test_monitor_html_escapes_dynamic_text():
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in html
 
 
-def test_monitor_html_signals_link_to_obsidian():
-    """每条 signal 整行可点击，跳到 Obsidian 对应 note。"""
-    html = build_monitor_html(_snapshot(), capture_status="running")
-
-    # 整行 <a> 包裹（不是 <div>）
-    assert '<a class="sugg-item"' in html
-    # 跳转走 keypulse://action/open-url，参数是 percent-encoded 后的 obsidian:// URL
-    assert "keypulse://action/open-url?u=obsidian%3A%2F%2Fopen" in html
-    # vault 名字 + 文件路径都进了链接（路径中的 / 会被编码成 %2F）
-    assert "vault%3DKeyPulse" in html
-    assert "Daily%2F2026-05-02" in html
-    # 右侧箭头指示
-    assert '<div class="sugg-arrow">→</div>' in html
-
-
 def test_monitor_html_pads_with_placeholders_when_signals_under_three():
     """少于 3 条 signals 时，剩余位置用占位行填满，保持版式稳定。"""
     snap = _snapshot()  # fixture 里只有 2 条
     html = build_monitor_html(snap, capture_status="running")
 
     # 两条真实 + 一条占位
-    assert html.count('<a class="sugg-item"') == 2
+    assert html.count('<div class="sugg-item">') == 2
     assert html.count('<div class="sugg-item placeholder">') == 1
 
 
@@ -286,11 +244,10 @@ def test_monitor_html_three_signals_no_placeholder():
         "reason": "信息密度高",
         "score": 0.7,
         "path": "Daily/2026-05-02.md",
-        "obsidian_url": "obsidian://open?vault=KeyPulse&file=Daily/2026-05-02",
     }
     base = _snapshot()
     snap = _snapshot(top_signals=[*list(base.top_signals), third])
     html = build_monitor_html(snap, capture_status="running")
 
-    assert html.count('<a class="sugg-item"') == 3
+    assert html.count('class="sugg-item"') == 3
     assert "sugg-item placeholder" not in html

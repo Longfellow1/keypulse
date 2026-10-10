@@ -97,6 +97,20 @@ reload_launchd_plist() {
   fi
 }
 
+# Obsidian sync jobs were removed in V1 (legacy report chain lives in tag legacy-v0).
+# On install/upgrade, unload and delete their plists if present. Idempotent; errors ignored.
+remove_legacy_obsidian_plists() {
+  local path
+  for path in "$OBSIDIAN_PLIST" "$OBSIDIAN_HOURLY_PLIST"; do
+    [[ -e "$path" ]] || continue
+    launchctl bootout "gui/$(id -u)" "$path" 2>/dev/null || true
+    launchctl unload "$path" 2>/dev/null || true
+    rm -f "$path" 2>/dev/null || true
+    info "Removed legacy launchd job: $(basename "$path")"
+  done
+  return 0
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 header "KeyPulse Installer"
 echo "  Repo:    $REPO_DIR"
@@ -114,13 +128,15 @@ echo "  Config:  $CONFIG_FILE"
 [[ "$NO_BREW" == true ]] && warn "--no-brew selected; using developer fallback"
 
 # ── 1. macOS check ────────────────────────────────────────────────────────────
-header "1/6  Checking system"
+header "1/7  Checking system"
 
 if [[ "$(uname)" != "Darwin" ]]; then
   error "macOS required. Got: $(uname)"
   exit 1
 fi
 success "macOS $(sw_vers -productVersion)"
+
+remove_legacy_obsidian_plists
 
 if [[ "$DEV_MODE" != true ]]; then
   header "2/4  Checking Homebrew"
@@ -152,8 +168,6 @@ if [[ "$DEV_MODE" != true ]]; then
   echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
   echo ""
   echo "  Next steps:"
-  echo -e "     ${CYAN}keypulse setup${RESET}"
-  echo -e "     ${CYAN}keypulse model setup${RESET}"
   echo -e "     ${CYAN}keypulse doctor${RESET}"
   echo ""
   exit 0
@@ -181,7 +195,7 @@ fi
 success "Python $($PYTHON --version 2>&1 | awk '{print $2}')  ($PYTHON)"
 
 # ── 3. Create venv ────────────────────────────────────────────────────────────
-header "2/6  Setting up virtual environment"
+header "2/7  Setting up virtual environment"
 
 mkdir -p "$KEYPULSE_DIR"
 
@@ -210,7 +224,7 @@ export PIP_USER=false
 "$VENV_PIP" install --upgrade pip --quiet 2>/dev/null || true
 
 # ── 4. Install KeyPulse ───────────────────────────────────────────────────────
-header "3/6  Installing KeyPulse"
+header "3/7  Installing KeyPulse"
 
 info "Editable install from $REPO_DIR"
 "$VENV_PIP" install --no-user -e "$REPO_DIR" --quiet
@@ -243,7 +257,7 @@ fi
   { error "keypulse binary not working after install"; exit 1; }
 
 # ── 5. Wrapper + PATH ─────────────────────────────────────────────────────────
-header "4/6  Installing keypulse command"
+header "4/7  Installing keypulse command"
 
 mkdir -p "$BIN_DIR"
 
@@ -276,7 +290,7 @@ else
 fi
 
 # ── 6. Default config ─────────────────────────────────────────────────────────
-header "5/6  Configuration"
+header "5/7  Configuration"
 
 if [[ -f "$CONFIG_FILE" ]]; then
   warn "Config already exists — skipping ($CONFIG_FILE)"
@@ -285,15 +299,8 @@ else
   success "Default config written to $CONFIG_FILE"
 fi
 
-# ── 6. sink discovery ────────────────────────────────────────────────────────
-header "6/7  Sink discovery"
-
-info "Detecting the best local sink…"
-"$BIN_DIR/keypulse" sinks detect --apply --plain
-success "Sink binding resolved"
-
 # ── 7. launchd (auto-start on login) ─────────────────────────────────────────
-header "7/7  launchd auto-start"
+header "6/7  launchd auto-start"
 
 if [[ "$INSTALL_LAUNCHD" == false ]]; then
   warn "Skipped (--no-launchd)"
@@ -355,7 +362,7 @@ PLIST
 fi
 
 # ── 8. launchd healthcheck job ───────────────────────────────────────────────
-header "8/9  launchd healthcheck job"
+header "7/7  launchd healthcheck job"
 
 if [[ "$INSTALL_LAUNCHD" == false ]]; then
   warn "Skipped healthcheck job (--no-launchd)"
@@ -406,137 +413,6 @@ PLIST
   fi
 fi
 
-# ── 9. launchd Obsidian sync jobs ─────────────────────────────────────────────
-header "9/9  Obsidian sync jobs"
-
-if [[ "$INSTALL_LAUNCHD" == false ]]; then
-  warn "Skipped Obsidian sync jobs (--no-launchd)"
-else
-  mkdir -p "$HOME/Library/LaunchAgents"
-  mkdir -p "$KEYPULSE_DIR/logs"
-
-  cat > "$OBSIDIAN_PLIST" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.keypulse.obsidian-sync</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>$BIN_DIR/keypulse</string>
-        <string>obsidian</string>
-        <string>sync</string>
-    </array>
-
-    <key>StartCalendarInterval</key>
-    <array>
-        <dict>
-            <key>Hour</key>
-            <integer>12</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>13</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>18</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>21</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-    </array>
-
-    <key>RunAtLoad</key>
-    <false/>
-
-    <key>KeepAlive</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>$KEYPULSE_DIR/logs/obsidian-sync.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>$KEYPULSE_DIR/logs/obsidian-sync.err</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>$BIN_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
-</dict>
-</plist>
-PLIST
-
-  cat > "$OBSIDIAN_HOURLY_PLIST" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.keypulse.obsidian-sync-hourly</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>$BIN_DIR/keypulse</string>
-        <string>obsidian</string>
-        <string>sync</string>
-        <string>--incremental</string>
-    </array>
-
-    <key>StartInterval</key>
-    <integer>3600</integer>
-
-    <key>ThrottleInterval</key>
-    <integer>60</integer>
-
-    <key>RunAtLoad</key>
-    <false/>
-
-    <key>KeepAlive</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>$KEYPULSE_DIR/logs/obsidian-sync-hourly.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>$KEYPULSE_DIR/logs/obsidian-sync-hourly.err</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>$BIN_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
-</dict>
-</plist>
-PLIST
-
-  reload_launchd_plist \
-    "$OBSIDIAN_PLIST" \
-    "Obsidian daily sync job installed — will run at 12:00, 13:00, 18:00, 21:00" \
-    "launchd bootstrap succeeded for Obsidian daily sync" \
-    "Try manually: launchctl load '$OBSIDIAN_PLIST'"
-
-  reload_launchd_plist \
-    "$OBSIDIAN_HOURLY_PLIST" \
-    "Obsidian hourly incremental sync job installed — will run every 60 minutes" \
-    "launchd bootstrap succeeded for Obsidian hourly sync" \
-    "Try manually: launchctl load '$OBSIDIAN_HOURLY_PLIST'"
-fi
-
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
@@ -556,9 +432,6 @@ echo -e "     ${CYAN}keypulse start${RESET}"
 echo ""
 echo -e "  ${BOLD}4. View today's activity:${RESET}"
 echo -e "     ${CYAN}keypulse timeline --today${RESET}"
-echo ""
-echo -e "  ${BOLD}5. Run the Obsidian sync manually:${RESET}"
-echo -e "     ${CYAN}keypulse obsidian sync --yesterday${RESET}"
 echo ""
 echo "  Config:  $CONFIG_FILE"
 echo "  Data:    $KEYPULSE_DIR/keypulse.db"

@@ -27,9 +27,9 @@ keypulse install init
 ## Lifecycle commands
 
 ```bash
-keypulse install init       # Create ~/.keypulse, default config, DB, sink binding, launchd jobs
+keypulse install init       # Create ~/.keypulse, default config, DB, launchd jobs
 keypulse install launchd    # Recreate launchd jobs using the installed keypulse executable
-keypulse install doctor     # Check executable, config, database, sink, model, and launchd status
+keypulse install doctor     # Check executable, config, database, and launchd status
 keypulse install uninstall  # Remove launchd jobs; preserve user data by default
 ```
 
@@ -40,7 +40,7 @@ keypulse install uninstall --remove-runtime
 keypulse install uninstall --remove-data --force
 ```
 
-`--remove-data --force` removes KeyPulse config, database, and runtime state under `~/.keypulse`. It does not remove Obsidian vault notes.
+`--remove-data --force` removes KeyPulse config, database, and runtime state under `~/.keypulse`.
 
 ## Developer install
 

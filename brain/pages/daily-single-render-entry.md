@@ -2,9 +2,9 @@
 id: daily-single-render-entry
 title: Daily output has one write path and one renderer
 category: decision
-status: active
+status: archived
 created: "2026-10-10T10:26:12"
-updated: "2026-10-10T10:26:12"
+updated: "2026-10-10T14:52:53"
 ---
 
 <!-- compiled_truth -->
@@ -35,4 +35,10 @@ Multiple renderers drifted apart. A single entry point makes section-name and qu
   kind: decision
   summary: captured from project history
   source: "commits 9151b68 (B, 2026-05-10), 6896c20 (C, 2026-05-10), 19aaaea (D); docs/说明-refactor-daily-renderer-unification.md"
+  affects: [daily-single-render-entry]
+
+- time: 2026-10-10T14:52:53
+  kind: reversal
+  summary: "Obsolete: daily report removed from V1 (D24)."
+  source: brain archive-page
   affects: [daily-single-render-entry]

@@ -59,72 +59,10 @@ redact_phones = true
 redact_tokens = true
 camera_scene_pause = true
 
-[pipeline]
-llm_mode = "local-first"
-max_llm_calls_per_run = 0
-max_llm_input_chars_per_run = 0
-feedback_path = "~/.keypulse/feedback.jsonl"
-use_narrative_v2 = true
-use_things_narrative = true
-things_idle_threshold_minutes = 30
-
-[pipeline.value_density]
-enabled = true
-token_target = 80
-decision_bonus = 0.25
-high_density_threshold = 0.75
-decision_regex = "是不是|为什么|决定|选择?|选|根因|结论|判断|取舍|方案|建议|应该|必须|确认|拍板|原因"
-
-[pipeline.value_density.source_weights]
-user_msg = 1.25
-assistant_msg = 0.85
-tool_echo = 0.25
-default = 0.6
-
-[pipeline.signals]
-fs_enabled = false
-fs_watch_paths = ["~/Documents", "~/Desktop", "~/Downloads", "~/Go"]
-fs_exclude = ["node_modules", ".git", "__pycache__", ".venv", "dist", "build"]
-browser_enabled = true
-
-[obsidian]
-vault_path = "~/Go/Knowledge"
-vault_name = "KeyPulse"
-export_hour = 9
-export_minute = 5
-wiki_link_mode = "relative"
-humanize_titles = false
-
-[integration]
-standalone_output_path = "~/Go/Knowledge"
-state_path = "~/.keypulse/sink-state.json"
-
 [sources.scheduler]
 enabled = true
 poll_interval_sec = 600
 debounce_sec = 300
-
-[model]
-active_profile = "local-first"
-state_path = "~/.keypulse/model-state.json"
-
-[model.local]
-kind = "lm_studio"
-base_url = "http://127.0.0.1:1234"
-model = "keypulse-local"
-api_key_env = ""
-
-[model.cloud]
-kind = "openai_compatible"
-base_url = "https://api.openai.com/v1"
-model = "keypulse-cloud"
-api_key_env = "OPENAI_API_KEY"
-
-[llm]
-tier = "mini"
-provider = ""
-monthly_budget_usd = 5.0
-local_ollama_url = "http://localhost:11434"
 
 [[policies]]
 scope_type = "app"

@@ -20,7 +20,7 @@ from keypulse.config import Config
 from keypulse.hud.approval_window import ApprovalWindowController, safe_pending_candidate_count
 from keypulse.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
 from keypulse.hud.monitor_html import build_monitor_data, build_monitor_html
-from keypulse.hud.state import dismiss_weekly_echo_for_week, read_hud_state, set_pending_count, set_today_focus
+from keypulse.hud.state import read_hud_state, set_pending_count, set_today_focus
 from keypulse.hud.state_reset import _reset_transient_error_state
 from keypulse.hud.summary import build_hud_snapshot
 from keypulse.store.db import init_db
@@ -272,13 +272,6 @@ class KeyPulseHUDApp(AppKit.NSObject):
             url_str = params.get("u", "")
             if url_str:
                 self._open_external_url(url_str)
-        elif action == "open-weekly-echo":
-            url_str = params.get("u", "")
-            week = str(params.get("week") or "").strip()
-            opened = self._open_external_url(url_str)
-            if opened and week:
-                dismiss_weekly_echo_for_week(week)
-                self.refresh()
         elif action == "quit":
             self.confirmQuit_(None)
         elif action == "close-popover":
