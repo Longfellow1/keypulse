@@ -321,9 +321,10 @@ def test_transient_rows_are_dropped_on_resume_and_real_failures_kept(tmp_path):
         {"id": "Q3", "exit": 1, "is_error": True, "tool_calls": 5, "answer": ""},       # failed after working: keep
         {"id": "Q4", "verdict": "error", "method": "llm", "reason": "empty judge output"},
         {"id": "Q5", "verdict": "wrong", "method": "llm", "reason": "x"},
+        {"id": "Q6", "exit": 1, "is_error": True, "tool_calls": 7, "answer": "API Error: Connection refused"},
     ]
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
-    assert [is_transient(r) for r in rows] == [False, True, False, True, False]
+    assert [is_transient(r) for r in rows] == [False, True, False, True, False, True]
     assert done_ids(path) == {"Q1", "Q3", "Q5"}
     assert {json.loads(l)["id"] for l in path.read_text().splitlines()} == {"Q1", "Q3", "Q5"}
 

@@ -73,11 +73,17 @@ def parse_stream(stdout: str) -> dict:
 
 def is_transient(row: dict) -> bool:
     """A row that failed before doing anything (API/usage error, crash): not an answer, so it is retried on
-    resume instead of being graded. Runs that used tools and then failed are kept and graded as they are."""
+    resume instead of being graded. API errors count as transient even after tool calls; other runs that used
+    tools and then failed are kept and graded as they are."""
     if "verdict" in row:
         return row.get("verdict") == "error" and row.get("method") in ("llm", "none")
-    return (row.get("exit") != 0 or row.get("is_error")) and not row.get("tool_calls") \
-        and not (row.get("answer") or "").strip()
+    if not (row.get("exit") != 0 or row.get("is_error")):
+        return False
+    # older rows stored the CLI's error text as the answer
+    text = f"{row.get('error') or ''} {row.get('answer') or ''}".strip()
+    if text.startswith("API Error") or row.get("stderr") == "timeout" and not row.get("tool_calls"):
+        return True  # connection / overload / rate limit: says nothing about the arm, even mid-run
+    return not row.get("tool_calls") and not (row.get("answer") or "").strip()
 
 
 def done_ids(path: Path) -> set[str]:
