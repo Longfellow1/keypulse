@@ -9,10 +9,11 @@ from keypulse.store.migration_v22 import migrate_v22
 from keypulse.store.migration_v23 import migrate_v23
 from keypulse.store.migration_v24 import migrate_v24
 from keypulse.store.migration_v26 import migrate_v26
+from keypulse.store.migration_v27 import migrate_v27
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 MIGRATIONS = [
     # v1
@@ -226,6 +227,9 @@ MIGRATIONS = [
     # AI-transcript noise, input placeholders, zsh re-decode reset, browser content by website
     # (see migration_v26).
     migrate_v26,
+    # v27 — browser-history plugins (chrome_history / safari_history) bucketed by website, like
+    # browser_url; re-buckets Personal rows by their URL (see migration_v27).
+    migrate_v27,
 ]
 
 

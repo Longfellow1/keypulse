@@ -5,13 +5,16 @@ Resolution order for an event:
      config_json = {"bucket": "<Name>"}. App scope matches app_name / process_name by
      case-insensitive substring (same semantics as the privacy PolicyEngine); source scope is exact.
   2. config `[buckets.source_defaults]` overrides, then DEFAULT_SOURCE_BUCKETS.
+     chrome_history / safari_history have no default here: they are site-classified (below).
   3. KeyPulse's own capture streams (CAPTURE_SOURCES, D26) are classified by app: config
      `[buckets.app_defaults]` (substring on app / process name), then the preset table in
      `store.app_categories`, then Personal (unknown apps are Personal).
      Browser content (D28) is classified by site first: config `[buckets.site_defaults]`, then the
      preset table in `store.site_categories`; a site with no entry falls back to the app level (so
-     Personal). browser_url rows carry their own URL; ax_text / clipboard / window / keyboard rows of a
-     browser take the URL of the nearest browser_url row of the same browser at or before them,
+     Personal). Browser-history plugin rows (chrome_history / safari_history) take the same site
+     table from their own URL, with Personal as the fallback. browser_url rows carry their own URL;
+     ax_text / clipboard / window / keyboard rows of a browser take the URL of the nearest browser_url
+     row of the same browser at or before them,
      within SITE_LOOKBACK (10 minutes); with none they stay at the app level.
   4. otherwise None: an unmapped plugin source is never auto-placed in a shareable bucket (PRD:
      uncertain origin must not default to a low-sensitivity bucket), so no grant can read it.
@@ -36,8 +39,6 @@ DEFAULT_SOURCE_BUCKETS: dict[str, str] = {
     "git_log": "Work",
     "zsh_history": "Work",
     "markdown_vault": "Personal",
-    "chrome_history": "Personal",
-    "safari_history": "Personal",
     "wechat": "Personal",
     "knowledgec": "Personal",
     "spotlight": "Personal",
@@ -53,6 +54,9 @@ CAPTURE_SOURCES = frozenset(
 SITE_OWN_URL_SOURCES = frozenset({"browser_url", "browser"})
 SITE_INHERIT_SOURCES = frozenset({"ax_text", "clipboard", "window", "keyboard_chunk"})
 SITE_LOOKBACK = timedelta(minutes=10)
+# Browser-history plugins (D28): every row is one visit with its own URL in metadata_json["url"]. They
+# are bucketed by site like browser_url, with no app-level default (see resolve_bucket).
+SITE_HISTORY_SOURCES = frozenset({"chrome_history", "safari_history"})
 
 _overrides: Optional[dict[str, str]] = None
 _app_overrides: Optional[dict[str, str]] = None
@@ -139,7 +143,7 @@ def wants_site_url(source: Optional[str], app_name: Optional[str], process_name:
     """Whether a row's bucket depends on a website (so a URL lookup is worth doing)."""
     from keypulse.store.site_categories import browser_family
 
-    if source in SITE_OWN_URL_SOURCES:
+    if source in SITE_OWN_URL_SOURCES or source in SITE_HISTORY_SOURCES:
         return True
     return source in SITE_INHERIT_SOURCES and browser_family(app_name, process_name) is not None
 
@@ -264,6 +268,16 @@ def classify_capture_app(
     return classify_app(app_name, process_name) or DEFAULT_APP_BUCKET
 
 
+def _site_bucket(url: Optional[str], site_overrides: Optional[dict[str, str]] = None) -> Optional[str]:
+    """Site table only (config site_defaults > preset); None when no URL or no entry matches."""
+    if not url:
+        return None
+    from keypulse.store.site_categories import classify_url
+
+    merged = _config_site_overrides() if site_overrides is None else site_overrides
+    return classify_url(url, merged)
+
+
 def _config_overrides() -> dict[str, str]:
     global _overrides
     if _overrides is None:
@@ -327,12 +341,13 @@ def resolve_bucket(
         elif rule["scope_type"] == "source" and source == rule["scope_value"]:
             return rule["bucket"]
     default = default_bucket_for_source(source, overrides)
+    if default is None and source in SITE_HISTORY_SOURCES:
+        from keypulse.store.site_categories import DEFAULT_SITE_BUCKET
+
+        return _site_bucket(url, site_overrides) or DEFAULT_SITE_BUCKET
     if default is None and source in CAPTURE_SOURCES:
         if url and wants_site_url(source, app_name, process_name):
-            from keypulse.store.site_categories import classify_url
-
-            merged_sites = _config_site_overrides() if site_overrides is None else site_overrides
-            site = classify_url(url, merged_sites)
+            site = _site_bucket(url, site_overrides)
             if site:
                 return site
         return classify_capture_app(app_name, process_name, app_overrides)

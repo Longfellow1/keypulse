@@ -402,6 +402,34 @@ def test_at05_work_only_host_sees_only_work_in_mixed_hits(canary_db) -> None:
     assert not any("secret note KPCANARY7" in r["snippet"] for r in resp["results"])
 
 
+def test_g1_history_row_on_bank_site_is_invisible_to_work_grant(tmp_path) -> None:
+    """A chrome_history visit to a bank is classified Financial at insert (site table, D28), so a Work-only
+    grant must not see it, even though the same grant reads Work rows that share its keyword."""
+    from datetime import datetime, timezone
+
+    from keypulse.sources.sink import persist_semantic_event
+    from keypulse.sources.types import SemanticEvent
+
+    canary = "KPCANARY15historybankvisit"
+    _seed(tmp_path / "g1_history.db", with_out_of_scope=False, scope="work_claude_only")
+    row_id = persist_semantic_event(
+        SemanticEvent(
+            time=datetime(2026, 3, 2, 12, 0, tzinfo=timezone.utc), source="chrome_history", actor="user",
+            intent=f"{SHARED_WORD} account page {canary}", artifact="https://www.icbc.com.cn/account",
+            raw_ref="synthetic:g1:visit:1", privacy_tier="standard",
+            metadata={"profile": "Default", "full_url": "https://www.icbc.com.cn/account?sid=1"},
+        ),
+        async_named_entities=False,
+    )
+    assert get_conn().execute("SELECT bucket FROM raw_events WHERE id = ?", (row_id,)).fetchone()[0] == "Financial"
+    token = auth.create_grant("host", **GRANT_SCOPES["work_all_sources"])
+    for q in ({"query": canary}, {"query": f"{SHARED_WORD} {canary}"}, {"query": SHARED_WORD}, {"keywords": [canary, SHARED_WORD]}):
+        resp = _run(token, q)
+        assert canary not in json.dumps(resp, ensure_ascii=False), q
+        assert {r["bucket"] for r in resp.get("results", [])} <= {"Work"}
+    close()
+
+
 # ── 2. differential ──────────────────────────────────────────────────────────────────────────
 _STRIP = {"id", "evidence_id", "occurred_at", "event_id", "next_cursor"}
 
