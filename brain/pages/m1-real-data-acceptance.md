@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [eval, m1, acceptance]
 created: "2026-10-12T14:41:55"
-updated: "2026-10-12T17:27:27"
+updated: "2026-10-13T01:10:25"
 ---
 
 <!-- compiled_truth -->
@@ -40,4 +40,9 @@ Known boundary accepted for M1: content in AI-tool apps/sites is bucketed Work b
 - time: 2026-10-12T17:27:27
   kind: evidence
   summary: "2026-10-12 auto-judged rerun (M2-0 harness, Sonnet judge, strict rubric): on the 19 A–C questions KP is 14/19 correct, not the 16/19 (84%) from human pre-labels; review found the pre-labels lenient on 2–3 items (judge more accurate on Q06/Q15-type). M2 baseline = auto-judged 14/19 (74%); bash 11/21. Single runs vary by ±2 questions from model nondeterminism, so M2 acceptance should use 3 repeated runs. Imported sources (codex/claude transcripts) are not email-redacted at query time (only secrets), unlike capture streams."
+  affects: [m1-real-data-acceptance]
+
+- time: 2026-10-13T01:10:25
+  kind: evidence
+  summary: "2026-10-13 M2 progress: 3-run baseline on main (v29 code) = 12/13/16 of 19 (mean 72%), D/E 4/4 every run; stable misses Q05 (web chat content not captured, only titles), Q08 (gold among candidates, model hedges), Q14 (ambiguous: several distinct key incidents). Evidence openable on real DB after v30/v31 = 97.0% excluding knowledgec (screen-time rows have no original by design). Experiment exp/evidence-context (multi-window snippets + get_evidence focus up to 1500 chars) = 13/14/16 (mean 75%): gain within run-to-run noise, target case Q14 still wrong; not shipped, keeping the short-excerpt data-minimisation contract. Branch kept on origin for reference."
   affects: [m1-real-data-acceptance]
