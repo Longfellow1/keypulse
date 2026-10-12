@@ -99,6 +99,8 @@ class ZshHistorySource(DataSource):
                 since = datetime.min.replace(tzinfo=timezone.utc)  # full re-read, once
             self._pending_cursors[source_id] = {"decoded": CURSOR_VERSION}
 
+        evidence_path = str(history_path.resolve())
+
         def _iter_events() -> Iterator[SemanticEvent]:
             try:
                 handle = history_path.open("rb")
@@ -128,6 +130,8 @@ class ZshHistorySource(DataSource):
                         raw_ref=f"zsh:line:{line_idx}",
                         privacy_tier=self.privacy_tier,
                         metadata={"elapsed_seconds": elapsed},
+                        evidence_locator=evidence_path,
+                        evidence_line=line_idx,
                     )
                     is_noise, _ = is_low_signal_event(event)
                     if is_noise:

@@ -9,6 +9,7 @@ from typing import Iterator
 
 from keypulse.privacy.desensitizer import desensitize
 from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
+from keypulse.store.locators import browser_locator
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
@@ -65,6 +66,7 @@ class ChromeHistorySource(DataSource):
         since_us = int(since.astimezone(timezone.utc).timestamp() * 1_000_000) + _WEBKIT_EPOCH_OFFSET_US
         until_us = int(until.astimezone(timezone.utc).timestamp() * 1_000_000) + _WEBKIT_EPOCH_OFFSET_US
         profile = str(instance.metadata.get("profile") or history_path.parent.name)
+        db_locator = str(history_path.resolve())
 
         def _iter_events() -> Iterator[SemanticEvent]:
             with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
@@ -110,6 +112,7 @@ class ChromeHistorySource(DataSource):
                         raw_ref=desensitize(f"chrome:visit:{visit_id}"),
                         privacy_tier=self.privacy_tier,
                         metadata={"profile": profile, "full_url": desensitize(full_url)},
+                        evidence_locator=browser_locator(db_locator, visit_id),
                     )
 
         return _iter_events()

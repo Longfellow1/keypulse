@@ -131,6 +131,7 @@ class SpotlightSource(DataSource):
                 if event is None:
                     continue
 
+                event.evidence_locator = str(path)  # file only: no line inside an arbitrary document
                 emitted += 1
                 yield event
 

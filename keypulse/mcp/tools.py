@@ -10,8 +10,12 @@ from keypulse.privacy import desensitizer
 from keypulse.search.engine import (
     TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, timeline_events,
 )
+from keypulse.store.db import get_conn
 from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, is_keypulse_locator
-from keypulse.store.evidence import refresh_availability, split_git_locator
+from keypulse.store.evidence import (
+    is_unresolvable_locator, refresh_availability, split_browser_locator, split_git_locator, unresolvable_source,
+)
+from keypulse.store.evidence_original import ORIGINAL_SOURCES, read_original
 
 # What a granted Host can search (D26): source-plugin events plus KeyPulse's own capture streams
 # (keyboard chunks, window focus sessions, clipboard, AX text, browser URLs), all still limited by
@@ -29,6 +33,13 @@ TOOL_GET_TIMELINE = "get_timeline"
 EXCERPT_CHARS = 400
 EVIDENCE_NOT_FOUND = {"status": "not_found", "message": "No evidence with this id is available to this client."}
 SOURCE_UNAVAILABLE_MESSAGE = "原始出处已不可访问 / original source is no longer accessible"
+# Sources whose events have no openable original by design (stored with available=0, locator
+# "unresolvable://<source>"). A fixed reason per source; never an error.
+NOT_RESOLVABLE_MESSAGES = {
+    "knowledgec": "macOS 系统活动库只有聚合记录，没有可打开的单条原文 / knowledgeC holds system activity records with no openable original",
+    "approved_sqlite": "用户授权的第三方数据库行，不提供原文回溯 / rows from a user-approved third-party database have no openable original",
+}
+NOT_RESOLVABLE_DEFAULT = "该来源没有可打开的原始出处 / this source has no openable original"
 
 _MATCH_REASON = "keyword match"
 SENTENCE_KEYWORD_MESSAGE = (
@@ -48,7 +59,7 @@ def _looks_like_sentence(keyword: str) -> bool:
     )
 
 
-_TEXT_FIELDS = frozenset({"snippet", "excerpt", "title", "app", "app_name", "window_title"})
+_TEXT_FIELDS = frozenset({"snippet", "excerpt", "title", "app", "app_name", "window_title", "url", "text"})
 
 
 def _redact_fields(node: Any) -> Any:
@@ -270,6 +281,15 @@ def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
         "available": available,
         "locator": None,
     }
+    if is_unresolvable_locator(row["locator"]):
+        reason = NOT_RESOLVABLE_MESSAGES.get(unresolvable_source(row["locator"]), NOT_RESOLVABLE_DEFAULT)
+        return {"status": "not_resolvable", "message": reason, "evidence": evidence}
+    original = None
+    if available and row["source"] in ORIGINAL_SOURCES:
+        original = read_original(row["source"], row["locator"])
+        if original is None:  # the file / visit row is gone although the file path still exists
+            available = evidence["available"] = False
+            _store_unavailable(row["evidence_id"])
     if not available:
         # AT21: keep the stored excerpt, give no path / commit that could look openable.
         return {"status": "source_unavailable", "message": SOURCE_UNAVAILABLE_MESSAGE, "evidence": evidence}
@@ -279,9 +299,23 @@ def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
         evidence["locator"] = {"type": "keypulse", "event_id": f"evt_{row['event_id']}"}
     elif parsed is not None:
         evidence["locator"] = {"type": "git", "repo": parsed[0], "commit": parsed[1]}
+    elif split_browser_locator(row["locator"]) is not None:
+        db_path, visit_id = split_browser_locator(row["locator"])
+        evidence["locator"] = {"type": "browser_visit", "db": db_path, "visit_id": visit_id}
     else:
         evidence["locator"] = {"type": "file", "path": row["locator"], "line": row["line"]}
+    if original is not None:
+        evidence["original"] = original
     return {"status": "ok", "evidence": evidence}
+
+
+def _store_unavailable(evidence_id: int) -> None:
+    try:
+        conn = get_conn()
+        conn.execute("UPDATE evidence SET available = 0 WHERE id = ?", (evidence_id,))
+        conn.commit()
+    except sqlite3.Error:
+        pass
 
 
 def _parse_cursor(raw: Any) -> tuple[str, int]:

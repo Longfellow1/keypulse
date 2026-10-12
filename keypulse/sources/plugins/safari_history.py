@@ -9,6 +9,7 @@ from typing import Iterator
 
 from keypulse.privacy.desensitizer import desensitize
 from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
+from keypulse.store.locators import browser_locator
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
@@ -50,6 +51,7 @@ class SafariHistorySource(DataSource):
         if blocked:
             return iter(())
 
+        db_locator = str(history_path.resolve())
         since_cf = since.astimezone(timezone.utc).timestamp() - _CF_EPOCH_OFFSET_S
         until_cf = until.astimezone(timezone.utc).timestamp() - _CF_EPOCH_OFFSET_S
 
@@ -97,6 +99,7 @@ class SafariHistorySource(DataSource):
                         raw_ref=desensitize(f"safari:visit:{visit_id}"),
                         privacy_tier=self.privacy_tier,
                         metadata={"profile": "Default", "full_url": desensitize(full_url)},
+                        evidence_locator=browser_locator(db_locator, visit_id),
                     )
 
         return _iter_events()

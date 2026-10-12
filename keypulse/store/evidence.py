@@ -1,8 +1,13 @@
 """Evidence availability (PRD 3.7.2 / 3.7.3): does the original an event came from still exist?
 
-Locators are produced by the source plugins: an absolute file path (with a 1-based line) or, for
-git, "{repo}@{commit}". Only existence is checked; file content is never read back out, so a
-stored (already redacted) excerpt remains the only text that can reach a Host.
+Locators are produced by the source plugins (M2, issue #57):
+  * file + line     "/abs/path"                  claude_code, codex_cli, zsh_history, markdown_vault
+  * file only       "/abs/path"                  spotlight
+  * commit          "{repo}@{commit}"            git_log
+  * browser visit   "{History DB}#visit:{id}"    chrome_history, safari_history (visits.id / history_visits.id)
+  * not resolvable  "unresolvable://{source}"    knowledgec, approved_sqlite (stored with available=0)
+Existence is checked here; reading a browser row / a plain-text file back out is done in
+keypulse.store.evidence_original, and only for the sources that define it.
 """
 from __future__ import annotations
 
@@ -13,18 +18,12 @@ from typing import Iterable, Optional
 
 from keypulse.store.capture_events import is_keypulse_locator
 from keypulse.store.db import get_conn
+from keypulse.store.locators import (  # noqa: F401  (re-exported)
+    UNRESOLVABLE_PREFIX, VISIT_MARKER, browser_locator, is_unresolvable_locator, split_browser_locator,
+    split_git_locator, unresolvable_locator, unresolvable_source,
+)
 
 GIT_TIMEOUT_SEC = 2.0
-_HEX_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
-
-
-def split_git_locator(locator: str) -> Optional[tuple[str, str]]:
-    repo, sep, commit = locator.rpartition("@")
-    if sep and repo and _HEX_RE.match(commit) and os.sep in repo:
-        return repo, commit
-    return None
-
-
 def _git_commit_exists(repo: str, commit: str) -> bool:
     if not os.path.isdir(repo):
         return False
@@ -56,6 +55,11 @@ def locator_exists(locator: str, line: Optional[int] = None, *, deep: bool = Tru
     used on every search); deep=True also verifies the line (files) or the commit (git)."""
     if is_keypulse_locator(locator):
         return True  # KeyPulse's own record (capture events): nothing external to disappear
+    if is_unresolvable_locator(locator):
+        return False  # no openable original exists, by design
+    browser = split_browser_locator(locator)
+    if browser is not None:
+        return os.path.isfile(browser[0])  # the visit row itself is verified when the original is read
     git = split_git_locator(locator)
     if git is not None:
         repo, commit = git
