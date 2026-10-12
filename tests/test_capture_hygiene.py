@@ -362,7 +362,7 @@ def test_v24_scrubs_existing_rows_transactionally_and_idempotently(tmp_path):
     assert fts('"hello world"') == [keep]
     ev = {r["event_id"] for r in conn.execute("SELECT event_id FROM evidence")}
     assert {pinyin, wechat, overlay, bili}.isdisjoint(ev) and keep in ev  # evidence of deleted events is gone
-    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 24
+    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 25
 
     before = [tuple(r) for r in conn.execute("SELECT * FROM raw_events ORDER BY id")]
     migrate_v24(conn)
@@ -390,3 +390,20 @@ def test_v24_is_fast_on_25k_rows(tmp_path):
     assert conn.execute("SELECT count(*) FROM raw_events WHERE content_text LIKE 'nihao%'").fetchone()[0] == 0
     assert conn.execute("SELECT count(*) FROM raw_events").fetchone()[0] < 25_000
     conn.close()
+
+
+def test_v25_hides_pre_fix_keyboard_rows_from_search_but_keeps_them(tmp_path):
+    from keypulse.search.engine import _NOT_ECHO_SQL
+
+    conn = _db_at_v23(tmp_path / "old.db")
+    kb = _row(conn, 1, "keyboard_chunk", "keyboard_chunk", "Notes", "hello world this is a test")
+    clip = _row(conn, 2, "clipboard", "clipboard_copy", "Notes", "hello world copied text")
+    conn.commit()
+
+    run_migrations(conn)
+    visible = {r[0] for r in conn.execute(f"SELECT e.id FROM raw_events e WHERE {_NOT_ECHO_SQL}")}
+    assert kb not in visible and clip in visible                       # hidden from search ...
+    assert conn.execute("SELECT content_text FROM raw_events WHERE id=?", (kb,)).fetchone()[0]  # ... but kept
+
+    new_kb = _row(conn, 3, "keyboard_chunk", "keyboard_chunk", "Notes", "typed after the tap fix")
+    assert conn.execute(f"SELECT 1 FROM raw_events e WHERE e.id=? AND {_NOT_ECHO_SQL}", (new_kb,)).fetchone()

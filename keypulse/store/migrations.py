@@ -11,7 +11,7 @@ from keypulse.store.migration_v24 import migrate_v24
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 MIGRATIONS = [
     # v1
@@ -211,6 +211,16 @@ MIGRATIONS = [
     migrate_v23,
     # v24 — D27: existing capture rows run through the hygiene gate (see migration_v24).
     migrate_v24,
+    # v25 — owner decision 2026-10-12: keyboard chunks captured before the v24 tap fix (spaces were
+    # stripped, so leftover pinyin can't be told from English) are kept but hidden from search.
+    # Every keyboard row present at upgrade time predates the fixed tap. Idempotent (json_set).
+    """
+    UPDATE raw_events
+       SET metadata_json = json_set(
+               CASE WHEN json_valid(metadata_json) THEN metadata_json ELSE '{}' END,
+               '$.pre_fix_keyboard', 1)
+     WHERE event_type = 'keyboard_chunk';
+    """,
 ]
 
 

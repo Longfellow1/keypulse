@@ -136,8 +136,11 @@ def _haystack(row) -> str:
 
 # Rows an AI host wrote after calling a KeyPulse MCP tool (paraphrase of KeyPulse's own output):
 # kept in the DB, flagged by the source plugin (metadata.via_keypulse), hidden by default.
+# Also hidden: keyboard chunks captured before the v24 tap fix (metadata.pre_fix_keyboard, set by v25).
 _NOT_ECHO_SQL = (
     "(CASE WHEN json_valid(e.metadata_json) THEN json_extract(e.metadata_json, '$.via_keypulse') END) IS NOT 1"
+    " AND (CASE WHEN json_valid(e.metadata_json)"
+    " THEN json_extract(e.metadata_json, '$.pre_fix_keyboard') END) IS NOT 1"
 )
 
 _SCOPED_CANDIDATES = 500
