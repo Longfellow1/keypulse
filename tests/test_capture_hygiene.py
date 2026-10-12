@@ -362,7 +362,7 @@ def test_v24_scrubs_existing_rows_transactionally_and_idempotently(tmp_path):
     assert fts('"hello world"') == [keep]
     ev = {r["event_id"] for r in conn.execute("SELECT event_id FROM evidence")}
     assert {pinyin, wechat, overlay, bili}.isdisjoint(ev) and keep in ev  # evidence of deleted events is gone
-    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 28
+    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 29
 
     before = [tuple(r) for r in conn.execute("SELECT * FROM raw_events ORDER BY id")]
     migrate_v24(conn)

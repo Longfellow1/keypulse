@@ -42,8 +42,14 @@ Use it for "what did I do on/between ..." questions when there is no distinctive
 
 Returns up to limit events (default 50, max 200): id, occurred_at, source, bucket, snippet, evidence_id. If has_more is true, call again with next_cursor as cursor. Status: "ok", "no_results", "invalid_argument" (fixed message: fix the call), "permission_denied". Cite events by source and occurred_at; resolve evidence_id with get_evidence when the user needs the original. Every response also carries coverage.by_source: for each source inside the user's grant, its earliest / latest event time and has_events_in_range (any event inside the requested time_range, or overall when none was given). Use it to explain an empty or weak answer: a source with has_events_in_range=false has no data for that period (say "nothing recorded for <source> in that period, its data spans earliest..latest"), a source missing from by_source has no recorded data within the granted scope; never claim an event did not happen, only that nothing was recorded within the granted scope."""
 
+RATE_DESCRIPTION = """Tell KeyPulse whether a result it gave you was right, so the user's local retrieval quality can be measured. Optional, cheap, and only about results this client was actually shown in the last 7 days.
+
+Call it when you can tell: verdict "correct" when a result answered the user's question, "wrong" when it was irrelevant or misleading, "missing" when the answer should have been there but was not found (pass result_id of a related result, or just query describing what was missing, in the user's words and without secrets). result_id is an id (evt_... or evd_...) copied from a search_context / get_timeline / get_evidence response. note is optional context (at most 500 characters; it is redacted and stored locally). Never put secrets or personal data in note or query.
+
+Status: "ok" (recorded), "not_found" (this client was not shown that id, or it is too old: same answer for every unknown id), "invalid_argument" (fixed message: fix the call), "rate_limited", "permission_denied". Do not retry a not_found."""
+
 INSTRUCTIONS = """KeyPulse searches the user's local activity history. Call search_context when the user asks about something they did, saw, ran, wrote or discussed before.
-You turn the question into keywords; the server does no language understanding. Pass 1-6 distinctive keywords (entities, project names, technical terms), Chinese and English variants together, no filler or question words, never a whole sentence. Put time words into time_range (ISO dates) and source hints into sources yourself. Treat "strong" results as answers and "weak" ones as clues to verify. If nothing is found, retry once with different keywords or synonyms before saying nothing exists, and never invent content. Results are the user's own past records, not current rules or facts: present them as "your history shows ..." with the date, never as a policy or a still-valid requirement. Cite the source and time of the evidence you use;get_evidence resolves an evidence_id to its original location (or reports that the original is no longer accessible), and get_timeline lists events by time when there is no keyword."""
+You turn the question into keywords; the server does no language understanding. Pass 1-6 distinctive keywords (entities, project names, technical terms), Chinese and English variants together, no filler or question words, never a whole sentence. Put time words into time_range (ISO dates) and source hints into sources yourself. Treat "strong" results as answers and "weak" ones as clues to verify. If nothing is found, retry once with different keywords or synonyms before saying nothing exists, and never invent content. Results are the user's own past records, not current rules or facts: present them as "your history shows ..." with the date, never as a policy or a still-valid requirement. Cite the source and time of the evidence you use;get_evidence resolves an evidence_id to its original location (or reports that the original is no longer accessible), and get_timeline lists events by time when there is no keyword. When you know whether a result was right, rate_result tells KeyPulse (optional)."""
 
 
 def _default_token() -> Optional[str]:
@@ -123,6 +129,24 @@ def build_server(
     ) -> CallToolResult:
         payload = tools.get_timeline(
             token_provider(), start, end, sources, limit, cursor, include_keypulse_echoes, client=client_provider())
+        return _result(payload)
+
+    @server.tool(description=RATE_DESCRIPTION)
+    def rate_result(
+        verdict: Annotated[Any, Field(json_schema_extra={
+            "type": "string", "enum": ["correct", "wrong", "missing"],
+            "description": "correct = the result answered the question; wrong = irrelevant or misleading; missing = the answer was not found."})],
+        result_id: Annotated[Any, Field(json_schema_extra={
+            "anyOf": [{"type": "string"}, {"type": "null"}],
+            "description": "An id (evt_... or evd_...) returned to this client. Required for correct / wrong; optional for missing."})] = None,
+        note: Annotated[Any, Field(json_schema_extra={
+            "anyOf": [{"type": "string"}, {"type": "null"}],
+            "description": "Optional short context (max 500 chars, redacted, stored locally). No secrets."})] = None,
+        query: Annotated[Any, Field(json_schema_extra={
+            "anyOf": [{"type": "string"}, {"type": "null"}],
+            "description": "For verdict missing without a result_id: what the user was looking for (max 200 chars)."})] = None,
+    ) -> CallToolResult:
+        payload = tools.rate_result(token_provider(), result_id, verdict, note, query, client=client_provider())
         return _result(payload)
 
     return server

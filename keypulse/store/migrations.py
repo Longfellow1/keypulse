@@ -11,10 +11,11 @@ from keypulse.store.migration_v24 import migrate_v24
 from keypulse.store.migration_v26 import migrate_v26
 from keypulse.store.migration_v27 import migrate_v27
 from keypulse.store.migration_v28 import migrate_v28
+from keypulse.store.migration_v29 import migrate_v29
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
 
 MIGRATIONS = [
     # v1
@@ -234,6 +235,8 @@ MIGRATIONS = [
     # v28 — M2 (issue #57): evidence rows for existing rows of every source plugin, from stored
     # locators only (see migration_v28).
     migrate_v28,
+    # v29 — M2 (issue #63): returned-result ledger + feedback verdicts for rate_result.
+    migrate_v29,
 ]
 
 
