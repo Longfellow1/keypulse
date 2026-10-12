@@ -18,7 +18,21 @@ from __future__ import annotations
 
 import sqlite3
 
-from keypulse.store.buckets import DEFAULT_SOURCE_BUCKETS
+# Frozen as of v21: the live DEFAULT_SOURCE_BUCKETS no longer lists the browser-history plugins (they are
+# site-bucketed, see store.buckets and migration v27), but a DB upgraded from v20 must still get the
+# v21 values here so no row is left NULL (an unmapped row is unreadable by any grant).
+_V21_SOURCE_BUCKETS = {
+    "claude_code": "Work",
+    "codex_cli": "Work",
+    "git_log": "Work",
+    "zsh_history": "Work",
+    "markdown_vault": "Personal",
+    "chrome_history": "Personal",
+    "safari_history": "Personal",
+    "wechat": "Personal",
+    "knowledgec": "Personal",
+    "spotlight": "Personal",
+}
 
 _GRANT_COLUMNS = (
     ("buckets", "TEXT NOT NULL DEFAULT '[\"Work\"]'"),
@@ -34,7 +48,7 @@ def migrate_v21(conn: sqlite3.Connection) -> None:
     for name, decl in _GRANT_COLUMNS:
         if name not in existing:
             conn.execute(f"ALTER TABLE access_grants ADD COLUMN {name} {decl}")
-    for source, bucket in DEFAULT_SOURCE_BUCKETS.items():
+    for source, bucket in _V21_SOURCE_BUCKETS.items():
         conn.execute(
             "UPDATE raw_events SET bucket = ? WHERE bucket IS NULL AND source = ?",
             (bucket, source),

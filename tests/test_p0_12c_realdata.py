@@ -414,7 +414,7 @@ def _seed_v25(path: Path) -> tuple[sqlite3.Connection, dict]:
 def test_v26_migration_end_to_end_and_idempotent(tmp_path):
     conn, ids = _seed_v25(tmp_path / "old.db")
     run_migrations(conn)
-    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 26
+    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 27
     assert list(tmp_path.glob("old.db.v25-*.bak"))
     q = lambda col, rid: conn.execute(f"SELECT {col} FROM raw_events WHERE id = ?", (rid,)).fetchone()
     exists = lambda rid: q("id", rid) is not None
