@@ -112,7 +112,7 @@ class MarkdownVaultSource(DataSource):
                     except Exception:
                         rel_path = path.name
 
-                    title = _extract_title(path)
+                    title, title_line = _extract_title_and_line(path)
                     event = ContentShape.DOCUMENT_FILE.to_semantic_event(
                         {
                             "mtime": event_time,
@@ -131,6 +131,8 @@ class MarkdownVaultSource(DataSource):
                         privacy_tier=self.privacy_tier,
                     )
                     if event is not None:
+                        event.evidence_locator = str(path.resolve())
+                        event.evidence_line = title_line
                         yield event
 
         return _iter_events()
@@ -171,11 +173,16 @@ class MarkdownVaultSource(DataSource):
 
 
 def _extract_title(path: Path) -> str:
+    return _extract_title_and_line(path)[0]
+
+
+def _extract_title_and_line(path: Path) -> tuple[str, int]:
+    """(title, 1-based line the title was read from); line 1 when the note has no heading."""
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
             in_frontmatter = False
             seen_first = False
-            for raw_line in handle:
+            for line_no, raw_line in enumerate(handle, start=1):
                 line = raw_line.strip()
                 if not line:
                     continue
@@ -189,8 +196,8 @@ def _extract_title(path: Path) -> str:
                         in_frontmatter = False
                     continue
                 if line.startswith("#"):
-                    return line.lstrip("#").strip()[:200]
-                return path.stem
+                    return line.lstrip("#").strip()[:200], line_no
+                return path.stem, line_no
     except Exception:
-        return path.stem
-    return path.stem
+        return path.stem, 1
+    return path.stem, 1

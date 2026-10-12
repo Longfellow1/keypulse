@@ -10,6 +10,7 @@ from typing import Any, Iterator
 
 from keypulse.sources.approval import ApprovalStore
 from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
+from keypulse.store.locators import unresolvable_locator
 from keypulse.sources.types import ContentShape, FIELD_HEURISTICS, DataSource, DataSourceInstance, SemanticEvent
 
 
@@ -209,6 +210,7 @@ class ApprovedSqliteSource(DataSource):
                         privacy_tier=self.privacy_tier,
                     )
                     if event is not None:
+                        event.evidence_locator = unresolvable_locator(self.name)
                         yield event
 
         return _iter_events()
@@ -286,6 +288,7 @@ class ApprovedSqliteSource(DataSource):
                             continue
                         if event.time < since_utc or event.time > until_utc:
                             continue
+                        event.evidence_locator = unresolvable_locator(self.name)
                         yield event
 
         return _iter_events()

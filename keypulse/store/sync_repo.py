@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from keypulse.store.db import get_conn
+from keypulse.store.locators import is_unresolvable_locator
 
 
 def _now() -> str:
@@ -72,12 +73,14 @@ def add_evidence(
     offset_or_line: Optional[int],
     content_hash: Optional[str],
 ) -> None:
-    """Idempotent: one evidence row per (event, locator)."""
+    """Idempotent: one evidence row per (event, locator). An "unresolvable://" locator (knowledgec,
+    approved_sqlite: no openable original) is stored with available=0."""
     conn = get_conn()
+    available = 0 if is_unresolvable_locator(locator) else 1
     conn.execute(
         """INSERT INTO evidence(event_id, locator, offset_or_line, content_hash, available, created_at)
-           SELECT ?,?,?,?,1,?
+           SELECT ?,?,?,?,?,?
            WHERE NOT EXISTS (SELECT 1 FROM evidence WHERE event_id = ? AND locator = ?)""",
-        (event_id, locator, offset_or_line, content_hash, _now(), event_id, locator),
+        (event_id, locator, offset_or_line, content_hash, available, _now(), event_id, locator),
     )
     conn.commit()

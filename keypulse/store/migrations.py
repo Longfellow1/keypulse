@@ -10,10 +10,11 @@ from keypulse.store.migration_v23 import migrate_v23
 from keypulse.store.migration_v24 import migrate_v24
 from keypulse.store.migration_v26 import migrate_v26
 from keypulse.store.migration_v27 import migrate_v27
+from keypulse.store.migration_v28 import migrate_v28
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 MIGRATIONS = [
     # v1
@@ -230,6 +231,9 @@ MIGRATIONS = [
     # v27 — browser-history plugins (chrome_history / safari_history) bucketed by website, like
     # browser_url; re-buckets Personal rows by their URL (see migration_v27).
     migrate_v27,
+    # v28 — M2 (issue #57): evidence rows for existing rows of every source plugin, from stored
+    # locators only (see migration_v28).
+    migrate_v28,
 ]
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterator
 
 from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
+from keypulse.store.locators import unresolvable_locator
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
@@ -157,6 +158,7 @@ def _row_to_event(
         raw_ref=f"knowledgec:{stream}:{z_pk}",
         privacy_tier=privacy_tier,
         metadata={"stream": stream, "duration_sec": duration_sec, "bundle_id": value_text},
+        evidence_locator=unresolvable_locator(source),
     )
 
 
