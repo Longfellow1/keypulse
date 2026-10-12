@@ -143,3 +143,100 @@ def test_read_returns_empty_when_git_call_fails(monkeypatch) -> None:
     )
 
     assert events == []
+
+
+@pytest.fixture()
+def isolated_git_home(tmp_path: Path, monkeypatch) -> Path:
+    # Keep results independent of the machine's global git config.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(home / ".gitconfig"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    return home
+
+
+def _commit_as(repo: Path, filename: str, subject: str, *, name: str, email: str, when: str) -> None:
+    (repo / filename).write_text(filename, encoding="utf-8")
+    env = os.environ.copy()
+    env.update(
+        GIT_AUTHOR_NAME=name,
+        GIT_AUTHOR_EMAIL=email,
+        GIT_COMMITTER_NAME=name,
+        GIT_COMMITTER_EMAIL=email,
+        GIT_AUTHOR_DATE=when,
+        GIT_COMMITTER_DATE=when,
+    )
+    _run_git(["add", filename], cwd=repo)
+    _run_git(["commit", "-m", subject], cwd=repo, env=env)
+
+
+def _read_day(source: GitLogSource, repo: Path) -> list:
+    instance = DataSourceInstance(plugin="git_log", locator=str(repo), label=repo.name)
+    return list(
+        source.read(
+            instance,
+            datetime(2026, 4, 28, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 4, 28, 23, 59, tzinfo=timezone.utc),
+        )
+    )
+
+
+def _two_author_repo(root: Path) -> Path:
+    repo = root / "shared-repo"
+    repo.mkdir()
+    _run_git(["init"], cwd=repo)
+    _run_git(["config", "user.name", "Alice"], cwd=repo)
+    _run_git(["config", "user.email", "a@example.com"], cwd=repo)
+    _commit_as(repo, "a1.txt", "alice work", name="Alice", email="a@example.com", when="2026-04-28T10:00:00+00:00")
+    _commit_as(repo, "b1.txt", "bob work", name="Bob", email="b@example.com", when="2026-04-28T11:00:00+00:00")
+    # Same display name as Alice but a different address: must not count as her.
+    _commit_as(
+        repo, "c1.txt", "impostor name", name="Alice", email="alice@other.example", when="2026-04-28T12:00:00+00:00"
+    )
+    return repo
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_read_ingests_only_commits_by_configured_user(isolated_git_home: Path, tmp_path: Path) -> None:
+    repo = _two_author_repo(tmp_path)
+
+    events = _read_day(GitLogSource(search_roots=[repo], cwd=repo), repo)
+
+    assert [e.intent for e in events] == ["alice work"]
+    assert events[0].metadata["author_email"] == "a@example.com"
+    assert events[0].actor == "Alice"
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_repo_without_identity_ingests_nothing(isolated_git_home: Path, tmp_path: Path) -> None:
+    repo = tmp_path / "foreign-repo"
+    repo.mkdir()
+    _run_git(["init"], cwd=repo)
+    _commit_as(repo, "x.txt", "someone else", name="Bob", email="b@example.com", when="2026-04-28T11:00:00+00:00")
+
+    assert _read_day(GitLogSource(search_roots=[repo], cwd=repo), repo) == []
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_extra_author_emails_add_identities(isolated_git_home: Path, tmp_path: Path) -> None:
+    repo = _two_author_repo(tmp_path)
+
+    source = GitLogSource(search_roots=[repo], cwd=repo, author_emails=["b@example.com"])
+    intents = sorted(e.intent for e in _read_day(source, repo))
+
+    assert intents == ["alice work", "bob work"]
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_name_fallback_only_when_no_email_configured(isolated_git_home: Path, tmp_path: Path) -> None:
+    repo = tmp_path / "name-only-repo"
+    repo.mkdir()
+    _run_git(["init"], cwd=repo)
+    _run_git(["config", "user.name", "Alice"], cwd=repo)
+    _commit_as(repo, "a1.txt", "alice work", name="Alice", email="a@example.com", when="2026-04-28T10:00:00+00:00")
+    _commit_as(repo, "b1.txt", "bob work", name="Bob", email="b@example.com", when="2026-04-28T11:00:00+00:00")
+
+    events = _read_day(GitLogSource(search_roots=[repo], cwd=repo), repo)
+
+    assert [e.intent for e in events] == ["alice work"]

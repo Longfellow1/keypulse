@@ -17,21 +17,6 @@ from keypulse.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInsta
 _SKIP_CONTENT_TYPES = {"tool_use", "tool_result", "thinking", "image"}
 
 
-def _infer_self_project_slugs() -> frozenset[str]:
-    # KeyPulse 自身仓库对应的 Claude Code project 目录名（如
-    # `-Users-Harland-Go-keypulse`），扫描时跳过，避免 KeyPulse 自己开发
-    # 时的 Claude 对话被当成"用户在做 KeyPulse 项目"的工作活动采集回去。
-    try:
-        for parent in Path(__file__).resolve().parents:
-            if (parent / "pyproject.toml").exists() or (parent / "keypulse" / "__init__.py").exists():
-                abs_path = str(parent.resolve())
-                slug = abs_path.replace("/", "-")
-                return frozenset({slug, slug.lower()})
-    except Exception:
-        pass
-    return frozenset()
-
-
 class ClaudeCodeSource(DataSource):
     name = "claude_code"
     privacy_tier = "green"
@@ -54,9 +39,8 @@ class ClaudeCodeSource(DataSource):
         self._use_cursor = use_cursor
         self._pending_cursors: dict[int, dict[str, Any]] = {}
         self._projects_root = (projects_root or (Path.home() / ".claude" / "projects")).expanduser()
-        self._self_exclude_dirs = (
-            frozenset(self_exclude_dirs) if self_exclude_dirs is not None else _infer_self_project_slugs()
-        )
+        # No self-exclusion by default: KeyPulse's own dev sessions are tagged via `via_keypulse` (D27).
+        self._self_exclude_dirs = frozenset(self_exclude_dirs or ())
 
     def discover(self) -> list[DataSourceInstance]:
         if not self._projects_root.exists() or not self._projects_root.is_dir():

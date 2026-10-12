@@ -163,6 +163,9 @@ def _write_git(root: Path, events: list[FxEvent]) -> Path:
         repo = repos / repo_name
         repo.mkdir(parents=True)
         subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True, env=env_base, capture_output=True)
+        # git_log ingests only the repo owner's commits; the synthetic owner is the eval tester.
+        for key, value in (("user.name", "Eval Tester"), ("user.email", "eval@example.invalid")):
+            subprocess.run(["git", "config", key, value], cwd=repo, check=True, env=env_base, capture_output=True)
         for n, ev in enumerate((e for e in sorted(events, key=lambda e: e.ts) if e.group == repo_name), start=1):
             (repo / f"f{n}.txt").write_text(str(n), encoding="utf-8")
             when = _dt(ev.ts).isoformat()

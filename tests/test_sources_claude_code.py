@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.plugins.claude_code import ClaudeCodeSource, _infer_self_project_slugs
+from keypulse.sources.plugins.claude_code import ClaudeCodeSource
 from keypulse.sources.types import DataSourceInstance
 
 
@@ -158,7 +158,14 @@ def test_self_exclude_skips_keypulse_own_project_dir(monkeypatch, tmp_path: Path
     assert events == []
 
 
-def test_infer_self_project_slugs_returns_keypulse_repo_slug() -> None:
-    slugs = _infer_self_project_slugs()
-    # When tests run from the keypulse repo, slug should contain "keypulse"
-    assert any("keypulse" in s.lower() for s in slugs)
+def test_default_does_not_exclude_keypulse_named_project_dir(monkeypatch, tmp_path: Path) -> None:
+    # Regression: an editable install used to exclude the user's main Claude project (0 events).
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    main_dir = home / ".claude" / "projects" / "-Users-Harland-Go-keypulse"
+    _write_jsonl(main_dir / "s1.jsonl", [{"type": "user", "timestamp": "2026-04-28T01:00:00Z"}])
+
+    source = ClaudeCodeSource()
+
+    assert [i.locator for i in source.discover()] == [str(main_dir.resolve())]
