@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-12T03:02:04.551Z._
+_Auto-generated. Last updated 2026-10-12T03:10:31.336Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
