@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from evals.realdata.questions import Question, VERDICTS
@@ -48,16 +49,22 @@ def parse_judge_output(text: str) -> dict:
     return {"verdict": verdict, "reason": reason.strip().splitlines()[0][:300]}
 
 
-def call_judge(prompt: str, *, model: str, claude: str, timeout: int = 300) -> str:
+def call_judge(prompt: str, *, model: str, claude: str, timeout: int = 300, retries: int = 2,
+               wait: float = 30) -> str:
     cmd = [claude, "-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose",
            "--no-session-persistence", "--permission-mode", "dontAsk", "--strict-mcp-config", "--tools", ""]
-    with tempfile.TemporaryDirectory(prefix="rdjudge-") as d:
-        try:
-            proc = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=timeout,
-                                  stdin=subprocess.DEVNULL)
-        except subprocess.TimeoutExpired:
-            return ""
-    return parse_stream(proc.stdout)["answer"] if proc.returncode == 0 else ""
+    for attempt in range(retries + 1):
+        with tempfile.TemporaryDirectory(prefix="rdjudge-") as d:
+            try:
+                proc = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=timeout,
+                                      stdin=subprocess.DEVNULL)
+                out = parse_stream(proc.stdout)["answer"] if proc.returncode == 0 else ""
+            except subprocess.TimeoutExpired:
+                out = ""
+        if out.strip() or attempt == retries:
+            return out
+        time.sleep(wait * (attempt + 1))
+    return ""
 
 
 def mechanical_must_not_see(q: Question, replay_entry: dict | None) -> dict:

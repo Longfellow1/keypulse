@@ -41,9 +41,12 @@ def build_command(arm: str, q: Question, *, model: str, max_turns: int, mcp_conf
     return [sandbox_exec, "-f", str(sandbox_profile), *cmd]
 
 
+RETRIES, RETRY_WAIT = 2, 30  # transient API failures (seconds, linear backoff)
+
+
 def parse_stream(stdout: str) -> dict:
     """Extract answer, cost and tool calls from stream-json output."""
-    tools, answer, cost, is_error = [], "", None, False
+    tools, answer, cost, is_error, error = [], "", None, False, ""
     for line in stdout.splitlines():
         try:
             ev = json.loads(line)
@@ -60,21 +63,38 @@ def parse_stream(stdout: str) -> dict:
                                   # full args kept only for KeyPulse tools (small, needed for replay)
                                   **({"args": inp} if str(b.get("name", "")).startswith("mcp__keypulse__") else {})})
         elif ev.get("type") == "result":
-            answer = ev.get("result") or ""
-            cost = ev.get("total_cost_usd")
             is_error = bool(ev.get("is_error"))
-    return {"answer": answer, "cost_usd": cost, "tools": tools, "is_error": is_error}
+            answer = "" if is_error else (ev.get("result") or "")
+            cost = ev.get("total_cost_usd")
+            if is_error:
+                error = str(ev.get("result") or ev.get("subtype") or "error")[:200]
+    return {"answer": answer, "cost_usd": cost, "tools": tools, "is_error": is_error, "error": error}
+
+
+def is_transient(row: dict) -> bool:
+    """A row that failed before doing anything (API/usage error, crash): not an answer, so it is retried on
+    resume instead of being graded. Runs that used tools and then failed are kept and graded as they are."""
+    if "verdict" in row:
+        return row.get("verdict") == "error" and row.get("method") in ("llm", "none")
+    return (row.get("exit") != 0 or row.get("is_error")) and not row.get("tool_calls") \
+        and not (row.get("answer") or "").strip()
 
 
 def done_ids(path: Path) -> set[str]:
+    """Ids already done. Transient failures are dropped from the file so a resume reruns them."""
     if not path.exists():
         return set()
-    ids = set()
+    keep, ids = [], set()
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
-            ids.add(json.loads(line)["id"])
-        except (json.JSONDecodeError, KeyError):
+            row = json.loads(line)
+        except json.JSONDecodeError:
             continue
+        if not isinstance(row, dict) or "id" not in row or is_transient(row):
+            continue
+        keep.append(line)
+        ids.add(row["id"])
+    path.write_text("".join(l + "\n" for l in keep), encoding="utf-8")
     return ids
 
 
@@ -98,7 +118,7 @@ def run_one(arm: str, q: Question, workdir: Path, *, model: str, max_turns: int,
     return {"id": q.id, "arm": arm, "group": q.group, "grant": list(q.grant), "query": q.query,
             "gold_answer": q.gold_answer, "expect": q.expect, "answer": parsed["answer"],
             "tool_calls": len(parsed["tools"]), "tools": parsed["tools"], "seconds": dur,
-            "cost_usd": parsed["cost_usd"], "is_error": parsed["is_error"],
+            "cost_usd": parsed["cost_usd"], "is_error": parsed["is_error"], "error": parsed["error"],
             "bash_touched_keypulse": touched, "exit": code, "stderr": stderr[-300:]}
 
 
@@ -126,8 +146,13 @@ def run_arm(arm: str, questions: list[Question], run_dir: Path, *, keypulse_bin:
                     "env": {"KEYPULSE_TOKEN": token, "KEYPULSE_CLIENT": cid, "HOME": str(run_dir / "home")}}}}))
                 cfg.chmod(0o600)
                 secrets = (token,)
-            r = run_one(arm, q, work, model=model, max_turns=max_turns, timeout=timeout, mcp_config=cfg,
-                        sandbox_profile=sandbox_profile, secrets=secrets, sandbox_exec=sandbox_exec, claude=claude)
+            for attempt in range(RETRIES + 1):
+                r = run_one(arm, q, work, model=model, max_turns=max_turns, timeout=timeout, mcp_config=cfg,
+                            sandbox_profile=sandbox_profile, secrets=secrets, sandbox_exec=sandbox_exec, claude=claude)
+                if not is_transient(r) or attempt == RETRIES:
+                    break
+                log(f"{q.id} {arm} transient failure ({r.get('error') or r.get('exit')}), retrying")
+                time.sleep(RETRY_WAIT * (attempt + 1))
             if cfg is not None:
                 cfg.unlink(missing_ok=True)
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")
