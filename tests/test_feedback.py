@@ -183,7 +183,7 @@ def test_per_client_cap(seeded, monkeypatch) -> None:
 # ── migration ────────────────────────────────────────────────────────────────────────────────
 def test_migration_v29_is_idempotent(db) -> None:
     conn = get_conn()
-    conn.execute("DELETE FROM _schema_version WHERE version = 29")
+    conn.execute("DELETE FROM _schema_version WHERE version >= 29")  # re-run v29 and v30 on top
     conn.commit()
     run_migrations(conn)
     run_migrations(conn)

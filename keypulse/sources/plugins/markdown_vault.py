@@ -172,6 +172,19 @@ class MarkdownVaultSource(DataSource):
         return roots
 
 
+def vault_roots_by_name(source: MarkdownVaultSource | None = None) -> dict[str, Path]:
+    """vault_name (the label discover() stores, as read() uses it) -> vault root dir, via discover().
+
+    Names shared by several discovered vaults are left out: an old row cannot be matched to one root.
+    """
+    found: dict[str, list[Path]] = {}
+    for instance in (source or MarkdownVaultSource()).discover():
+        name = str(instance.metadata.get("vault_name") or "")
+        if name:
+            found.setdefault(name, []).append(Path(instance.locator))
+    return {name: roots[0] for name, roots in found.items() if len(roots) == 1}
+
+
 def _extract_title(path: Path) -> str:
     return _extract_title_and_line(path)[0]
 

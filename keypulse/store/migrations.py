@@ -12,10 +12,11 @@ from keypulse.store.migration_v26 import migrate_v26
 from keypulse.store.migration_v27 import migrate_v27
 from keypulse.store.migration_v28 import migrate_v28
 from keypulse.store.migration_v29 import migrate_v29
+from keypulse.store.migration_v30 import migrate_v30
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 
 MIGRATIONS = [
     # v1
@@ -237,6 +238,8 @@ MIGRATIONS = [
     migrate_v28,
     # v29 — M2 (issue #63): returned-result ledger + feedback verdicts for rate_result.
     migrate_v29,
+    # v30 — old markdown_vault rows: evidence via vault discovery, vault name -> root (see migration_v30).
+    migrate_v30,
 ]
 
 
