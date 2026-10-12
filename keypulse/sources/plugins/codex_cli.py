@@ -50,6 +50,13 @@ _TEXT_PART_TYPES = {"input_text", "output_text", "text"}
 _KEEP_ROLES = {"user", "assistant"}
 _CALL_TYPES = {"function_call", "custom_tool_call", "mcp_tool_call", "mcp_tool_call_begin", "mcp_tool_call_end"}
 _SESSION_ID_RE = re.compile(r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")
+
+
+def default_codex_home() -> Path:
+    """Codex's home directory (``~/.codex``). Shared with migration v31 so both read the same history file."""
+    return Path.home() / ".codex"
+
+
 class CodexCliSource(DataSource):
     name = "codex_cli"
     privacy_tier = "green"
@@ -68,7 +75,7 @@ class CodexCliSource(DataSource):
         self._keypulse_server_names = keypulse_server_names
         self._use_cursor = use_cursor
         self._pending_cursors: dict[int, dict[str, Any]] = {}
-        codex_home = Path.home() / ".codex"
+        codex_home = default_codex_home()
         self._sessions_root = (sessions_root or (codex_home / "sessions")).expanduser()
         self._history_path = (history_path or (codex_home / "history.jsonl")).expanduser()
 

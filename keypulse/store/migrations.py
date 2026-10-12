@@ -13,10 +13,11 @@ from keypulse.store.migration_v27 import migrate_v27
 from keypulse.store.migration_v28 import migrate_v28
 from keypulse.store.migration_v29 import migrate_v29
 from keypulse.store.migration_v30 import migrate_v30
+from keypulse.store.migration_v31 import migrate_v31
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 31
 
 MIGRATIONS = [
     # v1
@@ -240,6 +241,8 @@ MIGRATIONS = [
     migrate_v29,
     # v30 — old markdown_vault rows: evidence via vault discovery, vault name -> root (see migration_v30).
     migrate_v30,
+    # v31 — old codex_cli history rows (raw_ref codex:history:<N>): evidence via the history file (see migration_v31).
+    migrate_v31,
 ]
 
 
