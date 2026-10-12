@@ -127,11 +127,10 @@ def test_semantic_weight_helper():
         ("manual", 1.0),
         ("browser", 0.85),
         ("ax_text", 0.8),
-        ("ax_ime_commit", 0.9),
-        ("ax_snapshot_fallback", 0.5),
         ("ocr_text", 0.4),
         ("window_focus_session", 0.2),
         ("unknown_source", 0.5),
+        ("ax_ime_commit", 0.5),  # no producer any more: falls to the default
         ("window", 0.5),
         ("idle", 0.5),
     ]

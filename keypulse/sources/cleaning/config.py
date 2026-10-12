@@ -59,6 +59,8 @@ class CleaningConfig:
     short_command_blacklist: tuple[str, ...] = field(default_factory=lambda: DEFAULT_SHORT_COMMAND_BLACKLIST)
     dedup_time_window_minutes: int = 10
     privacy_max_tier: str = "yellow"
+    # MCP server names KeyPulse is registered under in the user's AI hosts (via_keypulse marking).
+    keypulse_server_names: tuple[str, ...] = ("keypulse",)
 
 
 def load_cleaning_config() -> CleaningConfig:
@@ -80,6 +82,7 @@ def load_cleaning_config() -> CleaningConfig:
         short_command_blacklist=tuple(short_commands),
         dedup_time_window_minutes=max(1, dedup_window),
         privacy_max_tier=privacy_max_tier,
+        keypulse_server_names=tuple(_read_str_list(parsed, "keypulse_server_names") or defaults.keypulse_server_names),
     )
 
 

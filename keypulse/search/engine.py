@@ -134,6 +134,12 @@ def _haystack(row) -> str:
     )
 
 
+# Rows an AI host wrote after calling a KeyPulse MCP tool (paraphrase of KeyPulse's own output):
+# kept in the DB, flagged by the source plugin (metadata.via_keypulse), hidden by default.
+_NOT_ECHO_SQL = (
+    "(CASE WHEN json_valid(e.metadata_json) THEN json_extract(e.metadata_json, '$.via_keypulse') END) IS NOT 1"
+)
+
 _SCOPED_CANDIDATES = 500
 _TF_SATURATION = 1.2   # bm25-style term-frequency saturation
 _LEN_NORM = 0.75       # strength of length normalisation
@@ -182,9 +188,11 @@ def search_events(
     buckets: Optional[list[str]] = None,
     event_type: "str | Iterable[str] | None" = "semantic_event",
     limit: int = 20,
+    include_keypulse_echoes: bool = False,
 ) -> list[dict]:
     """Keyword search over raw_events: OR across keywords, ranked by how many distinct keywords a
-    document matches (coverage), then a per-document score, then recency.
+    document matches (coverage), then a per-document score, then the source's semantic_weight,
+    then recency. (Recency is a unique key, ts + id, so weight must sit before it to ever act.)
 
     The caller (an AI host) is responsible for turning a question into keywords; no query
     understanding happens here. `since`/`until` bound the event's real occurred_at (ts_start),
@@ -239,12 +247,14 @@ def search_events(
             return []
         where.append("e.bucket IN (%s)" % ",".join("?" * len(buckets)))
         params.extend(buckets)
+    if not include_keypulse_echoes:
+        where.append(_NOT_ECHO_SQL)
     limit = max(1, min(int(limit), 100))
     params.append(_SCOPED_CANDIDATES)
 
     sql = f"""
         SELECT e.id, e.source, e.ts_start AS occurred_at, e.bucket, e.kind, e.content_text, e.window_title,
-               e.app_name, e.event_type, e.ts_end,
+               e.app_name, e.event_type, e.ts_end, e.semantic_weight,
                (SELECT MIN(ev.id) FROM evidence ev WHERE ev.event_id = e.id) AS evidence_id,
                (SELECT ev.locator FROM evidence ev WHERE ev.event_id = e.id ORDER BY ev.id LIMIT 1) AS evidence_locator,
                (SELECT ev.offset_or_line FROM evidence ev WHERE ev.event_id = e.id ORDER BY ev.id LIMIT 1) AS evidence_line,
@@ -259,12 +269,13 @@ def search_events(
     for r in rows:
         found = _matched(r, terms)
         if found:
-            scored.append((len(found), _doc_score(r, terms), r, found))
-    # Stable sort over a recency-ordered list: coverage, then document score, then recency.
-    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            scored.append((len(found), round(_doc_score(r, terms), 6), r["semantic_weight"] or 0.0, r, found))
+    # Stable sort over a recency-ordered list: coverage, document score, semantic_weight, then recency.
+    scored.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
     hits = []
-    for coverage, _score, r, found in scored[:limit]:
+    for coverage, _score, _weight, r, found in scored[:limit]:
         d = dict(r)
+        d.pop("semantic_weight", None)
         d["snippet"] = _snippet(display_text(d), found)
         for k in ("content_text", "window_title", "app_name", "event_type", "ts_end"):
             d.pop(k, None)
@@ -287,6 +298,7 @@ def timeline_events(
     after: Optional[tuple[str, int]] = None,
     event_type: "str | Iterable[str]" = "semantic_event",
     limit: int = TIMELINE_DEFAULT_LIMIT,
+    include_keypulse_echoes: bool = False,
 ) -> tuple[list[dict], bool]:
     """Events in real occurred_at order (ascending, id as tiebreak), scope applied in the WHERE
     clause before LIMIT. `after` is a (occurred_at, id) keyset cursor. Returns (rows, has_more);
@@ -297,6 +309,8 @@ def timeline_events(
         return [], False
     where = ["e.event_type IN (%s)" % ",".join("?" * len(types)), "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
     params: list = [*types, *buckets]
+    if not include_keypulse_echoes:
+        where.append(_NOT_ECHO_SQL)
     if sources is not None:
         where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
         params.extend(sources)
