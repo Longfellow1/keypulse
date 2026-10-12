@@ -55,8 +55,6 @@ def _semantic_weight_for(source: str) -> float:
         "browser_url": 1.0,
         "browser_history": 0.9,
         "ax_text": 0.8,
-        "ax_ime_commit": 0.9,
-        "ax_snapshot_fallback": 0.5,
         "ocr_text": 0.4,
         "window_focus_session": 0.2,
     }

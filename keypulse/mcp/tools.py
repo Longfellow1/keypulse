@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from keypulse.mcp import audit
 from keypulse.mcp.auth import Grant, check_access
+from keypulse.privacy import desensitizer
 from keypulse.search.engine import (
     TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, timeline_events,
 )
@@ -45,6 +46,37 @@ def _looks_like_sentence(keyword: str) -> bool:
         or len(keyword.split()) > MAX_KEYWORD_WORDS
         or len(keyword) > MAX_KEYWORD_CHARS
     )
+
+
+_TEXT_FIELDS = frozenset({"snippet", "excerpt", "title", "app", "app_name", "window_title"})
+
+
+def _redact_fields(node: Any) -> Any:
+    if isinstance(node, dict):
+        return {k: desensitizer.redact_secrets(v) if k in _TEXT_FIELDS and isinstance(v, str) else _redact_fields(v)
+                for k, v in node.items()}
+    if isinstance(node, list):
+        return [_redact_fields(x) for x in node]
+    return node
+
+
+def redaction_failed() -> dict[str, Any]:
+    """Uniform body (same shape as permission_denied) when the query-time redaction pass fails."""
+    return {
+        "status": "error",
+        "reason_code": "REDACTION_UNAVAILABLE",
+        "message": "KeyPulse could not safely prepare this response.",
+        "next_action": "retry_later",
+    }
+
+
+def _redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Second, query-time redaction pass over every text field returned to the Host (backstop for rows
+    stored before current rules existed). Fails closed: any error returns a generic body, never text."""
+    try:
+        return _redact_fields(payload)
+    except Exception:
+        return redaction_failed()
 
 
 def permission_denied() -> dict[str, Any]:
@@ -87,6 +119,7 @@ def search_context(
     time_range: Any = None,
     sources: Any = None,
     limit: Any = 10,
+    include_keypulse_echoes: Any = False,
     *,
     client: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -95,20 +128,23 @@ def search_context(
         audit.record(client=decision.client, tool=TOOL_SEARCH_CONTEXT, allowed=False,
                      reason_code=decision.reason, scope=decision.scope)
         return permission_denied()
-    payload = _search(decision.grant, keywords, time_range, sources, limit)
+    payload = _redact_payload(_search(decision.grant, keywords, time_range, sources, limit, include_keypulse_echoes))
     count = len(payload.get("results") or [])
     audit.record(client=decision.client, tool=TOOL_SEARCH_CONTEXT, allowed=True,
                  reason_code=payload.get("status", "error"), scope=decision.scope, result_count=count)
     return payload
 
 
-def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: Any) -> dict[str, Any]:
+def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: Any,
+            include_echoes: Any = False) -> dict[str, Any]:
 
     # Fixed-text validation: caller-supplied values are never echoed back.
     if sources is not None and not (isinstance(sources, list) and all(isinstance(x, str) for x in sources)):
         return {"status": "invalid_argument", "message": "sources must be a list of source names"}
     if isinstance(limit, bool) or not isinstance(limit, int):
         return {"status": "invalid_argument", "message": "limit must be an integer between 1 and 100"}
+    if not isinstance(include_echoes, bool):
+        return {"status": "invalid_argument", "message": "include_keypulse_echoes must be a boolean"}
 
     try:
         start, end = _parse_time_range(time_range)
@@ -139,6 +175,7 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
             buckets=list(grant.buckets),
             event_type=SEARCHABLE_EVENT_TYPES,
             limit=limit,
+            include_keypulse_echoes=include_echoes,
         )
     except sqlite3.Error:
         # Never surface SQLite / FTS error text: it can echo query fragments or index internals.
@@ -198,7 +235,7 @@ def get_evidence(token: Optional[str], evidence_id: Any, *, client: Optional[str
     decision, denied = _gate(token, client, TOOL_GET_EVIDENCE)
     if denied is not None:
         return denied
-    payload = _get_evidence(decision.grant, evidence_id)
+    payload = _redact_payload(_get_evidence(decision.grant, evidence_id))
     audit.record(client=decision.client, tool=TOOL_GET_EVIDENCE, allowed=True,
                  reason_code=payload.get("status", "error"), scope=decision.scope,
                  result_count=1 if "evidence" in payload else 0)
@@ -266,24 +303,28 @@ def get_timeline(
     sources: Any = None,
     limit: Any = TIMELINE_DEFAULT_LIMIT,
     cursor: Any = None,
+    include_keypulse_echoes: Any = False,
     *,
     client: Optional[str] = None,
 ) -> dict[str, Any]:
     decision, denied = _gate(token, client, TOOL_GET_TIMELINE)
     if denied is not None:
         return denied
-    payload = _get_timeline(decision.grant, start, end, sources, limit, cursor)
+    payload = _redact_payload(_get_timeline(decision.grant, start, end, sources, limit, cursor, include_keypulse_echoes))
     audit.record(client=decision.client, tool=TOOL_GET_TIMELINE, allowed=True,
                  reason_code=payload.get("status", "error"), scope=decision.scope,
                  result_count=len(payload.get("results") or []))
     return payload
 
 
-def _get_timeline(grant: Grant, start: Any, end: Any, sources: Any, limit: Any, cursor: Any) -> dict[str, Any]:
+def _get_timeline(grant: Grant, start: Any, end: Any, sources: Any, limit: Any, cursor: Any,
+                  include_echoes: Any = False) -> dict[str, Any]:
     if sources is not None and not (isinstance(sources, list) and all(isinstance(x, str) for x in sources)):
         return {"status": "invalid_argument", "message": "sources must be a list of source names"}
     if isinstance(limit, bool) or not isinstance(limit, int):
         return {"status": "invalid_argument", "message": f"limit must be an integer between 1 and {TIMELINE_MAX_LIMIT}"}
+    if not isinstance(include_echoes, bool):
+        return {"status": "invalid_argument", "message": "include_keypulse_echoes must be a boolean"}
     bad_range = {"status": "invalid_argument",
                  "message": "start and end are required ISO dates or datetimes with start <= end; cursor must come from a previous call"}
     if not isinstance(start, str) or not isinstance(end, str):
@@ -299,6 +340,7 @@ def _get_timeline(grant: Grant, start: Any, end: Any, sources: Any, limit: Any, 
         rows, has_more = timeline_events(
             since=since, until=until, sources=_scope_sources(grant, sources), buckets=list(grant.buckets),
             after=after, event_type=SEARCHABLE_EVENT_TYPES, limit=limit,
+            include_keypulse_echoes=include_echoes,
         )
     except sqlite3.Error:
         return {"status": "error", "message": "timeline failed"}

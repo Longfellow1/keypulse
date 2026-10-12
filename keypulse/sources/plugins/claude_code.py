@@ -6,6 +6,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from keypulse.sources.cleaning.noise import (
+    advance_echo,
+    clean_message_part,
+    is_keypulse_call,
+    resolve_server_names,
+)
 from keypulse.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInstance, SemanticEvent
 
 _SKIP_CONTENT_TYPES = {"tool_use", "tool_result", "thinking", "image"}
@@ -38,7 +44,10 @@ class ClaudeCodeSource(DataSource):
         projects_root: Path | None = None,
         self_exclude_dirs: set[str] | frozenset[str] | None = None,
         use_cursor: bool = False,
+        keypulse_server_names: tuple[str, ...] | list[str] | None = None,
     ) -> None:
+        # MCP server name(s) KeyPulse is registered under; None = cleaning.toml / "keypulse".
+        self._keypulse_server_names = keypulse_server_names
         # use_cursor=True: incremental sync driven by a persistent per-file
         # cursor in `sync_cursors` (needs an initialised DB). The since/until
         # window is ignored in that mode; resume position replaces it.
@@ -89,8 +98,10 @@ class ClaudeCodeSource(DataSource):
             return self._read_incremental(project_dir)
 
         def _iter_events() -> Iterator[SemanticEvent]:
+            names = resolve_server_names(self._keypulse_server_names)
             for jsonl_file in sorted(project_dir.glob("*.jsonl")):
                 session_id_default = jsonl_file.stem
+                echo = False
                 try:
                     handle = jsonl_file.open("r", encoding="utf-8", errors="replace")
                 except Exception:
@@ -106,10 +117,11 @@ class ClaudeCodeSource(DataSource):
                         event_time = _parse_iso8601(row.get("timestamp"))
                         if event_time is None:
                             continue
+                        intent_text = _extract_message_text(row).strip()
+                        # State advances for every row, also those outside the window.
+                        marked, echo = _echo_state(row, str(row_type), bool(intent_text), echo, names)
                         if event_time < since or event_time > until:
                             continue
-
-                        intent_text = _extract_message_text(row).strip()
                         if not intent_text:
                             continue
 
@@ -125,11 +137,7 @@ class ClaudeCodeSource(DataSource):
                                 f"claude:projects:{project_dir.name}:{jsonl_file.name}:{line_idx}"
                             ),
                             privacy_tier=self.privacy_tier,
-                            metadata={
-                                "session_id": session_id,
-                                "parent_uuid": row.get("parentUuid"),
-                                "project_dir": str(project_dir.resolve()),
-                            },
+                            metadata=_row_metadata(session_id, row, project_dir, marked),
                         )
 
         return _iter_events()
@@ -144,6 +152,7 @@ class ClaudeCodeSource(DataSource):
         files_state: dict[str, dict[str, Any]] = dict(get_cursor(source_id).get("files") or {})
 
         def _iter() -> Iterator[SemanticEvent]:
+            names = resolve_server_names(self._keypulse_server_names)
             for jsonl_file in sorted(project_dir.glob("*.jsonl")):
                 try:
                     stat = jsonl_file.stat()
@@ -153,8 +162,9 @@ class ClaudeCodeSource(DataSource):
                 prior = files_state.get(jsonl_file.name) or {}
                 offset = int(prior.get("offset", 0))
                 line_no = int(prior.get("line", 0))
+                echo = bool(prior.get("echo"))
                 if stat.st_size < offset:  # truncated / rewritten: start over
-                    offset, line_no = 0, 0
+                    offset, line_no, echo = 0, 0, False
                 if stat.st_size == offset:
                     handle.close()
                     continue
@@ -170,12 +180,13 @@ class ClaudeCodeSource(DataSource):
                         line_no += 1
                         if row is None:
                             continue
-                        event = self._row_to_event(row, project_dir, jsonl_file, line_no)
+                        event, echo = self._row_to_event(row, project_dir, jsonl_file, line_no, echo, names)
                         if event is not None:
                             yield event
                 files_state[jsonl_file.name] = {
                     "offset": offset,
                     "line": line_no,
+                    "echo": echo,
                     "mtime": stat.st_mtime,
                     "size": stat.st_size,
                 }
@@ -200,16 +211,20 @@ class ClaudeCodeSource(DataSource):
         project_dir: Path,
         jsonl_file: Path,
         line_idx: int,
-    ) -> SemanticEvent | None:
+        echo: bool = False,
+        names: tuple[str, ...] = ("keypulse",),
+    ) -> tuple[SemanticEvent | None, bool]:
+        """Returns ``(event_or_None, new_echo_state)``; the state advances on every user/assistant row."""
         row_type = row.get("type")
         if row_type not in {"user", "assistant"}:
-            return None
+            return None, echo
         event_time = _parse_iso8601(row.get("timestamp"))
         if event_time is None:
-            return None
+            return None, echo
         intent_text = _extract_message_text(row).strip()
+        marked, echo = _echo_state(row, str(row_type), bool(intent_text), echo, names)
         if not intent_text:
-            return None
+            return None, echo
         session_id = str(row.get("sessionId") or jsonl_file.stem)
         uuid = row.get("uuid") or row.get("messageId")
         message_id = str(uuid or line_idx)
@@ -221,17 +236,36 @@ class ClaudeCodeSource(DataSource):
             artifact=f"claude:session:{session_id}:msg:{message_id}",
             raw_ref=f"claude:projects:{project_dir.name}:{jsonl_file.name}:{line_idx}",
             privacy_tier=self.privacy_tier,
-            metadata={
-                "session_id": session_id,
-                "parent_uuid": row.get("parentUuid"),
-                "project_dir": str(project_dir.resolve()),
-            },
+            metadata=_row_metadata(session_id, row, project_dir, marked),
             external_id=f"{session_id}:{uuid}" if uuid else f"{jsonl_file.name}:L{line_idx}",
             source_locator=str(project_dir.resolve()),
             evidence_locator=str(jsonl_file.resolve()),
             evidence_line=line_idx,
             kind="message",
-        )
+        ), echo
+
+
+def _row_metadata(session_id: str, row: dict[str, Any], project_dir: Path, via_keypulse: bool) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "session_id": session_id,
+        "parent_uuid": row.get("parentUuid"),
+        "project_dir": str(project_dir.resolve()),
+    }
+    if via_keypulse:
+        metadata["via_keypulse"] = True
+    return metadata
+
+
+def _echo_state(row: dict[str, Any], role: str, has_text: bool, echo: bool, names: tuple[str, ...]) -> tuple[bool, bool]:
+    calls = False
+    if role == "assistant":
+        message = row.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            calls = any(
+                isinstance(p, dict) and p.get("type") == "tool_use" and is_keypulse_call(p, names) for p in content
+            )
+    return advance_echo(echo, role, has_text, calls)
 
 
 def _parse_json_line(line: str) -> dict[str, Any] | None:
@@ -276,7 +310,7 @@ def _coerce_text(value: object) -> str:
             nested = _coerce_text(parsed)
             if nested:
                 return nested
-        return stripped
+        return clean_message_part(stripped)
     if isinstance(value, dict):
         if "content" in value:
             nested = _coerce_text(value.get("content"))
@@ -284,7 +318,7 @@ def _coerce_text(value: object) -> str:
                 return nested
         text_value = value.get("text")
         if isinstance(text_value, str):
-            return text_value.strip()
+            return clean_message_part(text_value)
         return ""
     if isinstance(value, list):
         parts: list[str] = []
@@ -292,7 +326,9 @@ def _coerce_text(value: object) -> str:
             if isinstance(item, dict):
                 item_type = item.get("type")
                 if item_type == "text" and isinstance(item.get("text"), str):
-                    parts.append(item["text"].strip())
+                    cleaned = clean_message_part(item["text"])
+                    if cleaned:
+                        parts.append(cleaned)
                     continue
                 if item_type in _SKIP_CONTENT_TYPES:
                     continue

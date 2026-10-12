@@ -47,8 +47,6 @@ _USER_SOURCES = frozenset(
         "browser_history",
         "ax_text",
         "keyboard_chunk",
-        "ax_ime_commit",
-        "ax_snapshot_fallback",
     }
 )
 _CHAT_STYLE_APPS = frozenset({"claude", "codex", "cursor", "obsidian", "notion", "visual studio code"})

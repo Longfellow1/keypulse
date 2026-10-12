@@ -19,8 +19,6 @@ from keypulse.store.models import RawEvent
         ("manual", "user"),
         ("browser", "user"),
         ("ax_text", "user"),
-        ("ax_ime_commit", "user"),
-        ("ax_snapshot_fallback", "user"),
         ("window", "system"),
         ("ocr", "system"),
         ("ocr_text", "system"),

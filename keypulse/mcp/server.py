@@ -87,9 +87,12 @@ def build_server(
             "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}],
             "description": 'Optional source names, e.g. ["zsh_history"].'})] = None,
         limit: Annotated[Any, Field(json_schema_extra={"type": "integer", "description": "Max results, 1-100."})] = 10,
+        include_keypulse_echoes: Annotated[Any, Field(json_schema_extra={
+            "type": "boolean",
+            "description": "Default false. true also returns assistant replies that merely restate KeyPulse's own earlier results."})] = False,
     ) -> CallToolResult:
         payload = tools.search_context(
-            token_provider(), keywords, time_range, sources, limit, client=client_provider()
+            token_provider(), keywords, time_range, sources, limit, include_keypulse_echoes, client=client_provider()
         )
         return _result(payload)
 
@@ -114,8 +117,12 @@ def build_server(
         cursor: Annotated[Any, Field(json_schema_extra={
             "anyOf": [{"type": "string"}, {"type": "null"}],
             "description": "next_cursor from the previous page."})] = None,
+        include_keypulse_echoes: Annotated[Any, Field(json_schema_extra={
+            "type": "boolean",
+            "description": "Default false. true also returns assistant replies that merely restate KeyPulse's own earlier results."})] = False,
     ) -> CallToolResult:
-        payload = tools.get_timeline(token_provider(), start, end, sources, limit, cursor, client=client_provider())
+        payload = tools.get_timeline(
+            token_provider(), start, end, sources, limit, cursor, include_keypulse_echoes, client=client_provider())
         return _result(payload)
 
     return server

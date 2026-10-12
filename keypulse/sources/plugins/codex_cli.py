@@ -31,6 +31,12 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from keypulse.sources.plugins.claude_code import _parse_iso8601, _parse_json_line
+from keypulse.sources.cleaning.noise import (
+    advance_echo,
+    clean_message_part,
+    is_keypulse_call,
+    resolve_server_names,
+)
 from keypulse.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInstance, SemanticEvent
 from keypulse.utils.logging import get_logger
 
@@ -38,28 +44,12 @@ LOGGER = get_logger("sources.codex_cli")
 
 # Cheap byte-level prefilter: only lines mentioning one of these can matter.
 _MARKERS = (b'"message"', b'"session_meta"', b'"turn_context"')
+# Tool-call records matter only for the via_keypulse state, and only when they name a KeyPulse server.
+_CALL_MARKERS = (b'"function_call"', b'"custom_tool_call"', b"mcp_tool_call")
 _TEXT_PART_TYPES = {"input_text", "output_text", "text"}
 _KEEP_ROLES = {"user", "assistant"}
+_CALL_TYPES = {"function_call", "custom_tool_call", "mcp_tool_call", "mcp_tool_call_begin", "mcp_tool_call_end"}
 _SESSION_ID_RE = re.compile(r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")
-_WRAPPER_RE = re.compile(r"^<([A-Za-z_][\w\-.]*)(?:\s[^>]*)?>.*</\1>$", re.DOTALL)
-_NOISE_PREFIXES = (
-    "<environment_context",
-    "<turn_aborted",
-    "<subagent_notification",
-    "<heartbeat",
-    "<recommended_plugins",
-    "<image name=",
-    "</image",
-    "<in-app-browser-context",
-    "<codex_internal_context",
-    "<user_instructions",
-    "<permissions",
-    "<collaboration_mode",
-    "<user_action",
-)
-_INSTRUCTION_HEADER_RE = re.compile(r"^#\s*(AGENTS\.md|CLAUDE\.md)\b|^#\s*Instructions\s+from\b", re.IGNORECASE)
-
-
 class CodexCliSource(DataSource):
     name = "codex_cli"
     privacy_tier = "green"
@@ -72,7 +62,10 @@ class CodexCliSource(DataSource):
         sessions_root: Path | None = None,
         history_path: Path | None = None,
         use_cursor: bool = False,
+        keypulse_server_names: tuple[str, ...] | list[str] | None = None,
     ) -> None:
+        # MCP server name(s) KeyPulse is registered under; None = cleaning.toml / "keypulse".
+        self._keypulse_server_names = keypulse_server_names
         self._use_cursor = use_cursor
         self._pending_cursors: dict[int, dict[str, Any]] = {}
         codex_home = Path.home() / ".codex"
@@ -165,6 +158,9 @@ class CodexCliSource(DataSource):
         sid_from_meta = bool(state.get("sid_meta"))
         cwd = state.get("cwd")
         start_ts = state.get("ts")
+        echo = bool(state.get("echo"))
+        names = resolve_server_names(self._keypulse_server_names)
+        name_bytes = tuple(n.encode() for n in names)
         with jsonl_file.open("rb") as handle:
             handle.seek(offset)
             for raw in handle:
@@ -174,13 +170,21 @@ class CodexCliSource(DataSource):
                         break  # partial trailing write: re-read next sync
                 offset += len(raw)
                 line_no += 1
-                if line_no != 1 and not any(m in raw for m in _MARKERS):
+                is_call = any(m in raw for m in _CALL_MARKERS) and any(n in raw.lower() for n in name_bytes)
+                if line_no != 1 and not is_call and not any(m in raw for m in _MARKERS):
                     continue
                 row = _parse_json_line(raw.decode("utf-8", errors="replace"))
                 if row is None:
                     continue
                 payload = row.get("payload") if isinstance(row.get("payload"), dict) else None
                 rtype = row.get("type")
+                if is_call:
+                    call = payload if payload is not None else row
+                    if call.get("type") in _CALL_TYPES:
+                        if is_keypulse_call(call, names):
+                            echo = True
+                            state["echo"] = True
+                        continue
 
                 if rtype == "session_meta" or (rtype is None and line_no == 1 and "id" in row):
                     meta = payload if rtype == "session_meta" and payload is not None else row
@@ -209,17 +213,20 @@ class CodexCliSource(DataSource):
                 text = _message_text(message.get("content"), role)
                 if not text:
                     continue
+                marked, echo = advance_echo(echo, role, True, False)
                 when = _parse_iso8601(row.get("timestamp")) or _parse_iso8601(message.get("timestamp")) or _parse_iso8601(start_ts)
                 if when is None:
                     when = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=timezone.utc)
                 ordinal = row.get("ordinal")
                 external_id = f"{sid}:{ordinal}" if isinstance(ordinal, int) else f"{sid}:L{line_no}"
                 metadata: dict[str, Any] = {"session_id": sid}
+                if marked:
+                    metadata["via_keypulse"] = True
                 if cwd:
                     metadata["cwd"] = cwd
                     metadata["project_dir"] = cwd
                     metadata["project"] = Path(cwd).name
-                state.update(offset=offset, line=line_no, sid=sid, sid_meta=sid_from_meta, cwd=cwd, ts=start_ts)
+                state.update(offset=offset, line=line_no, sid=sid, sid_meta=sid_from_meta, cwd=cwd, ts=start_ts, echo=echo)
                 yield SemanticEvent(
                     time=when,
                     source=self.name,
@@ -235,7 +242,7 @@ class CodexCliSource(DataSource):
                     evidence_line=line_no,
                     kind="message",
                 )
-        state.update(offset=offset, line=line_no, sid=sid, sid_meta=sid_from_meta, cwd=cwd, ts=start_ts)
+        state.update(offset=offset, line=line_no, sid=sid, sid_meta=sid_from_meta, cwd=cwd, ts=start_ts, echo=echo)
 
     def commit_cursors(self, *, failed: bool = False) -> None:
         """Persist resume positions once the registry has stored the events."""
@@ -296,19 +303,6 @@ def _session_id_from_name(path: Path) -> str:
     return match.group(1) if match else path.stem
 
 
-def _is_noise_part(text: str) -> bool:
-    head = text.lstrip()
-    if not head:
-        return True
-    if head.startswith(_NOISE_PREFIXES):
-        return True
-    if _INSTRUCTION_HEADER_RE.match(head):
-        return True
-    if "<INSTRUCTIONS>" in head[:400] and head.startswith("#"):
-        return True
-    return bool(_WRAPPER_RE.match(head.rstrip()))
-
-
 def _message_text(content: object, role: str) -> str:
     if isinstance(content, str):
         parts: list[object] = [{"type": "input_text", "text": content}]
@@ -324,7 +318,7 @@ def _message_text(content: object, role: str) -> str:
         if not isinstance(text, str) or not text.strip():
             continue
         # Automation blocks (e.g. <heartbeat>) also appear as assistant output_text, so filter both roles.
-        if _is_noise_part(text):
-            continue
-        out.append(text.strip())
+        cleaned = clean_message_part(text)
+        if cleaned:
+            out.append(cleaned)
     return "\n".join(out)
