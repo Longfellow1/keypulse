@@ -111,7 +111,7 @@ def test_read_extracts_kv_json_rows(tmp_path: Path) -> None:
     assert event.actor == "assistant"
     assert event.artifact == "Cursor:chat:1"
     assert event.raw_ref.startswith("leveldb_reader:")
-    assert "[REDACTED]" in event.intent
+    assert "***@example.com" in event.intent and "alice" not in event.intent
     assert event.metadata["shape"] == "kv_json_blob"
     assert event.metadata["candidate_id"]
 

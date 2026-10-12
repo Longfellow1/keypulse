@@ -145,7 +145,7 @@ def test_window_title_is_desensitized_before_persistence(monkeypatch):
     manager._process_event(event)
 
     assert captured
-    assert captured[0].window_title == "[REDACTED]"
+    assert captured[0].window_title == "***@example.com"
 
 
 def test_terminal_ax_text_is_dropped_and_marked(monkeypatch):

@@ -65,9 +65,24 @@ def _looks_like_sentence(keyword: str) -> bool:
 _TEXT_FIELDS = frozenset({"snippet", "excerpt", "title", "app", "app_name", "window_title", "url", "text"})
 
 
+# privacy.redact_emails, applied at query time too (default on = fail safe). `keypulse mcp serve` sets it
+# once from the loaded config; there is no per-call or Host-side way to turn it off.
+_mask_emails_at_query = True
+
+
+def configure(*, mask_emails: bool) -> None:
+    global _mask_emails_at_query
+    _mask_emails_at_query = bool(mask_emails)
+
+
+def _redact_text(text: str) -> str:
+    text = desensitizer.redact_secrets(text)
+    return desensitizer.mask_emails(text) if _mask_emails_at_query else text
+
+
 def _redact_fields(node: Any) -> Any:
     if isinstance(node, dict):
-        return {k: desensitizer.redact_secrets(v) if k in _TEXT_FIELDS and isinstance(v, str) else _redact_fields(v)
+        return {k: _redact_text(v) if k in _TEXT_FIELDS and isinstance(v, str) else _redact_fields(v)
                 for k, v in node.items()}
     if isinstance(node, list):
         return [_redact_fields(x) for x in node]
