@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-12T03:45:16.453Z._
+_Auto-generated. Last updated 2026-10-12T06:41:55.762Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -20,6 +20,7 @@ _Auto-generated. Last updated 2026-10-12T03:45:16.453Z._
 - [knowledge-graph-layer](pages/knowledge-graph-layer.md) — category: project | ## Goal
 - [legacy-data-new-schema-importer](pages/legacy-data-new-schema-importer.md) — category: decision | status: archived | tags: [data, migration, legacy] | ## Status: REVERSED by D20 (2026-10-10).
 - [legacy-extraction-blockers](pages/legacy-extraction-blockers.md) — category: project | tags: [refactor, boundary, analysis] | ## Blockers (facts)
+- [m1-real-data-acceptance](pages/m1-real-data-acceptance.md) — category: decision | tags: [eval, m1, acceptance] | M1 is signed off on a control eval over the user's own local data, not the synthetic CI set (the synthetic set saturates at recall 1.0 and c
 - [mcp-caller-auth-p0](pages/mcp-caller-auth-p0.md) — category: decision | tags: [mcp, security, auth] | ## Decision
 - [memory-distillation-by-agent](pages/memory-distillation-by-agent.md) — category: decision | tags: [core, memory, mcp] | ## Decision
 - [multi-host-mcp-integration](pages/multi-host-mcp-integration.md) — category: decision | tags: [mcp, hosts, v1] | ## Decision
