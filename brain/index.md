@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-12T06:41:55.762Z._
+_Auto-generated. Last updated 2026-10-12T07:20:36.808Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -25,6 +25,7 @@ _Auto-generated. Last updated 2026-10-12T06:41:55.762Z._
 - [memory-distillation-by-agent](pages/memory-distillation-by-agent.md) — category: decision | tags: [core, memory, mcp] | ## Decision
 - [multi-host-mcp-integration](pages/multi-host-mcp-integration.md) — category: decision | tags: [mcp, hosts, v1] | ## Decision
 - [no-real-data-in-repo](pages/no-real-data-in-repo.md) — category: decision | tags: [privacy, eval, git, secrets] | ## Rule
+- [product-positioning-memory-infra](pages/product-positioning-memory-infra.md) — category: decision | tags: [positioning, roadmap] | Positioning: KeyPulse persists the user's authorized digital trail and turns cross-app, cross-time traces into personal memory that any AI c
 - [py2app-preflight-smoke-test](pages/py2app-preflight-smoke-test.md) — category: decision | ## Decision
 - [refactor-in-place-with-legacy-tag](pages/refactor-in-place-with-legacy-tag.md) — category: decision | tags: [refactor, repo, legacy] | ## Decision
 - [session-handoff-2026-10-10](pages/session-handoff-2026-10-10.md) — category: project | tags: [handoff, state, refactor] | ## Repo state
