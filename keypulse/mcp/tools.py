@@ -11,6 +11,7 @@ from keypulse.search.engine import (
     TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, source_coverage,
     timeline_events,
 )
+from keypulse.store import feedback
 from keypulse.store.db import get_conn
 from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, is_keypulse_locator
 from keypulse.store.evidence import (
@@ -31,6 +32,7 @@ MAX_KEYWORD_WORDS = 6
 TOOL_SEARCH_CONTEXT = "search_context"
 TOOL_GET_EVIDENCE = "get_evidence"
 TOOL_GET_TIMELINE = "get_timeline"
+TOOL_RATE_RESULT = "rate_result"
 EXCERPT_CHARS = 400
 EVIDENCE_NOT_FOUND = {"status": "not_found", "message": "No evidence with this id is available to this client."}
 SOURCE_UNAVAILABLE_MESSAGE = "原始出处已不可访问 / original source is no longer accessible"
@@ -147,6 +149,19 @@ def _coverage(grant: Grant, start: Optional[str], end: Optional[str]) -> dict[st
     return coverage
 
 
+def _record_returned(grant: Grant, payload: dict[str, Any], query: Optional[str]) -> None:
+    """Write the ids this response handed to the client into the feedback ledger (rate_result checks
+    against it). Reads the response we just built, never the audit log."""
+    items: list[tuple[int, Optional[int]]] = []
+    for r in payload.get("results") or []:
+        event = feedback.parse_ref(r.get("id"))
+        if event is None or event[0] != "evt":
+            continue
+        evidence = feedback.parse_ref(r.get("evidence_id"))
+        items.append((event[1], evidence[1] if evidence and evidence[0] == "evd" else None))
+    feedback.record_returned(grant.client_id, items, query)
+
+
 def search_context(
     token: Optional[str],
     keywords: Any,
@@ -164,6 +179,8 @@ def search_context(
         return permission_denied()
     payload = _redact_payload(_search(decision.grant, keywords, time_range, sources, limit, include_keypulse_echoes))
     count = len(payload.get("results") or [])
+    if payload.get("status") == "ok":
+        _record_returned(decision.grant, payload, ", ".join(k.strip() for k in keywords))
     audit.record(client=decision.client, tool=TOOL_SEARCH_CONTEXT, allowed=True,
                  reason_code=payload.get("status", "error"), scope=decision.scope, result_count=count)
     return payload
@@ -275,6 +292,9 @@ def get_evidence(token: Optional[str], evidence_id: Any, *, client: Optional[str
     if denied is not None:
         return denied
     payload = _redact_payload(_get_evidence(decision.grant, evidence_id))
+    if payload.get("status") in ("ok", "source_unavailable", "not_resolvable") and "evidence" in payload:
+        ev = payload["evidence"]
+        _record_returned(decision.grant, {"results": [{"id": ev.get("event_id"), "evidence_id": ev.get("id")}]}, None)
     audit.record(client=decision.client, tool=TOOL_GET_EVIDENCE, allowed=True,
                  reason_code=payload.get("status", "error"), scope=decision.scope,
                  result_count=1 if "evidence" in payload else 0)
@@ -373,6 +393,9 @@ def get_timeline(
     if denied is not None:
         return denied
     payload = _redact_payload(_get_timeline(decision.grant, start, end, sources, limit, cursor, include_keypulse_echoes))
+    if payload.get("status") == "ok":
+        span = (payload.get("coverage") or {}).get("time_range") or {}
+        _record_returned(decision.grant, payload, f"timeline {span.get('start')} .. {span.get('end')}")
     audit.record(client=decision.client, tool=TOOL_GET_TIMELINE, allowed=True,
                  reason_code=payload.get("status", "error"), scope=decision.scope,
                  result_count=len(payload.get("results") or []))
@@ -424,3 +447,58 @@ def _get_timeline(grant: Grant, start: Any, end: Any, sources: Any, limit: Any, 
     if has_more:
         payload["next_cursor"] = f"{rows[-1]['occurred_at']}|{rows[-1]['id']}"
     return payload
+
+
+RATE_NOT_FOUND = {"status": "not_found", "message": "No result with this id was returned to this client."}
+RATE_ARG_MESSAGE = "verdict must be correct, wrong or missing; correct/wrong need result_id; missing needs result_id or query"
+
+
+def rate_result(
+    token: Optional[str],
+    result_id: Any,
+    verdict: Any,
+    note: Any = None,
+    query: Any = None,
+    *,
+    client: Optional[str] = None,
+) -> dict[str, Any]:
+    """Record whether a result this client was shown was right. Needs only a read grant. Every id that
+    this client was not returned (unknown, malformed, other client's, expired, out of scope) gets the
+    identical not_found body, so the tool cannot be used to probe what exists."""
+    decision, denied = _gate(token, client, TOOL_RATE_RESULT)
+    if denied is not None:
+        return denied
+    payload = _rate_result(decision.grant, result_id, verdict, note, query)
+    audit.record(client=decision.client, tool=TOOL_RATE_RESULT, allowed=True,
+                 reason_code=payload.get("status", "error"), scope=decision.scope)
+    return payload
+
+
+def _rate_result(grant: Grant, result_id: Any, verdict: Any, note: Any, query: Any) -> dict[str, Any]:
+    bad = {"status": "invalid_argument", "message": RATE_ARG_MESSAGE}
+    if verdict not in feedback.VERDICTS or not isinstance(verdict, str):
+        return bad
+    if (result_id is not None and not isinstance(result_id, str)) or \
+            (note is not None and not isinstance(note, str)) or (query is not None and not isinstance(query, str)):
+        return bad
+    stored_query = feedback.clean_text(query, feedback.MAX_QUERY_CHARS)
+    if result_id is None and (verdict != "missing" or stored_query is None):
+        return bad
+    event_id = evidence_id = None
+    ledger_query = None
+    if result_id is not None:
+        row = feedback.lookup_returned(
+            grant.client_id, result_id, buckets=list(grant.buckets),
+            sources=list(grant.sources) if grant.sources is not None else None)
+        if row is None:
+            return dict(RATE_NOT_FOUND)
+        event_id, evidence_id, ledger_query = row["event_id"], row["evidence_id"], row["query"]
+    try:
+        stored = feedback.save_feedback(
+            grant.client_id, verdict, buckets=list(grant.buckets), event_id=event_id, evidence_id=evidence_id,
+            query=stored_query or ledger_query, note=note)
+    except sqlite3.Error:
+        return {"status": "error", "message": "feedback could not be saved"}
+    if not stored:
+        return {"status": "rate_limited", "message": "Too much feedback stored for this client; try again later."}
+    return {"status": "ok", "recorded": True}

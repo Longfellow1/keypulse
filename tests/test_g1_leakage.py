@@ -45,6 +45,8 @@ G1_COVERED_TOOLS = {
     "search_context": {"keywords", "time_range", "sources", "limit", "include_keypulse_echoes"},
     "get_evidence": {"evidence_id"},
     "get_timeline": {"start", "end", "sources", "limit", "cursor", "include_keypulse_echoes"},
+    # M2-3: its G1 tests (unseen / other-bucket ids, differential) live in tests/test_feedback.py
+    "rate_result": {"result_id", "verdict", "note", "query"},
 }
 G1_COVERED_RESPONSE_FIELDS = {
     "status", "reason_code", "message", "next_action",
@@ -54,6 +56,7 @@ G1_COVERED_RESPONSE_FIELDS = {
     "coverage", "coverage.partial", "coverage.note", "coverage.time_range",
     "coverage.time_range.start", "coverage.time_range.end", "coverage.buckets", "coverage.sources",
     # M2-2: per-source span inside the grant (names / times of in-scope sources only; NO excluded counts)
+    "recorded",  # rate_result: {"status": "ok", "recorded": true}
     "coverage.by_source", "coverage.by_source[].source", "coverage.by_source[].earliest",
     "coverage.by_source[].latest", "coverage.by_source[].has_events_in_range",
     # get_timeline (results[].* above are shared)

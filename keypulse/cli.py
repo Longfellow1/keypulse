@@ -1856,6 +1856,10 @@ from keypulse.mcp.cli import mcp_group
 
 main.add_command(mcp_group)
 
+from keypulse.feedback_cli import feedback_group
+
+main.add_command(feedback_group)
+
 
 if __name__ == "__main__":
     main()
