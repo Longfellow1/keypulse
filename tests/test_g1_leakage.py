@@ -50,6 +50,7 @@ G1_COVERED_RESPONSE_FIELDS = {
     "status", "reason_code", "message", "next_action",
     "results", "results[].id", "results[].snippet", "results[].occurred_at", "results[].source",
     "results[].bucket", "results[].evidence_id", "results[].evidence_available", "results[].match", "results[].match_reason",
+    "results[].occurrences", "results[].first_seen", "results[].last_seen",
     "coverage", "coverage.partial", "coverage.note", "coverage.time_range",
     "coverage.time_range.start", "coverage.time_range.end", "coverage.buckets", "coverage.sources",
     # get_timeline (results[].* above are shared)

@@ -144,24 +144,64 @@ _NOT_ECHO_SQL = (
 )
 
 _SCOPED_CANDIDATES = 500
-_TF_SATURATION = 1.2   # bm25-style term-frequency saturation
-_LEN_NORM = 0.75       # strength of length normalisation
+_TF_SATURATION = 0.9   # bm25-style term-frequency saturation: repeats add less and less
+_LEN_NORM = 0.9        # strong length normalisation: a long transcript message is not "more relevant"
 _REF_LEN = 200         # fixed reference length in chars (a constant, not a corpus average)
+_DENSITY_WEIGHT = 4.0  # share of the text that is the query's keywords: focused short rows win
+_RARE_BOOST = 0.75     # exact-token hit of a rare keyword (hash, version, file name, issue key)
+_DENSITY_MIN_LEN = 80  # a bare one-word row is not "dense", it is just short
+
+_HEX_ID = re.compile(r"[0-9a-f]{7,40}")
+_VERSION = re.compile(r"v?\d+(?:\.\d+)+(?:[-+][\w.]+)?")
+_FILE_NAME = re.compile(r"[\w\-]+\.[a-z][a-z0-9]{0,5}")
+_ISSUE_KEY = re.compile(r"[a-z][a-z0-9]*-\d+")
+
+# "I copied it" cues: a keyword saying where the answer lives. Rows from that source rank first.
+_SOURCE_CUES = {
+    "clipboard": "clipboard", "copied": "clipboard", "copy": "clipboard", "pasted": "clipboard",
+    "剪贴板": "clipboard", "复制": "clipboard", "拷贝": "clipboard", "粘贴": "clipboard",
+}
+
+
+def _is_rare_token(term: str) -> bool:
+    """Single-token keywords that identify one thing: commit hash, version, file name, issue key."""
+    t = term.lower()
+    if " " in t or len(t) < 4:
+        return False
+    if _HEX_ID.fullmatch(t) and any(c.isdigit() for c in t):
+        return True
+    return bool(_VERSION.fullmatch(t) or _FILE_NAME.fullmatch(t) or _ISSUE_KEY.fullmatch(t))
+
+
+def _cued_sources(terms: list[str]) -> set[str]:
+    return {_SOURCE_CUES[t.lower()] for t in terms if t.lower() in _SOURCE_CUES}
+
+
+def _has_token(text: str, token: str) -> bool:
+    """Exact token match (not a substring of a longer word or hash)."""
+    return re.search(r"(?<![\w])" + re.escape(token) + r"(?![\w])", text) is not None
 
 
 def _doc_score(row, terms: list[str]) -> float:
-    """Relevance from the document alone: term occurrences (saturating), distinct-term coverage,
-    length normalisation. No document-frequency / corpus statistics."""
+    """Relevance from the document alone: term occurrences (saturating, length-normalised), distinct-term
+    coverage, keyword density, and a small boost for exact rare-token hits. No document-frequency /
+    corpus statistics."""
     text = _haystack(row)
+    distinct = set(x.lower() for x in terms)
     norm = 1 - _LEN_NORM + _LEN_NORM * (len(text) / _REF_LEN)
     score = 0.0
     matched = 0
-    for t in set(x.lower() for x in terms):
+    matched_chars = 0
+    for t in distinct:
         tf = text.count(t)
         if tf:
             matched += 1
+            matched_chars += len(t)
             score += tf * (_TF_SATURATION + 1) / (tf + _TF_SATURATION * norm)
-    return score * (1 + matched / max(1, len(set(terms))))
+            if _is_rare_token(t) and _has_token(text, t):
+                score += _RARE_BOOST
+    score *= 1 + matched / max(1, len(distinct))
+    return score + _DENSITY_WEIGHT * min(1.0, matched_chars / max(_DENSITY_MIN_LEN, len(text)))
 
 
 def _normalize_keywords(keywords: list[str]) -> list[str]:
@@ -196,6 +236,9 @@ def search_events(
     """Keyword search over raw_events: OR across keywords, ranked by how many distinct keywords a
     document matches (coverage), then a per-document score, then the source's semantic_weight,
     then recency. (Recency is a unique key, ts + id, so weight must sit before it to ever act.)
+    A "copied"-style keyword ranks that source's rows (clipboard) first. Rows with identical text (same
+    source family and bucket) are then folded into one hit with occurrences / first_seen / last_seen,
+    before LIMIT; counts cover the (<= 500 newest) in-scope candidates.
 
     The caller (an AI host) is responsible for turning a question into keywords; no query
     understanding happens here. `since`/`until` bound the event's real occurred_at (ts_start),
@@ -268,24 +311,59 @@ def search_events(
         LIMIT ?
     """
     rows = get_conn().execute(sql, params).fetchall()
+    cued = _cued_sources(terms)
     scored = []
     for r in rows:
         found = _matched(r, terms)
         if found:
-            scored.append((len(found), round(_doc_score(r, terms), 6), r["semantic_weight"] or 0.0, r, found))
-    # Stable sort over a recency-ordered list: coverage, document score, semantic_weight, then recency.
-    scored.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+            scored.append((
+                1 if r["source"] in cued else 0, len(found), round(_doc_score(r, terms), 6),
+                r["semantic_weight"] or 0.0, r, found,
+            ))
+    # Stable sort over a recency-ordered list (ts DESC, id DESC): source cue, coverage, document score,
+    # semantic_weight, then recency. Deterministic for identical input.
+    scored.sort(key=lambda x: x[:4], reverse=True)
     hits = []
-    for coverage, _score, _weight, r, found in scored[:limit]:
+    for r, found, occurrences, first_seen, last_seen in _collapse(scored)[:limit]:
         d = dict(r)
         d.pop("semantic_weight", None)
         d["snippet"] = _snippet(display_text(d), found)
         for k in ("content_text", "window_title", "app_name", "event_type", "ts_end"):
             d.pop(k, None)
-        d["matched"] = coverage
+        d["matched"] = len(found)
         d["keyword_count"] = len(terms)
+        d["occurrences"] = occurrences
+        d["first_seen"] = first_seen
+        d["last_seen"] = last_seen
         hits.append(d)
     return hits
+
+
+_SOURCE_FAMILY = {"chrome_history": "browser", "safari_history": "browser", "browser_url": "browser"}
+
+
+def _collapse_key(r) -> tuple:
+    text = " ".join(
+        ((r["content_text"] or "") + " | " + (r["window_title"] or "") + " | " + (r["app_name"] or "")).lower().split()
+    )
+    return (_SOURCE_FAMILY.get(r["source"], r["source"]), r["bucket"], text)
+
+
+def _collapse(scored: list) -> list:
+    """Group ranked rows with the same normalised text (same source family and bucket) into one hit:
+    the best-ranked row is the representative (its own evidence is kept) and the group carries
+    occurrences / first_seen / last_seen. It only sees rows the WHERE clause already admitted (grant
+    buckets and sources), and runs before LIMIT, so it can neither merge nor count anything outside
+    the grant. Groups keep the rank order of their best member."""
+    groups: dict[tuple, list] = {}
+    for item in scored:
+        groups.setdefault(_collapse_key(item[4]), []).append(item)
+    out = []
+    for members in groups.values():
+        rep = members[0]
+        times = [m[4]["occurred_at"] for m in members]
+        out.append((rep[4], rep[5], len(members), min(times), max(times)))
+    return out
 
 
 TIMELINE_DEFAULT_LIMIT = 50
