@@ -42,7 +42,9 @@ class AXTextConfig(BaseModel):
 
 class KeyboardChunkConfig(BaseModel):
     silence_sec: float = 2.0
-    force_flush_sec: float = 2.0
+    # D27: a flush after ~20s of continuous typing keeps chunks near sentence length
+    # (2s chunks were too short for any block-level filter to work on).
+    force_flush_sec: float = 20.0
     store_text: bool = True
 
 
@@ -94,6 +96,12 @@ class OCRConfig(BaseModel):
     # keyboard_quiet_sec: float = 2.0
 
 
+def _default_title_deny():
+    from keypulse.capture.hygiene import DEFAULT_TITLE_DENY_PATTERNS
+
+    return DEFAULT_TITLE_DENY_PATTERNS
+
+
 class PrivacyConfig(BaseModel):
     redact_emails: bool = True
     redact_phones: bool = True
@@ -127,11 +135,18 @@ class PrivacyConfig(BaseModel):
             "org.signal.signal-desktop",
             "com.whatsapp.messenger",
             "com.apple.Messages",
-            "com.tinyspk.slack",
+            # Slack's macOS bundle id (was "com.tinyspk.slack", a typo).
+            "com.tinyspeck.slackmacgap",
             "com.hnc.Discord",
             "com.tencent.wxwork",
             "com.alibaba.dingtalk",
+            # Verified from locally installed Lark.app / Telegram.app Info.plist (CFBundleIdentifier);
+            # the old feishu id was a guess. DingTalk's mac id is from public listings, not verified here.
+            "com.alibaba.DingTalkMac",
+            "com.electron.lark",
             "com.bytedance.feishu",
+            "ru.keepcoder.Telegram",
+            "com.tencent.xinWeChat",
             "jp.naver.line",
             "com.kakao.talk",
             "com.icbc.mobile",
@@ -152,6 +167,16 @@ class PrivacyConfig(BaseModel):
         ]
     )
     blacklist_patterns: list[str] = Field(default_factory=lambda: ["com.tencent.*"])
+    # D27: events without a bundle id (clipboard) are matched by app name, case-insensitive substring.
+    # D27: regexes (case-insensitive) matched against window titles; a hit makes the event
+    # metadata-only. Seeded from the login-context keywords (sign in, password, 登录, ...).
+    title_deny_patterns: list[str] = Field(default_factory=lambda: list(_default_title_deny()))
+    blacklist_app_names: list[str] = Field(
+        default_factory=lambda: [
+            "微信", "WeChat", "企业微信", "钉钉", "DingTalk", "飞书", "Lark", "Feishu",
+            "1Password", "Keychain Access", "钥匙串", "密码",
+        ]
+    )
 
 
 class MarkdownVaultSourceConfig(BaseModel):

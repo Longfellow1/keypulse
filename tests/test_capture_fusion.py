@@ -76,8 +76,10 @@ def test_fusion_does_not_merge_events_16_seconds_apart():
     )
     assert engine.fuse(canonical).persist is True
 
+    # D27: identical text is now merged for up to 300s (Jaccard); the 15s exact window only
+    # still applies to text that is not a near-duplicate.
     late_duplicate = normalize_ax_text_event(
-        text="same body",
+        text="completely different words here",
         app_name="Notes",
         window_title="Draft",
         ts_start="2026-04-19T09:00:16+00:00",

@@ -39,6 +39,17 @@ def _is_secure_input_enabled(application_services_module=None) -> bool:
     return False
 
 
+# CGEventFlags masks (Quartz kCGEventFlagMask*), used when the Quartz module lacks the constants.
+_FLAG_COMMAND = 0x100000
+_FLAG_CONTROL = 0x40000
+_FLAG_OPTION = 0x80000
+
+
+def clean_key_text(text: str) -> str:
+    """Keep spaces, Enter and Tab (the old .strip() ate them, so 'hello world' became 'helloworld')."""
+    return text.replace("\r", "\n")
+
+
 class MacOSKeyboardInputSource:
     def __init__(self, quartz_module=None):
         self._quartz_module = quartz_module
@@ -91,6 +102,20 @@ class MacOSKeyboardInputSource:
     def health(self) -> dict:
         return {"status": self._status, "running": self._thread is not None and self._thread.is_alive()}
 
+    @staticmethod
+    def _has_command_modifier(quartz, event) -> bool:
+        """Cmd/Ctrl/Option chords are shortcuts (Cmd+C yields 'c'), not typing. Shift is kept."""
+        try:
+            flags = int(quartz.CGEventGetFlags(event))
+        except Exception:
+            return False
+        mask = (
+            getattr(quartz, "kCGEventFlagMaskCommand", _FLAG_COMMAND)
+            | getattr(quartz, "kCGEventFlagMaskControl", _FLAG_CONTROL)
+            | getattr(quartz, "kCGEventFlagMaskAlternate", _FLAG_OPTION)
+        )
+        return bool(flags & mask)
+
     def _extract_text(self, event) -> str:
         quartz = self._load_quartz()
         if quartz is None:
@@ -121,7 +146,9 @@ class MacOSKeyboardInputSource:
             secure_input = _is_secure_input_enabled()
             if secure_input:
                 return event
-            text = self._extract_text(event).strip()
+            if self._has_command_modifier(quartz, event):
+                return event
+            text = clean_key_text(self._extract_text(event))
             if not text:
                 return event
             app_name, window_title, process_name = _get_frontmost_app()

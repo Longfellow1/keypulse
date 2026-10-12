@@ -219,7 +219,7 @@ def test_v23_backfill_classifies_redacts_adds_evidence_and_is_idempotent(tmp_pat
     _legacy_row(conn, 1, "keyboard_chunk", "keyboard_chunk", "Cursor", f"note api_key={FAKE_KEY} zebracorn")
     _legacy_row(conn, 2, "clipboard", "clipboard_copy", "Alipay", "balance zebracorn")
     _legacy_row(conn, 3, "window", "window_focus_session", "Safari", None, title=f"x?token={FAKE_KEY[:20]}zzzzzzzz page")
-    _legacy_row(conn, 4, "ax_text", "ax_text_capture", "Cursor", "kept", bucket="Private")    # user's choice survives
+    _legacy_row(conn, 4, "ax_text", "ax_text_capture", "Cursor", "kept while editing", bucket="Private")    # user's choice survives
     _legacy_row(conn, 5, "idle", "idle_start", None, None)
     _legacy_row(conn, 6, "claude_code", "semantic_event", "Cursor", "plugin row")             # not a capture source
     conn.execute("INSERT INTO policies(scope_type,scope_value,mode,enabled,priority,config_json,created_at,updated_at) "
@@ -252,7 +252,7 @@ def test_v23_backfill_classifies_redacts_adds_evidence_and_is_idempotent(tmp_pat
 
 def test_v23_backfill_is_fast_on_25k_rows_and_atomic(tmp_path, capsys):
     conn = _db_at_v22(tmp_path / "big.db")
-    apps = ["Cursor", "Safari", "Alipay", "Slack", "Spotify", "Terminal", "Notes", "Figma", "微信读书", "Chrome"]
+    apps = ["Cursor", "Safari", "Alipay", "Slack", "Spotify", "Preview", "Notes", "Figma", "读书笔记", "Chrome"]
     conn.executemany(
         "INSERT INTO raw_events(source,event_type,ts_start,app_name,window_title,content_text,content_hash,created_at) "
         "VALUES (?,?,?,?,?,?,?,'2026-01-01')",
