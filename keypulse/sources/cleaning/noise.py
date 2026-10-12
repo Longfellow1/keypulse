@@ -117,7 +117,8 @@ def is_keypulse_call(payload: dict, names: tuple[str, ...]) -> bool:
         server = c.get("server") or c.get("server_name") or c.get("namespace")
         if isinstance(server, str):
             s = server.strip().lower()
-            if s in names or _name_matches(s, names) or any(s.startswith(f"mcp__{n}") for n in names):
+            # Real Codex rollouts use namespace="mcp__<server>" with a bare tool name.
+            if s in names or _name_matches(s, names) or any(s in (f"mcp__{n}", f"mcp__{n}__") for n in names):
                 return True
     return False
 

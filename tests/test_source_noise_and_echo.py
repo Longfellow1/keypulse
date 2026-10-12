@@ -360,3 +360,13 @@ def test_query_time_redaction_fails_closed(db, monkeypatch) -> None:
         assert resp == tools.redaction_failed()
         assert set(resp) == set(denied)  # same uniform shape as denial bodies
         assert "pelican" not in json.dumps(resp) and LEGACY_SECRET not in json.dumps(resp)
+
+
+def test_codex_namespace_shape_matches_exact_server_only() -> None:
+    # Shape observed in current Codex rollouts: namespace "mcp__<server>", bare tool name.
+    from keypulse.sources.cleaning.noise import is_keypulse_call
+
+    names = ("keypulse",)
+    assert is_keypulse_call({"type": "function_call", "namespace": "mcp__keypulse", "name": "search_context"}, names)
+    assert not is_keypulse_call({"type": "function_call", "namespace": "mcp__keypulse_x", "name": "a"}, names)
+    assert not is_keypulse_call({"type": "function_call", "namespace": "mcp__cua_repl", "name": "js"}, names)
