@@ -185,12 +185,12 @@ def _rebucket_by_site(conn: sqlite3.Connection) -> None:
     old_cache: dict[tuple, str | None] = {}
     for rows in _batches(
         conn,
-        "SELECT id, source, app_name, process_name, bucket, ts_start, metadata_json FROM raw_events "
+        "SELECT id, source, app_name, process_name, bucket, ts_start, metadata_json, window_title FROM raw_events "
         f"WHERE source IN ({_marks(sources)}) AND id > ? ORDER BY id LIMIT ?",
         tuple(sources),
     ):
         updates = []
-        for rid, source, app, proc, bucket, ts, meta in rows:
+        for rid, source, app, proc, bucket, ts, meta, title in rows:
             if not wants_site_url(source, app, proc):
                 continue
             key = (source, app, proc)
@@ -200,7 +200,7 @@ def _rebucket_by_site(conn: sqlite3.Connection) -> None:
                 continue  # not on the old app-level bucket: the user's choice
             url = url_from_metadata(meta)
             if url is None and source in SITE_INHERIT_SOURCES:
-                url = timeline.lookup(app, proc, ts)
+                url = timeline.lookup(app, proc, ts, title)
             new = resolve_bucket(source, app, proc, rules=rules, overrides={}, app_overrides={}, url=url, site_overrides={})
             if new is not None and new != bucket:
                 updates.append((new, rid))

@@ -610,18 +610,18 @@ def test_g1_canary_financial_site_in_browser_is_unreachable_for_work_grant(tmp_p
 
     bank = ["KPCANARY20bankax", "KPCANARY21bankclip", "KPCANARY22bankwin", "KPCANARY23bankkey", "KPCANARY24bankdocs"]
     put(normalize_browser_url_event("https://www.icbc.com.cn/login?x=1", "Online banking", "Google Chrome", ts_start="2026-03-02T10:00:00+00:00"))
-    put(normalize_ax_text_event(f"{SHARED_WORD} balance {bank[0]} shown", app_name="Google Chrome", window_title="Account", ts_start="2026-03-02T10:01:00+00:00"))
+    put(normalize_ax_text_event(f"{SHARED_WORD} balance {bank[0]} shown", app_name="Google Chrome", window_title="Online banking - Google Chrome", ts_start="2026-03-02T10:01:00+00:00"))
     put(normalize_clipboard_event(f"{SHARED_WORD} copied {bank[1]}", app_name="Google Chrome", process_name="com.google.Chrome", ts_start="2026-03-02T10:02:00+00:00"))
-    put(normalize_window_event("window_focus_session", "Google Chrome", f"{SHARED_WORD} {bank[2]}", None, ts_start="2026-03-02T10:03:00+00:00", ts_end="2026-03-02T10:04:00+00:00"))
+    put(normalize_window_event("window_focus_session", "Google Chrome", f"Online banking - {SHARED_WORD} {bank[2]}", None, ts_start="2026-03-02T10:03:00+00:00", ts_end="2026-03-02T10:04:00+00:00"))
     put(normalize_keyboard_chunk_event(f"{SHARED_WORD} typed {bank[3]} here", app_name="Google Chrome", ts_start="2026-03-02T10:05:00+00:00"))
     # a docs.* host must not outrank Financial
     put(normalize_browser_url_event("https://docs.mybank.example/guide", "Docs", "Safari", ts_start="2026-03-02T10:00:00+00:00"))
-    put(normalize_ax_text_event(f"{SHARED_WORD} guide {bank[4]} text", app_name="Safari", window_title="Docs", ts_start="2026-03-02T10:01:00+00:00"))
+    put(normalize_ax_text_event(f"{SHARED_WORD} guide {bank[4]} text", app_name="Safari", window_title="Docs - Safari", ts_start="2026-03-02T10:01:00+00:00"))
     # a Work site in the same browser stays reachable (the scan is not vacuous)
     put(normalize_browser_url_event("https://github.com/org/repo", "repo", "Google Chrome", ts_start="2026-03-02T11:00:00+00:00"))
-    put(normalize_ax_text_event(f"{SHARED_WORD} review KPCANARYWORKOK comments", app_name="Google Chrome", window_title="PR", ts_start="2026-03-02T11:01:00+00:00"))
+    put(normalize_ax_text_event(f"{SHARED_WORD} review KPCANARYWORKOK comments", app_name="Google Chrome", window_title="repo - Google Chrome", ts_start="2026-03-02T11:01:00+00:00"))
     # a stale URL (> 10 min) must not lend its bucket: this text falls back to Personal
-    put(normalize_ax_text_event(f"{SHARED_WORD} later KPCANARY25stale text", app_name="Google Chrome", window_title="PR", ts_start="2026-03-02T11:30:00+00:00"))
+    put(normalize_ax_text_event(f"{SHARED_WORD} later KPCANARY25stale text", app_name="Google Chrome", window_title="repo - Google Chrome", ts_start="2026-03-02T11:30:00+00:00"))
 
     work = auth.create_grant("work-host", buckets=["Work"])
     for canary in bank + ["KPCANARY25stale"]:

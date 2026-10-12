@@ -144,18 +144,53 @@ def wants_site_url(source: Optional[str], app_name: Optional[str], process_name:
     return source in SITE_INHERIT_SOURCES and browser_family(app_name, process_name) is not None
 
 
-def nearest_browser_url(conn: sqlite3.Connection, app_name, process_name, ts_start: Optional[str]) -> Optional[str]:
-    """URL of the latest browser_url row of the same browser at or before ts_start, within SITE_LOOKBACK."""
+def _norm_title(title: Optional[str]) -> str:
+    from keypulse.utils.text_filters import strip_invisible
+
+    return (strip_invisible(title) or "").strip()
+
+
+def page_title_of(content_text: Optional[str], window_title: Optional[str], app_name: Optional[str]) -> str:
+    """Page title of a browser_url row: its content_text (the tab title), else its window_title minus
+    the " - <Browser>" suffix. A bare URL is not a title."""
+    text = _norm_title(content_text)
+    if text and "://" not in text:
+        return text
+    title = _norm_title(window_title)
+    suffix = f" - {(app_name or '').strip()}"
+    if app_name and title.endswith(suffix):
+        title = title[: -len(suffix)].rstrip()
+    return title
+
+
+def title_matches(event_title: Optional[str], page_title: str) -> bool:
+    """The event's window title is the page title, optionally followed by " - ..." decorations
+    ("... - 已固定 - 内存用量高 - 1.8 GB - Google Chrome")."""
+    title = _norm_title(event_title)
+    page = _norm_title(page_title)
+    if not title or not page:
+        return False
+    return title == page or title.startswith(page + " - ")
+
+
+def nearest_browser_url(
+    conn: sqlite3.Connection, app_name, process_name, ts_start: Optional[str], window_title: Optional[str] = None
+) -> Optional[str]:
+    """URL of the browser_url row of the same browser at or before ts_start, within SITE_LOOKBACK.
+
+    With a window title (tab switching makes "nearest in time" unreliable) only a row whose page title
+    matches the title counts, latest first; no match means no URL. Without a title it is the latest row."""
     from keypulse.store.site_categories import browser_family
 
     family = browser_family(app_name, process_name)
     ts = _parse_ts(ts_start)
     if family is None or ts is None:
         return None
+    wants_title = bool(_norm_title(window_title))
     lower = (ts - SITE_LOOKBACK).astimezone(timezone.utc).isoformat()
     rows = conn.execute(
-        "SELECT ts_start, app_name, process_name, metadata_json FROM raw_events "
-        "WHERE source = 'browser_url' AND ts_start <= ? AND ts_start >= ? ORDER BY ts_start DESC LIMIT 50",
+        "SELECT ts_start, app_name, process_name, metadata_json, content_text, window_title FROM raw_events "
+        "WHERE source = 'browser_url' AND ts_start <= ? AND ts_start >= ? ORDER BY ts_start DESC LIMIT 200",
         (ts_start, lower),
     ).fetchall()
     for row in rows:
@@ -165,45 +200,54 @@ def nearest_browser_url(conn: sqlite3.Connection, app_name, process_name, ts_sta
         if row_ts is None or not (ts - SITE_LOOKBACK <= row_ts <= ts):
             continue
         url = url_from_metadata(row[3])
-        if url:
-            return url
+        if not url:
+            continue
+        if wants_title and not title_matches(window_title, page_title_of(row[4], row[5], row[1])):
+            continue
+        return url
     return None
 
 
 class BrowserUrlTimeline:
     """In-memory index of browser_url rows (per browser family) for bulk re-bucketing: one pass over
-    the table instead of one lookup per row."""
+    the table instead of one lookup per row. Same matching rules as nearest_browser_url."""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         from keypulse.store.site_categories import browser_family
 
-        by_family: dict[str, list[tuple[datetime, str]]] = {}
+        by_family: dict[str, list[tuple[datetime, str, str]]] = {}
         for row in conn.execute(
-            "SELECT ts_start, app_name, process_name, metadata_json FROM raw_events "
+            "SELECT ts_start, app_name, process_name, metadata_json, content_text, window_title FROM raw_events "
             "WHERE source = 'browser_url' ORDER BY ts_start"
         ):
             family = browser_family(row[1], row[2])
             ts = _parse_ts(row[0])
             url = url_from_metadata(row[3])
             if family and ts and url:
-                by_family.setdefault(family, []).append((ts, url))
+                by_family.setdefault(family, []).append((ts, url, page_title_of(row[4], row[5], row[1])))
         for entries in by_family.values():
             entries.sort(key=lambda e: e[0])
         self._entries = by_family
         self._times = {f: [e[0] for e in entries] for f, entries in by_family.items()}
 
-    def lookup(self, app_name, process_name, ts_start: Optional[str]) -> Optional[str]:
+    def lookup(self, app_name, process_name, ts_start: Optional[str], window_title: Optional[str] = None) -> Optional[str]:
         from keypulse.store.site_categories import browser_family
 
         family = browser_family(app_name, process_name)
         ts = _parse_ts(ts_start)
         if family is None or ts is None or family not in self._entries:
             return None
-        i = bisect_right(self._times[family], ts)
-        if i == 0:
-            return None
-        entry_ts, url = self._entries[family][i - 1]
-        return url if ts - entry_ts <= SITE_LOOKBACK else None
+        wants_title = bool(_norm_title(window_title))
+        entries = self._entries[family]
+        i = bisect_right(self._times[family], ts) - 1
+        while i >= 0:
+            entry_ts, url, page = entries[i]
+            if ts - entry_ts > SITE_LOOKBACK:
+                return None
+            if not wants_title or title_matches(window_title, page):
+                return url
+            i -= 1
+        return None
 
 
 def classify_capture_app(
@@ -303,12 +347,13 @@ def resolve_for_event(
     *,
     metadata_json: Optional[str] = None,
     ts_start: Optional[str] = None,
+    window_title: Optional[str] = None,
 ) -> Optional[str]:
     url = None
     if wants_site_url(source, app_name, process_name):
         url = url_from_metadata(metadata_json)
         if url is None and source in SITE_INHERIT_SOURCES:
-            url = nearest_browser_url(conn, app_name, process_name, ts_start)
+            url = nearest_browser_url(conn, app_name, process_name, ts_start, window_title)
     return resolve_bucket(source, app_name, process_name, rules=load_bucket_rules(conn), url=url)
 
 
@@ -322,13 +367,13 @@ def reapply_buckets(conn: sqlite3.Connection, *, only_missing: bool = False) -> 
     where = " WHERE bucket IS NULL" if only_missing else ""
     changed = 0
     for row in conn.execute(
-        f"SELECT id, source, app_name, process_name, bucket, ts_start, metadata_json FROM raw_events{where}"
+        f"SELECT id, source, app_name, process_name, bucket, ts_start, metadata_json, window_title FROM raw_events{where}"
     ).fetchall():
         url = None
         if wants_site_url(row["source"], row["app_name"], row["process_name"]):
             url = url_from_metadata(row["metadata_json"])
             if url is None and row["source"] in SITE_INHERIT_SOURCES:
-                url = timeline.lookup(row["app_name"], row["process_name"], row["ts_start"])
+                url = timeline.lookup(row["app_name"], row["process_name"], row["ts_start"], row["window_title"])
         new = resolve_bucket(
             row["source"], row["app_name"], row["process_name"], rules=rules, overrides=overrides,
             app_overrides=app_overrides, url=url, site_overrides=site_overrides,

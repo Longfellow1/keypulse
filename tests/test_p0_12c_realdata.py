@@ -251,12 +251,12 @@ def _insert(ev: RawEvent) -> int:
 
 
 def _url_event(url, minute, browser="Google Chrome", n=0):
-    ev = normalize_browser_url_event(url, "t", browser, ts_start=_ts(minute, n))
+    ev = normalize_browser_url_event(url, "Page", browser, ts_start=_ts(minute, n))
     return _insert(ev)
 
 
 def _ax(text, minute, app="Google Chrome", second=0):
-    return _insert(normalize_ax_text_event(text, app_name=app, window_title="Doc", ts_start=_ts(minute, second)))
+    return _insert(normalize_ax_text_event(text, app_name=app, window_title="Page - 已固定 - 内存用量高 - 1.8 GB - " + app, ts_start=_ts(minute, second)))
 
 
 def test_browser_events_follow_the_site(tmp_path):
@@ -271,7 +271,7 @@ def test_browser_events_follow_the_site(tmp_path):
     clip = _insert(normalize_clipboard_event("copied from the bank page", app_name="Google Chrome",
                                              process_name="com.google.Chrome", ts_start=_ts(3)))
     assert _bucket_of(clip) == "Financial"
-    win = _insert(normalize_window_event("window_focus_session", "Google Chrome", "Account", None, ts_start=_ts(4), ts_end=_ts(5)))
+    win = _insert(normalize_window_event("window_focus_session", "Google Chrome", "Page - Google Chrome", None, ts_start=_ts(4), ts_end=_ts(5)))
     assert _bucket_of(win) == "Financial"
 
 
@@ -286,6 +286,40 @@ def test_url_lookup_is_same_browser_at_or_before_and_within_ten_minutes(tmp_path
     assert _bucket_of(_ax("text before any url was seen", 0, app="Google Chrome", second=0)) == "Work"  # at (==) counts
     # a non-browser app never inherits a URL
     assert _bucket_of(_ax("editor text typed while chrome is on github", 2, app="Notes")) == "Personal"
+
+
+XHS_TITLE = "🇳🇿春节新西兰南岛13天-自驾攻略 - 小红书"
+
+
+def _titled_ax(text, minute, title, app="Google Chrome"):
+    return _insert(normalize_ax_text_event(text, app_name=app, window_title=title, ts_start=_ts(minute)))
+
+
+def test_window_title_must_match_the_page_title_else_personal(tmp_path):
+    init_db(tmp_path / "kp.db")
+    _insert(normalize_browser_url_event("https://www.xiaohongshu.com/explore/1", XHS_TITLE, "Google Chrome", ts_start=_ts(0)))
+    _insert(normalize_browser_url_event("https://chatgpt.com/c/1", "Trip planner", "Google Chrome", ts_start=_ts(5)))
+    # tab-switch case: the last URL (chatgpt, Work) is not the page this text came from
+    mismatch = _titled_ax("读到的帖子正文内容在这里", 6, f"​{XHS_TITLE} - Google Chrome")
+    assert _bucket_of(mismatch) == "Personal"
+    # decorated titles still match their own page (latest matching row, not the latest row)
+    assert _bucket_of(_titled_ax("planning the trip with the assistant", 7,
+                                 "Trip planner - 已固定 - 内存用量高 - 1.8 GB - Google Chrome")) == "Work"
+    assert _bucket_of(_titled_ax("text on the earlier work tab again", 8, "Trip planner - Audio playing - Google Chrome")) == "Work"
+    # title unknown anywhere -> no URL -> Personal, never "nearest"
+    assert _bucket_of(_titled_ax("some unrelated page body text", 8, "Totally different - Google Chrome")) == "Personal"
+    # a prefix without the " - " boundary is not a match
+    assert _bucket_of(_titled_ax("prefix boundary check text", 8, "Trip planner 2 - Google Chrome")) == "Personal"
+    # no window title (typical clipboard row): nearest-in-time behaviour is kept
+    clip = _insert(normalize_clipboard_event("copied text from somewhere", app_name="Google Chrome",
+                                             process_name="com.google.Chrome", ts_start=_ts(9)))
+    assert _bucket_of(clip) == "Work"
+    # same rules in the bulk (rebucket / v26) path
+    conn = get_conn()
+    conn.execute("UPDATE raw_events SET bucket = 'Private'")
+    conn.commit()
+    buckets.reapply_buckets(conn)
+    assert _bucket_of(mismatch) == "Personal" and _bucket_of(clip) == "Work"
 
 
 def test_resolution_order_user_rule_over_config_over_preset(tmp_path, monkeypatch):

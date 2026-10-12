@@ -37,7 +37,8 @@ def insert_raw_event(e: RawEvent) -> int:
         from keypulse.store.buckets import resolve_for_event
 
         e.bucket = resolve_for_event(
-            conn, e.source, e.app_name, e.process_name, metadata_json=e.metadata_json, ts_start=e.ts_start
+            conn, e.source, e.app_name, e.process_name, metadata_json=e.metadata_json, ts_start=e.ts_start,
+            window_title=e.window_title,
         )
     cur = conn.execute(
         """INSERT INTO raw_events
