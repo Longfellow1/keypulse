@@ -5,6 +5,28 @@ from typing import Any
 
 from keypulse.privacy.detectors import PATTERNS, detect, has_sensitive_content
 
+# Email masking keeps the domain (useful for "which company / service") and drops the local part:
+# alice.w@gmail.com -> ***@gmail.com. Already-masked "***@x.com" does not match the pattern (the
+# local part class has no "*"), so masking is idempotent across the write-time and query-time passes.
+# Matches without a TLD ("user@host" shell prompts) never match the email pattern, so they are untouched.
+EMAIL_MASK_PREFIX = "***@"
+# Service accounts, not people: "git@github.com:org/repo.git" SSH remotes must stay usable.
+_SERVICE_LOCAL_PARTS = frozenset({"git"})
+_EMAIL = re.compile(r"([a-zA-Z0-9_.+-]+)@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)")
+
+
+def _mask_email_match(m: re.Match) -> str:
+    if m.group(1).lower() in _SERVICE_LOCAL_PARTS:
+        return m.group(0)
+    return EMAIL_MASK_PREFIX + m.group(2)
+
+
+def mask_emails(text: str) -> str:
+    """Mask the local part of every email, keeping the domain: alice@example.com -> ***@example.com."""
+    if not text or "@" not in text:
+        return text
+    return _EMAIL.sub(_mask_email_match, text)
+
 
 _SHELL_LINE_PATTERNS = (
     re.compile(r"(?m)^\s*sudo\s+\S.*$"),
@@ -26,12 +48,14 @@ def _redact_shell_lines(text: str) -> str:
 
 
 def desensitize(text: str, redact_emails: bool = True, redact_phones: bool = True, redact_tokens: bool = True) -> str:
-    """Replace sensitive patterns with [PATTERN_NAME] placeholders."""
+    """Replace sensitive patterns with [REDACTED] / labelled placeholders; emails become ***@domain."""
     if not text:
         return text
     text = _redact_shell_lines(text)
+    if redact_emails:
+        text = mask_emails(text)
     enabled = {
-        "email": redact_emails,
+        "email": False,  # handled above (domain-preserving mask)
         "phone_cn": redact_phones,
         "id_card": True,
         "bank_card": True,

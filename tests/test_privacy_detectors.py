@@ -257,7 +257,7 @@ def test_desensitize_json_value_recurses_through_nested_structures():
 
     result = desensitize_json_value(payload)
 
-    assert result["email"] == "[REDACTED]"
+    assert result["email"] == "***@example.com"
     assert result["nested"]["token"] == "[REDACTED]"
     assert result["nested"]["items"][0] == "safe"
     assert result["nested"]["items"][1] == "[REDACTED]"

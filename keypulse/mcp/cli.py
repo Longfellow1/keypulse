@@ -17,9 +17,12 @@ def mcp_group() -> None:
 
 @mcp_group.command("serve", help="Run the MCP server over stdio (env KEYPULSE_TOKEN + KEYPULSE_CLIENT).")
 def serve_command() -> None:
+    from keypulse.mcp import tools
     from keypulse.mcp.server import serve_stdio
 
-    init_db(Config.load().db_path_expanded)
+    cfg = Config.load()
+    tools.configure(mask_emails=cfg.privacy.redact_emails)
+    init_db(cfg.db_path_expanded)
     serve_stdio()
 
 
