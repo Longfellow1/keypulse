@@ -21,14 +21,14 @@ You do the language understanding; this tool only matches keywords. Before calli
 - Convert time words (上次, 昨天, last week, Oct 8) to time_range ISO dates yourself.
 - Map source hints to sources: terminal=zsh_history, browser=chrome_history/safari_history, commit=git_log, Claude=claude_code, Codex=codex_cli, notes=markdown_vault.
 
-Matching is OR across keywords; results matching more distinct keywords come first. Each result has match "strong" (2+ keywords, or the only keyword) or "weak" (a possible clue: verify before relying on it).
+Matching is OR across keywords; results matching more distinct keywords come first (exact hashes, versions and file names get a small boost). If the user says they copied or pasted something, pass sources including "clipboard" and keep keywords to the distinctive token (a name, part of a command); if the first search misses, run a second one restricted to clipboard. Identical records are folded into one result: occurrences is how many times it was recorded, first_seen / last_seen its time range (the result itself is the best-ranked one; for "which time" questions use get_timeline). Each result has match "strong" (2+ keywords, or the only keyword) or "weak" (a possible clue: verify before relying on it).
 
 Examples:
 - "上次办澳洲签证用了哪些材料?" -> keywords ["签证", "visa", "材料", "澳洲"]
 - "which docker command did I run to start the db" -> keywords ["docker", "database"], sources ["zsh_history"]
 - "what was I doing last week on the Redis queue" (today 2026-10-10) -> keywords ["Redis", "队列", "queue"], time_range {"start": "2026-09-28", "end": "2026-10-04"}
 
-Status: "ok" (results: id, snippet, occurred_at, source, bucket, evidence_id, evidence_available, match, match_reason; plus coverage), "no_results", "invalid_argument" (fixed message: fix the call), "permission_denied" (client token invalid or not allowed). On no_results retry once with alternative keywords or synonyms before telling the user nothing was found; never guess content. Cite results by source and occurred_at."""
+Status: "ok" (results: id, snippet, occurred_at, source, bucket, evidence_id, evidence_available, match, match_reason, occurrences, first_seen, last_seen; plus coverage), "no_results", "invalid_argument" (fixed message: fix the call), "permission_denied" (client token invalid or not allowed). On no_results retry once with alternative keywords or synonyms before telling the user nothing was found; never guess content. Cite results by source and occurred_at."""
 
 EVIDENCE_DESCRIPTION = """Resolve a search_context / get_timeline evidence_id (evd_...) to where the result came from, within the scope the user granted this client.
 

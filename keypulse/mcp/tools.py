@@ -207,6 +207,11 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
             "source": h["source"],
             "bucket": h["bucket"],
             "evidence_id": f"evd_{h['evidence_id']}" if h["evidence_id"] is not None else None,
+            # Identical records (same text, source family, bucket) are folded into this one hit; the
+            # counts and range cover in-scope rows only (the fold runs after the scope filter).
+            "occurrences": h.get("occurrences", 1),
+            "first_seen": h.get("first_seen", h["occurred_at"]),
+            "last_seen": h.get("last_seen", h["occurred_at"]),
             # Cheap path-existence check only; the line / commit is verified by get_evidence.
             "evidence_available": bool(availability.get(h["evidence_id"], False)),
             # Two tiers (PRD 3.7.3): "strong" = several keywords co-occur (or the only keyword hit);

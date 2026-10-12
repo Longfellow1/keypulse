@@ -48,7 +48,33 @@ MD = "markdown_vault"
 
 W, P, V, F = "Work", "Personal", "Private", "Financial"
 
+
+# R02 distractors: later sessions about the same recurring failures. Each one repeats the keywords
+# (high term frequency, medium length) but gives a different, wrong-for-the-question explanation.
+_EXPORT_TRIES = ("the cron entry", "the disk space", "the network route", "the service account", "the locale setting")
+_LOOP_TRIES = ("the load balancer", "the CDN rules", "the sticky session", "the TLS redirect", "the base path")
+_R02_NOISE: tuple[FxEvent, ...] = tuple(
+    FxEvent(
+        f"cc-rn{i + 1}", CC, f"2026-05-{8 + i:02d}T04:00:00", W,
+        f"the nightly export failed again, run {i + 1}. The nightly export failed after the retry, the nightly export "
+        f"failed after the restart. The quota dashboard says the quota is fine, the bucket is fine, the failed run left "
+        f"no quota or bucket error, trying {_EXPORT_TRIES[i]} next",
+        group=f"-tmp-proj-pipeline-n{i + 1}",
+    )
+    for i in range(5)
+) + tuple(
+    FxEvent(
+        f"cc-rl{i + 1}", CC, f"2026-05-{11 + i:02d}T05:00:00", W,
+        f"the login redirect loop again, round {i + 1}. The login redirect loop shows up with the cookie and without it. "
+        f"The cookie domain looks right, the callback url looks right, no reason found for the redirect loop, "
+        f"checking {_LOOP_TRIES[i]} next",
+        group=f"-tmp-proj-webapp-n{i + 1}",
+    )
+    for i in range(5)
+)
+
 EVENTS: tuple[FxEvent, ...] = (
+    *_R02_NOISE,
     # -- Claude Code ----------------------------------------------------------
     FxEvent("cc-01", CC, "2026-04-20T02:00:00", W, "这个功能的边界我们定了：检索只读，不做写回，写回放到 P1 再说", group="-tmp-proj-memory-core"),
     FxEvent("cc-02", CC, "2026-04-20T02:05:00", W, "确认检索边界：search_context 只读，commit_memory 延后到 P1", "assistant", "-tmp-proj-memory-core"),
@@ -69,6 +95,12 @@ EVENTS: tuple[FxEvent, ...] = (
     FxEvent("cc-17", CC, "2026-04-28T08:00:00", W, "更新一下：发布 deadline 改到 5 月 30 日，评审会不变", group="-tmp-proj-memory-core"),
     FxEvent("cc-18", CC, "2026-04-27T02:00:00", W, "评测集要分有答案、无答案、权限受限三类，每个场景至少八条", group="-tmp-proj-memory-core"),
     FxEvent("cc-19", CC, "2026-04-27T03:00:00", W, "Codex 会话是按日期分目录的 rollout 文件，扫描要递归 sessions/YYYY/MM/DD", group="-tmp-proj-memory-core"),
+    # -- R02 recurring problem: several sessions about the same failure, different reasons ----
+    FxEvent("cc-r1", CC, "2026-05-08T02:00:00", W, "the nightly export failed again. The nightly export failed after the retry, the nightly export failed after the restart. Checked the quota dashboard, the quota is fine; checked the bucket policy, the bucket is fine; failed with a bigger timeout too, so not the quota, not the bucket. Next: the cron entry, since the nightly export failed on the old host schedule, and the failed run left no quota or bucket error in the log", group="-tmp-proj-pipeline-a"),
+    FxEvent("cc-r2", CC, "2026-05-09T02:00:00", W, "nightly export failed again, the log shows exit code 137 so it ran out of memory, I will lower the batch size", group="-tmp-proj-pipeline-b"),
+    FxEvent("cc-r3", CC, "2026-05-07T02:00:00", W, "nightly export failed because the storage quota on the backup bucket was exceeded", group="-tmp-proj-pipeline-c"),
+    FxEvent("cc-r4", CC, "2026-05-12T02:00:00", W, "the login redirect loop is back. The login redirect loop shows up with the session cookie and without it, with the callback url and without it. Checked the cookie, the cookie domain, the callback url, the proxy headers: the redirect loop is still there, no reason found yet, the redirect loop reason may be the load balancer", group="-tmp-proj-webapp-a"),
+    FxEvent("cc-r5", CC, "2026-05-10T02:00:00", W, "login redirect loop reason: the cookie domain was set without the leading dot so the callback url never saw the session cookie", group="-tmp-proj-webapp-b"),
     # -- Codex CLI ------------------------------------------------------------
     FxEvent("cx-01", CX, "2026-04-20T09:00:00", W, "refactor the FTS trigram tokenizer config so short CJK terms fall back to LIKE", group="cx-s1"),
     FxEvent("cx-02", CX, "2026-04-21T09:00:00", W, "写一个脚本批量重命名 Obsidian 笔记的 frontmatter tags", group="cx-s2"),
@@ -77,6 +109,12 @@ EVENTS: tuple[FxEvent, ...] = (
     FxEvent("cx-05", CX, "2026-04-24T09:00:00", P, "draft a packing list for the Sydney trip in May including adapters and sunscreen", group="cx-s5"),
     FxEvent("cx-06", CX, "2026-04-25T09:00:00", W, "parse the Codex rollout files recursively under sessions by date and skip developer prompts", group="cx-s6"),
     FxEvent("cx-07", CX, "2026-04-25T09:05:00", W, "rollout parser keeps only user and assistant messages and drops tool call noise", "assistant", "cx-s6"),
+    # -- R01 same day, several pushes (codex rows) ----
+    FxEvent("cx-r1", CX, "2026-05-06T09:10:00", W, "push the build to dev and watch the deploy dashboard, then verify the dev smoke test and compare the commit with the release branch", group="cx-r1"),
+    FxEvent("cx-r2", CX, "2026-05-06T11:10:00", W, "after the hotfix push to dev, check the dev logs for the commit that was deployed and the smoke test result", group="cx-r2"),
+    FxEvent("cx-r3", CX, "2026-05-06T14:10:00", W, "push to dev done, the commit is deployed and the dev smoke test is green, update the release checklist", group="cx-r3"),
+    FxEvent("cx-r4", CX, "2026-05-13T09:10:00", W, "推送 staging 配置并检查 staging 的部署日志，确认提交已经生效", group="cx-r4"),
+    FxEvent("cx-r5", CX, "2026-05-13T11:10:00", W, "再次推送 staging，核对提交记录和部署状态", group="cx-r5"),
     # -- Git log --------------------------------------------------------------
     FxEvent("gl-01", GL, "2026-04-20T10:00:00", W, "feat(mcp): add search_context tool with token auth\n\nread-only retrieval, every hit carries an evidence id", group="memory-core"),
     FxEvent("gl-02", GL, "2026-04-21T10:00:00", W, "fix(sources): advance the cursor only after persist succeeds", group="memory-core"),
@@ -84,6 +122,11 @@ EVENTS: tuple[FxEvent, ...] = (
     FxEvent("gl-04", GL, "2026-04-23T10:00:00", W, "docs: record why the Redis queue was rejected (local-first)", group="memory-core"),
     FxEvent("gl-05", GL, "2026-04-24T10:00:00", W, "chore: bump pyobjc to 11.0 for the macOS extras", group="memory-core"),
     FxEvent("gl-06", GL, "2026-04-25T10:00:00", W, "feat(sources): ingest Codex rollout sessions with a byte-offset resume position", group="memory-core"),
+    FxEvent("gl-r1", GL, "2026-05-06T09:00:00", W, "chore(release): push build to dev, bump the commit counter in the changelog", group="memory-core"),
+    FxEvent("gl-r2", GL, "2026-05-06T11:00:00", W, "fix(release): push hotfix to dev after the smoke test, commit the retry patch", group="memory-core"),
+    FxEvent("gl-r3", GL, "2026-05-06T14:00:00", W, "feat(release): push retry budget to dev behind a flag, one commit per flag", group="memory-core"),
+    FxEvent("gl-r4", GL, "2026-05-13T10:00:00", W, "chore: 推送 staging 配置，提交说明补充", group="memory-core"),
+    FxEvent("gl-r5", GL, "2026-05-13T12:00:00", W, "fix: 推送 staging 修复，提交前先跑冒烟测试", group="memory-core"),
     # -- zsh ------------------------------------------------------------------
     FxEvent("zs-01", ZS, "2026-04-21T11:00:00", W, "sqlite3 demo.db 'PRAGMA wal_checkpoint(TRUNCATE)'"),
     FxEvent("zs-02", ZS, "2026-04-22T11:00:00", W, "launchctl kickstart -k gui/501/com.example.daemon"),
@@ -97,6 +140,15 @@ EVENTS: tuple[FxEvent, ...] = (
     FxEvent("ch-04", CH, "2026-04-20T08:00:00", W, "SQLite FTS5 trigram tokenizer documentation", group="Default", url="https://sqlite.example.org/fts5-trigram"),
     FxEvent("ch-05", CH, "2026-04-23T05:00:00", F, "Credit card annual fee comparison 2026 | CardGuide", group="Default", url="https://cards.example.com/annual-fee-2026"),
     FxEvent("ch-06", CH, "2026-04-21T08:00:00", W, "Model Context Protocol specification - server tools", group="Default", url="https://mcp.example.org/spec/tools"),
+    # R03 repeated page titles: the same page visited many times, plus one distinct page
+    FxEvent("ch-r1", CH, "2026-05-12T01:00:00", W, "Grafana - Ops dashboard", group="Default", url="https://grafana.example.org/d/ops-1"),
+    FxEvent("ch-r2", CH, "2026-05-12T02:00:00", W, "Grafana - Ops dashboard", group="Default", url="https://grafana.example.org/d/ops-2"),
+    FxEvent("ch-r3", CH, "2026-05-12T03:00:00", W, "Grafana - Ops dashboard", group="Default", url="https://grafana.example.org/d/ops-3"),
+    FxEvent("ch-r4", CH, "2026-05-12T04:00:00", W, "Grafana - Ops dashboard", group="Default", url="https://grafana.example.org/d/ops-4"),
+    FxEvent("ch-r5", CH, "2026-05-12T05:00:00", W, "Grafana - Ops dashboard", group="Default", url="https://grafana.example.org/d/ops-5"),
+    FxEvent("ch-r6", CH, "2026-05-12T06:00:00", W, "Grafana - Ops dashboard", group="Default", url="https://grafana.example.org/d/ops-6"),
+    FxEvent("ch-r7", CH, "2026-05-12T07:00:00", W, "Grafana - Ops dashboard", group="Default", url="https://grafana.example.org/d/ops-7"),
+    FxEvent("ch-r8", CH, "2026-05-12T09:00:00", W, "Grafana dashboard JSON export guide - Ops Wiki", group="Default", url="https://wiki.example.org/grafana-json-export"),
     # -- Safari ---------------------------------------------------------------
     FxEvent("sf-01", SF, "2026-04-26T07:30:00", P, "Wirecutter: the best tennis racket strings for spin", url="https://reviews.example.com/tennis-strings"),
     FxEvent("sf-02", SF, "2026-04-23T07:00:00", F, "Mortgage repayment calculator - Example Bank", url="https://bank.example.com/mortgage-calculator"),
@@ -133,6 +185,23 @@ CAPTURE_EVENTS: tuple[FxEvent, ...] = (
     FxEvent("cp-12", AX, "2026-04-30T06:00:00", P, "Flight AC088 departs Vancouver 14:35 gate B22", app="Safari"),
     FxEvent("cp-13", BU, "2026-04-29T09:00:00", P, "Best pour-over coffee grinders compared | BeanReview", app="Safari", url="https://reviews.example.com/coffee-grinders"),
     FxEvent("cp-14", BU, "2026-04-30T07:00:00", P, "Postgres partial indexes explained - DB Notes", app="Chrome", url="https://db.example.org/partial-indexes"),
+    # R01 clipboard rows (the copied commit hash) + R03 repeated clipboard / window rows
+    FxEvent("cp-r1", CB, "2026-05-06T11:05:00", W, "7e41c9d..a93bb10  dev -> dev", app="Slack"),
+    FxEvent("cp-r2", CB, "2026-05-13T10:05:00", W, "3b9d0e1..c4417aa  staging -> staging", app="Slack"),
+    FxEvent("cp-r3", CB, "2026-05-14T01:30:00", W, "kubectl get pods -n staging", app="Slack"),
+    FxEvent("cp-r4", CB, "2026-05-14T02:30:00", W, "kubectl get pods -n staging", app="Slack"),
+    FxEvent("cp-r5", CB, "2026-05-14T03:30:00", W, "kubectl get pods -n staging", app="Slack"),
+    FxEvent("cp-r6", CB, "2026-05-14T04:30:00", W, "kubectl get pods -n staging", app="Slack"),
+    FxEvent("cp-r7", CB, "2026-05-14T05:30:00", W, "kubectl get pods -n staging", app="Slack"),
+    FxEvent("cp-r8", CB, "2026-05-14T06:30:00", W, "kubectl get pods -n staging", app="Slack"),
+    FxEvent("cp-r9", CB, "2026-05-14T08:30:00", W, "kubectl rollout status deploy/api -n staging", app="Slack"),
+    FxEvent("cp-r10", WN, "2026-05-15T01:00:00", W, "", app="Cursor", title="runbook-ops.md - keypulse", ts_end="2026-05-15T01:20:00"),
+    FxEvent("cp-r11", WN, "2026-05-15T02:00:00", W, "", app="Cursor", title="runbook-ops.md - keypulse", ts_end="2026-05-15T02:20:00"),
+    FxEvent("cp-r12", WN, "2026-05-15T03:00:00", W, "", app="Cursor", title="runbook-ops.md - keypulse", ts_end="2026-05-15T03:20:00"),
+    FxEvent("cp-r13", WN, "2026-05-15T04:00:00", W, "", app="Cursor", title="runbook-ops.md - keypulse", ts_end="2026-05-15T04:20:00"),
+    FxEvent("cp-r14", WN, "2026-05-15T05:00:00", W, "", app="Cursor", title="runbook-ops.md - keypulse", ts_end="2026-05-15T05:20:00"),
+    FxEvent("cp-r15", WN, "2026-05-15T06:00:00", W, "", app="Cursor", title="runbook-ops.md - keypulse", ts_end="2026-05-15T06:20:00"),
+    FxEvent("cp-r16", WN, "2026-05-15T08:00:00", W, "", app="Cursor", title="ops-alerts.yaml - keypulse", ts_end="2026-05-15T08:20:00"),
 )
 
 BY_ID = {e.id: e for e in (*EVENTS, *CAPTURE_EVENTS)}
