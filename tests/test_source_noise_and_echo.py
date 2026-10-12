@@ -370,3 +370,24 @@ def test_codex_namespace_shape_matches_exact_server_only() -> None:
     assert is_keypulse_call({"type": "function_call", "namespace": "mcp__keypulse", "name": "search_context"}, names)
     assert not is_keypulse_call({"type": "function_call", "namespace": "mcp__keypulse_x", "name": "a"}, names)
     assert not is_keypulse_call({"type": "function_call", "namespace": "mcp__cua_repl", "name": "js"}, names)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "<task-notification>\n<task-id>x</task-id>\n</task-notification>",
+        "Stop hook feedback: please continue",
+        "<bash-stdout>ok</bash-stdout><bash-stderr></bash-stderr>",
+    ],
+)
+def test_claude_injected_turns_seen_in_real_transcripts_are_noise(text) -> None:
+    from keypulse.sources.cleaning.noise import is_noise_part
+
+    assert is_noise_part(text)
+
+
+def test_user_content_wrappers_are_kept() -> None:
+    from keypulse.sources.cleaning.noise import is_noise_part
+
+    assert not is_noise_part("<pasted_content>my notes</pasted_content>")
+    assert not is_noise_part("<bash-input>git status</bash-input>")

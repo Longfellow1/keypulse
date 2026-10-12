@@ -39,7 +39,18 @@ NOISE_PREFIXES: tuple[str, ...] = (
     "<local-command-",  # -stdout / -stderr / -caveat
     "Caveat:",
     "[Request interrupted",
+    # Seen in real Claude Code transcripts: background-task notices, hook feedback and `!` command
+    # output are injected as user turns. (`<bash-input>` is what the user typed, so it is kept.)
+    "<task-notification",
+    "Stop hook feedback",
+    "PreToolUse:",
+    "PostToolUse:",
+    "<bash-stdout",
+    "<bash-stderr",
 )
+
+# Wrappers that carry the user's own content; never dropped by the generic wrapper rule.
+_USER_CONTENT_WRAPPERS = ("<pasted_content", "<bash-input")
 
 _WRAPPER_RE = re.compile(r"^<([A-Za-z_][\w\-.]*)(?:\s[^>]*)?>.*</\1>$", re.DOTALL)
 _INSTRUCTION_HEADER_RE = re.compile(r"^#\s*(AGENTS\.md|CLAUDE\.md)\b|^#\s*Instructions\s+from\b", re.IGNORECASE)
@@ -57,6 +68,8 @@ def is_noise_part(text: str) -> bool:
         return True
     if "<INSTRUCTIONS>" in head[:400] and head.startswith("#"):
         return True
+    if head.startswith(_USER_CONTENT_WRAPPERS):
+        return False
     return bool(_WRAPPER_RE.match(head.rstrip()))
 
 
