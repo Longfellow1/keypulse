@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-12T09:27:27.165Z._
+_Auto-generated. Last updated 2026-10-12T17:10:25.986Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -11,6 +11,7 @@ _Auto-generated. Last updated 2026-10-12T09:27:27.165Z._
 - [core-no-embedded-llm](pages/core-no-embedded-llm.md) — category: decision | tags: [core, llm, privacy] | ## Decision
 - [daily-single-render-entry](pages/daily-single-render-entry.md) — category: decision | status: archived | ## Decision
 - [db-direct-read-over-screen-capture](pages/db-direct-read-over-screen-capture.md) — category: decision | ## Decision
+- [email-domain-kept-mask](pages/email-domain-kept-mask.md) — category: decision | tags: [privacy, redaction, mcp] | D31 (2026-10-12, product owner): emails are masked in the local part only, keeping the domain (`***@gmail.com`).
 - [eval-prd-separate](pages/eval-prd-separate.md) — category: decision | tags: [eval, prd] | ## Decision
 - [gold-set-gated-prompt-changes](pages/gold-set-gated-prompt-changes.md) — category: decision | status: archived | ## Decision
 - [host-does-query-preprocessing](pages/host-does-query-preprocessing.md) — category: decision | tags: [v1, mcp, search, decision] | <current best understanding — replace this with the real content>

@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [privacy, redaction, mcp]
 created: "2026-10-12T19:42:56"
-updated: "2026-10-12T19:42:56"
+updated: "2026-10-13T01:10:25"
 ---
 
 <!-- compiled_truth -->
