@@ -446,3 +446,44 @@ def scoped_evidence(
     out = dict(row)
     out["excerpt_text"] = display_text(out)
     return out
+
+
+def source_coverage(
+    *,
+    buckets: list[str],
+    sources: Optional[list[str]],
+    since: Optional[str],
+    until: Optional[str],
+    event_type: "str | Iterable[str]" = "semantic_event",
+    include_keypulse_echoes: bool = False,
+) -> list[dict]:
+    """Per-source data span inside the scope: one grouped query, same WHERE scope rules as search
+    (buckets / sources / event types / echo filter). The time range does NOT narrow the span; it only
+    sets `has_events_in_range`. Only sources with at least one in-scope row appear, and nothing
+    outside the scope can influence the result (no names, no counts). `since` / `until` are already
+    normalised UTC ISO bounds (or None)."""
+    types = _types(event_type)
+    if not buckets or not types or (sources is not None and not sources):
+        return []
+    where = ["e.event_type IN (%s)" % ",".join("?" * len(types)), "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
+    where_params: list = [*types, *buckets]
+    if sources is not None:
+        where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
+        where_params.extend(sources)
+    if not include_keypulse_echoes:
+        where.append(_NOT_ECHO_SQL)
+    rows = get_conn().execute(
+        f"""
+        SELECT e.source AS source, MIN(e.ts_start) AS earliest, MAX(e.ts_start) AS latest,
+               MAX((? IS NULL OR e.ts_start >= ?) AND (? IS NULL OR e.ts_start <= ?)) AS in_range
+        FROM raw_events e
+        WHERE {' AND '.join(where)}
+        GROUP BY e.source
+        ORDER BY e.source
+        """,
+        [since, since, until, until, *where_params],
+    ).fetchall()
+    return [
+        {"source": r["source"], "earliest": r["earliest"], "latest": r["latest"], "has_events_in_range": bool(r["in_range"])}
+        for r in rows
+    ]

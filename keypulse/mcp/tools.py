@@ -8,7 +8,8 @@ from keypulse.mcp import audit
 from keypulse.mcp.auth import Grant, check_access
 from keypulse.privacy import desensitizer
 from keypulse.search.engine import (
-    TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, timeline_events,
+    TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, source_coverage,
+    timeline_events,
 )
 from keypulse.store.db import get_conn
 from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, is_keypulse_locator
@@ -114,14 +115,36 @@ def _parse_time_range(time_range: Any) -> tuple[Optional[str], Optional[str]]:
 
 def _coverage(grant: Grant, start: Optional[str], end: Optional[str]) -> dict[str, Any]:
     """What this call searched: the caller's own grant scope only. Must never carry names, counts
-    or existence of anything outside it (B1 / G1); no query or requested-source echo either."""
-    return {
+    or existence of anything outside it (B1 / G1); no query or requested-source echo either.
+
+    `by_source` lists every source inside the grant: earliest / latest event time and whether it has
+    any event in the requested time range (overall when no range was given). A source the grant
+    explicitly names but that has no events is listed with null times and has_events_in_range=false,
+    so a host can tell "nothing recorded" from "not searched". Deliberately NO count of sources or
+    events excluded by the grant: it would reveal that out-of-grant data exists (breaks G1)."""
+    coverage: dict[str, Any] = {
         "partial": False,
         "note": "Searched indexed history (source plugins and KeyPulse capture) within this client's granted scope.",
         "time_range": {"start": start, "end": end},
         "buckets": list(grant.buckets),
         "sources": list(grant.sources) if grant.sources is not None else None,
     }
+    try:
+        spans = source_coverage(
+            buckets=list(grant.buckets), sources=list(grant.sources) if grant.sources is not None else None,
+            since=start, until=end, event_type=SEARCHABLE_EVENT_TYPES,
+            include_keypulse_echoes=True,  # recorded-data span: the echo filter would defeat the covering index
+        )
+    except sqlite3.Error:
+        coverage["by_source"] = None  # unknown; never an error text
+        return coverage
+    if grant.sources is not None:
+        seen = {s["source"] for s in spans}
+        spans += [{"source": n, "earliest": None, "latest": None, "has_events_in_range": False}
+                  for n in grant.sources if n not in seen]
+        spans.sort(key=lambda s: s["source"])
+    coverage["by_source"] = spans
+    return coverage
 
 
 def search_context(
