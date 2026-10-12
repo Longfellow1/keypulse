@@ -53,6 +53,9 @@ G1_COVERED_RESPONSE_FIELDS = {
     "results[].occurrences", "results[].first_seen", "results[].last_seen",
     "coverage", "coverage.partial", "coverage.note", "coverage.time_range",
     "coverage.time_range.start", "coverage.time_range.end", "coverage.buckets", "coverage.sources",
+    # M2-2: per-source span inside the grant (names / times of in-scope sources only; NO excluded counts)
+    "coverage.by_source", "coverage.by_source[].source", "coverage.by_source[].earliest",
+    "coverage.by_source[].latest", "coverage.by_source[].has_events_in_range",
     # get_timeline (results[].* above are shared)
     "has_more", "next_cursor",
     # get_evidence
