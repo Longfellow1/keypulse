@@ -43,7 +43,7 @@ def _isolated_home(tmp_path, monkeypatch):
 # ── coverage list: UPDATE THIS (and the batteries) when the MCP surface changes ──────────────
 G1_COVERED_TOOLS = {
     "search_context": {"keywords", "time_range", "sources", "limit", "include_keypulse_echoes"},
-    "get_evidence": {"evidence_id"},
+    "get_evidence": {"evidence_id", "focus"},
     "get_timeline": {"start", "end", "sources", "limit", "cursor", "include_keypulse_echoes"},
     # M2-3: its G1 tests (unseen / other-bucket ids, differential) live in tests/test_feedback.py
     "rate_result": {"result_id", "verdict", "note", "query"},
@@ -63,7 +63,7 @@ G1_COVERED_RESPONSE_FIELDS = {
     "has_more", "next_cursor",
     # get_evidence
     "evidence", "evidence.id", "evidence.event_id", "evidence.source", "evidence.bucket", "evidence.occurred_at",
-    "evidence.excerpt", "evidence.available", "evidence.locator", "evidence.locator.type", "evidence.locator.path",
+    "evidence.excerpt", "evidence.context", "evidence.available", "evidence.locator", "evidence.locator.type", "evidence.locator.path",
     "evidence.locator.line", "evidence.locator.repo", "evidence.locator.commit",
     # capture events (D26): locator {"type": "keypulse", "event_id": ...}
     "evidence.locator.event_id",

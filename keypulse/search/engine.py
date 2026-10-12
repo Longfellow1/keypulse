@@ -73,21 +73,69 @@ def parse_time_bound(raw: str | datetime | None, *, end_of_day: bool = False) ->
     return _utc_iso(parsed)
 
 
+SNIPPET_MAX_CHARS = 360
+SNIPPET_MAX_WINDOWS = 3
+WINDOW_SEP = " … "
+
+
+def context_windows(text: str, positions: list[int], *, before: int, size: int, max_windows: int,
+                    max_chars: int) -> str:
+    """Windows of `size` chars, each starting `before` chars before one position (text is already
+    whitespace-normalised). Positions are taken in text order; overlapping or touching windows merge.
+    Output is joined with WINDOW_SEP, ellipses mark cut edges, and the result never exceeds
+    `max_chars`: the window that would overflow is trimmed and nothing after it is added."""
+    if not text or not positions:
+        return ""
+    spans: list[list[int]] = []
+    for pos in sorted(set(positions)):
+        start = max(0, pos - before)
+        end = min(len(text), pos + size - before)
+        if spans and start <= spans[-1][1]:
+            spans[-1][1] = max(spans[-1][1], end)
+        else:
+            spans.append([start, end])
+    pieces: list[str] = []
+    used = 0
+    for start, end in spans:
+        if len(pieces) >= max_windows:
+            break
+        piece = ("…" if start > 0 else "") + text[start:end] + ("…" if end < len(text) else "")
+        sep = len(WINDOW_SEP) if pieces else 0
+        room = max_chars - used - sep
+        if room <= 0:
+            break
+        if len(piece) > room:
+            pieces.append(piece[: room - 1] + "…")
+            break
+        pieces.append(piece)
+        used += sep + len(piece)
+    return WINDOW_SEP.join(pieces)
+
+
 def _snippet(text: str, terms: list[str], width: int = 80) -> str:
+    """Search snippet: one window per distinct keyword (its first occurrence, text order, at most
+    SNIPPET_MAX_WINDOWS), merged where they overlap, total <= SNIPPET_MAX_CHARS. A single match keeps
+    the original 200-char window, so 0 or 1 match behaves exactly as before."""
     text = " ".join((text or "").split())
     lowered = text.lower()
-    pos = -1
+    seen: set[str] = set()
+    found: list[int] = []
     for term in terms:
-        pos = lowered.find(term.lower())
+        key = term.lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        pos = lowered.find(key)
         if pos >= 0:
-            break
-    if pos < 0:
+            found.append(pos)
+    if not found:
         return text[: width * 2]
-    start = max(0, pos - width)
-    end = min(len(text), pos + width + 40)
-    prefix = "…" if start > 0 else ""
-    suffix = "…" if end < len(text) else ""
-    return f"{prefix}{text[start:end]}{suffix}"
+    found = sorted(found)[:SNIPPET_MAX_WINDOWS]
+    n = len(found)
+    full = 2 * width + 40
+    size = min(full, (SNIPPET_MAX_CHARS - len(WINDOW_SEP) * (n - 1)) // n - 2)
+    return context_windows(text, found, before=size * width // full, size=size,
+                           max_windows=SNIPPET_MAX_WINDOWS, max_chars=SNIPPET_MAX_CHARS)
 
 
 def _types(event_type: "str | Iterable[str] | None") -> list[str]:

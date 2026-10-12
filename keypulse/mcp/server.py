@@ -21,7 +21,7 @@ You do the language understanding; this tool only matches keywords. Before calli
 - Convert time words (上次, 昨天, last week, Oct 8) to time_range ISO dates yourself.
 - Map source hints to sources: terminal=zsh_history, browser=chrome_history/safari_history, commit=git_log, Claude=claude_code, Codex=codex_cli, notes=markdown_vault.
 
-Matching is OR across keywords; results matching more distinct keywords come first (exact hashes, versions and file names get a small boost). If the user says they copied or pasted something, pass sources including "clipboard" and keep keywords to the distinctive token (a name, part of a command); if the first search misses, run a second one restricted to clipboard. Identical records are folded into one result: occurrences is how many times it was recorded, first_seen / last_seen its time range (the result itself is the best-ranked one; for "which time" questions use get_timeline). Each result has match "strong" (2+ keywords, or the only keyword) or "weak" (a possible clue: verify before relying on it).
+Matching is OR across keywords; results matching more distinct keywords come first (exact hashes, versions and file names get a small boost). If the user says they copied or pasted something, pass sources including "clipboard" and keep keywords to the distinctive token (a name, part of a command); if the first search misses, run a second one restricted to clipboard. Identical records are folded into one result: occurrences is how many times it was recorded, first_seen / last_seen its time range (the result itself is the best-ranked one; for "which time" questions use get_timeline). Each result has match "strong" (2+ keywords, or the only keyword) or "weak" (a possible clue: verify before relying on it). If a strong result's snippet looks cut off before the answer, call get_evidence with focus = the terms you need.
 
 Examples:
 - "上次办澳洲签证用了哪些材料?" -> keywords ["签证", "visa", "材料", "澳洲"]
@@ -32,7 +32,7 @@ Status: "ok" (results: id, snippet, occurred_at, source, bucket, evidence_id, ev
 
 EVIDENCE_DESCRIPTION = """Resolve a search_context / get_timeline evidence_id (evd_...) to where the result came from, within the scope the user granted this client.
 
-Use it to cite or verify a result. Returns the source, occurred_at, a short stored excerpt and the original location (file path + line, or repo + commit). It never returns more of the original than that excerpt.
+Use it to cite or verify a result. Returns the source, occurred_at, a short stored excerpt and the original location (file path + line, or repo + commit). With focus, it returns up to 1500 chars of the stored record around those terms, for when a search snippet is cut off before the answer.
 
 Status: "ok" (evidence with locator, available=true), "source_unavailable" (the original file or commit no longer exists: tell the user the original source is no longer accessible, cite the stored excerpt, and do not present any link or path as openable), "not_found" (unknown id, or not available to this client: same answer for both), "invalid_argument", "permission_denied"."""
 
@@ -106,8 +106,11 @@ def build_server(
     def get_evidence(
         evidence_id: Annotated[Any, Field(json_schema_extra={
             "type": "string", "description": "An evidence_id (evd_...) from search_context or get_timeline."})],
+        focus: Annotated[Any, Field(json_schema_extra={
+            "anyOf": [{"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 6}, {"type": "null"}],
+            "description": "Optional 1-6 terms the answer needs (Chinese and English variants). Adds context: windows of the stored record around each occurrence."})] = None,
     ) -> CallToolResult:
-        payload = tools.get_evidence(token_provider(), evidence_id, client=client_provider())
+        payload = tools.get_evidence(token_provider(), evidence_id, focus, client=client_provider())
         return _result(payload)
 
     @server.tool(description=TIMELINE_DESCRIPTION)

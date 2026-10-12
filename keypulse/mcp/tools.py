@@ -8,8 +8,8 @@ from keypulse.mcp import audit
 from keypulse.mcp.auth import Grant, check_access
 from keypulse.privacy import desensitizer
 from keypulse.search.engine import (
-    TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, source_coverage,
-    timeline_events,
+    TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, context_windows, parse_time_bound, scoped_evidence, search_events,
+    source_coverage, timeline_events,
 )
 from keypulse.store import feedback
 from keypulse.store.db import get_conn
@@ -50,6 +50,13 @@ SENTENCE_KEYWORD_MESSAGE = (
     "Split the question into 1-6 distinctive keywords and call again."
 )
 KEYWORDS_MESSAGE = "keywords must be a non-empty list of 1-10 strings"
+# get_evidence focus (experiment): windows of the stored row text around each focus term occurrence.
+FOCUS_MAX_TERMS = 6
+FOCUS_MAX_WINDOWS = 6
+FOCUS_WINDOW_CHARS = 300
+FOCUS_BEFORE_CHARS = 100
+FOCUS_MAX_CHARS = 1500
+FOCUS_MESSAGE = "focus must be a list of 1-6 non-empty strings"
 
 
 def _looks_like_sentence(keyword: str) -> bool:
@@ -62,7 +69,7 @@ def _looks_like_sentence(keyword: str) -> bool:
     )
 
 
-_TEXT_FIELDS = frozenset({"snippet", "excerpt", "title", "app", "app_name", "window_title", "url", "text"})
+_TEXT_FIELDS = frozenset({"snippet", "excerpt", "context", "title", "app", "app_name", "window_title", "url", "text"})
 
 
 # privacy.redact_emails, applied at query time too (default on = fail safe). `keypulse mcp serve` sets it
@@ -302,11 +309,12 @@ def _scope_sources(grant: Grant, sources: Optional[list[str]]) -> Optional[list[
     return list(grant.sources) if sources is None else [x for x in sources if x in grant.sources]
 
 
-def get_evidence(token: Optional[str], evidence_id: Any, *, client: Optional[str] = None) -> dict[str, Any]:
+def get_evidence(token: Optional[str], evidence_id: Any, focus: Any = None, *,
+                 client: Optional[str] = None) -> dict[str, Any]:
     decision, denied = _gate(token, client, TOOL_GET_EVIDENCE)
     if denied is not None:
         return denied
-    payload = _redact_payload(_get_evidence(decision.grant, evidence_id))
+    payload = _redact_payload(_get_evidence(decision.grant, evidence_id, focus))
     if payload.get("status") in ("ok", "source_unavailable", "not_resolvable") and "evidence" in payload:
         ev = payload["evidence"]
         _record_returned(decision.grant, {"results": [{"id": ev.get("event_id"), "evidence_id": ev.get("id")}]}, None)
@@ -316,9 +324,35 @@ def get_evidence(token: Optional[str], evidence_id: Any, *, client: Optional[str
     return payload
 
 
-def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
+def _valid_focus(focus: Any) -> bool:
+    return (
+        isinstance(focus, list)
+        and 1 <= len(focus) <= FOCUS_MAX_TERMS
+        and all(isinstance(t, str) and 0 < len(" ".join(t.split())) <= MAX_KEYWORD_CHARS for t in focus)
+    )
+
+
+def focus_context(text: str, focus: list[str]) -> str:
+    """Windows of the stored (whitespace-normalised) text around every occurrence of any focus term,
+    case-insensitive, in text order. Empty string when no term occurs."""
+    text = " ".join(text.split())  # same normalisation as the excerpt, so offsets match the Host's view
+    lowered = text.lower()
+    positions: list[int] = []
+    for term in focus:
+        key = " ".join(term.split()).lower()
+        pos = lowered.find(key)
+        while pos >= 0:
+            positions.append(pos)
+            pos = lowered.find(key, pos + 1)
+    return context_windows(text, positions, before=FOCUS_BEFORE_CHARS, size=FOCUS_WINDOW_CHARS,
+                           max_windows=FOCUS_MAX_WINDOWS, max_chars=FOCUS_MAX_CHARS)
+
+
+def _get_evidence(grant: Grant, evidence_id: Any, focus: Any = None) -> dict[str, Any]:
     if not isinstance(evidence_id, str):
         return {"status": "invalid_argument", "message": "evidence_id must be a string such as evd_123"}
+    if focus is not None and not _valid_focus(focus):
+        return {"status": "invalid_argument", "message": FOCUS_MESSAGE}
     # Malformed, nonexistent and out-of-scope ids all get the identical not_found body.
     numeric = _parse_evidence_id(evidence_id)
     if numeric is None:
@@ -333,17 +367,21 @@ def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
     available = refresh_availability(
         [(row["evidence_id"], row["locator"], row["line"], row["stored_available"])], deep=True
     )[row["evidence_id"]]
+    # Stored, already-redacted text only. The original file is never read back out.
+    stored_text = " ".join((row["excerpt_text"] or "").split())
     evidence: dict[str, Any] = {
         "id": f"evd_{row['evidence_id']}",
         "event_id": f"evt_{row['event_id']}",
         "source": row["source"],
         "bucket": row["bucket"],
         "occurred_at": row["occurred_at"],
-        # Stored, already-redacted text only. The original file is never read back out.
-        "excerpt": " ".join((row["excerpt_text"] or "").split())[:EXCERPT_CHARS],
+        "excerpt": stored_text[:EXCERPT_CHARS],
         "available": available,
         "locator": None,
     }
+    if focus is not None:
+        # "" when no focus term occurs in the stored text (the key is still present, so the Host knows focus ran).
+        evidence["context"] = focus_context(stored_text, focus)
     if is_unresolvable_locator(row["locator"]):
         reason = NOT_RESOLVABLE_MESSAGES.get(unresolvable_source(row["locator"]), NOT_RESOLVABLE_DEFAULT)
         return {"status": "not_resolvable", "message": reason, "evidence": evidence}
