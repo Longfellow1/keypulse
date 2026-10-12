@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [eval, m1, acceptance]
 created: "2026-10-12T14:41:55"
-updated: "2026-10-12T14:41:55"
+updated: "2026-10-12T17:27:27"
 ---
 
 <!-- compiled_truth -->
@@ -35,4 +35,9 @@ Known boundary accepted for M1: content in AI-tool apps/sites is bucketed Work b
   kind: decision
   summary: "M1 acceptance = real-data control eval; criterion 2 redefined from measured results"
   source: user 2026-10-12
+  affects: [m1-real-data-acceptance]
+
+- time: 2026-10-12T17:27:27
+  kind: evidence
+  summary: "2026-10-12 auto-judged rerun (M2-0 harness, Sonnet judge, strict rubric): on the 19 A–C questions KP is 14/19 correct, not the 16/19 (84%) from human pre-labels; review found the pre-labels lenient on 2–3 items (judge more accurate on Q06/Q15-type). M2 baseline = auto-judged 14/19 (74%); bash 11/21. Single runs vary by ±2 questions from model nondeterminism, so M2 acceptance should use 3 repeated runs. Imported sources (codex/claude transcripts) are not email-redacted at query time (only secrets), unlike capture streams."
   affects: [m1-real-data-acceptance]
