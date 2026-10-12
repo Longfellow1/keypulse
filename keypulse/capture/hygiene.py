@@ -28,7 +28,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from keypulse.capture.active_app import SYSTEM_OVERLAY_APPS
-from keypulse.utils.text_filters import looks_like_ime_composition
+from keypulse.utils.text_filters import looks_like_ime_composition, strip_invisible
 
 DROP = "drop"
 METADATA_ONLY = "metadata_only"
@@ -80,7 +80,33 @@ TERMINAL_BUNDLE_IDS = frozenset({
 })
 
 _OVERLAY_FOLDED = frozenset(name.casefold() for name in SYSTEM_OVERLAY_APPS)
+_OVERLAY_BUNDLE_PREFIXES = ("com.apple.setupassistant",)
+
+# Input placeholders and UI prompts rendered by chat / search boxes: AX reads them as the "text" of
+# the field, they are never something the user wrote. Matched against the whole stripped text,
+# case-insensitively, ignoring a trailing ellipsis / full stop. Extend by adding to this tuple.
+APP_CHROME_PLACEHOLDERS: tuple[str, ...] = (
+    "问问 ChatGPT", "发消息或按住空格说话", "Message ChatGPT", "Ask anything", "有问题，尽管问",
+    "输入消息", "Send a message", "Ask Claude", "Message Claude", "Reply to Claude",
+    "给 ChatGPT 发送消息", "问点什么", "Ask a follow-up", "Type a message",
+    "Search or ask a question", "Message Gemini", "Ask Gemini",
+)
+_PLACEHOLDER_TRIM = " \t\r\n…。.!！"
+_PLACEHOLDERS_FOLDED = frozenset(p.casefold().strip(_PLACEHOLDER_TRIM) for p in APP_CHROME_PLACEHOLDERS)
 _CONTENT_STREAMS = frozenset({"keyboard_chunk", "ax_text", "clipboard", "browser_url"})
+
+
+def is_system_overlay(app_name: str | None, process_name: str | None = None) -> bool:
+    """loginwindow / Setup Assistant / Dock & co: the foreground "app" is a system overlay."""
+    for value in (app_name, process_name):
+        folded = str(value or "").strip().casefold()
+        if folded and (folded in _OVERLAY_FOLDED or folded.startswith(_OVERLAY_BUNDLE_PREFIXES)):
+            return True
+    return False
+
+
+def is_placeholder_text(content: str | None) -> bool:
+    return str(content or "").strip().casefold().strip(_PLACEHOLDER_TRIM) in _PLACEHOLDERS_FOLDED
 
 
 def is_terminal_app(app_name: str | None, process_name: str | None = None) -> bool:
@@ -164,6 +190,8 @@ def is_app_chrome(content: str, window_title: str | None, app_name: str | None) 
     content = (content or "").strip()
     if not content:
         return False
+    if is_placeholder_text(content):
+        return True
     title = (window_title or "").strip()
     app = (app_name or "").strip()
     if title and (content == title or (len(content) >= 4 and (content in title or title.endswith(content)))):
@@ -240,6 +268,9 @@ def capture_gate(
     title_deny_patterns=None,
 ) -> GateVerdict | None:
     """Decide the fate of one capture event. Never logs or returns content."""
+    # Zero-width characters must not hide a keyword from the rules below.
+    window_title = strip_invisible(window_title)
+    content_text = strip_invisible(content_text)
     if is_internal_browser_page(source, window_title, url, app_name):
         return GateVerdict(DROP, "browser_internal_page")
     if source in _CONTENT_STREAMS or source == "window":
@@ -249,7 +280,7 @@ def capture_gate(
         if _title_denied(window_title, patterns):
             return GateVerdict(METADATA_ONLY, "title_deny")
     if source == "window":
-        if str(app_name or "").strip().casefold() in _OVERLAY_FOLDED:
+        if is_system_overlay(app_name, process_name):
             return GateVerdict(DROP, "system_overlay")
         if is_login_context(window_title, app_name):
             return GateVerdict(METADATA_ONLY, "login_context")

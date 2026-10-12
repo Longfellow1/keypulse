@@ -8,10 +8,11 @@ from keypulse.store.migration_v21 import migrate_v21
 from keypulse.store.migration_v22 import migrate_v22
 from keypulse.store.migration_v23 import migrate_v23
 from keypulse.store.migration_v24 import migrate_v24
+from keypulse.store.migration_v26 import migrate_v26
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 MIGRATIONS = [
     # v1
@@ -221,6 +222,10 @@ MIGRATIONS = [
                '$.pre_fix_keyboard', 1)
      WHERE event_type = 'keyboard_chunk';
     """,
+    # v26 — P0-12c real-data fixes (issue #53, D27 / D28): zero-width strip, system-overlay apps,
+    # AI-transcript noise, input placeholders, zsh re-decode reset, browser content by website
+    # (see migration_v26).
+    migrate_v26,
 ]
 
 

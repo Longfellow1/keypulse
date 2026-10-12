@@ -147,7 +147,7 @@ def test_v21_adds_grant_scope_backfills_buckets_and_is_idempotent(tmp_path: Path
     conn.commit()
 
     run_migrations(conn)
-    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 25
+    assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 26
     g = conn.execute("SELECT buckets, sources, operations, purpose, expires_at FROM access_grants").fetchone()
     assert (g["buckets"], g["sources"], g["operations"]) == ('["Work"]', None, '["read"]')  # legacy grant -> least privilege
     got = {r["source"]: r["bucket"] for r in conn.execute("SELECT source, bucket FROM raw_events")}

@@ -6,6 +6,7 @@ from typing import Optional
 from keypulse.privacy.desensitizer import redact_secrets
 from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, keypulse_locator
 from keypulse.store.db import get_conn
+from keypulse.utils.text_filters import strip_invisible
 from keypulse.store.models import RawEvent, Session, SearchDoc, Policy, AppState
 
 
@@ -29,13 +30,15 @@ def insert_raw_event(e: RawEvent) -> int:
     conn = get_conn()
     # Credentials must not reach the DB / FTS index / MCP hosts (D26). Idempotent; capture keeps its
     # own PII filters upstream, this is the secret-class backstop for every writer.
-    e.content_text = redact_secrets(e.content_text)
-    e.window_title = redact_secrets(e.window_title)
+    e.content_text = redact_secrets(strip_invisible(e.content_text))
+    e.window_title = redact_secrets(strip_invisible(e.window_title))
     if e.bucket is None:
         # P0 bucket assignment (D23): source default + app rules from the policies table.
         from keypulse.store.buckets import resolve_for_event
 
-        e.bucket = resolve_for_event(conn, e.source, e.app_name, e.process_name)
+        e.bucket = resolve_for_event(
+            conn, e.source, e.app_name, e.process_name, metadata_json=e.metadata_json, ts_start=e.ts_start
+        )
     cur = conn.execute(
         """INSERT INTO raw_events
            (source, event_type, ts_start, ts_end, app_name, window_title,

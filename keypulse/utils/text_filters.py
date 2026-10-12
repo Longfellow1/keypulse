@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+import re
+
+# Invisible formatting characters that only add noise to stored text and search (D27): zero-width
+# space/joiners and direction marks (U+200B-200F), bidi embeddings/overrides (U+202A-202E), word
+# joiner and invisible operators (U+2060-2064), BOM (U+FEFF), soft hyphen (U+00AD).
+INVISIBLE_CHARS_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff\u00ad]")
+
+
+def strip_invisible(text: str | None) -> str | None:
+    """Remove zero-width / bidi / BOM / soft-hyphen characters. None passes through."""
+    if not text:
+        return text
+    return INVISIBLE_CHARS_RE.sub("", text)
+
 
 _L5_MIN_LEN = 12
 _L5_BOUNDARY_CHARS = {" ", "\t", "\n", "\r", "-", "_", ".", ",", ":", ";", "/", "\\", "(", ")", "[", "]", "{", "}"}

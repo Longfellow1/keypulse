@@ -8,6 +8,11 @@ Resolution order for an event:
   3. KeyPulse's own capture streams (CAPTURE_SOURCES, D26) are classified by app: config
      `[buckets.app_defaults]` (substring on app / process name), then the preset table in
      `store.app_categories`, then Personal (unknown apps are Personal).
+     Browser content (D28) is classified by site first: config `[buckets.site_defaults]`, then the
+     preset table in `store.site_categories`; a site with no entry falls back to the app level (so
+     Personal). browser_url rows carry their own URL; ax_text / clipboard / window / keyboard rows of a
+     browser take the URL of the nearest browser_url row of the same browser at or before them,
+     within SITE_LOOKBACK (10 minutes); with none they stay at the app level.
   4. otherwise None: an unmapped plugin source is never auto-placed in a shareable bucket (PRD:
      uncertain origin must not default to a low-sensitivity bucket), so no grant can read it.
 
@@ -18,6 +23,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from bisect import bisect_right
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 BUCKETS = ("Work", "Personal", "Private", "Financial")  # Temporary is P1 (D23)
@@ -41,8 +48,15 @@ CAPTURE_SOURCES = frozenset(
     {"keyboard_chunk", "window", "clipboard", "ax_text", "browser_url", "idle", "manual", "ocr_text", "browser"}
 )
 
+# Streams whose bucket follows the website (D28). browser_url / browser carry their own URL; the
+# others inherit the nearest browser_url of the same browser when the app is a browser.
+SITE_OWN_URL_SOURCES = frozenset({"browser_url", "browser"})
+SITE_INHERIT_SOURCES = frozenset({"ax_text", "clipboard", "window", "keyboard_chunk"})
+SITE_LOOKBACK = timedelta(minutes=10)
+
 _overrides: Optional[dict[str, str]] = None
 _app_overrides: Optional[dict[str, str]] = None
+_site_overrides: Optional[dict[str, str]] = None
 
 
 def normalize_bucket(name: str) -> str:
@@ -54,9 +68,10 @@ def normalize_bucket(name: str) -> str:
 
 
 def reset_cache() -> None:
-    global _overrides, _app_overrides
+    global _overrides, _app_overrides, _site_overrides
     _overrides = None
     _app_overrides = None
+    _site_overrides = None
 
 
 def _config_app_overrides() -> dict[str, str]:
@@ -75,6 +90,120 @@ def _config_app_overrides() -> dict[str, str]:
             found = {}
         _app_overrides = found
     return _app_overrides
+
+
+def _config_site_overrides() -> dict[str, str]:
+    global _site_overrides
+    if _site_overrides is None:
+        from keypulse.store.site_categories import normalize_site_key
+
+        found: dict[str, str] = {}
+        try:
+            from keypulse.config import Config
+
+            for site, bucket in Config.load().buckets.site_defaults.items():
+                try:
+                    key = normalize_site_key(site)
+                    if key:
+                        found[key] = normalize_bucket(bucket)
+                except ValueError:
+                    continue
+        except Exception:
+            found = {}
+        _site_overrides = found
+    return _site_overrides
+
+
+def url_from_metadata(metadata_json: Optional[str]) -> Optional[str]:
+    if not metadata_json or "url" not in metadata_json:
+        return None
+    try:
+        payload = json.loads(metadata_json)
+    except (TypeError, ValueError):
+        return None
+    url = payload.get("url") if isinstance(payload, dict) else None
+    return url if isinstance(url, str) and url.strip() else None
+
+
+def _parse_ts(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def wants_site_url(source: Optional[str], app_name: Optional[str], process_name: Optional[str] = None) -> bool:
+    """Whether a row's bucket depends on a website (so a URL lookup is worth doing)."""
+    from keypulse.store.site_categories import browser_family
+
+    if source in SITE_OWN_URL_SOURCES:
+        return True
+    return source in SITE_INHERIT_SOURCES and browser_family(app_name, process_name) is not None
+
+
+def nearest_browser_url(conn: sqlite3.Connection, app_name, process_name, ts_start: Optional[str]) -> Optional[str]:
+    """URL of the latest browser_url row of the same browser at or before ts_start, within SITE_LOOKBACK."""
+    from keypulse.store.site_categories import browser_family
+
+    family = browser_family(app_name, process_name)
+    ts = _parse_ts(ts_start)
+    if family is None or ts is None:
+        return None
+    lower = (ts - SITE_LOOKBACK).astimezone(timezone.utc).isoformat()
+    rows = conn.execute(
+        "SELECT ts_start, app_name, process_name, metadata_json FROM raw_events "
+        "WHERE source = 'browser_url' AND ts_start <= ? AND ts_start >= ? ORDER BY ts_start DESC LIMIT 50",
+        (ts_start, lower),
+    ).fetchall()
+    for row in rows:
+        if browser_family(row[1], row[2]) != family:
+            continue
+        row_ts = _parse_ts(row[0])
+        if row_ts is None or not (ts - SITE_LOOKBACK <= row_ts <= ts):
+            continue
+        url = url_from_metadata(row[3])
+        if url:
+            return url
+    return None
+
+
+class BrowserUrlTimeline:
+    """In-memory index of browser_url rows (per browser family) for bulk re-bucketing: one pass over
+    the table instead of one lookup per row."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        from keypulse.store.site_categories import browser_family
+
+        by_family: dict[str, list[tuple[datetime, str]]] = {}
+        for row in conn.execute(
+            "SELECT ts_start, app_name, process_name, metadata_json FROM raw_events "
+            "WHERE source = 'browser_url' ORDER BY ts_start"
+        ):
+            family = browser_family(row[1], row[2])
+            ts = _parse_ts(row[0])
+            url = url_from_metadata(row[3])
+            if family and ts and url:
+                by_family.setdefault(family, []).append((ts, url))
+        for entries in by_family.values():
+            entries.sort(key=lambda e: e[0])
+        self._entries = by_family
+        self._times = {f: [e[0] for e in entries] for f, entries in by_family.items()}
+
+    def lookup(self, app_name, process_name, ts_start: Optional[str]) -> Optional[str]:
+        from keypulse.store.site_categories import browser_family
+
+        family = browser_family(app_name, process_name)
+        ts = _parse_ts(ts_start)
+        if family is None or ts is None or family not in self._entries:
+            return None
+        i = bisect_right(self._times[family], ts)
+        if i == 0:
+            return None
+        entry_ts, url = self._entries[family][i - 1]
+        return url if ts - entry_ts <= SITE_LOOKBACK else None
 
 
 def classify_capture_app(
@@ -141,6 +270,8 @@ def resolve_bucket(
     rules: list[dict],
     overrides: Optional[dict[str, str]] = None,
     app_overrides: Optional[dict[str, str]] = None,
+    url: Optional[str] = None,
+    site_overrides: Optional[dict[str, str]] = None,
 ) -> Optional[str]:
     for rule in rules:
         value = (rule["scope_value"] or "").lower()
@@ -153,12 +284,32 @@ def resolve_bucket(
             return rule["bucket"]
     default = default_bucket_for_source(source, overrides)
     if default is None and source in CAPTURE_SOURCES:
+        if url and wants_site_url(source, app_name, process_name):
+            from keypulse.store.site_categories import classify_url
+
+            merged_sites = _config_site_overrides() if site_overrides is None else site_overrides
+            site = classify_url(url, merged_sites)
+            if site:
+                return site
         return classify_capture_app(app_name, process_name, app_overrides)
     return default
 
 
-def resolve_for_event(conn: sqlite3.Connection, source, app_name, process_name=None) -> Optional[str]:
-    return resolve_bucket(source, app_name, process_name, rules=load_bucket_rules(conn))
+def resolve_for_event(
+    conn: sqlite3.Connection,
+    source,
+    app_name,
+    process_name=None,
+    *,
+    metadata_json: Optional[str] = None,
+    ts_start: Optional[str] = None,
+) -> Optional[str]:
+    url = None
+    if wants_site_url(source, app_name, process_name):
+        url = url_from_metadata(metadata_json)
+        if url is None and source in SITE_INHERIT_SOURCES:
+            url = nearest_browser_url(conn, app_name, process_name, ts_start)
+    return resolve_bucket(source, app_name, process_name, rules=load_bucket_rules(conn), url=url)
 
 
 def reapply_buckets(conn: sqlite3.Connection, *, only_missing: bool = False) -> int:
@@ -166,10 +317,22 @@ def reapply_buckets(conn: sqlite3.Connection, *, only_missing: bool = False) -> 
     rules = load_bucket_rules(conn)
     overrides = _config_overrides()
     app_overrides = _config_app_overrides()
+    site_overrides = _config_site_overrides()
+    timeline = BrowserUrlTimeline(conn)
     where = " WHERE bucket IS NULL" if only_missing else ""
     changed = 0
-    for row in conn.execute(f"SELECT id, source, app_name, process_name, bucket FROM raw_events{where}").fetchall():
-        new = resolve_bucket(row["source"], row["app_name"], row["process_name"], rules=rules, overrides=overrides, app_overrides=app_overrides)
+    for row in conn.execute(
+        f"SELECT id, source, app_name, process_name, bucket, ts_start, metadata_json FROM raw_events{where}"
+    ).fetchall():
+        url = None
+        if wants_site_url(row["source"], row["app_name"], row["process_name"]):
+            url = url_from_metadata(row["metadata_json"])
+            if url is None and row["source"] in SITE_INHERIT_SOURCES:
+                url = timeline.lookup(row["app_name"], row["process_name"], row["ts_start"])
+        new = resolve_bucket(
+            row["source"], row["app_name"], row["process_name"], rules=rules, overrides=overrides,
+            app_overrides=app_overrides, url=url, site_overrides=site_overrides,
+        )
         if new != row["bucket"]:
             conn.execute("UPDATE raw_events SET bucket = ? WHERE id = ?", (new, row["id"]))
             changed += 1

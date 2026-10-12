@@ -200,6 +200,9 @@ class BucketsConfig(BaseModel):
     # Capture-stream app overrides (D26), e.g. {"Obsidian": "Personal"}; case-insensitive substring
     # of the app / process name. Beats the preset app table, loses to user bucket rules.
     app_defaults: dict[str, str] = Field(default_factory=dict)
+    # Website overrides for browser content (D28), e.g. {"notion.so": "Personal", "corp.example.com": "Work"};
+    # host-suffix match. Beats the preset site table (store.site_categories), loses to user bucket rules.
+    site_defaults: dict[str, str] = Field(default_factory=dict)
 
 
 class PolicyConfig(BaseModel):

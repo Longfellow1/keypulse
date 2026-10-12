@@ -14,7 +14,14 @@ from keypulse.capture.aggregator import Aggregator
 from keypulse.capture.base import BaseWatcher
 from keypulse.capture.camera_monitor import CameraMonitor
 from keypulse.capture.fusion import CaptureFusionEngine
-from keypulse.capture.hygiene import METADATA_ONLY, capture_gate, is_blacklisted_app, is_terminal_app, strip_url_query
+from keypulse.capture.hygiene import (
+    METADATA_ONLY,
+    capture_gate,
+    is_blacklisted_app,
+    is_system_overlay,
+    is_terminal_app,
+    strip_url_query,
+)
 from keypulse.capture.policy import PolicyEngine
 # from keypulse.capture.provider import build_ocr_provider
 from keypulse.capture.normalizer import (
@@ -533,6 +540,11 @@ class CaptureManager:
             self._count_gate_hit(event, verdict.reason)
             if verdict.action != METADATA_ONLY:
                 return
+
+        if event.source != "window" and is_system_overlay(event.app_name, event.process_name):
+            # Setup Assistant & co: keep what was typed/copied/read, but it belongs to no app (D27).
+            event.app_name = None
+            event.process_name = None
 
         self._sync_window_idle_state(event)
         self._feed_light_capture_watchers(event)
