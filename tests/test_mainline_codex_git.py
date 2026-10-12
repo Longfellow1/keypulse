@@ -97,6 +97,9 @@ def env(tmp_path: Path, monkeypatch):
     repo = repos / "demo-app"
     repo.mkdir(parents=True)
     _git(repo, "init", "-q", "-b", "main")
+    # git_log only ingests the repo owner's commits, so the repo must have a local identity.
+    _git(repo, "config", "user.name", "T")
+    _git(repo, "config", "user.email", "t@example.invalid")
     _commit(repo, "a.txt", "fix: narwhalquux cache eviction order", "2026-05-01T09:00:00+00:00")
 
     proj = tmp_path / "claude" / "projects" / "-work-demo-app"

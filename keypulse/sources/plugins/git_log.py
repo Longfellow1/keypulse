@@ -28,10 +28,13 @@ class GitLogSource(DataSource):
         search_roots: Iterable[Path] | None = None,
         cwd: Path | None = None,
         use_cursor: bool = False,
+        author_emails: Iterable[str] | None = None,
     ) -> None:
         # use_cursor=True: per-repo incremental sync driven by a committer-time
         # high-water mark in `sync_cursors`; the since/until window is ignored.
         self._use_cursor = use_cursor
+        # Extra identities besides each repo's own git user.email (e.g. a second address).
+        self._extra_emails = tuple(e.strip() for e in (author_emails or ()) if e and e.strip())
         self._pending_cursors: dict[int, dict[str, Any]] = {}
         self._cwd = (cwd or Path.cwd()).resolve()
         self._search_roots = list(search_roots) if search_roots is not None else self._default_roots(self._cwd)
@@ -80,6 +83,16 @@ class GitLogSource(DataSource):
         if shutil.which("git") is None:
             return iter(())
 
+        # Fail closed: only the user's own commits. No identity in this repo means nothing is ingested.
+        emails, name = self._author_identity(instance.locator)
+        if not emails and name is None:
+            LOGGER.debug("git_log skip %s: no user identity configured; ingesting nothing", instance.locator)
+            return iter(())
+        if emails:
+            author_args = ["-F", *(f"--author=<{email}>" for email in emails)]
+        else:
+            author_args = ["-F", f"--author={name} <"]
+
         source_id = None
         prior_ts: int | None = None
         if self._use_cursor:
@@ -103,7 +116,8 @@ class GitLogSource(DataSource):
             instance.locator,
             "log",
             *range_args,
-            "--pretty=format:%H%x09%cI%x09%an%x09%s%x09%b%x00",
+            *author_args,
+            "--pretty=format:%H%x09%cI%x09%an%x09%ae%x09%s%x09%b%x00",
             "--no-merges",
         ]
 
@@ -122,7 +136,16 @@ class GitLogSource(DataSource):
             )
             return iter(())
 
-        events = list(self._parse_git_log(instance, result.stdout))
+        # git already filtered by --author; this exact check guards against loose substring matches.
+        own_emails = {e.lower() for e in emails}
+        events = []
+        for event in self._parse_git_log(instance, result.stdout):
+            if emails:
+                is_own = str(event.metadata.get("author_email", "")).lower() in own_emails
+            else:
+                is_own = event.actor == name
+            if is_own:
+                events.append(event)
         if source_id is not None:
             # `recent` = hashes inside the overlap window, so the overlap re-scan yields only new commits.
             recent: dict[str, int] = dict(get_cursor(source_id).get("recent") or {})
@@ -155,14 +178,15 @@ class GitLogSource(DataSource):
             chunk = chunk.strip()
             if not chunk:
                 continue
-            parts = chunk.split("\t", 4)
-            if len(parts) < 4:
+            parts = chunk.split("\t", 5)
+            if len(parts) < 5:
                 continue
             commit_hash = parts[0]
             author_time = parts[1]
             author_name = parts[2]
-            subject = parts[3]
-            body = parts[4].strip() if len(parts) == 5 else ""
+            author_email = parts[3]
+            subject = parts[4]
+            body = parts[5].strip() if len(parts) == 6 else ""
             try:
                 event_time = datetime.fromisoformat(author_time).astimezone(timezone.utc)
             except ValueError:
@@ -180,6 +204,7 @@ class GitLogSource(DataSource):
                     "repo_path": instance.locator,
                     "full_hash": commit_hash,
                     "repo_name": repo_name,
+                    "author_email": author_email,
                 },
                 external_id=commit_hash,
                 source_locator=instance.locator,
@@ -242,6 +267,35 @@ class GitLogSource(DataSource):
         if not top:
             return None
         return Path(top).resolve()
+
+    def _author_identity(self, repo: str) -> tuple[list[str], str | None]:
+        """Return (emails, name) identifying the user's commits in `repo`.
+
+        Emails come from the repo's git config (local, then global) plus any extras.
+        The name is used only when no email is known. ([], None) means no identity.
+        """
+        emails: list[str] = []
+        own = self._git_config(repo, "user.email")
+        for candidate in [own, *self._extra_emails]:
+            if candidate and candidate not in emails:
+                emails.append(candidate)
+        if emails:
+            return emails, None
+        return [], self._git_config(repo, "user.name")
+
+    def _git_config(self, repo: str, key: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "-C", repo, "config", "--get", key],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            return None
+        if result.returncode != 0:
+            return None
+        return (result.stdout or "").strip() or None
 
     def _branch_name(self, repo: Path) -> str | None:
         try:
