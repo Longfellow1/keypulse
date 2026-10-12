@@ -1,9 +1,10 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-12T03:10:31.336Z._
+_Auto-generated. Last updated 2026-10-12T03:45:16.453Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
+- [browser-classified-by-site](pages/browser-classified-by-site.md) — category: decision | tags: [v1, capture, buckets, decision] | <current best understanding — replace this with the real content>
 - [capability-fact-vs-probe](pages/capability-fact-vs-probe.md) — category: decision | ## Decision
 - [capture-hygiene-at-write](pages/capture-hygiene-at-write.md) — category: decision | tags: [v1, capture, privacy, pipeline, decision] | <current best understanding — replace this with the real content>
 - [capture-streams-queryable](pages/capture-streams-queryable.md) — category: decision | tags: [v1, privacy, mcp, capture, decision] | <current best understanding — replace this with the real content>
