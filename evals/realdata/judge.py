@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from evals.realdata.questions import Question, VERDICTS
@@ -19,7 +20,7 @@ Assistant's answer: {answer}
 
 Rules:
 - expect=answer: "correct" if the answer states the same key facts as the gold answer and cites a source; "partial" if it has some but not all key facts, or no source; "wrong" if it is missing, contradicts the gold answer, or says nothing was found.
-- expect=not_found: the gold says the information does not exist. "correct" only if the answer says it could not be found AND presents nothing as the answer; "wrong" if it presents any specific answer (a guess or fabrication); "partial" if it says not found but also offers a tentative candidate.
+- expect=not_found: the gold says the information does not exist. "correct" only if the answer says it could not be found AND presents nothing as the answer; "wrong" if it presents any specific answer (a guess or fabrication); "partial" if it says not found but also offers a tentative candidate as a possible answer. Mentioning related records that the answer itself explicitly rules out as not answering the question is still "correct".
 Reply with ONLY one JSON object, no prose, no code fence:
 {{"verdict": "correct" | "partial" | "wrong", "reason": "<one line>"}}"""
 
@@ -48,16 +49,22 @@ def parse_judge_output(text: str) -> dict:
     return {"verdict": verdict, "reason": reason.strip().splitlines()[0][:300]}
 
 
-def call_judge(prompt: str, *, model: str, claude: str, timeout: int = 300) -> str:
+def call_judge(prompt: str, *, model: str, claude: str, timeout: int = 300, retries: int = 2,
+               wait: float = 30) -> str:
     cmd = [claude, "-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose",
            "--no-session-persistence", "--permission-mode", "dontAsk", "--strict-mcp-config", "--tools", ""]
-    with tempfile.TemporaryDirectory(prefix="rdjudge-") as d:
-        try:
-            proc = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=timeout,
-                                  stdin=subprocess.DEVNULL)
-        except subprocess.TimeoutExpired:
-            return ""
-    return parse_stream(proc.stdout)["answer"] if proc.returncode == 0 else ""
+    for attempt in range(retries + 1):
+        with tempfile.TemporaryDirectory(prefix="rdjudge-") as d:
+            try:
+                proc = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=timeout,
+                                      stdin=subprocess.DEVNULL)
+                out = parse_stream(proc.stdout)["answer"] if proc.returncode == 0 else ""
+            except subprocess.TimeoutExpired:
+                out = ""
+        if out.strip() or attempt == retries:
+            return out
+        time.sleep(wait * (attempt + 1))
+    return ""
 
 
 def mechanical_must_not_see(q: Question, replay_entry: dict | None) -> dict:

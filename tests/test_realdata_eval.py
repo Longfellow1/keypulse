@@ -307,3 +307,48 @@ def test_unparseable_judge_reply_yields_error_verdict(tmp_path, fake_bin, monkey
     assert main(["judge", "--data-dir", str(data)]) == 0
     j = json.loads((data / "runs" / "r1" / "judged-kp.jsonl").read_text())
     assert j["verdict"] == "error"
+
+
+# ── transient failures (API/usage errors) are retried and rerun on resume, never graded ──────────
+
+def test_transient_rows_are_dropped_on_resume_and_real_failures_kept(tmp_path):
+    from evals.realdata.runner import done_ids, is_transient
+
+    path = tmp_path / "results-bash.jsonl"
+    rows = [
+        {"id": "Q1", "exit": 0, "is_error": False, "tool_calls": 3, "answer": "ok"},
+        {"id": "Q2", "exit": 1, "is_error": True, "tool_calls": 0, "answer": ""},       # API error, nothing done
+        {"id": "Q3", "exit": 1, "is_error": True, "tool_calls": 5, "answer": ""},       # failed after working: keep
+        {"id": "Q4", "verdict": "error", "method": "llm", "reason": "empty judge output"},
+        {"id": "Q5", "verdict": "wrong", "method": "llm", "reason": "x"},
+        {"id": "Q6", "exit": 1, "is_error": True, "tool_calls": 7, "answer": "API Error: Connection refused"},
+    ]
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    assert [is_transient(r) for r in rows] == [False, True, False, True, False, True]
+    assert done_ids(path) == {"Q1", "Q3", "Q5"}
+    assert {json.loads(l)["id"] for l in path.read_text().splitlines()} == {"Q1", "Q3", "Q5"}
+
+
+def test_parse_stream_error_result_is_not_an_answer():
+    from evals.realdata.runner import parse_stream
+
+    out = parse_stream(json.dumps({"type": "result", "is_error": True, "result": "API Error: overloaded"}))
+    assert out["is_error"] and out["answer"] == "" and "overloaded" in out["error"]
+
+
+def test_judge_retries_empty_output(monkeypatch):
+    calls = []
+
+    class P:
+        def __init__(self, stdout):
+            self.stdout, self.returncode = stdout, 0
+
+    def fake_run(*a, **k):
+        calls.append(1)
+        text = "" if len(calls) < 3 else '{"verdict": "correct", "reason": "r"}'
+        return P(json.dumps({"type": "result", "result": text}) if text else "")
+
+    monkeypatch.setattr(judge.subprocess, "run", fake_run)
+    monkeypatch.setattr(judge.time, "sleep", lambda s: None)
+    assert '"correct"' in judge.call_judge("p", model="m", claude="claude", retries=2, wait=0)
+    assert len(calls) == 3
