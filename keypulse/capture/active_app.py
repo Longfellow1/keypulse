@@ -40,6 +40,18 @@ def get_active_app() -> tuple[Optional[str], Optional[int]]:
         return _last_known_app, _last_known_pid
 
 
+def get_active_bundle_id() -> Optional[str]:
+    """Bundle id of the frontmost app (None if unknown). Lets bundle-id exclusions cover clipboard."""
+    try:
+        from AppKit import NSWorkspace
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        bundle = app.bundleIdentifier() if app else None
+        return str(bundle) if bundle else None
+    except Exception as exc:
+        logger.debug("get_active_bundle_id error: %s", exc)
+        return None
+
+
 def is_system_overlay_active() -> bool:
     """True if frontmost is currently a system overlay (loginwindow/screensaver/Dock).
     Use this to decide whether to skip content reads (ax_text)."""

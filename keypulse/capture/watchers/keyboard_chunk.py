@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from keypulse.utils.text_filters import looks_like_ime_composition
-
 import queue
 import time
 import unicodedata
@@ -29,7 +27,7 @@ def _normalize_buffered_text(parts: list[str]) -> str:
 
 
 class KeyboardChunkBuffer:
-    def __init__(self, silence_sec: float = 2.0, force_flush_sec: float = 2.0):
+    def __init__(self, silence_sec: float = 2.0, force_flush_sec: float = 20.0):
         self._silence_sec = silence_sec
         self._force_flush_sec = force_flush_sec
         self._parts: list[str] = []
@@ -91,7 +89,7 @@ class KeyboardChunkWatcher(BaseWatcher):
         self,
         event_queue: queue.Queue,
         silence_sec: float = 2.0,
-        force_flush_sec: float = 2.0,
+        force_flush_sec: float = 20.0,
         store_text: bool = True,
         source=None,
     ):
@@ -141,9 +139,6 @@ class KeyboardChunkWatcher(BaseWatcher):
         denied: bool = False,
     ) -> None:
         if secure_input or denied:
-            return
-        # Early filter: drop IME composition blobs at capture source
-        if looks_like_ime_composition(text):
             return
         self._buffer.add_text(
             text=text,

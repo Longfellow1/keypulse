@@ -7,10 +7,11 @@ from keypulse.store.migration_v20 import migrate_v20, rebuild_events_fts  # noqa
 from keypulse.store.migration_v21 import migrate_v21
 from keypulse.store.migration_v22 import migrate_v22
 from keypulse.store.migration_v23 import migrate_v23
+from keypulse.store.migration_v24 import migrate_v24
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 MIGRATIONS = [
     # v1
@@ -208,6 +209,8 @@ MIGRATIONS = [
     migrate_v22,
     # v23 — D26: capture streams queryable (bucket + secret-redaction + evidence backfill).
     migrate_v23,
+    # v24 — D27: existing capture rows run through the hygiene gate (see migration_v24).
+    migrate_v24,
 ]
 
 

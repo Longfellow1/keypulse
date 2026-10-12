@@ -53,7 +53,8 @@ def desensitize(text: str, redact_emails: bool = True, redact_phones: bool = Tru
     prev = 0
     for d in detections:
         result.append(text[prev:d.start])
-        result.append("[REDACTED]")
+        # labelled placeholders for card numbers; everything else stays [REDACTED]
+        result.append(d.replacement if d.replacement.startswith("[") else "[REDACTED]")
         prev = d.end
     result.append(text[prev:])
     return "".join(result)

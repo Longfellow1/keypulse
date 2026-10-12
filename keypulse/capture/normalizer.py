@@ -131,12 +131,14 @@ def normalize_clipboard_event(
     text: str,
     app_name: Optional[str] = None,
     ts_start: Optional[str] = None,
+    process_name: Optional[str] = None,
 ) -> RawEvent:
     return RawEvent(
         source="clipboard",
         event_type="clipboard_copy",
         ts_start=ts_start or _now(),
         app_name=app_name,
+        process_name=process_name,
         content_text=text,
         content_hash=_hash(text),
         semantic_weight=_semantic_weight_for("clipboard"),

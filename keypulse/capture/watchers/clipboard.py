@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
-from keypulse.capture.active_app import get_active_app
+from keypulse.capture.active_app import get_active_app, get_active_bundle_id
 from keypulse.capture.base import BaseWatcher
 from keypulse.capture.normalizer import normalize_clipboard_event
 from keypulse.utils.logging import get_logger
@@ -75,6 +75,8 @@ class ClipboardWatcher(BaseWatcher):
 
         app_name, _ = get_active_app()
         ts = datetime.now(timezone.utc).isoformat()
-        event = normalize_clipboard_event(text=text, app_name=app_name, ts_start=ts)
+        event = normalize_clipboard_event(
+            text=text, app_name=app_name, ts_start=ts, process_name=get_active_bundle_id()
+        )
         self.emit(event)
         logger.debug(f"Clipboard captured ({len(text)} chars) from {app_name}")

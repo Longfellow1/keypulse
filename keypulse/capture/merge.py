@@ -10,6 +10,7 @@ SOURCE_PRIORITY = {
     "clipboard": 4,
     "ax_text": 3,
     "ocr_text": 2,
+    "keyboard_chunk": 1,  # dedup against other keyboard chunks only (see fusion)
 }
 
 
@@ -40,3 +41,24 @@ def parse_ts(value: str | None) -> datetime:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except Exception:
         return datetime.min.replace(tzinfo=timezone.utc)
+
+
+_JACCARD_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]")
+
+
+def jaccard_similarity(left: str | None, right: str | None) -> float:
+    """Token-set Jaccard (ported from legacy event_intake._jaccard_similarity)."""
+    a = {t.lower() for t in _JACCARD_TOKEN_RE.findall(left or "")}
+    b = {t.lower() for t in _JACCARD_TOKEN_RE.findall(right or "")}
+    if not a and not b:
+        return 1.0
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def jaccard_threshold(gap_seconds: float) -> float:
+    """legacy collapse_self_repeat: 0.65 within 60s, 0.80 up to 300s."""
+    return 0.65 if gap_seconds <= 60 else 0.80
+
+
+NEAR_DUPLICATE_WINDOW_SEC = 300.0

@@ -14,6 +14,7 @@ from keypulse.capture.aggregator import Aggregator
 from keypulse.capture.base import BaseWatcher
 from keypulse.capture.camera_monitor import CameraMonitor
 from keypulse.capture.fusion import CaptureFusionEngine
+from keypulse.capture.hygiene import METADATA_ONLY, capture_gate, is_blacklisted_app, is_terminal_app, strip_url_query
 from keypulse.capture.policy import PolicyEngine
 # from keypulse.capture.provider import build_ocr_provider
 from keypulse.capture.normalizer import (
@@ -50,7 +51,6 @@ _USER_SOURCES = frozenset(
     }
 )
 _CHAT_STYLE_APPS = frozenset({"claude", "codex", "cursor", "obsidian", "notion", "visual studio code"})
-_TERMINAL_APPS = frozenset({"terminal", "iterm2", "warp", "alacritty", "kitty", "ghostty"})
 
 
 def _derive_speaker(event: RawEvent) -> Literal["user", "system"]:
@@ -58,7 +58,7 @@ def _derive_speaker(event: RawEvent) -> Literal["user", "system"]:
 
 
 def _is_terminal_app(app_name: str | None) -> bool:
-    return str(app_name or "").strip().lower() in _TERMINAL_APPS
+    return is_terminal_app(app_name)
 
 
 def _metadata_payload(metadata_json: str | None) -> object | None:
@@ -152,12 +152,30 @@ def _host_matches_denylist(host: str, deny_hosts: list[str]) -> bool:
 
 
 def _should_drop_browser_event(event: RawEvent, deny_hosts: list[str]) -> bool:
-    if event.source != "browser":
+    if event.source not in ("browser", "browser_url"):
         return False
     host = _browser_host_from_metadata(event.metadata_json)
     if not host:
         return False
     return _host_matches_denylist(host, deny_hosts)
+
+
+def _event_url(event: RawEvent) -> str | None:
+    payload = _metadata_payload(event.metadata_json)
+    url = payload.get("url") if isinstance(payload, dict) else None
+    return str(url) if url else None
+
+
+def _strip_metadata_urls(metadata_json: str | None) -> str | None:
+    payload = _metadata_payload(metadata_json)
+    if not isinstance(payload, dict):
+        return metadata_json
+    if payload.get("url"):
+        payload["url"] = strip_url_query(str(payload["url"]))
+    entities = payload.get("entities")
+    if isinstance(entities, dict) and isinstance(entities.get("urls"), list):
+        entities["urls"] = [strip_url_query(str(u)) for u in entities["urls"]]
+    return json.dumps(payload, ensure_ascii=False)
 
 
 class CaptureManager:
@@ -176,6 +194,8 @@ class CaptureManager:
         self._runtime_state_last_persist = 0.0
         self._source_counts: dict[str, int] = {}
         self._source_last_event_at: dict[str, str] = {}
+        # D27: gate hits by "source:reason" (counts only, never content)
+        self._gate_hits: dict[str, int] = {}
 
     def start(self):
         """Initialize DB, seed policies, start watchers and flush loop."""
@@ -252,6 +272,7 @@ class CaptureManager:
             "paused": self._paused.is_set(),
             "watchers": {name: w.health() for name, w in self._watchers.items()},
             "queue_size": self._queue.qsize(),
+            "gate_hits": dict(self._gate_hits),
         }
 
     def save_manual(self, text: str, tags: Optional[str] = None):
@@ -321,7 +342,7 @@ class CaptureManager:
             self._watchers["keyboard_chunk"] = KeyboardChunkWatcher(
                 self._queue,
                 silence_sec=getattr(keyboard_cfg, "silence_sec", 2.0),
-                force_flush_sec=getattr(keyboard_cfg, "force_flush_sec", 2.0),
+                force_flush_sec=getattr(keyboard_cfg, "force_flush_sec", 20.0),
                 store_text=getattr(keyboard_cfg, "store_text", True),
             )
         if cfg.ax_text:
@@ -467,12 +488,19 @@ class CaptureManager:
                 logger.error(f"Error processing event: {e}")
 
     def _is_blacklisted(self, event: RawEvent) -> bool:
-        candidate = event.process_name or event.app_name
-        if not candidate:
-            return False
-        if candidate in self.config.privacy.blacklist_bundle_ids:
-            return True
-        return any(fnmatch(candidate, pattern) for pattern in self.config.privacy.blacklist_patterns)
+        privacy = self.config.privacy
+        return is_blacklisted_app(
+            event.app_name,
+            event.process_name,
+            bundle_ids=privacy.blacklist_bundle_ids,
+            patterns=privacy.blacklist_patterns,
+            app_names=privacy.blacklist_app_names,
+        )
+
+    def _count_gate_hit(self, event: RawEvent, reason: str) -> None:
+        key = f"{event.source}:{reason}"
+        self._gate_hits[key] = self._gate_hits.get(key, 0) + 1
+        logger.debug("capture gate: %s (%s)", reason, event.source)  # never log content
 
     def _process_event(self, event: RawEvent):
         event.speaker = _derive_speaker(event)
@@ -492,6 +520,20 @@ class CaptureManager:
             )
             return
 
+        verdict = capture_gate(
+            source=event.source,
+            app_name=event.app_name,
+            process_name=event.process_name,
+            window_title=event.window_title,
+            content_text=event.content_text,
+            url=_event_url(event),
+            title_deny_patterns=self.config.privacy.title_deny_patterns,
+        )
+        if verdict is not None:
+            self._count_gate_hit(event, verdict.reason)
+            if verdict.action != METADATA_ONLY:
+                return
+
         self._sync_window_idle_state(event)
         self._feed_light_capture_watchers(event)
         if event.source == "window" and event.event_type in {WINDOW_FOCUS_EVENT, WINDOW_TITLE_CHANGED_EVENT}:
@@ -505,6 +547,14 @@ class CaptureManager:
 
         # 2. Desensitize content
         text_dropped_reason: str | None = None
+        if verdict is not None:  # metadata-only: keep app + time, null the content
+            text_dropped_reason = verdict.reason
+            result.content_text = None
+            result.content_hash = None
+            if verdict.reason != "terminal_app":  # title-based reasons: the title itself is the sensitive part
+                result.window_title = None
+            if result.source == "browser_url":
+                result.metadata_json = _strip_metadata_urls(result.metadata_json)
         if result.source == "ax_text" and _is_terminal_app(result.app_name):
             if self.config.privacy.drop_terminal_text:
                 result.content_text = None
@@ -683,6 +733,7 @@ class CaptureManager:
             },
             "queue_size": self._queue.qsize(),
             "multi_source_counts": multi_source_counts,
+            "gate_hits": dict(self._gate_hits),
             "last_seen": last_seen,
         }
 
