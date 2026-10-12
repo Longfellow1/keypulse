@@ -585,3 +585,51 @@ def test_g1_coverage_guard_fails_on_new_field(canary_db, monkeypatch) -> None:
     monkeypatch.setattr(tools, "_coverage", lambda g, s, e: {**real(g, s, e), "hit_total": 3})
     observed = _observed_response_fields()
     assert "coverage.hit_total" in observed - G1_COVERED_RESPONSE_FIELDS
+
+
+# ── 4. D28: browser content follows the site, never the browser app ──────────────────────────
+def _assert_no_canary_value(text: str, canary: str) -> None:
+    assert canary not in text and canary.lower() not in text.lower(), f"G1 FAIL: {canary} leaked to a Work-only grant"
+
+
+def test_g1_canary_financial_site_in_browser_is_unreachable_for_work_grant(tmp_path) -> None:
+    """A banking tab in Chrome: the page text, clipboard, window and typing that follow the browser_url
+    row are Financial, so a Work-only grant must not find them, while the same browser on a Work site is
+    found. Rows are inserted with no preset bucket, so the live resolution path itself is under test."""
+    from keypulse.capture.normalizer import (
+        normalize_ax_text_event, normalize_browser_url_event, normalize_clipboard_event,
+        normalize_keyboard_chunk_event, normalize_window_event,
+    )
+
+    close()
+    init_db(tmp_path / "d28.db")
+
+    def put(ev):
+        ev.content_hash = f"d28-{ev.source}-{ev.ts_start}-{ev.app_name}"
+        return insert_raw_event(ev)
+
+    bank = ["KPCANARY20bankax", "KPCANARY21bankclip", "KPCANARY22bankwin", "KPCANARY23bankkey", "KPCANARY24bankdocs"]
+    put(normalize_browser_url_event("https://www.icbc.com.cn/login?x=1", "Online banking", "Google Chrome", ts_start="2026-03-02T10:00:00+00:00"))
+    put(normalize_ax_text_event(f"{SHARED_WORD} balance {bank[0]} shown", app_name="Google Chrome", window_title="Online banking - Google Chrome", ts_start="2026-03-02T10:01:00+00:00"))
+    put(normalize_clipboard_event(f"{SHARED_WORD} copied {bank[1]}", app_name="Google Chrome", process_name="com.google.Chrome", ts_start="2026-03-02T10:02:00+00:00"))
+    put(normalize_window_event("window_focus_session", "Google Chrome", f"Online banking - {SHARED_WORD} {bank[2]}", None, ts_start="2026-03-02T10:03:00+00:00", ts_end="2026-03-02T10:04:00+00:00"))
+    put(normalize_keyboard_chunk_event(f"{SHARED_WORD} typed {bank[3]} here", app_name="Google Chrome", ts_start="2026-03-02T10:05:00+00:00"))
+    # a docs.* host must not outrank Financial
+    put(normalize_browser_url_event("https://docs.mybank.example/guide", "Docs", "Safari", ts_start="2026-03-02T10:00:00+00:00"))
+    put(normalize_ax_text_event(f"{SHARED_WORD} guide {bank[4]} text", app_name="Safari", window_title="Docs - Safari", ts_start="2026-03-02T10:01:00+00:00"))
+    # a Work site in the same browser stays reachable (the scan is not vacuous)
+    put(normalize_browser_url_event("https://github.com/org/repo", "repo", "Google Chrome", ts_start="2026-03-02T11:00:00+00:00"))
+    put(normalize_ax_text_event(f"{SHARED_WORD} review KPCANARYWORKOK comments", app_name="Google Chrome", window_title="repo - Google Chrome", ts_start="2026-03-02T11:01:00+00:00"))
+    # a stale URL (> 10 min) must not lend its bucket: this text falls back to Personal
+    put(normalize_ax_text_event(f"{SHARED_WORD} later KPCANARY25stale text", app_name="Google Chrome", window_title="repo - Google Chrome", ts_start="2026-03-02T11:30:00+00:00"))
+
+    work = auth.create_grant("work-host", buckets=["Work"])
+    for canary in bank + ["KPCANARY25stale"]:
+        for q in (canary, canary.lower(), canary[:10], f"{SHARED_WORD} {canary}"):
+            _assert_no_canary_value(json.dumps(search(work, q.split(), limit=100), ensure_ascii=False), canary)
+    ok = search(work, ["KPCANARYWORKOK"])
+    assert ok["status"] == "ok" and {r["bucket"] for r in ok["results"]} == {"Work"}
+    wide = auth.create_grant("wide", buckets=["Work", "Personal", "Financial"])
+    for canary in bank:
+        assert search(wide, [canary])["status"] == "ok", canary
+    close()

@@ -9,6 +9,9 @@ logger = get_logger("capture.active_app")
 SYSTEM_OVERLAY_APPS = frozenset({
     "loginwindow", "ScreenSaverEngine", "Dock",
     "Notification Center", "Control Center",
+    # First-run / macOS setup overlay (en, zh-Hans, process name, bundle ids): never a real app.
+    "Setup Assistant", "SetupAssistant", "设置助理", "com.apple.SetupAssistant",
+    "com.apple.loginwindow",
 })
 # Backward-compatible alias for any internal usage.
 _SYSTEM_OVERLAY_APPS = SYSTEM_OVERLAY_APPS
