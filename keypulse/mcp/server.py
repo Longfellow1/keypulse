@@ -21,7 +21,7 @@ You do the language understanding; this tool only matches keywords. Before calli
 - Convert time words (上次, 昨天, last week, Oct 8) to time_range ISO dates yourself.
 - Map source hints to sources: terminal=zsh_history, browser=chrome_history/safari_history, commit=git_log, Claude=claude_code, Codex=codex_cli, notes=markdown_vault.
 
-Matching is OR across keywords; results matching more distinct keywords come first (a keyword like "copied" / 复制 puts clipboard records first; exact hashes, versions and file names get a small boost). Identical records are folded into one result: occurrences is how many times it was recorded, first_seen / last_seen its time range (the result itself is the best-ranked one; for "which time" questions use get_timeline). Each result has match "strong" (2+ keywords, or the only keyword) or "weak" (a possible clue: verify before relying on it).
+Matching is OR across keywords; results matching more distinct keywords come first (exact hashes, versions and file names get a small boost). If the user says they copied or pasted something, pass sources including "clipboard" and keep keywords to the distinctive token (a name, part of a command); if the first search misses, run a second one restricted to clipboard. Identical records are folded into one result: occurrences is how many times it was recorded, first_seen / last_seen its time range (the result itself is the best-ranked one; for "which time" questions use get_timeline). Each result has match "strong" (2+ keywords, or the only keyword) or "weak" (a possible clue: verify before relying on it).
 
 Examples:
 - "上次办澳洲签证用了哪些材料?" -> keywords ["签证", "visa", "材料", "澳洲"]

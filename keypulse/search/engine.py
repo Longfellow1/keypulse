@@ -156,13 +156,6 @@ _VERSION = re.compile(r"v?\d+(?:\.\d+)+(?:[-+][\w.]+)?")
 _FILE_NAME = re.compile(r"[\w\-]+\.[a-z][a-z0-9]{0,5}")
 _ISSUE_KEY = re.compile(r"[a-z][a-z0-9]*-\d+")
 
-# "I copied it" cues: a keyword saying where the answer lives. Rows from that source rank first.
-_SOURCE_CUES = {
-    "clipboard": "clipboard", "copied": "clipboard", "copy": "clipboard", "pasted": "clipboard",
-    "剪贴板": "clipboard", "复制": "clipboard", "拷贝": "clipboard", "粘贴": "clipboard",
-}
-
-
 def _is_rare_token(term: str) -> bool:
     """Single-token keywords that identify one thing: commit hash, version, file name, issue key."""
     t = term.lower()
@@ -171,10 +164,6 @@ def _is_rare_token(term: str) -> bool:
     if _HEX_ID.fullmatch(t) and any(c.isdigit() for c in t):
         return True
     return bool(_VERSION.fullmatch(t) or _FILE_NAME.fullmatch(t) or _ISSUE_KEY.fullmatch(t))
-
-
-def _cued_sources(terms: list[str]) -> set[str]:
-    return {_SOURCE_CUES[t.lower()] for t in terms if t.lower() in _SOURCE_CUES}
 
 
 def _has_token(text: str, token: str) -> bool:
@@ -236,7 +225,7 @@ def search_events(
     """Keyword search over raw_events: OR across keywords, ranked by how many distinct keywords a
     document matches (coverage), then a per-document score, then the source's semantic_weight,
     then recency. (Recency is a unique key, ts + id, so weight must sit before it to ever act.)
-    A "copied"-style keyword ranks that source's rows (clipboard) first. Rows with identical text (same
+    Rows with identical text (same
     source family and bucket) are then folded into one hit with occurrences / first_seen / last_seen,
     before LIMIT; counts cover the (<= 500 newest) in-scope candidates.
 
@@ -311,18 +300,14 @@ def search_events(
         LIMIT ?
     """
     rows = get_conn().execute(sql, params).fetchall()
-    cued = _cued_sources(terms)
     scored = []
     for r in rows:
         found = _matched(r, terms)
         if found:
-            scored.append((
-                1 if r["source"] in cued else 0, len(found), round(_doc_score(r, terms), 6),
-                r["semantic_weight"] or 0.0, r, found,
-            ))
-    # Stable sort over a recency-ordered list (ts DESC, id DESC): source cue, coverage, document score,
+            scored.append((len(found), round(_doc_score(r, terms), 6), r["semantic_weight"] or 0.0, r, found))
+    # Stable sort over a recency-ordered list (ts DESC, id DESC): coverage, document score,
     # semantic_weight, then recency. Deterministic for identical input.
-    scored.sort(key=lambda x: x[:4], reverse=True)
+    scored.sort(key=lambda x: x[:3], reverse=True)
     hits = []
     for r, found, occurrences, first_seen, last_seen in _collapse(scored)[:limit]:
         d = dict(r)
@@ -357,12 +342,12 @@ def _collapse(scored: list) -> list:
     the grant. Groups keep the rank order of their best member."""
     groups: dict[tuple, list] = {}
     for item in scored:
-        groups.setdefault(_collapse_key(item[4]), []).append(item)
+        groups.setdefault(_collapse_key(item[3]), []).append(item)
     out = []
     for members in groups.values():
         rep = members[0]
-        times = [m[4]["occurred_at"] for m in members]
-        out.append((rep[4], rep[5], len(members), min(times), max(times)))
+        times = [m[3]["occurred_at"] for m in members]
+        out.append((rep[3], rep[4], len(members), min(times), max(times)))
     return out
 
 

@@ -126,17 +126,17 @@ def test_rare_token_detection() -> None:
         assert not _is_rare_token(t), t
 
 
-def test_copy_cue_ranks_clipboard_rows_first_and_ties_are_deterministic(db) -> None:
+def test_source_filter_is_how_a_host_finds_the_copied_row(db) -> None:
     _ins("push to dev finished, commit deployed", "2026-05-06T09:00:00+00:00", source="codex_cli")
     _ins("push to dev, smoke test green", "2026-05-06T10:00:00+00:00", source="git_log")
     clip = _ins("7e41c9d..a93bb10  dev -> dev", "2026-05-06T11:00:00+00:00", source="clipboard",
                 event_type="clipboard_copy")
     kw = dict(buckets=["Work"], event_type=["semantic_event", "clipboard_copy"])
-    first = [h["id"] for h in search_events(["push", "dev", "copied"], **kw)]
-    assert first[0] == clip
-    assert first == [h["id"] for h in search_events(["push", "dev", "copied"], **kw)]
-    # without the cue the clipboard row only matches one keyword and does not jump the queue
+    assert [h["id"] for h in search_events(["push", "dev"], sources=["clipboard"], **kw)] == [clip]
+    # no keyword is treated as a source hint: "copied" is just a keyword
     assert [h["id"] for h in search_events(["push", "dev"], **kw)][0] != clip
+    first = [h["id"] for h in search_events(["push", "dev"], **kw)]
+    assert first == [h["id"] for h in search_events(["push", "dev"], **kw)]  # deterministic
 
 
 def test_identical_rows_order_is_newest_first(db) -> None:
