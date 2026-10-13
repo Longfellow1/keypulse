@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-13T06:16:02.490Z._
+_Auto-generated. Last updated 2026-10-13T07:14:00.643Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -29,6 +29,7 @@ _Auto-generated. Last updated 2026-10-13T06:16:02.490Z._
 - [product-positioning-memory-infra](pages/product-positioning-memory-infra.md) — category: decision | tags: [positioning, roadmap] | Positioning: KeyPulse persists the user's authorized digital trail and turns cross-app, cross-time traces into personal memory that any AI c
 - [py2app-preflight-smoke-test](pages/py2app-preflight-smoke-test.md) — category: decision | ## Decision
 - [refactor-in-place-with-legacy-tag](pages/refactor-in-place-with-legacy-tag.md) — category: decision | tags: [refactor, repo, legacy] | ## Decision
+- [retention-keep-forever](pages/retention-keep-forever.md) — category: decision | tags: [retention, data-lifecycle, privacy] | Decision (user, 2026-10-13): KeyPulse does not delete anything automatically. All sources, including raw streams such as keyboard chunks, ar
 - [session-handoff-2026-10-10](pages/session-handoff-2026-10-10.md) — category: project | tags: [handoff, state, refactor] | ## Repo state
 - [skill-layer](pages/skill-layer.md) — category: project | ## Goal
 - [tcc-permission-refresh-on-install](pages/tcc-permission-refresh-on-install.md) — category: decision | ## Decision
