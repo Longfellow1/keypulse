@@ -237,3 +237,9 @@ def test_migration_v34_marks_spaced_pinyin_chain_idempotently(db) -> None:
     conn.commit()
     assert marks() == first
     assert [h["id"] for h in _search(["明天大家"], buckets=["Work"])] == [ids[-1]]
+
+
+def test_mid_sentence_pinyin_turning_into_characters_is_an_earlier_state() -> None:
+    from keypulse.store.snapshots import is_superseded_by
+    assert is_superseded_by("比较几家同行如ma la tang，它们都做了这些，为何胜出？", "比较几家同行如麻辣烫店，它们都做了这些，为何胜出？")
+    assert not is_superseded_by("今天天气不错", "明天开会讨论预算")

@@ -23,6 +23,8 @@ SNAPSHOT_SOURCES = ("ax_text",)
 SNAPSHOT_WINDOW = timedelta(seconds=120)
 # Unconfirmed IME pinyin at the end of a field: lowercase ASCII letters, apostrophes and spaces.
 _PINYIN_TAIL = re.compile(r"[a-z' ]+$")
+_PINYIN_RUN = re.compile(r"[a-z' ]+")
+_CJK_ANY = re.compile(r"[\u4e00-\u9fff]")
 # The stem left after removing that tail must end in CJK text or CJK/fullwidth punctuation.
 _CJK_END = re.compile(r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]$")
 # A later state that edits the same draft in place (a word inserted mid-sentence) is near-identical.
@@ -55,7 +57,13 @@ def is_superseded_by(prev_text: Optional[str], next_text: Optional[str]) -> bool
     if pinyin_stem != prev and _CJK_END.search(pinyin_stem) and len(nxt) > len(pinyin_stem) \
             and nxt.startswith(pinyin_stem):
         return True
-    return len(nxt) >= len(prev) and difflib.SequenceMatcher(None, prev, nxt).ratio() >= _EDIT_SIMILARITY
+    if len(nxt) >= len(prev) and difflib.SequenceMatcher(None, prev, nxt).ratio() >= _EDIT_SIMILARITY:
+        return True
+    # Pinyin inside the sentence turning into characters ("如dou ban di" -> "如豆包电脑版") shortens the
+    # text; compare the drafts with lowercase pinyin/ASCII runs removed from both sides.
+    prev_core, next_core = _PINYIN_RUN.sub("", prev), _PINYIN_RUN.sub("", nxt)
+    return bool(prev_core) and _CJK_ANY.search(prev_core) is not None and len(next_core) >= len(prev_core) \
+        and difflib.SequenceMatcher(None, prev_core, next_core).ratio() >= _EDIT_SIMILARITY
 
 
 def _parse(ts: str) -> datetime:
