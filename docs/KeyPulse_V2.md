@@ -8,6 +8,15 @@
 > 适用对象：产品、客户端、数据/算法、Agent 接口、交互、测试  
 > 依据：当前 KeyPulse V1 产品基线，以及《座舱AI智能体产品需求文档（PRD）模板》的结构与交接粒度。
 
+### v1.3 变更记录（2026-10-13，产品负责人决策）
+
+以下条目标注日期 **2026-10-13**，并在正文相应位置以「D30 / D32 / D31」标注。原文未删除；冲突处以本节和标注为准。
+
+1. **V1 只读（D30）**：`commit_memory` / `update_memory` 及 AT16 移出 V1 P0，列为「后续版本（D30：V1 只读，M4 之后再评估写回）」。本条取代上文第 2 条中「写入升 P0」的部分；「抽取由 Host 完成、核心不做 LLM」的结论不变。涉及：§1.3 F11、§3.6.3、§3.8.2–3.8.3、§6.1、§6.4 第 4 条、AT16、AT17。
+2. **HUD Control Center 归 M3（D30，2026-10-13 确认）**：HUD 的数据记录观察（各来源采集状态、断流提醒、记录预览、AI 查询记录）与控制能力一起留在 M3 控制中心；M2 只做召回准确率与中文上屏试验。涉及：§1.3 F13、§6.1、§6.4 第 5 条。基础健康状态仍属 V1 P0，由 CLI（`keypulse health` / `status`）提供；HUD 内的可视化观察与控制归 M3。
+3. **保留期：不做自动删除（D32，2026-10-13）**：记忆保留到用户主动删除为止，不设自动过期删除。涉及：§5.4。D32 取代 D08 中按层自动过期的部分：任何层都不自动删除，删除只由用户主动发起（CLI purge；M3 控制中心按来源删除）。
+4. **邮箱脱敏（D31，决策日期 2026-10-12，本次同步记录）**：邮箱在写入与查询两端仅遮蔽 `@` 前的本地部分、保留域名（如 `***@gmail.com`），原始位置经 evidence 回溯。本 PRD 原文未单独描述邮箱脱敏，故正文无需改动，以本条为准。
+
 ### v1.2 变更记录（2026-10-10，产品负责人拍板）
 
 **A. 产品负责人决策（编号对应决策表 D13–D27）**
@@ -149,9 +158,9 @@ flowchart LR
 | Memory | F08 情景/语义/基础工作记忆 | P0 | 把事件整理成事实、项目、决策等对象，避免只会全文匹配 | 可直接问“发生过什么” | 数据模型、规则整理、Agent 经 commit_memory 写入 |
 | Memory | F09 冲突/更新/结果验证/衰减 | P1 | 处理记忆过期及前后矛盾，减少旧信息被当成当前事实 | 长期记忆可信 | 证据关联、生命周期 |
 | 记忆服务 | F10 Search / Recall / Timeline / Evidence | P0 | 按模糊线索、时间、来源和项目找回，返回可核对片段 | 减少重复翻找 | DB、索引、权限引擎 |
-| AI 连接 | F11 MCP stdio、只读工具与 commit_memory / update_memory 写入 | P0 | Claude / Codex / Cursor 经同一 MCP Server，在用户授权后查询并（带 Evidence 引用）写入同一个数据底座 | 无需重复介绍背景 | MCP、Client 配置、本地 token + 客户端白名单 |
+| AI 连接 | F11 MCP stdio、只读工具（D30：V1 只读；commit_memory / update_memory 写回移至后续版本） | P0 | Claude / Codex / Cursor 经同一 MCP Server，在用户授权后只读查询同一个数据底座（带 Evidence 引用） | 无需重复介绍背景 | MCP、Client 配置、本地 token + 客户端白名单 |
 | AI 连接 | F12 CLI / Local API / 其他 Host 适配 | P1 | 扩展接入方式与更多 Host（Agent 写回已随 F11 进入 P0），保障跨工具连续使用 | 连接更广、记忆更准 | 接口契约、鉴权 |
-| 本地 Client | F13 HUD / 健康与数据状态 | P0 | 显示实际采集/索引/连接/异常状态，解决后台死亡不可见 | 用户信任与掌控 | Daemon、health、IPC |
+| 本地 Client | F13 HUD / 健康与数据状态 | P0 | 显示实际采集/索引/连接/异常状态，解决后台死亡不可见（D30，2026-10-13：数据观察与控制面板归 M3，见 v1.3 第 2 条） | 用户信任与掌控 | Daemon、health、IPC |
 | 用户控制 | F14 暂停/删除/黑名单/权限/访问审计 | P0 | 提供清晰的控制开关与本地权限边界 | 愿意长期安装 | 访问控制、存储 |
 | 经验演化 | F15 失败案例/方法/原则/Skill 支撑 | P2 | 聚合高价值证据供 AI 蒸馏方法与 Skill | 长期能力积累 | Memory 生命周期、外部 AI |
 
@@ -465,7 +474,7 @@ Source Input
 
 | 子功能 | 规则 | 结果 |
 |---|---|---|
-| 候选创建 | 候选仅来自两类：① AI Host 经 `commit_memory` 写入（必须带 Evidence 引用）；② 核心内基于规则的捕获（显式用户确认、可信结构化事件，如 Git commit / 会话元数据）。**核心内不做模型/LLM 抽取** | 可审阅/可撤销，标注来源与写入方（`created_by`） |
+| 候选创建 | 候选仅来自两类：① AI Host 经 `commit_memory` 写入（必须带 Evidence 引用；D30：V1 不做，移至后续版本）；② 核心内基于规则的捕获（显式用户确认、可信结构化事件，如 Git commit / 会话元数据）。**核心内不做模型/LLM 抽取** | 可审阅/可撤销，标注来源与写入方（`created_by`） |
 | 状态区分 | `observed`（系统观察）、`declared`（用户/AI 陈述）、`inferred`（推断）分开记录 | “用户说完成”不等于测试已通过 |
 | 新旧事实 | 对有时间性的事实保留 `valid_from/to`；更新当前状态时旧事实转历史 | 旧方案不会覆盖新方案 |
 | 冲突处理 | 来源矛盾时保留双方 Evidence，标为 `conflicted` 或 `needs_review` | 不随机选一个给 AI 当事实 |
@@ -476,7 +485,7 @@ Source Input
 
 **禁止行为**：不得仅凭模型生成一条没有来源的“用户习惯”；不得把“上次用过某个品牌”直接推断为“始终喜欢该品牌”；不得把 `inferred` 结果伪装成 `observed`。
 
-**Agent 写入约束（审阅修订）**：经 `commit_memory` 写入的记忆默认 `declared`；不得引用该 Host 的 AccessGrant 无权读取的 Evidence；无有效 Evidence 的提交一律拒绝。
+**Agent 写入约束（审阅修订；D30，2026-10-13：V1 不适用，后续版本生效）**：经 `commit_memory` 写入的记忆默认 `declared`；不得引用该 Host 的 AccessGrant 无权读取的 Evidence；无有效 Evidence 的提交一律拒绝。
 
 #### 3.6.4 异常处理及验收
 
@@ -532,11 +541,11 @@ Source Input
 | `get_evidence` | 查看原始证据 | evidence_id | 可用片段/定位/失效状态 | P0 |
 | `get_project_context` | 获取项目上下文 | project/workspace、recency | 最近状态/决策/未完项/证据 | P1（可先做基本版） |
 | `get_memory` | 获取结构化记忆 | type、subject、valid_at | 当前/历史事实 + 证据 | P1 |
-| `commit_memory` | Agent 写入（抽取由 Agent 完成） | proposal、evidence（必填）、bucket、reason | 成功/待确认/拒绝 | **P0**；核心仅校验写权限、Evidence 有效且在授权范围、规则去重/合并；无 Evidence 拒绝 |
-| `update_memory` | 修正与状态变更 | memory_id、changes、supporting_evidence | 新版本及审计信息 | **P0（最小：修正/撤销/标注失效，保留版本与审计）**；冲突闭环仍属 P1 |
+| `commit_memory` | Agent 写入（抽取由 Agent 完成） | proposal、evidence（必填）、bucket、reason | 成功/待确认/拒绝 | **后续版本（D30：V1 只读，M4 之后再评估写回）**；核心仅校验写权限、Evidence 有效且在授权范围、规则去重/合并；无 Evidence 拒绝 |
+| `update_memory` | 修正与状态变更 | memory_id、changes、supporting_evidence | 新版本及审计信息 | **后续版本（D30：V1 只读；下列 P0 最小方案保留为设计依据：修正/撤销/标注失效，保留版本与审计）**；冲突闭环仍属 P1 |
 | CLI / Local API | 扩展 Host/本地调用 | 等价的授权和查询参数 | 等价结果结构 | P1 |
 
-**P0 最小交付链路**：`MCP stdio → token/白名单鉴权 → 授权过滤 → search_context / get_timeline / get_evidence → 证据返回`；写入链路：`commit_memory / update_memory → 鉴权 + 写权限 + Evidence 校验 → 规则去重/合并 → 持久化 + 审计`。`get_memory` 仍为 P1，P0 期间 Memory 命中经 `search_context` 返回（供 Agent 写前查重，审阅修订）。
+**P0 最小交付链路**：`MCP stdio → token/白名单鉴权 → 授权过滤 → search_context / get_timeline / get_evidence → 证据返回`（D30，2026-10-13：V1 只读，以下写入链路移至后续版本）；后续版本写入链路：`commit_memory / update_memory → 鉴权 + 写权限 + Evidence 校验 → 规则去重/合并 → 持久化 + 审计`。`get_memory` 仍为 P1，P0 期间 Memory 命中经 `search_context` 返回（供 Agent 写前查重，审阅修订）。
 
 #### 3.8.3 跨 Host 权限与传输
 
@@ -550,7 +559,7 @@ Source Input
 3. 调用时再次做权限检查；无授权返回明确的 `permission_denied`，不返回受限内容的命中数量。
 4. **关键外发提醒**：KeyPulse 数据存放在本机，**但返回给云端 AI Host 后，片段可能被该 Host 传输到其云服务**。界面必须说明此边界，禁止写“用任何 AI 查询都绝不上云”。
 5. 用户撤销权限后新调用立即拒绝；外部 AI 已接收的历史上下文无法由 KeyPulse 远程撤回，必须向用户说明。
-6. **写操作授权**：`commit_memory` / `update_memory` 需 Grant 显式包含 write 操作及目标 Bucket，写入 Bucket 不得超出 Grant 范围；每次写入落审计（含 principal，不存敏感全文）。
+6. **写操作授权**（D30：V1 只读，本条适用于后续版本）：`commit_memory` / `update_memory` 需 Grant 显式包含 write 操作及目标 Bucket，写入 Bucket 不得超出 Grant 范围；每次写入落审计（含 principal，不存敏感全文）。
 7. **多 Host**：同一 MCP Server、每 Host 独立 token/Grant；Claude、Codex、Cursor 均须通过 P0 接口验收（AT17）。
 
 #### 3.8.4 异常处理及验收
@@ -811,7 +820,7 @@ macOS 菜单栏 / HUD
 
 ### 5.4 数据保留与故障诊断
 
-- **默认保留策略【待确认】**：不建议无限保留所有键盘/剪贴板原文；建议区分原始短期片段、关键事件、长期记忆和用户固定收藏，分别设置生命周期。
+- **默认保留策略【D32 部分决定，其余待确认】**：（D32，2026-10-13）不做自动删除，所有数据（含键盘、剪贴板原文）保留到用户主动删除为止。以下原建议已被 D32 取代，仅保留作背景：不建议无限保留所有键盘/剪贴板原文；建议区分原始短期片段、关键事件、长期记忆和用户固定收藏，分别设置生命周期。
 - **诊断策略【建议冻结】**：记录 Source 发现/启停、权限状态、事件写入量、队列积压、索引耗时、错误码及恢复次数；默认**不记录完整个人正文**。
 - **维护策略【建议冻结】**：支持查看存储占用、索引重建、按范围清除、导出日志和版本信息。
 - **升级策略【待工程确认】**：数据库 Schema 迁移兼容区间、备份回滚、升级后首次检查项和降级支持范围。
@@ -825,7 +834,7 @@ macOS 菜单栏 / HUD
 | 阶段 | 功能范围 | 阶段交付目标 | 出口条件 |
 |---|---|---|---|
 | **V0 · 基建核验** | 源码盘点、现有 daemon/capture/source/store/HUD 能力与测试现状核验；小样本数据基线 | 确认哪些直接复用，哪些必须重构 | 组件清单、差距表、冒烟报告齐备 |
-| **V1.0 · P0 最小闭环** | 安装/授权；动态采集；基础结构化源；清洗/分桶；本地 Event+基础 Memory；FTS 检索/证据；MCP（Claude/Codex/Cursor 同一 Server：只读 + commit_memory/update_memory 写入 + token/白名单鉴权）；HUD/暂停/隐私 | 用户真实提出历史问题，AI 能准确从本机找回并引用出处 | 核心 E2E 与权限/暂停/删除/鉴权阻断验收通过；成功判定见《Eval PRD》（`docs/KeyPulse_Eval_PRD.md` v1.0） |
+| **V1.0 · P0 最小闭环** | 安装/授权；动态采集；基础结构化源；清洗/分桶；本地 Event+基础 Memory；FTS 检索/证据；MCP（Claude/Codex/Cursor 同一 Server：只读 + token/白名单鉴权；commit_memory/update_memory 写入移至后续版本，D30 2026-10-13）；HUD/暂停/隐私（HUD Control Center 观察与控制归 M3，D30） | 用户真实提出历史问题，AI 能准确从本机找回并引用出处 | 核心 E2E 与权限/暂停/删除/鉴权阻断验收通过；成功判定见《Eval PRD》（`docs/KeyPulse_Eval_PRD.md` v1.0） |
 | **V1.1 · P1 长期记忆强化** | Memory 冲突与更新、Project/Task/Open Thread、跨源关联、Claude/Codex/Cursor 之外的 Host 适配、部分 IM Source 试点（仅官方接口：飞书/Slack） | 跨 Agent 任务续接与长期 Memory 更可信 | 更新冲突/跨 Host/权限回归通过 |
 | **V2.0 · P2 经验演化** | 失败案例与方法对象、多任务比较、经验复用、Skill 证据包与生成工作流 | 用户可从个人历史中复用方法与经验 | 方法人工评价与案例复现通过 |
 
@@ -866,8 +875,8 @@ macOS 菜单栏 / HUD
 | AT13 | 生活历史 vs 最新规定 | 含过去签证材料记录 | 只标识用户历史，不称其为现行法规 | P0 |
 | AT14 | 方法蒸馏 | 同类工作 3 次并含失败/成功 | AI 能获得带证据的 Method 候选，用户确认前不自动执行 | P2 |
 | AT15 | MCP 鉴权 | 无 token / 错误 token / 非白名单 client_id / 已撤销或已轮换的旧 token 发起连接与调用 | 全部被拒且不返回任何数据或命中数，并写审计；合法 token + 白名单正常；token 明文不出现在库、日志、审计 | **阻断** |
-| AT16 | Agent 写入 | Host 经 `commit_memory` 提交：有效 Evidence / 无 Evidence / 引用无权 Evidence / 写入未授权 Bucket / 重复提交 | 仅第一种成功；其余被拒；重复提交按规则去重合并且不丢 Evidence；核心内无 LLM 调用 | P0 |
-| AT17 | 三 Host 接入 | Claude、Codex、Cursor 各按其配置接入同一 MCP Server | 三者均可完成 AT01/AT04 查询与 AT16 写入，权限相互独立 | P0 |
+| AT16 | Agent 写入（D30，2026-10-13：移出 V1，后续版本验收） | Host 经 `commit_memory` 提交：有效 Evidence / 无 Evidence / 引用无权 Evidence / 写入未授权 Bucket / 重复提交 | 仅第一种成功；其余被拒；重复提交按规则去重合并且不丢 Evidence；核心内无 LLM 调用 | 后续版本（D30） |
+| AT17 | 三 Host 接入 | Claude、Codex、Cursor 各按其配置接入同一 MCP Server | 三者均可完成 AT01/AT04 查询，权限相互独立（AT16 写入部分 D30 移出 V1） | P0 |
 | AT18 | 用户排除名单 | 配置 App/域名排除后在其中输入/浏览 | 无对应内容事件入库 | P0 |
 | AT19 | Keyboard 开关 | 默认状态；开启；关闭 | 默认不采集；开启后仅产生过滤后文本片段、库中无逐键流；关闭后不再写入 | P0 |
 | AT20 | 聊天 App 默认排除 | 未开启时在聊天 App 中输入/浏览；对某 App 显式开启后 | 未开启时无对应内容事件入库；开启后事件进入 Private 分桶，未授权 Host 查询不到 | P0 |
@@ -880,8 +889,8 @@ P0 只有在以下条件**全部达成**时才能宣布完成：
 1. **有可复现的首次使用体验**：用户能独立完成安装、源授权、初始化和至少一个端到端查询。
 2. **动态与静态两种输入链路均可用**：不是只接 Chat History，也不是只有后台键盘片段。
 3. **Memory 和检索确实能找回事实**：代表性场景（W01、W02、L01、L02）可端到端跑通，无证据时合理拒答；**通过与否的量化判定由《Eval PRD》（`docs/KeyPulse_Eval_PRD.md` v1.0）规定**。
-4. **MCP Host 真正打通**：Claude、Codex、Cursor 三个 Host 均经同一 MCP Server 通过 P0 接口验收（含鉴权 AT15、写入 AT16、接入 AT17）；其它 Host 逐个列清。
-5. **HUD 运行状态可信**：后台故障、权限异常、索引滞后能区分，暂停与删除反馈准确。
+4. **MCP Host 真正打通**：Claude、Codex、Cursor 三个 Host 均经同一 MCP Server 通过 P0 接口验收（含鉴权 AT15、接入 AT17；写入 AT16 移出 V1，D30 2026-10-13）；其它 Host 逐个列清。
+5. **HUD 运行状态可信**：后台故障、权限异常、索引滞后能区分，暂停与删除反馈准确。（D30，2026-10-13：完整 HUD 数据观察与控制面板归 M3；V1 由 CLI health/status 区分这些状态。）
 6. **权限与控制阻断项通过**：未经授权的读取、暂停失效、删除不彻底、MCP 鉴权绕过等 AT05/06/10/15 不得带病发布；敏感串过滤（AT07）为 best-effort，非阻断，缺陷登记 P1。
 7. **回归资产完整**：Source 样本集、E2E 脚本、诊断手册齐全；评测集与性能基线按《Eval PRD》（`docs/KeyPulse_Eval_PRD.md` v1.0）要求交付。
 

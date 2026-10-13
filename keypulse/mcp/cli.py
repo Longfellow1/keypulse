@@ -1,18 +1,63 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
+import sys
 
 import click
 
 from keypulse.config import Config
 from keypulse.store.db import init_db
 
+HOSTS = ("claude", "codex", "cursor", "generic")
+EGRESS_NOTICE = "提示：KeyPulse 返回给该 AI 的内容会进入它的对话，并可能发送到该 AI 的云端模型服务。"
+
 
 @click.group(name="mcp", help="KeyPulse MCP server and client access.")
 def mcp_group() -> None:
     pass
+
+
+def _keypulse_executable() -> str:
+    """Absolute path of the running keypulse, so the written config works outside the shell PATH."""
+    argv0 = sys.argv[0] if sys.argv else ""
+    if argv0 and os.path.basename(argv0) == "keypulse" and os.path.isfile(argv0):
+        return os.path.abspath(argv0)
+    beside_python = os.path.join(os.path.dirname(sys.executable), "keypulse")
+    if os.path.isfile(beside_python):
+        return beside_python
+    found = shutil.which("keypulse")
+    return os.path.abspath(found) if found else "keypulse"
+
+
+def _host_config_lines(host: str, exe: str, token: str, client_id: str) -> list[str]:
+    from keypulse.mcp.auth import CLIENT_ENV, TOKEN_ENV
+
+    server = {"command": exe, "args": ["mcp", "serve"], "env": {TOKEN_ENV: token, CLIENT_ENV: client_id}}
+    json_block = json.dumps({"mcpServers": {"keypulse": server}}, indent=2)
+    if host == "claude":
+        return [
+            "Claude Code (CLI):\n",
+            f"  claude mcp add keypulse -e {TOKEN_ENV}={token} -e {CLIENT_ENV}={client_id} -- {shlex.quote(exe)} mcp serve\n",
+            ".mcp.json / claude_desktop_config.json snippet:\n",
+            json_block,
+        ]
+    if host == "codex":
+        # json.dumps yields TOML-compatible basic strings for these plain values.
+        return [
+            "Codex CLI: add this block to ~/.codex/config.toml:\n",
+            "[mcp_servers.keypulse]",
+            f"command = {json.dumps(exe)}",
+            'args = ["mcp", "serve"]',
+            f"env = {{ {TOKEN_ENV} = {json.dumps(token)}, {CLIENT_ENV} = {json.dumps(client_id)} }}\n",
+            "Or run this command (注意：它会把 token 记入 shell 历史；若 shell 设置了 HIST_IGNORE_SPACE，可在命令前加一个空格):\n",
+            f"  codex mcp add keypulse --env {TOKEN_ENV}={token} --env {CLIENT_ENV}={client_id} -- {shlex.quote(exe)} mcp serve\n",
+        ]
+    if host == "cursor":
+        return ["Cursor: write this JSON to ~/.cursor/mcp.json:\n", json_block]
+    return ["Generic MCP client (JSON snippet):\n", json_block]
 
 
 @mcp_group.command("serve", help="Run the MCP server over stdio (env KEYPULSE_TOKEN + KEYPULSE_CLIENT).")
@@ -34,11 +79,13 @@ def serve_command() -> None:
 @click.option("--operations", default="read", show_default=True, help="Comma-separated: read[,write].")
 @click.option("--purpose", default=None, help="Why this client needs access (shown in 'mcp list').")
 @click.option("--expires-in-days", type=click.IntRange(min=1), default=None, help="Grant expires after N days.")
+@click.option("--host", type=click.Choice(HOSTS), default="claude", show_default=True,
+              help="Which AI client's connection config to print.")
 def grant_command(client_id: str, buckets: str, sources: str | None, operations: str,
-                  purpose: str | None, expires_in_days: int | None) -> None:
+                  purpose: str | None, expires_in_days: int | None, host: str) -> None:
     from datetime import datetime, timedelta, timezone
 
-    from keypulse.mcp.auth import CLIENT_ENV, TOKEN_ENV, create_grant
+    from keypulse.mcp.auth import create_grant
 
     init_db(Config.load().db_path_expanded)
     expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days) if expires_in_days else None
@@ -53,22 +100,14 @@ def grant_command(client_id: str, buckets: str, sources: str | None, operations:
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    exe = shutil.which("keypulse") or "keypulse"
+    exe = _keypulse_executable()
     scope = f"buckets={buckets}, sources={sources or 'all in buckets'}, operations={operations}"
     click.echo(f"Granted client '{client_id}' ({scope}). Token (shown once, only its hash is stored):\n")
     click.echo(f"  {token}\n")
-    click.echo("Claude Code (CLI):\n")
-    click.echo(
-        f"  claude mcp add keypulse -e {TOKEN_ENV}={token} -e {CLIENT_ENV}={client_id} -- {shlex.quote(exe)} mcp serve\n"
-    )
-    click.echo(".mcp.json / claude_desktop_config.json snippet:\n")
-    snippet = {
-        "mcpServers": {
-            "keypulse": {"command": exe, "args": ["mcp", "serve"], "env": {TOKEN_ENV: token, CLIENT_ENV: client_id}}
-        }
-    }
-    click.echo(json.dumps(snippet, indent=2))
+    for line in _host_config_lines(host, exe, token, client_id):
+        click.echo(line)
     click.echo("\nBoth values are required; a call without the matching client id is denied.")
+    click.echo(EGRESS_NOTICE)
     click.echo("Keep the config file readable by your user only. Revoke with: keypulse mcp revoke " + client_id)
 
 

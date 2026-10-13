@@ -26,7 +26,7 @@ Star KeyPulse if you care about:
 
 ## Longer introduction
 
-KeyPulse is a local-first tool for macOS. It captures your work activity on your own machine — the apps you switch to, the lines you paste, the windows you keep returning to — and forgets sensitive content before it reaches disk. Today you can read what it has captured through the CLI and the menu-bar HUD. Serving that memory to Claude / Codex / Cursor over MCP (a standard protocol that lets AI tools read external context) is **in development**.
+KeyPulse is a local-first tool for macOS. It captures your work activity on your own machine — the apps you switch to, the lines you paste, the windows you keep returning to — and forgets sensitive content before it reaches disk. Today you can read what it has captured through the CLI and the menu-bar HUD. Serving that memory read-only to Claude / Codex / Cursor over MCP (a standard protocol that lets AI tools read external context) is **available**, with per-AI grants.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
@@ -120,7 +120,7 @@ Background tools die. Permissions get revoked. KeyPulse assumes this and bakes r
 │  Surfaces                                                     │
 │  • Menu-bar HUD (WKWebView · today's focus + fix-path on err) │
 │  • CLI (timeline / search / stats / export)                   │
-│  • MCP server (in development) → Claude / Codex / Cursor      │
+│  • MCP server (read-only) → Claude / Codex / Cursor          │
 └──────────────────────────────────────────────────────────────┘
 
        ↑ Capability self-check (60s loop, domains independently probed)
@@ -186,16 +186,35 @@ Miss any one, redesign.
 
 ---
 
+## Connect an AI (MCP)
+
+KeyPulse runs as an MCP server (`keypulse mcp serve`, stdio). Each AI client is granted separately, read-only, and can be limited to buckets (Work / Personal / Private / Financial):
+
+```bash
+keypulse mcp grant claude --buckets Work,Personal          # default --host claude
+keypulse mcp grant codex  --host codex --buckets Work
+keypulse mcp grant cursor --host cursor --buckets Work
+```
+
+The token is shown once (only its hash is stored locally), followed by that client's config: the `claude mcp add` command for Claude Code; a `~/.codex/config.toml` block for Codex; `~/.cursor/mcp.json` for Cursor; `--host generic` prints plain JSON. The command in the config uses keypulse's absolute path, so it starts outside your shell PATH.
+
+Tools today: `search_context` (keyword / time / source search, with a coverage note), `get_timeline`, `get_evidence` (fetch the original source), `rate_result` (feedback on a result).
+
+- Manage grants: `keypulse mcp list`, `keypulse mcp rotate <client>` (new token), `keypulse mcp revoke <client>`, `keypulse mcp audit` (call log; no query text or tokens)
+- Note: content KeyPulse returns to an AI enters that AI's conversation and may be sent to its cloud model service.
+
+---
+
 ## Status
 
 - **Platform:** macOS 12+ (Apple Silicon + Intel)
 - **Tests:** 800+ passing (pytest, including capability framework architectural invariants)
 - **Installable:** Homebrew installs the CLI; `keypulse install init` initializes runtime + launchd
 - **First-time setup:** no model configuration needed; follow the HUD's yellow bar to grant permissions
-- **MCP server:** in development — lets Claude / Codex / Cursor read your memory over MCP, with evidence and access control
+- **MCP server:** available (read-only) — Claude / Codex / Cursor read your memory over MCP, with evidence and per-AI access control
 - **Roadmap:** cross-device merge
 
-KeyPulse is early: capture, search, timeline and the menu-bar HUD work today; the MCP server is in development.
+KeyPulse is early: capture, search, timeline, the menu-bar HUD and the read-only MCP server work today.
 
 ---
 
