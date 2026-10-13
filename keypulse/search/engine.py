@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Optional
 
+from keypulse.capture.watchers.browser import DEFAULT_SUPPORTED_BROWSERS
 from keypulse.search.backends import resolve_search_backend
 from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES
 from keypulse.store.context_label import CONTEXT_LABEL_SOURCES
@@ -147,6 +148,13 @@ _NOT_ECHO_SQL = (
     " THEN json_extract(e.metadata_json, '$.pre_fix_keyboard') END) IS NOT 1"
 )
 
+# Progressive-typing snapshots (ax_text): an earlier state of a sentence that a later row extends.
+# Marked by migration v33 / store.snapshots (metadata_json.superseded_by). Always hidden from search
+# and timeline; get_evidence still resolves them.
+_NOT_SUPERSEDED_SQL = (
+    "(CASE WHEN json_valid(e.metadata_json) THEN json_extract(e.metadata_json, '$.superseded_by') END) IS NULL"
+)
+
 _SCOPED_CANDIDATES = 500
 _TF_SATURATION = 0.9   # bm25-style term-frequency saturation: repeats add less and less
 _LEN_NORM = 0.9        # strong length normalisation: a long transcript message is not "more relevant"
@@ -276,6 +284,7 @@ def _scope_clauses(
         params.extend(buckets)
     if not include_keypulse_echoes:
         where.append(_NOT_ECHO_SQL)
+    where.append(_NOT_SUPERSEDED_SQL)
     return where, params
 
 
@@ -322,7 +331,8 @@ def search_events(
     then recency. (Recency is a unique key, ts + id, so weight must sit before it to ever act.)
     Rows with identical text (same
     source family and bucket) are then folded into one hit with occurrences / first_seen / last_seen,
-    before LIMIT; counts cover the (<= 500 newest) in-scope candidates.
+    before LIMIT; counts cover the (<= 500 newest) in-scope candidates. Browser pages fold across
+    sources (see _collapse) and carry also_seen_in. Superseded snapshots are never candidates.
 
     The caller (an AI host) is responsible for turning a question into keywords; no query
     understanding happens here. `since`/`until` bound the event's real occurred_at (ts_start),
@@ -371,7 +381,7 @@ def search_events(
     # semantic_weight, then recency. Deterministic for identical input.
     scored.sort(key=lambda x: x[:3], reverse=True)
     hits = []
-    for r, found, occurrences, first_seen, last_seen in _collapse(scored)[:limit]:
+    for r, found, occurrences, first_seen, last_seen, also_seen_in in _collapse(scored)[:limit]:
         d = dict(r)
         d.pop("semantic_weight", None)
         d["snippet"] = _snippet(display_text(d), found)
@@ -383,34 +393,101 @@ def search_events(
         d["occurrences"] = occurrences
         d["first_seen"] = first_seen
         d["last_seen"] = last_seen
+        d["also_seen_in"] = also_seen_in  # other sources that recorded this same item (browser pages)
         hits.append(d)
     return hits
 
 
 _SOURCE_FAMILY = {"chrome_history": "browser", "safari_history": "browser", "browser_url": "browser"}
 
+# Browser page rows: the page title is what they are about. Sources that carry the page title in
+# content_text (history plugins, browser_url) and window rows whose app is a browser (title in
+# window_title, with the browser name / "已固定" / unread counter around it) fold by that title.
+_PAGE_TITLE_SOURCES = frozenset({"chrome_history", "safari_history", "browser_url"})
+_FOLD_WINDOW = timedelta(minutes=10)  # same page title further apart than this is a separate hit
+_BROWSER_NAMES = tuple(sorted({name.casefold() for name in DEFAULT_SUPPORTED_BROWSERS}))
+_BROWSER_SUFFIX = re.compile(r"\s*-\s*(?:" + "|".join(re.escape(n) for n in _BROWSER_NAMES) + r")$")
+_PINNED_SUFFIX = re.compile(r"\s*-?\s*已固定$")  # Chinese Chrome pinned-tab marker
+_UNREAD_PREFIX = re.compile(r"^\(\d+\)\s*")
+_PAGE_KEY = "page"
+
+
+def _is_browser_app(app_name: Optional[str]) -> bool:
+    return bool(app_name) and app_name.strip().casefold() in _BROWSER_NAMES
+
+
+def _canonical_page_title(text: Optional[str]) -> str:
+    """Lowercased, whitespace-collapsed title without browser suffix, pinned marker or unread counter."""
+    title = " ".join(str(text or "").casefold().split())
+    while True:
+        before = title
+        title = _UNREAD_PREFIX.sub("", title)
+        title = _BROWSER_SUFFIX.sub("", title)
+        title = _PINNED_SUFFIX.sub("", title)
+        if title == before:
+            return title.strip()
+
+
+def _page_title(r) -> str:
+    """Canonical page title of a browser-family row, or '' when the row is not one / has no title."""
+    if r["source"] in _PAGE_TITLE_SOURCES:
+        return _canonical_page_title(r["content_text"])
+    if r["source"] == "window" and _is_browser_app(r["app_name"]):
+        return _canonical_page_title(r["window_title"])
+    return ""
+
 
 def _collapse_key(r) -> tuple:
+    page = _page_title(r)
+    if page:
+        return (_PAGE_KEY, r["bucket"], page)
     # The context label of imported rows is not part of the fold key: folding stays what it was.
     title = "" if r["source"] in CONTEXT_LABEL_SOURCES else (r["window_title"] or "")
     text = " ".join(((r["content_text"] or "") + " | " + title + " | " + (r["app_name"] or "")).lower().split())
     return (_SOURCE_FAMILY.get(r["source"], r["source"]), r["bucket"], text)
 
 
+def _parse_ts(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _time_clusters(members: list) -> list:
+    """Split one page-title group into runs where each row is within _FOLD_WINDOW of the previous one
+    (by occurred_at). Each run keeps rank order. Items are (rank_index, item)."""
+    by_time = sorted(members, key=lambda m: _parse_ts(m[1][3]["occurred_at"]))
+    runs = [[by_time[0]]]
+    for member in by_time[1:]:
+        previous = runs[-1][-1][1][3]["occurred_at"]
+        if _parse_ts(member[1][3]["occurred_at"]) - _parse_ts(previous) <= _FOLD_WINDOW:
+            runs[-1].append(member)
+        else:
+            runs.append([member])
+    return [sorted(run, key=lambda m: m[0]) for run in runs]
+
+
 def _collapse(scored: list) -> list:
-    """Group ranked rows with the same normalised text (same source family and bucket) into one hit:
-    the best-ranked row is the representative (its own evidence is kept) and the group carries
-    occurrences / first_seen / last_seen. It only sees rows the WHERE clause already admitted (grant
-    buckets and sources), and runs before LIMIT, so it can neither merge nor count anything outside
-    the grant. Groups keep the rank order of their best member."""
+    """Group ranked rows into one hit each. Rows with the same normalised text (same source family and
+    bucket) fold together. Browser page rows fold across sources too (same canonical page title, same
+    bucket, occurred_at within _FOLD_WINDOW of each other). The best-ranked row is the representative
+    (its own evidence is kept); the group carries occurrences / first_seen / last_seen and also_seen_in
+    (the other distinct sources). It only sees rows the WHERE clause already admitted (grant buckets and
+    sources), and runs before LIMIT, so it can neither merge nor count anything outside the grant.
+    Groups keep the rank order of their best member."""
     groups: dict[tuple, list] = {}
-    for item in scored:
-        groups.setdefault(_collapse_key(item[3]), []).append(item)
+    for index, item in enumerate(scored):
+        groups.setdefault(_collapse_key(item[3]), []).append((index, item))
+    clusters: list[list] = []
+    for key, members in groups.items():
+        clusters.extend(_time_clusters(members) if key[0] == _PAGE_KEY else [members])
+    clusters.sort(key=lambda c: c[0][0])
     out = []
-    for members in groups.values():
-        rep = members[0]
-        times = [m[3]["occurred_at"] for m in members]
-        out.append((rep[3], rep[4], len(members), min(times), max(times)))
+    for members in clusters:
+        items = [m[1] for m in members]
+        rep = items[0]
+        times = [m[3]["occurred_at"] for m in items]
+        also_seen_in = sorted({m[3]["source"] for m in items} - {rep[3]["source"]})
+        out.append((rep[3], rep[4], len(items), min(times), max(times), also_seen_in))
     return out
 
 
@@ -440,6 +517,7 @@ def timeline_events(
     params: list = [*types, *buckets]
     if not include_keypulse_echoes:
         where.append(_NOT_ECHO_SQL)
+    where.append(_NOT_SUPERSEDED_SQL)
     if sources is not None:
         where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
         params.extend(sources)

@@ -37,8 +37,9 @@ def db(tmp_path):
 
 # ── collapse ─────────────────────────────────────────────────────────────────────────────────
 def test_identical_rows_collapse_with_count_and_range(db) -> None:
-    ids = [_ins("pelican dashboard", f"2026-05-0{d}T10:00:00+00:00", source="chrome_history") for d in (1, 2, 3)]
-    other = _ins("pelican runbook", "2026-05-04T10:00:00+00:00", source="chrome_history")
+    # identical text folds across days for non-browser sources (browser pages fold within 10 min only)
+    ids = [_ins("pelican dashboard", f"2026-05-0{d}T10:00:00+00:00", source="claude_code") for d in (1, 2, 3)]
+    other = _ins("pelican runbook", "2026-05-04T10:00:00+00:00", source="claude_code")
     hits = search_events(["pelican"], buckets=["Work"])
     assert len(hits) == 2
     folded = next(h for h in hits if h["id"] != other)
@@ -50,7 +51,7 @@ def test_identical_rows_collapse_with_count_and_range(db) -> None:
 
 def test_collapse_runs_before_limit_so_repeats_do_not_crowd(db) -> None:
     for d in range(1, 8):
-        _ins("pelican dashboard", f"2026-05-{d:02d}T10:00:00+00:00", source="chrome_history")
+        _ins("pelican dashboard", f"2026-05-{d:02d}T10:00:00+00:00", source="claude_code")
     distinct = _ins("pelican export guide", "2026-04-01T10:00:00+00:00", source="chrome_history")
     top2 = search_events(["pelican"], buckets=["Work"], limit=2)
     assert len(top2) == 2 and distinct in {h["id"] for h in top2}
@@ -62,9 +63,9 @@ def test_different_source_or_bucket_never_merge(db) -> None:
     _ins("pelican plan", "2026-05-03T10:00:00+00:00", source="zsh_history", bucket="Personal")
     hits = search_events(["pelican"], buckets=["Work", "Personal"])
     assert len(hits) == 3 and all(h["occurrences"] == 1 for h in hits)
-    # browser sources are one family: chrome + safari with the same title in one bucket fold
+    # browser sources fold across sources: chrome + safari with the same page title within 10 min fold
     _ins("pelican wiki", "2026-05-01T10:00:00+00:00", source="chrome_history")
-    _ins("pelican wiki", "2026-05-02T10:00:00+00:00", source="safari_history")
+    _ins("pelican wiki", "2026-05-01T10:01:00+00:00", source="safari_history")
     wiki = [h for h in search_events(["wiki"], buckets=["Work"])]
     assert len(wiki) == 1 and wiki[0]["occurrences"] == 2
 

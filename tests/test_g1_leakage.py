@@ -53,6 +53,8 @@ G1_COVERED_RESPONSE_FIELDS = {
     "results", "results[].id", "results[].snippet", "results[].occurred_at", "results[].source",
     "results[].bucket", "results[].evidence_id", "results[].evidence_available", "results[].match", "results[].match_reason",
     "results[].occurrences", "results[].first_seen", "results[].last_seen",
+    # cross-source fold: other in-grant sources that recorded the same page (names only, never out-of-grant)
+    "results[].also_seen_in",
     "coverage", "coverage.partial", "coverage.note", "coverage.time_range",
     "coverage.time_range.start", "coverage.time_range.end", "coverage.buckets", "coverage.sources",
     # M2-2: per-source span inside the grant (names / times of in-scope sources only; NO excluded counts)
