@@ -11,6 +11,7 @@ paths compute the same marking.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -19,6 +20,8 @@ from typing import Optional
 # buffered flushes (silence or 20 s), so no row extends the previous one.
 SNAPSHOT_SOURCES = ("ax_text",)
 SNAPSHOT_WINDOW = timedelta(seconds=120)
+_PINYIN_TAIL = re.compile(r"[a-z']+$")
+_CJK = re.compile(r"[\u4e00-\u9fff]$")
 
 
 def _normalise(text: Optional[str]) -> str:
@@ -36,7 +39,12 @@ def is_superseded_by(prev_text: Optional[str], next_text: Optional[str]) -> bool
     if nxt.startswith(prev):
         return True
     stem = prev.rsplit(" ", 1)[0] if " " in prev else ""
-    return bool(stem) and nxt.startswith(stem + " ")
+    if stem and nxt.startswith(stem + " "):
+        return True
+    # Chinese has no spaces: an unconfirmed pinyin run glued to the end ("我想测试yixia") is the tail.
+    cjk_stem = _PINYIN_TAIL.sub("", prev)
+    return cjk_stem != prev and _CJK.search(cjk_stem) is not None and len(nxt) > len(cjk_stem) \
+        and nxt.startswith(cjk_stem)
 
 
 def _parse(ts: str) -> datetime:

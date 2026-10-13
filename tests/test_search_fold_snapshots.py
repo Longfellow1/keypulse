@@ -62,21 +62,14 @@ def test_same_page_from_four_sources_is_one_hit_with_also_seen_in(db) -> None:
     assert hit["evidence_id"] is not None  # representative keeps its own evidence
 
 
-def test_same_title_two_hours_apart_stays_two_hits(db) -> None:
-    _ins("Pelican Guide", "2026-05-01T10:00:00+00:00", source="chrome_history")
-    _ins("Pelican Guide", "2026-05-01T12:00:00+00:00", source="chrome_history")
+def test_same_page_revisited_later_folds_with_time_span(db) -> None:
+    # Like identical text, revisits fold into one hit; first_seen / last_seen keep the span and
+    # get_timeline answers "when exactly". Revisits must not crowd other pages out of the results.
+    for ts in ("2026-05-01T10:00:00+00:00", "2026-05-01T12:00:00+00:00", "2026-05-03T09:00:00+00:00"):
+        _ins("Pelican Guide", ts, source="chrome_history")
     hits = _search(["pelican"], buckets=["Work"])
-    assert len(hits) == 2 and all(h["occurrences"] == 1 and h["also_seen_in"] == [] for h in hits)
-
-
-def test_page_visits_chain_within_ten_minutes_and_split_after(db) -> None:
-    # 0, 6, 12 min: each gap is within 10 min, so one run; the 40 min visit starts a new hit.
-    for minute in (0, 6, 12, 40):
-        _ins("Pelican Guide", f"2026-05-01T10:{minute:02d}:00+00:00", source="safari_history")
-    hits = _search(["pelican"], buckets=["Work"])
-    assert sorted(h["occurrences"] for h in hits) == [1, 3]
-    folded = next(h for h in hits if h["occurrences"] == 3)
-    assert folded["first_seen"].startswith("2026-05-01T10:00") and folded["last_seen"].startswith("2026-05-01T10:12")
+    assert len(hits) == 1 and hits[0]["occurrences"] == 3 and hits[0]["also_seen_in"] == []
+    assert hits[0]["first_seen"].startswith("2026-05-01T10:00") and hits[0]["last_seen"].startswith("2026-05-03T09:00")
 
 
 def test_different_bucket_never_folds(db) -> None:
@@ -176,3 +169,10 @@ def test_migration_v33_marks_chain_and_is_idempotent(db) -> None:
     conn.commit()
     assert marks() == first
     assert [h["id"] for h in _search(["pelican"], buckets=["Work"])] == [ids[-1]]
+
+
+def test_chinese_pinyin_tail_is_an_earlier_state() -> None:
+    from keypulse.store.snapshots import is_superseded_by
+    assert is_superseded_by("我想测试yixia", "我想测试一下吧")
+    assert not is_superseded_by("我想测试yixia", "你好")
+    assert not is_superseded_by("abc", "xyz")

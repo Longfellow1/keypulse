@@ -404,7 +404,6 @@ _SOURCE_FAMILY = {"chrome_history": "browser", "safari_history": "browser", "bro
 # content_text (history plugins, browser_url) and window rows whose app is a browser (title in
 # window_title, with the browser name / "已固定" / unread counter around it) fold by that title.
 _PAGE_TITLE_SOURCES = frozenset({"chrome_history", "safari_history", "browser_url"})
-_FOLD_WINDOW = timedelta(minutes=10)  # same page title further apart than this is a separate hit
 _BROWSER_NAMES = tuple(sorted({name.casefold() for name in DEFAULT_SUPPORTED_BROWSERS}))
 _BROWSER_SUFFIX = re.compile(r"\s*-\s*(?:" + "|".join(re.escape(n) for n in _BROWSER_NAMES) + r")$")
 _PINNED_SUFFIX = re.compile(r"\s*-?\s*已固定$")  # Chinese Chrome pinned-tab marker
@@ -447,29 +446,10 @@ def _collapse_key(r) -> tuple:
     return (_SOURCE_FAMILY.get(r["source"], r["source"]), r["bucket"], text)
 
 
-def _parse_ts(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value)
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
-
-
-def _time_clusters(members: list) -> list:
-    """Split one page-title group into runs where each row is within _FOLD_WINDOW of the previous one
-    (by occurred_at). Each run keeps rank order. Items are (rank_index, item)."""
-    by_time = sorted(members, key=lambda m: _parse_ts(m[1][3]["occurred_at"]))
-    runs = [[by_time[0]]]
-    for member in by_time[1:]:
-        previous = runs[-1][-1][1][3]["occurred_at"]
-        if _parse_ts(member[1][3]["occurred_at"]) - _parse_ts(previous) <= _FOLD_WINDOW:
-            runs[-1].append(member)
-        else:
-            runs.append([member])
-    return [sorted(run, key=lambda m: m[0]) for run in runs]
-
-
 def _collapse(scored: list) -> list:
     """Group ranked rows into one hit each. Rows with the same normalised text (same source family and
-    bucket) fold together. Browser page rows fold across sources too (same canonical page title, same
-    bucket, occurred_at within _FOLD_WINDOW of each other). The best-ranked row is the representative
+    bucket) fold together. Browser page rows fold across sources too (same canonical page title and
+    bucket, at any time, like identical text; get_timeline answers "which time"). The best-ranked row is the representative
     (its own evidence is kept); the group carries occurrences / first_seen / last_seen and also_seen_in
     (the other distinct sources). It only sees rows the WHERE clause already admitted (grant buckets and
     sources), and runs before LIMIT, so it can neither merge nor count anything outside the grant.
@@ -479,7 +459,7 @@ def _collapse(scored: list) -> list:
         groups.setdefault(_collapse_key(item[3]), []).append((index, item))
     clusters: list[list] = []
     for key, members in groups.items():
-        clusters.extend(_time_clusters(members) if key[0] == _PAGE_KEY else [members])
+        clusters.append(members)
     clusters.sort(key=lambda c: c[0][0])
     out = []
     for members in clusters:
