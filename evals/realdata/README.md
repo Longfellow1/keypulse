@@ -66,6 +66,29 @@ python -m evals.realdata report            # writes <run dir>/report.md
 Common flags: `--data-dir`, `--questions`, `--run-dir` (default: latest run), `--only ID...`.
 `run` is resumable: question ids already in `results-<arm>.jsonl` are skipped. `judge` resumes the same way.
 
+## Running on Codex (cheap model)
+
+`--host codex` runs the KeyPulse arm through the Codex CLI, and `--judge-host codex` grades through it too.
+Defaults: `gpt-6-luna` for codex (`--model` / `--judge-model`), `sonnet` for claude. `--codex-bin` defaults to the
+ChatGPT app's bundled binary. The bash arm stays on Claude, so run it separately:
+
+```bash
+python -m evals.realdata run --arm kp --host codex
+python -m evals.realdata run --arm bash --deny-regex <build-session-id>   # Claude, as before
+python -m evals.realdata replay
+python -m evals.realdata judge --judge-host codex
+python -m evals.realdata report
+```
+
+- `all` refuses `--host codex`, because it also runs the bash arm.
+- Codex runs use `codex exec` with the shell, file, app, browser, plugin and sub-agent tools switched off. Web
+  search is off. The only tools are `mcp__keypulse__*`. A run whose transcript shows any other tool call is listed
+  under "Isolation violations" in the report. Those rows still count, so treat a non-empty list as a failed run.
+- The KeyPulse grant reaches Codex through a 0700 wrapper script in the per-question temp dir. It is deleted
+  after each question and the token never goes into argv or results.
+- Rows record `host`, `model` and, for codex, `usage`. Judged rows record `judge_host` and `judge_model`.
+  Retries also cover codex rate-limit, 5xx and dropped-stream errors.
+
 - `--exclude-session` / `--authored-after` delete `claude_code` and `codex_cli` rows only. A session id matches
   `session_id`, `external_id`, `metadata_json` or an evidence locator. `--authored-after` compares against
   `ts_start` as a string, so use the stored ISO format.

@@ -352,3 +352,215 @@ def test_judge_retries_empty_output(monkeypatch):
     monkeypatch.setattr(judge.time, "sleep", lambda s: None)
     assert '"correct"' in judge.call_judge("p", model="m", claude="claude", retries=2, wait=0)
     assert len(calls) == 3
+
+
+# ---- Codex host (cheap model) ----
+
+def _ev(*evs):
+    return "\n".join(json.dumps(e) for e in evs) + "\n"
+
+
+def _msg(text):
+    return {"type": "item.completed", "item": {"type": "agent_message", "text": text}}
+
+
+def _mcp(tool, args, server="keypulse"):
+    return {"type": "item.completed", "item": {"type": "mcp_tool_call", "server": server, "tool": tool,
+                                               "arguments": args, "status": "completed"}}
+
+
+def test_codex_command_is_isolated_and_never_carries_the_token():
+    from evals.realdata.runner import CODEX_DISABLE, build_codex_command
+
+    wrapper = Path("/tmp/run/kp-A1.sh")
+    cmd = build_codex_command("PROMPT", model="gpt-6-luna", codex="/bin/codex", wrapper=wrapper)
+    assert cmd[:2] == ["/bin/codex", "exec"] and cmd[-1] == "PROMPT"
+    assert cmd[cmd.index("-m") + 1] == "gpt-6-luna" and cmd[cmd.index("-s") + 1] == "read-only"
+    disabled = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--disable"]
+    assert disabled == CODEX_DISABLE and "code_mode_host" not in disabled  # MCP tools need code_mode_host
+    assert 'web_search="disabled"' in cmd
+    assert f'mcp_servers.keypulse.command="{wrapper}"' in cmd
+    assert 'mcp_servers.keypulse.default_tools_approval_mode="approve"' in cmd
+    assert "--ignore-user-config" in cmd and "--ephemeral" in cmd and "--json" in cmd
+    assert "kp_" not in " ".join(cmd)
+    plain = build_codex_command("PROMPT", model="m", codex="codex")
+    assert not any("mcp_servers" in a for a in plain)  # judge calls get no MCP server
+
+
+def test_codex_wrapper_is_0700_quoted_and_exports_the_grant(tmp_path):
+    import subprocess
+
+    from evals.realdata.runner import write_codex_wrapper
+
+    tools = tmp_path / "My Tools"
+    tools.mkdir()
+    fake_kp = tools / "keypulse"
+    env_out = tmp_path / "env.txt"
+    fake_kp.write_text('#!/bin/sh\necho "$KEYPULSE_TOKEN|$KEYPULSE_CLIENT|$HOME|$*" > "$FAKE_ENV_OUT"\n')
+    fake_kp.chmod(0o700)
+    token = "kp_a'b $(touch x)"  # quotes and shell syntax must survive as literal text
+    wrapper = tmp_path / "kp-A1.sh"
+    write_codex_wrapper(wrapper, keypulse_bin=str(fake_kp), token=token, client="rdeval-work",
+                        home=tmp_path / "home")
+    assert stat.S_IMODE(wrapper.stat().st_mode) == 0o700
+    body = wrapper.read_text()
+    assert body.startswith("#!/bin/sh\n") and "exec " in body and "mcp serve" in body
+    assert "export KEYPULSE_TOKEN=" in body and "export HOME=" in body
+    res = subprocess.run([str(wrapper)], capture_output=True, text=True, timeout=20,
+                         env={"PATH": os.environ["PATH"], "FAKE_ENV_OUT": str(env_out)})
+    assert res.returncode == 0, res.stderr
+    got = env_out.read_text().strip().split("|")
+    assert got[0] == token and got[1] == "rdeval-work" and got[2] == str(tmp_path / "home")
+    assert got[3] == "mcp serve"  # the token arrived verbatim: no shell expansion
+
+
+def test_parse_codex_stream_keeps_last_answer_tools_and_flags_other_tools():
+    from evals.realdata.runner import parse_codex_stream
+
+    out = parse_codex_stream(_ev(
+        {"type": "thread.started"},
+        _msg("thinking out loud"),
+        _mcp("search_context", json.dumps({"keywords": ["secretword"]})),
+        {"type": "item.started", "item": {"type": "command_execution", "command": "ls"}},
+        {"type": "item.completed", "item": {"type": "command_execution", "command": "ls", "exit_code": 0}},
+        _mcp("get_timeline", {"start": "2026-01-01"}),
+        _msg("final answer (Work)"),
+        {"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 4}},
+    ))
+    assert out["answer"] == "final answer (Work)" and out["is_error"] is False and out["cost_usd"] is None
+    assert [t["name"] for t in out["tools"]] == ["mcp__keypulse__search_context", "mcp__keypulse__get_timeline"]
+    assert out["tools"][0]["args"] == {"keywords": ["secretword"]} and out["tools"][1]["args"] == {"start": "2026-01-01"}
+    assert out["non_kp_tools"] == ["command_execution"] and out["usage"] == {"input_tokens": 10, "output_tokens": 4}
+
+
+def test_parse_codex_stream_failure_and_foreign_servers():
+    from evals.realdata.runner import parse_codex_stream
+
+    failed = parse_codex_stream(_ev(_msg("partial"), {"type": "turn.failed", "error": {"message": "rate limit hit"}}))
+    assert failed["is_error"] and failed["answer"] == "" and failed["error"] == "rate limit hit"
+    err = parse_codex_stream(_ev({"type": "error", "message": "stream disconnected before completion"}))
+    assert err["is_error"] and err["error"].startswith("stream disconnected")
+    foreign = parse_codex_stream(_ev(_mcp("read_file", {}, server="filesystem"), _msg("x")))
+    assert foreign["tools"] == [] and foreign["non_kp_tools"] == ["mcp_tool_call:filesystem"]
+    assert parse_codex_stream("not json\n")["answer"] == ""  # garbage lines are skipped, not fatal
+
+
+def test_codex_errors_are_transient_only_when_api_side():
+    from evals.realdata.runner import is_transient
+
+    base = {"host": "codex", "exit": 1, "is_error": True, "answer": "", "tool_calls": 2}
+    assert is_transient({**base, "error": "stream disconnected before completion"})
+    assert is_transient({**base, "error": "HTTP 429 Too Many Requests"})
+    assert is_transient({**base, "error": "server returned 503"})
+    assert not is_transient({**base, "error": "model not found"})
+    assert not is_transient({**base, "host": "claude", "error": "stream disconnected"})  # claude rows: old rule
+
+
+def test_judge_codex_path_takes_last_agent_message(monkeypatch):
+    seen = []
+
+    class P:
+        returncode = 0
+        stdout = _ev(_msg("draft"), _msg('{"verdict": "partial", "reason": "missing date"}'))
+
+    def fake_run(cmd, **k):
+        seen.append(cmd)
+        return P()
+
+    monkeypatch.setattr(judge.subprocess, "run", fake_run)
+    text = judge.call_judge("grade this", model="gpt-6-luna", host="codex", codex="/bin/codex", retries=0)
+    assert judge.parse_judge_output(text)["verdict"] == "partial"
+    cmd = seen[0]
+    assert cmd[0] == "/bin/codex" and cmd[-1] == "grade this" and "--disable" in cmd
+    assert not any("mcp_servers" in a for a in cmd)
+
+
+def test_codex_cli_refuses_bash_arm_and_all(tmp_path, capsys):
+    data = tmp_path / "evals"
+    data.mkdir()
+    (data / "questions.jsonl").write_text(json.dumps(
+        {"id": "A1", "group": "A", "grant": ["Work"], "query": "q", "gold_answer": "g"}) + "\n")
+    base = ["--data-dir", str(data)]
+    with pytest.raises(SystemExit, match="bash arm stays on Claude"):
+        main(["run", *base, "--arm", "bash", "--host", "codex"])
+    with pytest.raises(SystemExit, match="stays on Claude"):
+        main(["all", *base, "--host", "codex"])
+    assert not (data / "runs").exists()  # nothing ran
+
+
+@pytest.fixture
+def fake_codex(tmp_path, monkeypatch):
+    b = tmp_path / "bin"
+    b.mkdir()
+    codex = b / "codex"
+    codex.write_text(FAKE_CODEX.replace("__PY__", sys.executable))
+    codex.chmod(0o700)
+    kp = b / "keypulse"
+    kp.write_text('#!/bin/sh\necho "$KEYPULSE_TOKEN|$KEYPULSE_CLIENT|$HOME|$*" > "$FAKE_ENV_OUT"\n')
+    kp.chmod(0o700)
+    log, env_out = tmp_path / "codex.log", tmp_path / "kp-env.txt"
+    monkeypatch.setenv("FAKE_LOG", str(log))
+    monkeypatch.setenv("FAKE_ENV_OUT", str(env_out))
+    yield {"codex": codex, "kp": kp, "log": log, "env": env_out}
+    close()
+
+
+# Fake `codex exec`: records argv, runs the KeyPulse MCP command like codex would, emits JSONL events.
+FAKE_CODEX = """#!__PY__
+import json, os, subprocess, sys
+a = sys.argv
+with open(os.environ["FAKE_LOG"], "a") as f:
+    f.write(json.dumps(a[1:]) + "\\n")
+def emit(e):
+    print(json.dumps(e))
+for x in a:
+    if x.startswith("mcp_servers.keypulse.command="):
+        wrapper = json.loads(x.split("=", 1)[1])
+        subprocess.run([wrapper], check=True, env=dict(os.environ), timeout=20)
+emit({"type": "item.completed", "item": {"type": "mcp_tool_call", "server": "keypulse", "tool": "search_context",
+                                          "arguments": json.dumps({"keywords": ["secretword"]}), "status": "completed"}})
+emit({"type": "item.completed", "item": {"type": "agent_message", "text": "found it (Work)"}})
+emit({"type": "turn.completed", "usage": {"input_tokens": 7}})
+"""
+
+
+def test_codex_kp_run_end_to_end_with_fake_codex(tmp_path, fake_codex):
+    run = tmp_path / "evals" / "runs" / "r1"
+    run.mkdir(parents=True)
+    _make_db(run / "keypulse.db")
+    (tmp_path / "evals" / "questions.jsonl").write_text(json.dumps(
+        {"id": "A1", "group": "A", "grant": ["Work"], "query": "what?", "gold_answer": "g"}) + "\n")
+    assert main(["run", "--data-dir", str(tmp_path / "evals"), "--run-dir", str(run), "--arm", "kp", "--host", "codex",
+                 "--codex-bin", str(fake_codex["codex"]), "--keypulse-bin", str(fake_codex["kp"])]) == 0
+    row = json.loads((run / "results-kp.jsonl").read_text().splitlines()[0])
+    assert row["host"] == "codex" and row["model"] == "gpt-6-luna" and row["exit"] == 0
+    assert row["answer"] == "found it (Work)" and row["tool_calls"] == 1 and row["non_kp_tools"] == []
+    assert row["tools"][0]["args"] == {"keywords": ["secretword"]} and row["usage"] == {"input_tokens": 7}
+    token, client, home, _ = fake_codex["env"].read_text().split("|")
+    assert token.startswith("kp_") and client == "rdeval-work" and home == str(run / "home")
+    argv = json.loads(fake_codex["log"].read_text().splitlines()[0])
+    assert token not in " ".join(argv) and token not in (run / "results-kp.jsonl").read_text()  # no token in argv or rows
+    assert "gpt-6-luna" in argv and "--disable" in argv
+    (override,) = [a for a in argv if a.startswith("mcp_servers.keypulse.command=")]
+    wrapper_path = Path(json.loads(override.split("=", 1)[1]))
+    assert not wrapper_path.exists()  # deleted after the question
+
+
+def test_report_lists_isolation_violations_and_host_model():
+    qs = {"a": _q(id="a"), "b": _q(id="b")}
+    results = {"kp": [{"id": "a", "seconds": 1, "tool_calls": 1, "cost_usd": None, "host": "codex",
+                       "model": "gpt-6-luna", "non_kp_tools": ["command_execution"]},
+                      {"id": "b", "seconds": 2, "tool_calls": 1, "cost_usd": None, "host": "codex",
+                       "model": "gpt-6-luna", "non_kp_tools": []}]}
+    judged = {"kp": [{"id": "a", "verdict": "correct", "method": "llm", "judge_host": "codex",
+                      "judge_model": "gpt-6-luna"},
+                     {"id": "b", "verdict": "wrong", "method": "llm", "judge_host": "codex",
+                      "judge_model": "gpt-6-luna"}]}
+    kp = report.aggregate(qs, results, judged, None)["arms"]["kp"]
+    assert kp["isolation_violations"] == ["a"] and kp["isolation_count"] == 1
+    assert (kp["host"], kp["model"], kp["judge_host"], kp["judge_model"]) == ("codex", "gpt-6-luna", "codex", "gpt-6-luna")
+    md = report.render(report.aggregate(qs, results, judged, None), "run")
+    assert "Isolation violations (kp, tools outside KeyPulse MCP ran): a" in md
+    legacy = report.aggregate(qs, {"kp": [{"id": "a", "seconds": 1, "tool_calls": 0, "cost_usd": 0.1}]}, {}, None)
+    assert legacy["arms"]["kp"]["host"] == "claude" and legacy["arms"]["kp"]["model"] == "-"
+
