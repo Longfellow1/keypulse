@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -23,16 +24,37 @@ def _common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--only", nargs="*", default=[], help="restrict to these question ids")
 
 
+def _codex_opt(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--codex-bin", default=runner.CODEX_BIN, help="Codex CLI binary (used when a host is codex)")
+
+
+def _judge_opts(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--judge-host", choices=runner.HOSTS, default="claude")
+    p.add_argument("--judge-model", help=f"default: {runner.DEFAULT_MODEL['claude']} (claude) or "
+                                         f"{runner.DEFAULT_MODEL['codex']} (codex)")
+
+
 def _run_opts(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--model", default="sonnet")
+    p.add_argument("--host", choices=runner.HOSTS, default="claude",
+                   help="CLI that runs the KeyPulse arm (codex: kp arm only)")
+    p.add_argument("--model", help=f"default: {runner.DEFAULT_MODEL['claude']} (claude) or "
+                                   f"{runner.DEFAULT_MODEL['codex']} (codex)")
     p.add_argument("--max-turns", type=int, default=25)
     p.add_argument("--timeout", type=int, default=900, help="seconds per question")
     p.add_argument("--keypulse-bin", default="keypulse")
     p.add_argument("--claude-bin", default="claude")
+    _codex_opt(p)
     p.add_argument("--sandbox-exec", default="sandbox-exec")
     p.add_argument("--deny-path", action="append", default=[], help="extra path the bash arm may not read (repeatable)")
     p.add_argument("--deny-regex", action="append", default=[],
                    help="SBPL regex of paths the bash arm may not read, e.g. a session id (repeatable)")
+
+
+def _resolve_bin(name: str, what: str) -> str:
+    path = shutil.which(name)
+    if not path:
+        raise SystemExit(f"{what} not found or not executable: {name}")
+    return path
 
 
 def _setup(args):
@@ -86,12 +108,21 @@ def _bash_profile(args, data_dir: Path, run_dir: Path) -> Path:
 
 
 def cmd_run(args, arm: str | None = None) -> int:
+    arm = arm or args.arm
+    try:
+        runner.check_host(arm, args.host)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     data_dir, qs = _setup(args)
     run_dir = _run_dir(args, data_dir)
-    arm = arm or args.arm
     prof = _bash_profile(args, data_dir, run_dir) if arm == "bash" else None
-    runner.run_arm(arm, qs, run_dir, keypulse_bin=args.keypulse_bin, model=args.model, max_turns=args.max_turns,
-                   timeout=args.timeout, sandbox_profile=prof, sandbox_exec=args.sandbox_exec, claude=args.claude_bin)
+    keypulse_bin, codex = args.keypulse_bin, args.codex_bin
+    if args.host == "codex":  # the wrapper script runs with a minimal env, so use absolute paths
+        keypulse_bin = _resolve_bin(args.keypulse_bin, "keypulse")
+        codex = _resolve_bin(args.codex_bin, "codex binary")
+    runner.run_arm(arm, qs, run_dir, keypulse_bin=keypulse_bin, model=args.model, max_turns=args.max_turns,
+                   timeout=args.timeout, sandbox_profile=prof, sandbox_exec=args.sandbox_exec, claude=args.claude_bin,
+                   host=args.host, codex=codex)
     return 0
 
 
@@ -105,9 +136,11 @@ def cmd_replay(args) -> int:
 def cmd_judge(args) -> int:
     data_dir, qs = _setup(args)
     run_dir = _run_dir(args, data_dir)
+    codex = _resolve_bin(args.codex_bin, "codex binary") if args.judge_host == "codex" else args.codex_bin
     for arm in ("kp", "bash"):
         if (run_dir / f"results-{arm}.jsonl").exists():
-            judge_mod.judge_arm(arm, {q.id: q for q in qs}, run_dir, model=args.judge_model, claude=args.claude_bin)
+            judge_mod.judge_arm(arm, {q.id: q for q in qs}, run_dir, model=args.judge_model, claude=args.claude_bin,
+                                host=args.judge_host, codex=codex)
     return 0
 
 
@@ -119,6 +152,9 @@ def cmd_report(args) -> int:
 
 
 def cmd_all(args) -> int:
+    if args.host == "codex":  # the bash arm is Claude-only, so one `all` cannot span both hosts
+        raise SystemExit("all runs the bash arm too, and that arm stays on Claude. With codex, run "
+                         "`run --arm kp --host codex`, then `run --arm bash`, then `replay`, `judge`, `report`.")
     for arm in ("kp", "bash"):
         cmd_run(args, arm)
     cmd_replay(args)
@@ -149,8 +185,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("judge", help="grade results with the judge model")
     _common(p)
-    p.add_argument("--judge-model", default="sonnet")
+    _judge_opts(p)
     p.add_argument("--claude-bin", default="claude")
+    _codex_opt(p)
     p.set_defaults(fn=cmd_judge)
 
     p = sub.add_parser("report", help="write report.md into the run dir")
@@ -160,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("all", help="run both arms, replay, judge, report")
     _common(p)
     _run_opts(p)
-    p.add_argument("--judge-model", default="sonnet")
+    _judge_opts(p)
     p.set_defaults(fn=cmd_all)
     return ap
 

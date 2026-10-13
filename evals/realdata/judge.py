@@ -9,7 +9,8 @@ import time
 from pathlib import Path
 
 from evals.realdata.questions import Question, VERDICTS
-from evals.realdata.runner import done_ids, parse_stream
+from evals.realdata.runner import (build_codex_command, default_model, done_ids, parse_codex_stream,
+                                   parse_stream)
 
 JUDGE_PROMPT = """You are grading an AI assistant's answer against a gold answer. Be strict and literal.
 
@@ -49,16 +50,24 @@ def parse_judge_output(text: str) -> dict:
     return {"verdict": verdict, "reason": reason.strip().splitlines()[0][:300]}
 
 
-def call_judge(prompt: str, *, model: str, claude: str, timeout: int = 300, retries: int = 2,
-               wait: float = 30) -> str:
-    cmd = [claude, "-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose",
-           "--no-session-persistence", "--permission-mode", "dontAsk", "--strict-mcp-config", "--tools", ""]
+def call_judge(prompt: str, *, model: str, claude: str = "claude", host: str = "claude", codex: str = "codex",
+               timeout: int = 300, retries: int = 2, wait: float = 30) -> str:
+    if host == "codex":  # same isolation as the KeyPulse arm, but no MCP wrapper: the judge gets no tools
+        cmd = build_codex_command(prompt, model=model, codex=codex)
+    else:
+        cmd = [claude, "-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose",
+               "--no-session-persistence", "--permission-mode", "dontAsk", "--strict-mcp-config", "--tools", ""]
     for attempt in range(retries + 1):
         with tempfile.TemporaryDirectory(prefix="rdjudge-") as d:
             try:
                 proc = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=timeout,
                                       stdin=subprocess.DEVNULL)
-                out = parse_stream(proc.stdout)["answer"] if proc.returncode == 0 else ""
+                if proc.returncode != 0:
+                    out = ""
+                elif host == "codex":
+                    out = parse_codex_stream(proc.stdout)["answer"]
+                else:
+                    out = parse_stream(proc.stdout)["answer"]
             except subprocess.TimeoutExpired:
                 out = ""
         if out.strip() or attempt == retries:
@@ -77,8 +86,9 @@ def mechanical_must_not_see(q: Question, replay_entry: dict | None) -> dict:
     return {"verdict": "correct", "reason": "tool output contained no forbidden id or string"}
 
 
-def judge_arm(arm: str, questions: dict[str, Question], run_dir: Path, *, model: str = "sonnet",
-              claude: str = "claude", log=print) -> Path:
+def judge_arm(arm: str, questions: dict[str, Question], run_dir: Path, *, model: str | None = None,
+              claude: str = "claude", host: str = "claude", codex: str = "codex", log=print) -> Path:
+    model = model or default_model(host)
     results = run_dir / f"results-{arm}.jsonl"
     out = run_dir / f"judged-{arm}.jsonl"
     replay_path = run_dir / "replay.json"
@@ -92,6 +102,7 @@ def judge_arm(arm: str, questions: dict[str, Question], run_dir: Path, *, model:
             if r["id"] in seen or r["id"] not in questions:
                 continue
             q = questions[r["id"]]
+            judge_host = judge_model = None
             if q.expect == "must_not_see":
                 v = mechanical_must_not_see(q, (replay.get("per_question") or {}).get(q.id)) if arm == "kp" \
                     else {"verdict": "n/a", "reason": "must_not_see is only checked on the KeyPulse arm"}
@@ -100,8 +111,10 @@ def judge_arm(arm: str, questions: dict[str, Question], run_dir: Path, *, model:
                 v, method = error_verdict(f"run produced no answer (exit={r.get('exit')})"), "none"
             else:
                 prompt = JUDGE_PROMPT.format(query=q.query, gold=q.gold_answer, expect=q.expect, answer=r["answer"])
-                v, method = parse_judge_output(call_judge(prompt, model=model, claude=claude)), "llm"
-            fh.write(json.dumps({"id": q.id, "arm": arm, "expect": q.expect, "method": method, **v},
+                v = parse_judge_output(call_judge(prompt, model=model, claude=claude, host=host, codex=codex))
+                method, judge_host, judge_model = "llm", host, model
+            fh.write(json.dumps({"id": q.id, "arm": arm, "expect": q.expect, "method": method,
+                                 "judge_host": judge_host, "judge_model": judge_model, **v},
                                 ensure_ascii=False) + "\n")
             fh.flush()
             log(f"{q.id} {arm} {v['verdict']}")

@@ -18,6 +18,14 @@ def _fmt(v, nd=1) -> str:
     return "-" if v is None else (f"{v:.{nd}f}" if isinstance(v, float) else str(v))
 
 
+def _labels(rows: list[dict], key: str, legacy: str | None) -> str:
+    """Distinct values of a row field, e.g. the host or model a run used. Rows written before the field
+    existed get `legacy` (None means unknown)."""
+    vals = {str(r[key]) if r.get(key) is not None else legacy for r in rows}
+    vals.discard(None)
+    return "/".join(sorted(vals)) or "-"
+
+
 def aggregate(questions: dict[str, Question], results: dict[str, list[dict]], judged: dict[str, list[dict]],
               replay: dict | None) -> dict:
     arms = {}
@@ -35,11 +43,17 @@ def aggregate(questions: dict[str, Question], results: dict[str, list[dict]], ju
             if human and human != v[r["id"]]["verdict"]:
                 dis.append(r["id"])
         compared = sum(1 for r in counted if questions[r["id"]].human_verdicts.get(arm))
+        llm_judged = [j for j in judged.get(arm, []) if j.get("method") == "llm"]
+        violations = [r["id"] for r in rs if r.get("non_kp_tools")]  # codex runs: anything but KeyPulse MCP calls
         arms[arm] = {
             "n": n, **c, "accuracy": c["correct"] / n if n else None,
+            "host": _labels(rs, "host", "claude"), "model": _labels(rs, "model", None),
+            "judge_host": _labels(llm_judged, "judge_host", "claude"),
+            "judge_model": _labels(llm_judged, "judge_model", None),
             "median_seconds": statistics.median(secs) if secs else None, "max_seconds": max(secs) if secs else None,
             "median_tool_calls": statistics.median([r["tool_calls"] for r in rs]) if rs else None,
             "cost_usd": sum(costs) if costs else None,
+            "isolation_violations": violations, "isolation_count": len(violations),
             "judge_compared": compared, "judge_disagreements": dis,
             "judge_agreement": (1 - len(dis) / compared) if compared else None,
         }
@@ -60,10 +74,13 @@ def render(agg: dict, run_name: str = "") -> str:
     if arms:
         names = list(arms)
         L += ["## Per arm", "", "| metric | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
-        rows = [("graded questions", "n", 0), ("correct", "correct", 0), ("partial", "partial", 0),
+        rows = [("run host", "host", 0), ("run model", "model", 0),
+                ("judge host", "judge_host", 0), ("judge model", "judge_model", 0),
+                ("graded questions", "n", 0), ("correct", "correct", 0), ("partial", "partial", 0),
                 ("wrong", "wrong", 0), ("judge errors", "error", 0), ("accuracy (correct)", "accuracy", 3),
                 ("median seconds", "median_seconds", 1), ("max seconds", "max_seconds", 1),
                 ("median tool calls", "median_tool_calls", 1), ("cost USD", "cost_usd", 3),
+                ("isolation violations", "isolation_count", 0),
                 ("judge vs human agreement", "judge_agreement", 3)]
         for label, key, nd in rows:
             L.append(f"| {label} | " + " | ".join(_fmt(arms[a][key], nd) for a in names) + " |")
@@ -71,6 +88,8 @@ def render(agg: dict, run_name: str = "") -> str:
         for a in names:
             if arms[a]["judge_disagreements"]:
                 L.append(f"- Judge disagreements with human pre-labels ({a}): {', '.join(arms[a]['judge_disagreements'])}")
+            if arms[a]["isolation_violations"]:
+                L.append(f"- Isolation violations ({a}, tools outside KeyPulse MCP ran): {', '.join(arms[a]['isolation_violations'])}")
         L.append("")
     ex = agg["exclusive"]
     if ex:
