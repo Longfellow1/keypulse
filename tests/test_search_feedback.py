@@ -170,7 +170,8 @@ def test_context_label_per_source() -> None:
     assert context_label("codex_cli", {"cwd": "/work/demo-app"}) == "demo-app"
     assert context_label("codex_cli", {"session_id": "s1"}) is None
     assert context_label("claude_code", {"project_dir": "/Users/x/.claude/projects/-Users-x-Go-keypulse"}) == \
-        "-Users-x-Go-keypulse"
+        "Go-keypulse"  # account path dropped
+    assert context_label("claude_code", {"project_dir": "/p/-opt-tools"}) == "-opt-tools"
     assert context_label("chrome_history", {"artifact": "https://user:pw@docs.example.com:8443/a/b?q=1"}) == \
         "docs.example.com"
     assert context_label("safari_history", {"artifact": "not a url"}) is None

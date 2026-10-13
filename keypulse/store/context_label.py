@@ -58,6 +58,20 @@ def _note_path(metadata: Mapping[str, Any]) -> Optional[str]:
     return _clean(PurePosixPath(rel).with_suffix("").as_posix())
 
 
+def _claude_project(project_dir: Any) -> Optional[str]:
+    """Claude Code keeps transcripts under ~/.claude/projects/<cwd with "/" replaced by "-">. Drop the
+    encoded home prefix ("-Users-<name>-") so the label is the project part ("Go-CorpusFlow"), not the
+    user's account path; the project name stays searchable as a substring."""
+    name = _basename(project_dir)
+    if not name:
+        return None
+    parts = name.lstrip("-").split("-")
+    if len(parts) > 2 and parts[0] in ("Users", "home"):
+        rest = "-".join(parts[2:])
+        return _clean(rest) or name
+    return name
+
+
 def context_label(source: str, metadata: Mapping[str, Any]) -> Optional[str]:
     """The place label for one stored record, or None when the source has none."""
     if source == "git_log":
@@ -65,8 +79,7 @@ def context_label(source: str, metadata: Mapping[str, Any]) -> Optional[str]:
     if source == "codex_cli":
         return _clean(metadata.get("project")) or _basename(metadata.get("project_dir") or metadata.get("cwd"))
     if source == "claude_code":
-        # The plugin's project dir is the encoded transcript folder; its basename is the project key.
-        return _basename(metadata.get("project_dir"))
+        return _claude_project(metadata.get("project_dir"))
     if source in ("chrome_history", "safari_history"):
         return _domain(metadata.get("artifact"))
     if source == "markdown_vault":
