@@ -1,10 +1,10 @@
 """Migration v24 (D27): run existing capture rows through the write-time hygiene gate.
 
-D32: this migration never deletes rows. Rows the gate would have dropped are left untouched and only
-counted (their content is still on disk; deciding what to do with them is a user decision). Rows the gate would have reduced to
+Rows the gate would have dropped are deleted (the raw_events delete trigger removes their FTS entry and
+evidence row; clipboard search_docs rows are removed too). Rows the gate would have reduced to
 metadata only keep app + time, with content_text / content_hash (and the title for window and
 browser_url rows) nulled; the update trigger re-indexes FTS. Excluded apps (default bundle ids,
-patterns and app names) and denied browser hosts are counted, not removed.
+patterns and app names) and denied browser hosts are removed as well.
 
 Runs in the migration transaction (all or nothing); run_migrations takes a .bak first. Idempotent:
 a second pass finds nothing left to change. It reads built-in defaults only, never user config
@@ -97,6 +97,7 @@ def scrub_capture_rows(conn: sqlite3.Connection) -> dict[str, int]:
             if not rows:
                 break
             last = rows[-1]["id"]
+            deletes: list[tuple] = []
             updates: list[tuple] = []
             for r in rows:
                 reason = None
@@ -127,7 +128,7 @@ def scrub_capture_rows(conn: sqlite3.Connection) -> dict[str, int]:
                     if verdict is not None:
                         action, reason = verdict.action, verdict.reason
                 if action == DROP:
-                    pass  # D32: kept, never deleted automatically
+                    deletes.append((r["id"],))
                 elif action == METADATA_ONLY:
                     clear_title = reason != "terminal_app"
                     if r["content_text"] is None and (not clear_title or r["window_title"] is None):
@@ -146,6 +147,12 @@ def scrub_capture_rows(conn: sqlite3.Connection) -> dict[str, int]:
                     "UPDATE raw_events SET content_text = ?, content_hash = ?, window_title = ?, "
                     "metadata_json = ? WHERE id = ?",
                     updates,
+                )
+            if deletes:
+                conn.executemany("DELETE FROM raw_events WHERE id = ?", deletes)
+                conn.executemany(
+                    "DELETE FROM search_docs WHERE ref_type IN ('clipboard','manual') AND ref_id = CAST(? AS TEXT)",
+                    deletes,
                 )
             if updates:
                 conn.executemany(

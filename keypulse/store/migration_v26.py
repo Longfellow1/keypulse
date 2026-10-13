@@ -4,18 +4,21 @@ One transactional, idempotent pass (run_migrations takes a .bak first). Order ma
 
   1. invisible    zero-width / bidi / BOM / soft-hyphen characters are stripped from content_text and
                   window_title (all sources; clipboard search_docs follow). FTS follows via the update trigger.
-  2. overlay      capture rows of a system overlay app (Setup Assistant, loginwindow, ...) lose
-                  app_name / process_name (content kept) and, if still on the default bucket, become
-                  Personal. Their sessions are dropped (sessions are derived data).
-  3. noise        claude_code / codex_cli rows run through the shared noise predicate: inline
-                  <system-reminder> blocks are cut out (evidence hash follows). Rows that would become
-                  empty are left as they are.
-  4. (placeholder and zsh steps removed under D32: rows are never deleted by a migration.)
-  5. site         browser rows still on their old app-level bucket are re-bucketed by website (D28). A
+  2. overlay      window rows of a system overlay app (Setup Assistant, loginwindow, ...) and their
+                  sessions are deleted; other capture rows of such an app lose app_name / process_name
+                  (content kept) and, if still on the default bucket, become Personal.
+  3. noise        claude_code / codex_cli rows run through the shared noise predicate: whole-noise rows
+                  are deleted, inline <system-reminder> blocks are cut out (evidence hash follows).
+  4. placeholder  ax_text rows that are an input placeholder / UI prompt are deleted.
+  5. zsh          zsh_history rows were decoded without unmetafying and cannot be repaired (the original
+                  bytes are gone), so they are deleted and any zsh sync cursor is reset. The plugin
+                  re-reads the whole history file on its next sync (no cursor = full read) and its dedup
+                  keys are stable, so nothing is duplicated.
+  6. site         browser rows still on their old app-level bucket are re-bucketed by website (D28). A
                   row whose bucket differs from what the old rules would give was chosen by the user and
                   is left alone.
 
-D32: this migration never deletes raw_events rows. Like
+Deleting a raw_events row removes its FTS entry and evidence row through the existing triggers. Like
 v21 / v23 / v24 this reads built-in defaults and stored user bucket rules only, never user config
 (`keypulse rules rebucket` applies config.toml later).
 """
@@ -24,7 +27,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 
-from keypulse.capture.hygiene import is_system_overlay
+from keypulse.capture.hygiene import is_placeholder_text, is_system_overlay
 from keypulse.store.buckets import (
     CAPTURE_SOURCES,
     BrowserUrlTimeline,
@@ -39,6 +42,7 @@ from keypulse.utils.text_filters import INVISIBLE_CHARS_RE, strip_invisible
 
 _BATCH = 2000
 _NOISE_SOURCES = ("claude_code", "codex_cli")
+_PLACEHOLDER_MAX_LEN = 80
 
 
 def _marks(items) -> str:
@@ -48,6 +52,15 @@ def _marks(items) -> str:
 def _has_search_docs(conn: sqlite3.Connection) -> bool:
     # A very old legacy DB may reach this step without the table.
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'search_docs'").fetchone() is not None
+
+
+def _delete_rows(conn: sqlite3.Connection, ids: list[int]) -> None:
+    rows = [(i,) for i in ids]
+    conn.executemany("DELETE FROM raw_events WHERE id = ?", rows)
+    if _has_search_docs(conn):
+        conn.executemany(
+            "DELETE FROM search_docs WHERE ref_type IN ('clipboard','manual') AND ref_id = CAST(? AS TEXT)", rows
+        )
 
 
 def _batches(conn: sqlite3.Connection, sql: str, params: tuple = ()):
@@ -92,6 +105,12 @@ def _scrub_overlay_apps(conn: sqlite3.Connection) -> None:
     for source, app, proc in pairs:
         if source not in CAPTURE_SOURCES or not (app or proc) or not is_system_overlay(app, proc):
             continue
+        if source == "window":
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM raw_events WHERE source = 'window' AND app_name IS ? AND process_name IS ?", (app, proc)
+            )]
+            _delete_rows(conn, ids)
+            continue
         conn.execute(
             "UPDATE raw_events SET app_name = NULL, process_name = NULL, "
             "bucket = CASE WHEN bucket IS NULL OR bucket = 'Personal' THEN 'Personal' ELSE bucket END "
@@ -121,20 +140,39 @@ def _scrub_ai_transcript_noise(conn: sqlite3.Connection) -> None:
         f"WHERE source IN ({_marks(_NOISE_SOURCES)}) AND content_text IS NOT NULL AND id > ? ORDER BY id LIMIT ?",
         _NOISE_SOURCES,
     ):
+        deletes: list[int] = []
         updates: list[tuple] = []
         hashes: list[tuple] = []
         for rid, text in rows:
             cleaned = clean_message_part(text)
             if cleaned == text.strip():
                 continue
-            # D32: a message that cleans down to nothing is left as-is, not deleted.
             if not cleaned:
-                continue
-            updates.append((cleaned, rid))
-            hashes.append((hashlib.sha256(cleaned.encode("utf-8")).hexdigest(), rid))
+                deletes.append(rid)
+            else:
+                updates.append((cleaned, rid))
+                hashes.append((hashlib.sha256(cleaned.encode("utf-8")).hexdigest(), rid))
         if updates:
             conn.executemany("UPDATE raw_events SET content_text = ? WHERE id = ?", updates)
             conn.executemany("UPDATE evidence SET content_hash = ? WHERE event_id = ?", hashes)
+        if deletes:
+            _delete_rows(conn, deletes)
+
+
+def _scrub_placeholders(conn: sqlite3.Connection) -> None:
+    for rows in _batches(
+        conn,
+        "SELECT id, content_text FROM raw_events WHERE source = 'ax_text' AND content_text IS NOT NULL "
+        f"AND length(content_text) <= {_PLACEHOLDER_MAX_LEN} AND id > ? ORDER BY id LIMIT ?",
+    ):
+        ids = [rid for rid, text in rows if is_placeholder_text(text)]
+        if ids:
+            _delete_rows(conn, ids)
+
+
+def _reset_zsh(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM raw_events WHERE source = 'zsh_history'")
+    conn.execute("DELETE FROM sync_cursors WHERE source_id IN (SELECT id FROM sources WHERE type = 'zsh_history')")
 
 
 def _rebucket_by_site(conn: sqlite3.Connection) -> None:
@@ -174,4 +212,6 @@ def migrate_v26(conn: sqlite3.Connection) -> None:
     _strip_invisible_chars(conn)
     _scrub_overlay_apps(conn)
     _scrub_ai_transcript_noise(conn)
+    _scrub_placeholders(conn)
+    _reset_zsh(conn)
     _rebucket_by_site(conn)
