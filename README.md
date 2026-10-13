@@ -26,7 +26,7 @@ Star KeyPulse if you care about:
 
 ## 中文介绍
 
-KeyPulse 是一个本地优先的 macOS 工具。它在你的机器上采集工作活动 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉。采集到的记忆目前可以通过命令行（CLI）与菜单栏 HUD 查看；经 MCP（一种让 AI 工具读取外部数据的标准协议）把记忆提供给 Claude / Codex / Cursor 的能力**开发中**。
+KeyPulse 是一个本地优先的 macOS 工具。它在你的机器上采集工作活动 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉。采集到的记忆目前可以通过命令行（CLI）与菜单栏 HUD 查看；已经 MCP（一种让 AI 工具读取外部数据的标准协议）把记忆只读地提供给 Claude / Codex / Cursor，按 AI 单独授权。
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
@@ -121,7 +121,7 @@ KeyPulse 不是这三种。它记录碎事 —— 应用切换、剪贴板、窗
 │  呈现面                                                       │
 │  • 菜单栏 HUD（WKWebView · 今日重点 + 异常即修复入口）         │
 │  • CLI（timeline / search / stats / export）                  │
-│  • MCP 服务（开发中）→ Claude / Codex / Cursor                 │
+│  • MCP 服务（只读，按 AI 授权）→ Claude / Codex / Cursor     │
 └──────────────────────────────────────────────────────────────┘
 
        ↑ Capability 自检层（60s 一轮，多个能力域各自体检）
@@ -187,16 +187,35 @@ keypulse install init
 
 ---
 
+## 接入 AI（MCP）
+
+KeyPulse 以 MCP 服务运行（`keypulse mcp serve`，stdio）。每个 AI 客户端单独授权，只读，可按桶（Work / Personal / Private / Financial）限定范围：
+
+```bash
+keypulse mcp grant claude --buckets Work,Personal          # 默认 --host claude
+keypulse mcp grant codex  --host codex --buckets Work
+keypulse mcp grant cursor --host cursor --buckets Work
+```
+
+命令只显示一次 token（本地只存哈希），并打印该客户端的配置：Claude Code 的 `claude mcp add` 命令；Codex 的 `~/.codex/config.toml` 片段；Cursor 的 `~/.cursor/mcp.json`；`--host generic` 为通用 JSON。配置中的命令使用 keypulse 的绝对路径，在 shell 之外也能启动。
+
+当前工具：`search_context`（关键词 / 时间 / 来源搜索，附覆盖说明）、`get_timeline`（时间线）、`get_evidence`（取回原始出处）、`rate_result`（对结果打分反馈）。
+
+- 管理授权：`keypulse mcp list`、`keypulse mcp rotate <client>`（轮换 token）、`keypulse mcp revoke <client>`（撤销）、`keypulse mcp audit`（调用记录，不含查询内容与 token）
+- 提示：KeyPulse 返回给 AI 的内容会进入该 AI 的对话，并可能发送到其云端模型服务。
+
+---
+
 ## 当前状态
 
 - **平台：** macOS 12+（Apple Silicon + Intel）
 - **测试：** 800+ passing（pytest，含 capability 框架架构不变量）
 - **安装：** Homebrew 安装 CLI，`keypulse install init` 初始化 runtime + launchd
 - **首次配置：** 无需模型配置，装完按 HUD 黄条提示授权即可
-- **MCP 服务：** 开发中 —— 让 Claude / Codex / Cursor 通过 MCP 读取你的记忆，带出处与访问控制
+- **MCP 服务：** 已可用（只读）—— Claude / Codex / Cursor 通过 MCP 读取你的记忆，带出处与按 AI 的访问控制
 - **Roadmap：** 多设备合并
 
-KeyPulse 还在早期：采集、搜索、时间线与菜单栏 HUD 已可用，MCP 服务在开发中。
+KeyPulse 还在早期：采集、搜索、时间线、菜单栏 HUD 与只读 MCP 服务已可用。
 
 ---
 
