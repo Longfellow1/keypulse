@@ -23,6 +23,8 @@ You do the language understanding; this tool only matches keywords. Before calli
 
 Matching is OR across keywords; results matching more distinct keywords come first (exact hashes, versions and file names get a small boost). If the user says they copied or pasted something, pass sources including "clipboard" and keep keywords to the distinctive token (a name, part of a command); if the first search misses, run a second one restricted to clipboard. Identical records are folded into one result: occurrences is how many times it was recorded, first_seen / last_seen its time range (the result itself is the best-ranked one; for "which time" questions use get_timeline). Each result has match "strong" (2+ keywords, or the only keyword) or "weak" (a possible clue: verify before relying on it).
 
+Keywords are matched literally, so prefer short distinctive words (2-4 Chinese characters, one English term, abbreviations as written) over phrases. Every response has keywords[] with one entry per keyword (index = its position in your keywords array): in_scope=false means that keyword matched nothing in the granted scope, so split or rephrase it rather than concluding nothing exists; hint "browse_timeline" means call get_timeline for that period and those sources. Repo, project, site and note names are searchable too.
+
 Examples:
 - "上次办澳洲签证用了哪些材料?" -> keywords ["签证", "visa", "材料", "澳洲"]
 - "which docker command did I run to start the db" -> keywords ["docker", "database"], sources ["zsh_history"]

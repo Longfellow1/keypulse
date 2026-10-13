@@ -14,10 +14,11 @@ from keypulse.store.migration_v28 import migrate_v28
 from keypulse.store.migration_v29 import migrate_v29
 from keypulse.store.migration_v30 import migrate_v30
 from keypulse.store.migration_v31 import migrate_v31
+from keypulse.store.migration_v32 import migrate_v32
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 32
 
 MIGRATIONS = [
     # v1
@@ -243,6 +244,8 @@ MIGRATIONS = [
     migrate_v30,
     # v31 — old codex_cli history rows (raw_ref codex:history:<N>): evidence via the history file (see migration_v31).
     migrate_v31,
+    # v32 — context label for old imported rows (repo / project / site / note path into window_title, see migration_v32).
+    migrate_v32,
 ]
 
 

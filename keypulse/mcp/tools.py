@@ -8,8 +8,8 @@ from keypulse.mcp import audit
 from keypulse.mcp.auth import Grant, check_access
 from keypulse.privacy import desensitizer
 from keypulse.search.engine import (
-    TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, parse_time_bound, scoped_evidence, search_events, source_coverage,
-    timeline_events,
+    TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, keyword_in_scope, normalize_keywords, parse_time_bound, scoped_evidence,
+    search_events, source_coverage, timeline_events,
 )
 from keypulse.store import feedback
 from keypulse.store.db import get_conn
@@ -232,23 +232,34 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
     if grant.sources is not None:
         effective_sources = list(grant.sources) if sources is None else [x for x in sources if x in grant.sources]
 
+    scope = dict(
+        since=start, until=end, sources=effective_sources, buckets=list(grant.buckets),
+        event_type=SEARCHABLE_EVENT_TYPES, include_keypulse_echoes=include_echoes,
+    )
+    # One feedback entry per normalised keyword, reported by its position in the caller's list (first
+    # occurrence). The caller's text is never echoed back (B1 / G1), so the host maps index -> its own word.
+    terms = normalize_keywords(keywords)
+    first_index: dict[str, int] = {}  # case-insensitive, as normalize_keywords de-duplicates
+    for index, raw in enumerate(keywords):
+        for norm in normalize_keywords([raw]):
+            first_index.setdefault(norm.lower(), index)
     try:
-        hits = search_events(
-            keywords,
-            since=start,
-            until=end,
-            sources=effective_sources,
-            buckets=list(grant.buckets),
-            event_type=SEARCHABLE_EVENT_TYPES,
-            limit=limit,
-            include_keypulse_echoes=include_echoes,
-        )
+        hits = search_events(keywords, limit=limit, **scope)
+        in_scope = {term: keyword_in_scope(term, **scope) for term in terms}
     except sqlite3.Error:
         # Never surface SQLite / FTS error text: it can echo query fragments or index internals.
         return {"status": "error", "message": "search failed"}
     coverage = _coverage(grant, start, end)
+    in_results = {term: sum(1 for h in hits if term in h.get("matched_terms", ())) for term in terms}
+    keyword_feedback = [
+        {"index": first_index[term.lower()], "in_scope": in_scope[term], "in_results": in_results[term]}
+        for term in terms
+    ]
     if not hits:
-        return {"status": "no_results", "results": [], "coverage": coverage}
+        time_range_given = start is not None or end is not None
+        hint = _no_results_hints(keyword_feedback, time_range_given, effective_sources, coverage)
+        return {"status": "no_results", "results": [], "coverage": coverage, "keywords": keyword_feedback,
+                "hint": hint}
     availability = refresh_availability(
         [(h["evidence_id"], h["evidence_locator"], h.get("evidence_line"), h.get("evidence_stored_available", 1))
          for h in hits if h["evidence_id"] is not None and h.get("evidence_locator")],
@@ -277,7 +288,29 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
         }
         for h in hits
     ]
-    return {"status": "ok", "results": results, "coverage": coverage}
+    return {"status": "ok", "results": results, "coverage": coverage, "keywords": keyword_feedback}
+
+
+# Fixed next-step hints on no_results (a closed enum: never built from caller text).
+HINT_SPLIT_OR_REPHRASE = "split_or_rephrase"
+HINT_BROWSE_TIMELINE = "browse_timeline"
+
+
+def _no_results_hints(keyword_feedback: list[dict[str, Any]], time_range_given: bool,
+                      effective_sources: Optional[list[str]], coverage: dict[str, Any]) -> list[str]:
+    """What the host should do next after an empty search. split_or_rephrase: no keyword matched
+    anything in the granted scope. browse_timeline: a time range was given and a requested (or
+    granted) source has events inside it, so get_timeline for that period can show them."""
+    hints: list[str] = []
+    if keyword_feedback and not any(k["in_scope"] for k in keyword_feedback):
+        hints.append(HINT_SPLIT_OR_REPHRASE)
+    spans = coverage.get("by_source") or []
+    if time_range_given and any(
+        s["has_events_in_range"] and (effective_sources is None or s["source"] in effective_sources)
+        for s in spans
+    ):
+        hints.append(HINT_BROWSE_TIMELINE)
+    return hints
 
 
 def _gate(token: Optional[str], client: Optional[str], tool: str):
