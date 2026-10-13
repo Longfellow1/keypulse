@@ -380,6 +380,7 @@ def test_codex_command_is_isolated_and_never_carries_the_token():
     assert disabled == CODEX_DISABLE and "code_mode_host" not in disabled  # MCP tools need code_mode_host
     assert 'web_search="disabled"' in cmd
     assert f'mcp_servers.keypulse.command="{wrapper}"' in cmd
+    assert 'mcp_servers.keypulse.default_tools_approval_mode="approve"' in cmd
     assert "--ignore-user-config" in cmd and "--ephemeral" in cmd and "--json" in cmd
     assert "kp_" not in " ".join(cmd)
     plain = build_codex_command("PROMPT", model="m", codex="codex")

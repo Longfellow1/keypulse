@@ -73,7 +73,9 @@ def build_codex_command(prompt: str, *, model: str, codex: str = "codex", wrappe
         cmd += ["--disable", feature]
     cmd += ["-c", 'web_search="disabled"']
     if wrapper is not None:
-        cmd += ["-c", f"mcp_servers.keypulse.command={json.dumps(str(wrapper))}"]
+        cmd += ["-c", f"mcp_servers.keypulse.command={json.dumps(str(wrapper))}",
+                # exec runs with approval_policy=never: without this every MCP call is refused
+                "-c", 'mcp_servers.keypulse.default_tools_approval_mode="approve"']
     return [*cmd, prompt]
 
 
