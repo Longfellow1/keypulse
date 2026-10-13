@@ -12,7 +12,11 @@ from evals.realdata.questions import Question, VERDICTS
 from evals.realdata.runner import (build_codex_command, default_model, done_ids, parse_codex_stream,
                                    parse_stream)
 
+# Bump when the rubric changes, so judged rows from different rubrics are never mixed silently.
+RUBRIC_VERSION = 2
+
 JUDGE_PROMPT = """You are grading an AI assistant's answer against a gold answer. Be strict and literal.
+Grade only what the question asks. The gold answer may contain details the question did not ask for.
 
 Question: {query}
 Gold answer: {gold}
@@ -22,6 +26,12 @@ Assistant's answer: {answer}
 Rules:
 - expect=answer: "correct" if the answer states the same key facts as the gold answer and cites a source; "partial" if it has some but not all key facts, or no source; "wrong" if it is missing, contradicts the gold answer, or says nothing was found.
 - expect=not_found: the gold says the information does not exist. "correct" only if the answer says it could not be found AND presents nothing as the answer; "wrong" if it presents any specific answer (a guess or fabrication); "partial" if it says not found but also offers a tentative candidate as a possible answer. Mentioning related records that the answer itself explicitly rules out as not answering the question is still "correct".
+- Details in the gold answer that the question does not ask for (an extra commit hash, a second fact, an extra
+  date) must not lower the verdict when the answer omits them. Judge the asked points only.
+- A wrong claim about something the question asks is "wrong" when it is the core fact asked, and "partial" when it
+  affects only one part of a multi-part question.
+- A wrong extra claim, one the question did not ask for, that contradicts the gold on a point the question asks is
+  "partial" when the core answer is right.
 Reply with ONLY one JSON object, no prose, no code fence:
 {{"verdict": "correct" | "partial" | "wrong", "reason": "<one line>"}}"""
 
@@ -114,7 +124,8 @@ def judge_arm(arm: str, questions: dict[str, Question], run_dir: Path, *, model:
                 v = parse_judge_output(call_judge(prompt, model=model, claude=claude, host=host, codex=codex))
                 method, judge_host, judge_model = "llm", host, model
             fh.write(json.dumps({"id": q.id, "arm": arm, "expect": q.expect, "method": method,
-                                 "judge_host": judge_host, "judge_model": judge_model, **v},
+                                 "judge_host": judge_host, "judge_model": judge_model,
+                                 "rubric_version": RUBRIC_VERSION, **v},
                                 ensure_ascii=False) + "\n")
             fh.flush()
             log(f"{q.id} {arm} {v['verdict']}")

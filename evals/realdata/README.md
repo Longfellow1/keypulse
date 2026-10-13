@@ -43,6 +43,30 @@ Tests use synthetic DBs and a fake `claude`; never point them at real data.
 `must_not_see` needs `gold_event_ids` or `gold_match`, runs on the kp arm only, and is graded mechanically
 from the replay (no LLM).
 
+## Gold validation
+
+Before trusting a run, check the gold labels against the run DB copy:
+
+```bash
+python -m evals.realdata validate --questions Q --run-dir R
+```
+
+For each `answer` / `must_not_see` question: every `gold_event_id` must exist in `raw_events` (`123` or `evt_123`),
+and every `gold_match` string must occur (case-insensitive) in `content_text` or `window_title` of a gold row.
+Output is one line per question: `PASS`, `WARN` or `FAIL` plus reason codes and ids. Row text is never printed.
+`WARN` (no `gold_match`, no `gold_event_ids` on an answer question) does not fail. Any `FAIL` exits 1.
+`all` runs validate first and stops on a FAIL unless `--allow-invalid-gold` is passed. `prepare` prints the summary.
+
+## Judge rubric (version 2)
+
+The judge grades only what the question asks. Judged rows record `rubric_version` (currently `2`).
+- Details in the gold answer that the question does not ask for must not lower the verdict when omitted.
+- A wrong claim about an asked point is `wrong` (core fact) or `partial` (one part of a multi-part question).
+- A wrong extra claim that contradicts the gold on an asked point is `partial` when the core answer is right.
+- `not_found`: mentioning a related record while stating it does not answer the question is still `correct`.
+
+`judge` resumes by question id, so rows judged under an older rubric are kept. Delete `judged-*.jsonl` to re-judge.
+
 ## Run
 
 Requires `claude` (Claude Code CLI) and `keypulse` on PATH; the bash arm needs macOS `sandbox-exec`.

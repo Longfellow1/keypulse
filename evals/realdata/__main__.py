@@ -1,4 +1,4 @@
-"""CLI: python -m evals.realdata {prepare,run,replay,judge,report,all} ...  (see README.md)."""
+"""CLI: python -m evals.realdata {prepare,validate,run,replay,judge,report,all} ...  (see README.md)."""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +11,7 @@ from evals.realdata import judge as judge_mod
 from evals.realdata import replay as replay_mod
 from evals.realdata import report as report_mod
 from evals.realdata import runner
+from evals.realdata import validate as validate_mod
 from evals.realdata.paths import latest_run_dir, new_run_dir, resolve_data_dir
 from evals.realdata.prepare import backup_copy, contamination_counts, strip_transcripts
 from evals.realdata.questions import QuestionError, load_questions
@@ -91,7 +92,21 @@ def cmd_prepare(args) -> int:
     print(f"contamination check: {len(dirty)} of {len(counts)} questions still have gold strings in transcript rows")
     for qid, n in sorted(dirty.items()):
         print(f"  {qid}: {n} row(s)")
+    gold = validate_mod.validate_gold(qs, copy)
+    for line in validate_mod.format_lines(gold, problems_only=True):  # ids and reason codes only, no row text
+        print(line)
     return 0
+
+
+def cmd_validate(args) -> int:
+    data_dir, qs = _setup(args)
+    db = _run_dir(args, data_dir) / "keypulse.db"
+    if not db.exists():
+        raise SystemExit(f"run DB not found: {db} (run `prepare` first, or pass --run-dir)")
+    results = validate_mod.validate_gold(qs, db)
+    for line in validate_mod.format_lines(results):
+        print(line)
+    return 1 if validate_mod.has_failures(results) else 0
 
 
 def _configured_db() -> Path:
@@ -155,6 +170,10 @@ def cmd_all(args) -> int:
     if args.host == "codex":  # the bash arm is Claude-only, so one `all` cannot span both hosts
         raise SystemExit("all runs the bash arm too, and that arm stays on Claude. With codex, run "
                          "`run --arm kp --host codex`, then `run --arm bash`, then `replay`, `judge`, `report`.")
+    if cmd_validate(args) != 0 and not args.allow_invalid_gold:
+        print("stopped: gold validation failed (see FAIL lines). Fix the questions or the run, "
+              "or pass --allow-invalid-gold to run anyway.", file=sys.stderr)
+        return 1
     for arm in ("kp", "bash"):
         cmd_run(args, arm)
     cmd_replay(args)
@@ -190,14 +209,19 @@ def build_parser() -> argparse.ArgumentParser:
     _codex_opt(p)
     p.set_defaults(fn=cmd_judge)
 
+    p = sub.add_parser("validate", help="check gold_event_ids exist in the run DB and gold_match occurs in them")
+    _common(p)
+    p.set_defaults(fn=cmd_validate)
+
     p = sub.add_parser("report", help="write report.md into the run dir")
     _common(p)
     p.set_defaults(fn=cmd_report)
 
-    p = sub.add_parser("all", help="run both arms, replay, judge, report")
+    p = sub.add_parser("all", help="validate gold, run both arms, replay, judge, report")
     _common(p)
     _run_opts(p)
     _judge_opts(p)
+    p.add_argument("--allow-invalid-gold", action="store_true", help="continue even if gold validation has FAILs")
     p.set_defaults(fn=cmd_all)
     return ap
 
