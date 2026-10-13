@@ -15,10 +15,11 @@ from keypulse.store.migration_v29 import migrate_v29
 from keypulse.store.migration_v30 import migrate_v30
 from keypulse.store.migration_v31 import migrate_v31
 from keypulse.store.migration_v32 import migrate_v32
+from keypulse.store.migration_v33 import migrate_v33
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 
 MIGRATIONS = [
     # v1
@@ -246,6 +247,8 @@ MIGRATIONS = [
     migrate_v31,
     # v32 — context label for old imported rows (repo / project / site / note path into window_title, see migration_v32).
     migrate_v32,
+    # v33 — progressive-typing snapshots (ax_text): earlier states marked superseded_by the next state (see migration_v33).
+    migrate_v33,
 ]
 
 

@@ -278,6 +278,8 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
             "occurrences": h.get("occurrences", 1),
             "first_seen": h.get("first_seen", h["occurred_at"]),
             "last_seen": h.get("last_seen", h["occurred_at"]),
+            # Other sources that recorded the same browser page (folded into this hit); [] when none.
+            "also_seen_in": list(h.get("also_seen_in", [])),
             # Cheap path-existence check only; the line / commit is verified by get_evidence.
             "evidence_available": bool(availability.get(h["evidence_id"], False)),
             # Two tiers (PRD 3.7.3): "strong" = several keywords co-occur (or the only keyword hit);

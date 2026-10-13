@@ -8,6 +8,7 @@ from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, keypul
 from keypulse.store.db import get_conn
 from keypulse.utils.text_filters import strip_invisible
 from keypulse.store.models import RawEvent, Session, SearchDoc, Policy, AppState
+from keypulse.store.snapshots import mark_previous_snapshot
 
 
 def _now() -> str:
@@ -61,6 +62,9 @@ def insert_raw_event(e: RawEvent) -> int:
                VALUES (?,?,?,?,1,?)""",
             (cur.lastrowid, keypulse_locator(cur.lastrowid), None, e.content_hash, _now()),
         )
+    if cur.rowcount > 0:
+        # Progressive-typing snapshots: the previous state of the same field is superseded (v33 rule).
+        mark_previous_snapshot(conn, cur.lastrowid, e.source, e.app_name, e.ts_start, e.content_text)
     conn.commit()
     if cur.rowcount > 0:
         return cur.lastrowid
