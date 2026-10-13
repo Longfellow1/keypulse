@@ -5,11 +5,12 @@ import json
 import re
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
 from evals.realdata.questions import Question, VERDICTS
-from evals.realdata.runner import (build_codex_command, default_model, done_ids, parse_codex_stream,
+from evals.realdata.runner import (build_codex_command, default_model, done_ids, parse_codex_stream, run_parallel,
                                    parse_stream)
 
 # Bump when the rubric changes, so judged rows from different rubrics are never mixed silently.
@@ -97,20 +98,23 @@ def mechanical_must_not_see(q: Question, replay_entry: dict | None) -> dict:
 
 
 def judge_arm(arm: str, questions: dict[str, Question], run_dir: Path, *, model: str | None = None,
-              claude: str = "claude", host: str = "claude", codex: str = "codex", log=print) -> Path:
+              claude: str = "claude", host: str = "claude", codex: str = "codex", log=print, jobs: int = 1) -> Path:
     model = model or default_model(host)
     results = run_dir / f"results-{arm}.jsonl"
     out = run_dir / f"judged-{arm}.jsonl"
     replay_path = run_dir / "replay.json"
     replay = json.loads(replay_path.read_text(encoding="utf-8")) if replay_path.exists() else {}
     seen = done_ids(out)
+    todo = []
+    for line in results.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        r = json.loads(line)
+        if r["id"] not in seen and r["id"] in questions:
+            todo.append(r)
+    lock = threading.Lock()
     with out.open("a", encoding="utf-8") as fh:
-        for line in results.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            r = json.loads(line)
-            if r["id"] in seen or r["id"] not in questions:
-                continue
+        def one(r: dict) -> None:
             q = questions[r["id"]]
             judge_host = judge_model = None
             if q.expect == "must_not_see":
@@ -123,10 +127,13 @@ def judge_arm(arm: str, questions: dict[str, Question], run_dir: Path, *, model:
                 prompt = JUDGE_PROMPT.format(query=q.query, gold=q.gold_answer, expect=q.expect, answer=r["answer"])
                 v = parse_judge_output(call_judge(prompt, model=model, claude=claude, host=host, codex=codex))
                 method, judge_host, judge_model = "llm", host, model
-            fh.write(json.dumps({"id": q.id, "arm": arm, "expect": q.expect, "method": method,
-                                 "judge_host": judge_host, "judge_model": judge_model,
-                                 "rubric_version": RUBRIC_VERSION, **v},
-                                ensure_ascii=False) + "\n")
-            fh.flush()
-            log(f"{q.id} {arm} {v['verdict']}")
+            with lock:
+                fh.write(json.dumps({"id": q.id, "arm": arm, "expect": q.expect, "method": method,
+                                     "judge_host": judge_host, "judge_model": judge_model,
+                                     "rubric_version": RUBRIC_VERSION, **v},
+                                    ensure_ascii=False) + "\n")
+                fh.flush()
+                log(f"{q.id} {arm} {v['verdict']}")
+
+        run_parallel(one, todo, jobs)
     return out

@@ -265,8 +265,8 @@ def test_end_to_end_prepare_run_replay_judge_report(tmp_path, fake_bin, capsys):
     assert "gold validation: 3 checked" in out  # A1, D1, D2 (not_found skipped); no row text
     run_dir = next((data / "runs").iterdir())
 
-    assert main(["run", *base, "--arm", "kp", "--keypulse-bin", "keypulse"]) == 0
-    assert main(["run", *base, "--arm", "bash", "--deny-regex", "build-sess"]) == 0
+    assert main(["run", *base, "--arm", "kp", "--keypulse-bin", "keypulse", "--jobs", "1"]) == 0
+    assert main(["run", *base, "--arm", "bash", "--deny-regex", "build-sess", "--jobs", "1"]) == 0
     kp = [json.loads(l) for l in (run_dir / "results-kp.jsonl").read_text().splitlines()]
     bash = [json.loads(l) for l in (run_dir / "results-bash.jsonl").read_text().splitlines()]
     assert [r["id"] for r in kp] == ["A1", "A2", "D1", "D2"]
@@ -702,3 +702,18 @@ def test_judged_rows_carry_rubric_version(tmp_path, monkeypatch):
     assert row["rubric_version"] == judge.RUBRIC_VERSION == 2 and row["verdict"] == "correct"
     assert "2026-01-01, commit abc1234" in prompts[0] and "Grade only what the question asks" in prompts[0]
 
+
+
+def test_run_parallel_runs_every_item_once_and_jobs_1_keeps_order() -> None:
+    import threading
+    from evals.realdata.runner import run_parallel
+    seen, lock = [], threading.Lock()
+
+    def fn(x):
+        with lock:
+            seen.append(x)
+    run_parallel(fn, list(range(20)), 4)
+    assert sorted(seen) == list(range(20))
+    seen.clear()
+    run_parallel(fn, list(range(5)), 1)
+    assert seen == list(range(5))

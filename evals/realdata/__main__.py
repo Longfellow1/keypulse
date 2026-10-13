@@ -43,6 +43,8 @@ def _run_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--max-turns", type=int, default=25)
     p.add_argument("--timeout", type=int, default=900, help="seconds per question")
     p.add_argument("--keypulse-bin", default="keypulse")
+    p.add_argument("--jobs", type=int, default=4,
+                   help="questions run at once (each is its own isolated process; 1 = one by one)")
     p.add_argument("--claude-bin", default="claude")
     _codex_opt(p)
     p.add_argument("--sandbox-exec", default="sandbox-exec")
@@ -137,7 +139,7 @@ def cmd_run(args, arm: str | None = None) -> int:
         codex = _resolve_bin(args.codex_bin, "codex binary")
     runner.run_arm(arm, qs, run_dir, keypulse_bin=keypulse_bin, model=args.model, max_turns=args.max_turns,
                    timeout=args.timeout, sandbox_profile=prof, sandbox_exec=args.sandbox_exec, claude=args.claude_bin,
-                   host=args.host, codex=codex)
+                   host=args.host, codex=codex, jobs=args.jobs)
     return 0
 
 
@@ -155,7 +157,7 @@ def cmd_judge(args) -> int:
     for arm in ("kp", "bash"):
         if (run_dir / f"results-{arm}.jsonl").exists():
             judge_mod.judge_arm(arm, {q.id: q for q in qs}, run_dir, model=args.judge_model, claude=args.claude_bin,
-                                host=args.judge_host, codex=codex)
+                                host=args.judge_host, codex=codex, jobs=args.jobs)
     return 0
 
 
@@ -206,6 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
     _judge_opts(p)
     p.add_argument("--claude-bin", default="claude")
+    p.add_argument("--jobs", type=int, default=4, help="answers graded at once (1 = one by one)")
     _codex_opt(p)
     p.set_defaults(fn=cmd_judge)
 

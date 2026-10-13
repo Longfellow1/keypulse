@@ -8,7 +8,9 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from evals.realdata.grants import make_grants
@@ -267,7 +269,7 @@ def run_one(arm: str, q: Question, workdir: Path, *, model: str, max_turns: int,
 def run_arm(arm: str, questions: list[Question], run_dir: Path, *, keypulse_bin: str, model: str | None = None,
             max_turns: int = 25, timeout: int = 900, sandbox_profile: Path | None = None,
             sandbox_exec: str = "sandbox-exec", claude: str = "claude", host: str = "claude",
-            codex: str = "codex", log=print) -> Path:
+            codex: str = "codex", log=print, jobs: int = 1) -> Path:
     check_host(arm, host)
     model = model or default_model(host)
     out = run_dir / f"results-{arm}.jsonl"
@@ -279,9 +281,11 @@ def run_arm(arm: str, questions: list[Question], run_dir: Path, *, keypulse_bin:
     grants, db = {}, run_dir / "keypulse.db"
     if arm == "kp":
         grants = make_grants(run_dir / "home", db, {q.grant for q in todo}, "rdeval")
+    lock = threading.Lock()
     with tempfile.TemporaryDirectory(prefix="rdeval-") as d, out.open("a", encoding="utf-8") as fh:
         work = Path(d)
-        for q in todo:
+
+        def one(q: Question) -> None:
             cfg, secrets = None, ()
             if arm == "kp":
                 cid, token = grants[q.grant]
@@ -306,10 +310,24 @@ def run_arm(arm: str, questions: list[Question], run_dir: Path, *, keypulse_bin:
                 time.sleep(RETRY_WAIT * (attempt + 1))
             if cfg is not None:
                 cfg.unlink(missing_ok=True)
-            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
-            fh.flush()
-            log(f"{q.id} {arm} tools={r['tool_calls']} {r['seconds']}s exit={r['exit']}")
+            with lock:  # rows are appended whole; order follows completion, done_ids makes reruns resume
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+                fh.flush()
+                log(f"{q.id} {arm} tools={r['tool_calls']} {r['seconds']}s exit={r['exit']}")
+
+        run_parallel(one, todo, jobs)
     return out
+
+
+def run_parallel(fn, items: list, jobs: int) -> None:
+    """Questions are independent (own process, own config, read-only DB copy): run up to `jobs` at once."""
+    if jobs <= 1:
+        for item in items:
+            fn(item)
+        return
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        for future in [pool.submit(fn, item) for item in items]:
+            future.result()
 
 
 def which_or_die(name: str) -> str:
