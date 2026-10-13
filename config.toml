@@ -2,7 +2,6 @@
 db_path = "~/.keypulse/keypulse.db"
 log_path = "~/.keypulse/keypulse.log"
 flush_interval_sec = 5
-retention_days = 30
 
 [watchers]
 window = true

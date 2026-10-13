@@ -29,7 +29,6 @@ from keypulse.store.repository import (
     set_state,
     get_all_policies,
     insert_policy,
-    apply_retention,
 )
 from keypulse.store.models import Policy, RawEvent, SearchDoc
 from keypulse.privacy.desensitizer import desensitize
@@ -183,7 +182,6 @@ _DEFAULT_USER_CONFIG = """# KeyPulse user config.
 db_path = "~/.keypulse/keypulse.db"
 log_path = "~/.keypulse/keypulse.log"
 flush_interval_sec = 5
-retention_days = 30
 
 [watchers]
 window = true
@@ -1647,7 +1645,7 @@ def config_show(plain):
         print(f"db_path={cfg.app.db_path}")
         print(f"log_path={cfg.app.log_path}")
         print(f"flush_interval_sec={cfg.app.flush_interval_sec}")
-        print(f"retention_days={cfg.app.retention_days}")
+        print("retention=permanent (D32)")
         print(f"watchers_window={cfg.watchers.window}")
         print(f"watchers_idle={cfg.watchers.idle}")
         print(f"watchers_clipboard={cfg.watchers.clipboard}")

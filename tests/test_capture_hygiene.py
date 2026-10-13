@@ -350,18 +350,21 @@ def test_v24_scrubs_existing_rows_transactionally_and_idempotently(tmp_path):
     conn.commit()
 
     run_migrations(conn)
+    # D32: the migration never deletes rows; gate-DROP rows (pinyin, wechat, overlay, bili) are kept untouched
     ids = {r["id"] for r in conn.execute("SELECT id FROM raw_events")}
-    assert ids == {keep, term, login, plugin}
+    assert ids == {keep, pinyin, term, wechat, login, overlay, bili, plugin}
+    kept = conn.execute("SELECT content_text FROM raw_events WHERE id=?", (pinyin,)).fetchone()
+    assert kept["content_text"] == "nihaoshijiezhendeshiyigeceshi zebracorn"
     t = conn.execute("SELECT * FROM raw_events WHERE id=?", (term,)).fetchone()
     assert t["content_text"] is None and t["content_hash"] is None and t["app_name"] == "Terminal"
     assert json.loads(t["metadata_json"])["text_dropped"] == "terminal_app"
     lg = conn.execute("SELECT * FROM raw_events WHERE id=?", (login,)).fetchone()
     assert lg["window_title"] is None and lg["app_name"] == "Safari"
     fts = lambda q: [r[0] for r in conn.execute("SELECT rowid FROM raw_events_fts WHERE raw_events_fts MATCH ?", (q,))]
-    assert fts('"zebracorn"') == []                                     # FTS follows deletes and nulling
+    assert pinyin in fts('"zebracorn"') and term not in fts('"zebracorn"')  # term row was reduced, not removed
     assert fts('"hello world"') == [keep]
     ev = {r["event_id"] for r in conn.execute("SELECT event_id FROM evidence")}
-    assert {pinyin, wechat, overlay, bili}.isdisjoint(ev) and keep in ev  # evidence of deleted events is gone
+    assert {pinyin, wechat, overlay, bili, keep} <= ev                   # evidence of kept rows is kept
     assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 31
 
     before = [tuple(r) for r in conn.execute("SELECT * FROM raw_events ORDER BY id")]
@@ -387,8 +390,8 @@ def test_v24_is_fast_on_25k_rows(tmp_path):
     elapsed = time.perf_counter() - start
     print(f"v24 gate migration 25k rows: {elapsed:.2f}s")
     assert elapsed < 30
-    assert conn.execute("SELECT count(*) FROM raw_events WHERE content_text LIKE 'nihao%'").fetchone()[0] == 0
-    assert conn.execute("SELECT count(*) FROM raw_events").fetchone()[0] < 25_000
+    # D32: gate-DROP rows are kept, never deleted, so the row count is unchanged
+    assert conn.execute("SELECT count(*) FROM raw_events").fetchone()[0] == 25_000
     conn.close()
 
 

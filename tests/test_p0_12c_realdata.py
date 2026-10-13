@@ -423,26 +423,26 @@ def test_v26_migration_end_to_end_and_idempotent(tmp_path):
     # 5 zero-width
     assert q("content_text", ids["zw"])[0] == "zebracorn plan" and q("window_title", ids["zw_title"])[0] == "Title"
     assert fts('"zebracorn"') == [ids["zw"]]
-    # 2 overlay
-    assert not exists(ids["ov_window"])
+    # 2 overlay (D32: rows are kept; only app/process metadata is cleared)
+    assert exists(ids["ov_window"]) and q("app_name", ids["ov_window"])[0] is None
     assert conn.execute("SELECT app_name FROM sessions").fetchall()[0][0] == "Notes" and conn.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
     for k in ("ov_clip", "ov_key"):
         r = conn.execute("SELECT app_name, process_name, bucket, content_text FROM raw_events WHERE id = ?", (ids[k],)).fetchone()
         assert (r[0], r[1], r[2]) == (None, None, "Personal") and r[3]
     assert q("bucket", ids["ov_manual"])[0] == "Work" and q("app_name", ids["ov_manual"])[0] is None   # manual bucket kept
-    # 3 noise
-    assert not exists(ids["noise_all"]) and not exists(ids["noise_cmd"])
+    # 3 noise (D32: whole-noise rows are left as they are, never deleted)
+    assert exists(ids["noise_all"]) and exists(ids["noise_cmd"])
     assert q("content_text", ids["noise_inline"])[0] == "real question here and more"
     assert q("content_text", ids["clean"])[0] == "an ordinary message"
-    assert fts('"injected"') == [] and fts('"host injected"') == []
-    # 4 placeholder
-    assert not exists(ids["ph"]) and exists(ids["ph_real"])
-    # evidence follows deletes
+    assert ids["noise_inline"] not in fts('"injected"')
+    # 4 placeholder (D32: kept)
+    assert exists(ids["ph"]) and exists(ids["ph_real"])
+    # evidence of kept rows is kept
     ev = {r[0] for r in conn.execute("SELECT event_id FROM evidence")}
-    assert {ids["ov_window"], ids["ph"], ids["zsh"]}.isdisjoint(ev) and ids["ph_real"] in ev
-    # 1 zsh
-    assert not exists(ids["zsh"])
-    assert conn.execute("SELECT count(*) FROM sync_cursors").fetchone()[0] == 0
+    assert {ids["ov_window"], ids["ph"], ids["zsh"], ids["ph_real"]} <= ev
+    # 1 zsh (D32: rows and sync cursor kept; no re-import is triggered by migration)
+    assert exists(ids["zsh"])
+    assert conn.execute("SELECT count(*) FROM sync_cursors").fetchone()[0] == 1
     # 6 site buckets
     assert q("bucket", ids["u_gh"])[0] == "Work" and q("bucket", ids["u_bank"])[0] == "Financial"
     assert q("bucket", ids["ax_gh"])[0] == "Work"                  # inherits github url
