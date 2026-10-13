@@ -12,6 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 from keypulse.privacy.desensitizer import redact_secrets
 from keypulse.sources.entity_extractor import extract_named_entities
 from keypulse.sources.types import SemanticEvent
+from keypulse.store.context_label import context_label
 from keypulse.store.models import RawEvent
 from keypulse.store.repository import get_conn
 from keypulse.store.repository import insert_raw_event
@@ -85,6 +86,7 @@ def semantic_event_to_raw_event(
         ts_start=event.time.isoformat(),
         app_name=_optional_string(event.metadata.get("app_name") if event.metadata else None),
         process_name=_optional_string(event.metadata.get("app_bundle_id") if event.metadata else None),
+        window_title=context_label(event.source, metadata),  # place label (repo / project / site / note); never a real title
         content_text=event.intent or None,
         content_hash=_content_hash(event),
         metadata_json=payload,

@@ -59,6 +59,9 @@ G1_COVERED_RESPONSE_FIELDS = {
     "recorded",  # rate_result: {"status": "ok", "recorded": true}
     "coverage.by_source", "coverage.by_source[].source", "coverage.by_source[].earliest",
     "coverage.by_source[].latest", "coverage.by_source[].has_events_in_range",
+    # search_context per-keyword feedback: index = caller's own position (no text echoed); in_scope /
+    # in_results are counts or booleans computed inside the grant only; hint is a fixed enum
+    "keywords", "keywords[].index", "keywords[].in_scope", "keywords[].in_results", "hint",
     # get_timeline (results[].* above are shared)
     "has_more", "next_cursor",
     # get_evidence

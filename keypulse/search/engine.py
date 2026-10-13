@@ -6,6 +6,7 @@ from typing import Iterable, Optional
 
 from keypulse.search.backends import resolve_search_backend
 from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES
+from keypulse.store.context_label import CONTEXT_LABEL_SOURCES
 from keypulse.store.db import get_conn
 
 
@@ -128,10 +129,13 @@ def display_text(row: dict) -> str:
     return f"[{app}] {content}" if app else content
 
 
-def _haystack(row) -> str:
-    return " ".join(
-        ((row["content_text"] or "") + " " + (row["window_title"] or "") + " " + (row["app_name"] or "")).lower().split()
-    )
+def _haystack(row, *, with_label: bool = True) -> str:
+    """Text a keyword is matched against. `with_label=False` leaves out the context label of imported
+    rows, so scoring stays exactly what it was before labels existed (see _doc_score)."""
+    title = row["window_title"] or ""
+    if not with_label and row["source"] in CONTEXT_LABEL_SOURCES:
+        title = ""
+    return " ".join(((row["content_text"] or "") + " " + title + " " + (row["app_name"] or "")).lower().split())
 
 
 # Rows an AI host wrote after calling a KeyPulse MCP tool (paraphrase of KeyPulse's own output):
@@ -175,7 +179,7 @@ def _doc_score(row, terms: list[str]) -> float:
     """Relevance from the document alone: term occurrences (saturating, length-normalised), distinct-term
     coverage, keyword density, and a small boost for exact rare-token hits. No document-frequency /
     corpus statistics."""
-    text = _haystack(row)
+    text = _haystack(row, with_label=False)
     distinct = set(x.lower() for x in terms)
     norm = 1 - _LEN_NORM + _LEN_NORM * (len(text) / _REF_LEN)
     score = 0.0
@@ -211,6 +215,97 @@ def _matched(row, terms: list[str]) -> list[str]:
     return [t for t in terms if t.lower() in text]
 
 
+def normalize_keywords(keywords: list[str]) -> list[str]:
+    """Public form of the keyword normalisation search_events applies (the feedback uses the same list)."""
+    return _normalize_keywords(keywords)
+
+
+def _match_clause(terms: list[str]) -> tuple[str, list]:
+    """SQL that is true for a row matching ANY of the normalised keywords (same predicate for search
+    and for the per-keyword scope check)."""
+    params: list = []
+    any_match: list[str] = []
+    long_terms = [t for t in terms if len(t) >= _MIN_FTS_CHARS]
+    short_terms = [t for t in terms if len(t) < _MIN_FTS_CHARS]
+    # Long keywords go through the trigram index (a phrase when they contain spaces); 1-2 char
+    # keywords cannot be indexed and fall back to LIKE.
+    if long_terms:
+        any_match.append("e.id IN (SELECT rowid FROM raw_events_fts WHERE raw_events_fts MATCH ?)")
+        params.append(" OR ".join('"%s"' % t for t in long_terms))
+    for t in short_terms:
+        any_match.append("e.content_text LIKE ? ESCAPE '\\'")
+        params.append(_like(t))
+    for t in terms:  # the app is part of what a capture record is about ("how long in Figma")
+        any_match.append("e.app_name LIKE ? ESCAPE '\\'")
+        params.append(_like(t))
+    return "(" + " OR ".join(any_match) + ")", params
+
+
+def _scope_clauses(
+    *,
+    since_ts: Optional[str],
+    until_ts: Optional[str],
+    sources: Optional[list[str]],
+    buckets: Optional[list[str]],
+    event_type: "str | Iterable[str] | None",
+    include_keypulse_echoes: bool,
+) -> Optional[tuple[list[str], list]]:
+    """WHERE clauses for the scope (event type, time bounds, sources, buckets, echo filter), or None
+    when the scope is empty and nothing can match. Shared by search_events and keyword_in_scope."""
+    where: list[str] = []
+    params: list = []
+    types = _types(event_type)
+    if types:
+        where.append("e.event_type IN (%s)" % ",".join("?" * len(types)))
+        params.extend(types)
+    if since_ts:
+        where.append("e.ts_start >= ?")
+        params.append(since_ts)
+    if until_ts:
+        where.append("e.ts_start <= ?")
+        params.append(until_ts)
+    if sources is not None:
+        if not sources:
+            return None
+        where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
+        params.extend(sources)
+    if buckets is not None:
+        if not buckets:
+            return None
+        where.append("e.bucket IN (%s)" % ",".join("?" * len(buckets)))
+        params.extend(buckets)
+    if not include_keypulse_echoes:
+        where.append(_NOT_ECHO_SQL)
+    return where, params
+
+
+def keyword_in_scope(
+    keyword: str,
+    *,
+    since: str | datetime | None = None,
+    until: str | datetime | None = None,
+    sources: Optional[list[str]] = None,
+    buckets: Optional[list[str]] = None,
+    event_type: "str | Iterable[str] | None" = "semantic_event",
+    include_keypulse_echoes: bool = False,
+) -> bool:
+    """True when ANY row inside the scope matches this one keyword (same predicate and same scope
+    filters as search_events). One EXISTS / LIMIT 1 query: it does not look at the 500-row candidate
+    window, so 'no' here means no in-scope row at all. Out-of-scope rows never count."""
+    terms = _normalize_keywords([keyword])
+    if not terms:
+        return False
+    scope = _scope_clauses(
+        since_ts=parse_time_bound(since), until_ts=parse_time_bound(until, end_of_day=True), sources=sources,
+        buckets=buckets, event_type=event_type, include_keypulse_echoes=include_keypulse_echoes)
+    if scope is None:
+        return False
+    scope_where, scope_params = scope
+    match_sql, match_params = _match_clause(terms)
+    sql = "SELECT 1 FROM raw_events e WHERE %s LIMIT 1" % " AND ".join([match_sql, *scope_where])
+    return get_conn().execute(sql, [*match_params, *scope_params]).fetchone() is not None
+
+
 def search_events(
     keywords: list[str],
     *,
@@ -242,48 +337,15 @@ def search_events(
     terms = _normalize_keywords(keywords)
     if not terms:
         return []
-    since_ts = parse_time_bound(since)
-    until_ts = parse_time_bound(until, end_of_day=True)
-
-    long_terms = [t for t in terms if len(t) >= _MIN_FTS_CHARS]
-    short_terms = [t for t in terms if len(t) < _MIN_FTS_CHARS]
-
-    # Any keyword may match (OR). Long keywords go through the trigram index (a phrase when they
-    # contain spaces); 1-2 char keywords cannot be indexed and fall back to LIKE.
-    params: list = []
-    any_match: list[str] = []
-    if long_terms:
-        any_match.append("e.id IN (SELECT rowid FROM raw_events_fts WHERE raw_events_fts MATCH ?)")
-        params.append(" OR ".join('"%s"' % t for t in long_terms))
-    for t in short_terms:
-        any_match.append("e.content_text LIKE ? ESCAPE '\\'")
-        params.append(_like(t))
-    for t in terms:  # the app is part of what a capture record is about ("how long in Figma")
-        any_match.append("e.app_name LIKE ? ESCAPE '\\'")
-        params.append(_like(t))
-    where = ["(" + " OR ".join(any_match) + ")"]
-    types = _types(event_type)
-    if types:
-        where.append("e.event_type IN (%s)" % ",".join("?" * len(types)))
-        params.extend(types)
-    if since_ts:
-        where.append("e.ts_start >= ?")
-        params.append(since_ts)
-    if until_ts:
-        where.append("e.ts_start <= ?")
-        params.append(until_ts)
-    if sources is not None:
-        if not sources:
-            return []
-        where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
-        params.extend(sources)
-    if buckets is not None:
-        if not buckets:
-            return []
-        where.append("e.bucket IN (%s)" % ",".join("?" * len(buckets)))
-        params.extend(buckets)
-    if not include_keypulse_echoes:
-        where.append(_NOT_ECHO_SQL)
+    scope = _scope_clauses(
+        since_ts=parse_time_bound(since), until_ts=parse_time_bound(until, end_of_day=True), sources=sources,
+        buckets=buckets, event_type=event_type, include_keypulse_echoes=include_keypulse_echoes)
+    if scope is None:
+        return []
+    match_sql, params = _match_clause(terms)
+    scope_where, scope_params = scope
+    where = [match_sql, *scope_where]
+    params = [*params, *scope_params]
     limit = max(1, min(int(limit), 100))
     params.append(_SCOPED_CANDIDATES)
 
@@ -316,6 +378,7 @@ def search_events(
         for k in ("content_text", "window_title", "app_name", "event_type", "ts_end"):
             d.pop(k, None)
         d["matched"] = len(found)
+        d["matched_terms"] = list(found)  # which normalised keywords this hit contains (per-keyword feedback)
         d["keyword_count"] = len(terms)
         d["occurrences"] = occurrences
         d["first_seen"] = first_seen
@@ -328,9 +391,9 @@ _SOURCE_FAMILY = {"chrome_history": "browser", "safari_history": "browser", "bro
 
 
 def _collapse_key(r) -> tuple:
-    text = " ".join(
-        ((r["content_text"] or "") + " | " + (r["window_title"] or "") + " | " + (r["app_name"] or "")).lower().split()
-    )
+    # The context label of imported rows is not part of the fold key: folding stays what it was.
+    title = "" if r["source"] in CONTEXT_LABEL_SOURCES else (r["window_title"] or "")
+    text = " ".join(((r["content_text"] or "") + " | " + title + " | " + (r["app_name"] or "")).lower().split())
     return (_SOURCE_FAMILY.get(r["source"], r["source"]), r["bucket"], text)
 
 
