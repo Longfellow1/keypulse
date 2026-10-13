@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [positioning, roadmap]
 created: "2026-10-12T15:20:36"
-updated: "2026-10-12T15:20:36"
+updated: "2026-10-13T09:36:43"
 ---
 
 <!-- compiled_truth -->
@@ -37,4 +37,10 @@ Not adopted yet: claims that KeyPulse "subsumes" Pieces/Memmy (unverified); agen
   kind: decision
   summary: "Positioning, hero scenario, milestone order after M1"
   source: user 2026-10-12
+  affects: [product-positioning-memory-infra]
+
+- time: 2026-10-13T09:36:43
+  kind: decision
+  summary: "2026-10-13 用户确认：HUD 数据记录观察（各来源采集状态、断流提醒、记录预览、AI 查询记录）与控制能力一起留在 M3 控制中心，M2 只做召回准确率与中文上屏试验。M2 评测题库扩到 50 题，其中至少 15-20 题为只给部分线索的查询。"
+  source: chat
   affects: [product-positioning-memory-infra]

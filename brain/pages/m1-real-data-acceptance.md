@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [eval, m1, acceptance]
 created: "2026-10-12T14:41:55"
-updated: "2026-10-13T01:10:25"
+updated: "2026-10-13T14:16:02"
 ---
 
 <!-- compiled_truth -->
@@ -45,4 +45,10 @@ Known boundary accepted for M1: content in AI-tool apps/sites is bucketed Work b
 - time: 2026-10-13T01:10:25
   kind: evidence
   summary: "2026-10-13 M2 progress: 3-run baseline on main (v29 code) = 12/13/16 of 19 (mean 72%), D/E 4/4 every run; stable misses Q05 (web chat content not captured, only titles), Q08 (gold among candidates, model hedges), Q14 (ambiguous: several distinct key incidents). Evidence openable on real DB after v30/v31 = 97.0% excluding knowledgec (screen-time rows have no original by design). Experiment exp/evidence-context (multi-window snippets + get_evidence focus up to 1500 chars) = 13/14/16 (mean 75%): gain within run-to-run noise, target case Q14 still wrong; not shipped, keeping the short-excerpt data-minimisation contract. Branch kept on origin for reference."
+  affects: [m1-real-data-acceptance]
+
+- time: 2026-10-13T14:16:02
+  kind: evidence
+  summary: "2026-10-13 题库扩到 50 题（v2，本机）：新增 27 题含 19 道部分线索题；Q14 改写并修正标错的出处。Sonnet 1 轮 46/50；Codex gpt-6-luna 3 轮各 42/50（84%，非常稳定）；Codex 判分与 Sonnet 一致率 KeyPulse 组 48/50、bash 组 41/45。日常评测改用 Codex 低价模型作答+判分（PR #77），里程碑验收再用 Sonnet 复核。部分线索题多给了精确日期，偏简单，下一批应用模糊时间。三轮都没答对：Q05（网页对话未采到）、Q06、Q22、Q36、Q44。"
+  source: chat
   affects: [m1-real-data-acceptance]
