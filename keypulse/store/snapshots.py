@@ -11,6 +11,7 @@ paths compute the same marking.
 """
 from __future__ import annotations
 
+import difflib
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -20,8 +21,12 @@ from typing import Optional
 # buffered flushes (silence or 20 s), so no row extends the previous one.
 SNAPSHOT_SOURCES = ("ax_text",)
 SNAPSHOT_WINDOW = timedelta(seconds=120)
-_PINYIN_TAIL = re.compile(r"[a-z']+$")
-_CJK = re.compile(r"[\u4e00-\u9fff]$")
+# Unconfirmed IME pinyin at the end of a field: lowercase ASCII letters, apostrophes and spaces.
+_PINYIN_TAIL = re.compile(r"[a-z' ]+$")
+# The stem left after removing that tail must end in CJK text or CJK/fullwidth punctuation.
+_CJK_END = re.compile(r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]$")
+# A later state that edits the same draft in place (a word inserted mid-sentence) is near-identical.
+_EDIT_SIMILARITY = 0.8
 
 
 def _normalise(text: Optional[str]) -> str:
@@ -29,9 +34,14 @@ def _normalise(text: Optional[str]) -> str:
 
 
 def is_superseded_by(prev_text: Optional[str], next_text: Optional[str]) -> bool:
-    """True when `prev_text` is an earlier state of `next_text`: either a prefix of it, or its text
-    without the last token (a trailing IME fragment) is a prefix of it and the next text continues
-    past that stem. Empty texts never supersede (an empty stem would match everything)."""
+    """True when `prev_text` is an earlier state of `next_text`:
+      1. it is a prefix of it, or its text without the last word is a prefix of it and the next text
+         continues past that word;
+      2. an unconfirmed pinyin tail (lowercase ASCII letters, apostrophes, spaces) is removed from
+         `prev_text`, the remaining stem ends in CJK text or CJK punctuation, and `next_text` starts
+         with that stem and is longer than it;
+      3. the next text edits the same draft: similarity >= 0.8 and it is not shorter.
+    Empty texts never supersede (an empty stem would match everything)."""
     prev = _normalise(prev_text)
     nxt = _normalise(next_text)
     if not prev or not nxt:
@@ -41,10 +51,11 @@ def is_superseded_by(prev_text: Optional[str], next_text: Optional[str]) -> bool
     stem = prev.rsplit(" ", 1)[0] if " " in prev else ""
     if stem and nxt.startswith(stem + " "):
         return True
-    # Chinese has no spaces: an unconfirmed pinyin run glued to the end ("我想测试yixia") is the tail.
-    cjk_stem = _PINYIN_TAIL.sub("", prev)
-    return cjk_stem != prev and _CJK.search(cjk_stem) is not None and len(nxt) > len(cjk_stem) \
-        and nxt.startswith(cjk_stem)
+    pinyin_stem = _PINYIN_TAIL.sub("", prev)
+    if pinyin_stem != prev and _CJK_END.search(pinyin_stem) and len(nxt) > len(pinyin_stem) \
+            and nxt.startswith(pinyin_stem):
+        return True
+    return len(nxt) >= len(prev) and difflib.SequenceMatcher(None, prev, nxt).ratio() >= _EDIT_SIMILARITY
 
 
 def _parse(ts: str) -> datetime:

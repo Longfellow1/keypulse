@@ -16,10 +16,11 @@ from keypulse.store.migration_v30 import migrate_v30
 from keypulse.store.migration_v31 import migrate_v31
 from keypulse.store.migration_v32 import migrate_v32
 from keypulse.store.migration_v33 import migrate_v33
+from keypulse.store.migration_v34 import migrate_v34
 
 LOGGER = logging.getLogger("keypulse.store.migrations")
 
-SCHEMA_VERSION = 33
+SCHEMA_VERSION = 34
 
 MIGRATIONS = [
     # v1
@@ -249,6 +250,8 @@ MIGRATIONS = [
     migrate_v32,
     # v33 — progressive-typing snapshots (ax_text): earlier states marked superseded_by the next state (see migration_v33).
     migrate_v33,
+    # v34 — re-mark progressive-typing snapshots with the spaced-pinyin and same-draft-edit rules (see migration_v34).
+    migrate_v34,
 ]
 
 

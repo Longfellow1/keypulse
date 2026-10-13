@@ -176,3 +176,64 @@ def test_chinese_pinyin_tail_is_an_earlier_state() -> None:
     assert is_superseded_by("我想测试yixia", "我想测试一下吧")
     assert not is_superseded_by("我想测试yixia", "你好")
     assert not is_superseded_by("abc", "xyz")
+
+
+# ── v34 rules: spaced pinyin tails, in-place edits of the same draft ─────────────────────────────
+@pytest.mark.parametrize("prev, nxt", [
+    ("我们周末去爬山吧，但是他xiang qu kan wa", "我们周末去爬山吧，但是他想去看"),   # spaced pinyin tail
+    ("明天大家zhun bei hao le na xie", "明天大家准备好了那些"),                 # several syllables
+    ("这次为什么tomcat zhi xing", "这次为什么tomcat执行了"),                   # pinyin after an English word
+])
+def test_spaced_pinyin_tail_is_superseded_by_rule_a(prev, nxt, monkeypatch) -> None:
+    from keypulse.store import snapshots
+    assert snapshots.is_superseded_by(prev, nxt)
+    # rule a alone (rule b disabled) already covers these: the stem is a CJK prefix of the next state
+    monkeypatch.setattr(snapshots, "_EDIT_SIMILARITY", 2.0)
+    assert snapshots.is_superseded_by(prev, nxt)
+
+
+def test_mid_sentence_insertion_is_superseded_by_rule_b(monkeypatch) -> None:
+    from keypulse.store import snapshots
+    prev = "我们对比了三款同类产品的价格和体验，团队里大多数人都试过，但最后为什么选了第二个方案呢？"
+    nxt = "我们对比了三款同类产品如xia ji ma的价格和体验，团队里大多数人都试过，但最后为什么选了第二个方案呢？"
+    assert snapshots.is_superseded_by(prev, nxt)  # next does not start with prev
+    monkeypatch.setattr(snapshots, "_EDIT_SIMILARITY", 2.0)
+    assert not snapshots.is_superseded_by(prev, nxt)  # only the edit rule covers it
+
+
+@pytest.mark.parametrize("prev, nxt", [
+    ("今天下午去图书馆", "帮我查一下航班"),                                        # two different short messages
+    ("明天去图书馆还书", "请把这份合同的违约条款总结成三点，并标出风险最高的一条给我看看"),  # unrelated longer message
+    ("deploy the app zai", "fix the build"),                                       # English only, no CJK stem
+    ("ok zai", "okay now"),                                                        # English stem, not CJK
+])
+def test_unrelated_or_english_only_texts_are_not_superseded(prev, nxt) -> None:
+    from keypulse.store.snapshots import is_superseded_by
+    assert not is_superseded_by(prev, nxt)
+    assert not is_superseded_by(nxt, prev)
+
+
+def test_migration_v34_marks_spaced_pinyin_chain_idempotently(db) -> None:
+    from keypulse.store.migration_v34 import migrate_v34
+    texts = ["明天大家zhun bei hao le na xie", "明天大家准备好了那些", "明天大家准备好了那些事情，请确认"]
+    ids = [_ins(text, f"2026-05-02T09:00:{i * 3:02d}+00:00", source="ax_text", bucket="Work", app="Notes",
+                event_type="ax_text_capture") for i, text in enumerate(texts)]
+    conn = get_conn()
+    # Simulate rows stored before v34: clear the marks, keep other metadata.
+    conn.execute("UPDATE raw_events SET metadata_json = json_remove(metadata_json, '$.superseded_by') "
+                 "WHERE source = 'ax_text'")
+    conn.commit()
+    assert len(_search(["明天大家"], buckets=["Work"])) == 3
+    migrate_v34(conn)
+    conn.commit()
+
+    def marks():
+        return dict(conn.execute("SELECT id, json_extract(metadata_json, '$.superseded_by') "
+                                 "FROM raw_events WHERE source = 'ax_text'").fetchall())
+
+    first = marks()
+    assert first[ids[0]] == ids[1] and first[ids[1]] == ids[2] and first[ids[2]] is None
+    migrate_v34(conn)
+    conn.commit()
+    assert marks() == first
+    assert [h["id"] for h in _search(["明天大家"], buckets=["Work"])] == [ids[-1]]
