@@ -265,11 +265,11 @@ def test_end_to_end_prepare_run_replay_judge_report(tmp_path, fake_bin, capsys):
     assert "gold validation: 3 checked" in out  # A1, D1, D2 (not_found skipped); no row text
     run_dir = next((data / "runs").iterdir())
 
-    assert main(["run", *base, "--arm", "kp", "--keypulse-bin", "keypulse"]) == 0
-    assert main(["run", *base, "--arm", "bash", "--deny-regex", "build-sess"]) == 0
+    assert main(["run", *base, "--arm", "kp", "--keypulse-bin", "keypulse", "--jobs", "1"]) == 0
+    assert main(["run", *base, "--arm", "bash", "--deny-regex", "build-sess", "--jobs", "1"]) == 0
     kp = [json.loads(l) for l in (run_dir / "results-kp.jsonl").read_text().splitlines()]
     bash = [json.loads(l) for l in (run_dir / "results-bash.jsonl").read_text().splitlines()]
-    assert sorted(r["id"] for r in kp) == ["A1", "A2", "D1", "D2"]  # parallel: completion order
+    assert [r["id"] for r in kp] == ["A1", "A2", "D1", "D2"]
     assert [r["id"] for r in bash] == ["A1", "A2"]  # must_not_see is KeyPulse-only
     assert all(r["exit"] == 0 and r["tool_calls"] == 1 and r["cost_usd"] == 0.05 for r in kp + bash)
     assert kp[0]["tools"][0]["args"] == {"keywords": ["secretword"]} and "args" not in bash[0]["tools"][0]
