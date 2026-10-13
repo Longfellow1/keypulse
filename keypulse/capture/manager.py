@@ -36,7 +36,6 @@ from keypulse.privacy.desensitizer import desensitize, desensitize_json_value, t
 from keypulse.store.db import init_db
 from keypulse.store.models import RawEvent, SearchDoc
 from keypulse.store.repository import (
-    apply_retention,
     get_state,
     insert_raw_event,
     insert_search_doc,
@@ -209,7 +208,7 @@ class CaptureManager:
         init_db(self.config.db_path_expanded)
         seed_policies_from_config(self.config.policies)
         self._policy.reload()
-        apply_retention(self.config.app.retention_days)
+        # D32: startup never deletes user data. Retention was removed; history is kept until an explicit purge.
 
         self._init_watchers()
         for w in self._watchers.values():

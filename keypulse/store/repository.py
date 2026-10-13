@@ -1,7 +1,7 @@
 import hashlib
 import sqlite3
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 from keypulse.privacy.desensitizer import redact_secrets
 from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, keypulse_locator
@@ -285,20 +285,3 @@ def get_state(key: str) -> Optional[str]:
     return row[0] if row else None
 
 
-# ── Retention ─────────────────────────────────────────────────────────────────
-
-def apply_retention(retention_days: int):
-    """Delete raw_events and clipboard docs older than retention_days."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
-    conn = get_conn()
-    deleted_raw_events = conn.execute(
-        "DELETE FROM raw_events WHERE created_at < ?",
-        (cutoff,),
-    ).rowcount
-    deleted_clipboard_docs = conn.execute(
-        "DELETE FROM search_docs WHERE ref_type='clipboard' AND created_at < ?",
-        (cutoff,),
-    ).rowcount
-    conn.commit()
-    if deleted_raw_events or deleted_clipboard_docs:
-        conn.execute("VACUUM")
