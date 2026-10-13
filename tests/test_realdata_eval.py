@@ -10,7 +10,9 @@ from pathlib import Path
 
 import pytest
 
+from evals.realdata import __main__ as cli
 from evals.realdata import judge, report
+from evals.realdata import validate as validate_mod
 from evals.realdata.__main__ import main
 from evals.realdata.paths import REPO_ROOT, resolve_data_dir
 from evals.realdata.prepare import contamination_counts, strip_transcripts
@@ -260,6 +262,7 @@ def test_end_to_end_prepare_run_replay_judge_report(tmp_path, fake_bin, capsys):
     assert main(["prepare", *base, "--db", str(src), "--exclude-session", "build-sess", "--authored-after", "2026-10-01T00:00:00"]) == 0
     out = capsys.readouterr().out
     assert "excluded sessions=1, after cutoff=1" in out and "g1" not in out
+    assert "gold validation: 3 checked" in out  # A1, D1, D2 (not_found skipped); no row text
     run_dir = next((data / "runs").iterdir())
 
     assert main(["run", *base, "--arm", "kp", "--keypulse-bin", "keypulse"]) == 0
@@ -563,4 +566,139 @@ def test_report_lists_isolation_violations_and_host_model():
     assert "Isolation violations (kp, tools outside KeyPulse MCP ran): a" in md
     legacy = report.aggregate(qs, {"kp": [{"id": "a", "seconds": 1, "tool_calls": 0, "cost_usd": 0.1}]}, {}, None)
     assert legacy["arms"]["kp"]["host"] == "claude" and legacy["arms"]["kp"]["model"] == "-"
+
+
+# ---- gold validation ----
+
+def _gold_db(path: Path) -> dict:
+    """Synthetic DB with known row ids. Returns {key: raw_events.id}."""
+    init_db(path)
+    conn = sqlite3.connect(path)
+    ids = {}
+    for key, text, title in (("alpha", "alpha-gold discussed", None), ("title", "unrelated body", "Secret Title Bar")):
+        cur = conn.execute(
+            "INSERT INTO raw_events(source,event_type,ts_start,content_text,content_hash,created_at,bucket,window_title) "
+            "VALUES ('claude_code','semantic_event','2026-01-01T10:00:00',?,?,'2026-01-01T10:00:00','Work',?)",
+            (text, f"gh-{key}", title))
+        ids[key] = cur.lastrowid
+    conn.commit()
+    conn.close()
+    close()
+    return ids
+
+
+def _gold_qs() -> list:
+    return [parse_question(r) for r in [
+        {"id": "G1", "group": "G", "grant": ["Work"], "query": "q", "gold_answer": "a",
+         "gold_event_ids": ["evt_1"], "gold_match": ["ALPHA-gold"]},
+        {"id": "G2", "group": "G", "grant": ["Work"], "query": "q", "gold_answer": "a",
+         "gold_event_ids": [9999], "gold_match": ["alpha-gold"]},
+        {"id": "G3", "group": "G", "grant": ["Work"], "query": "q", "gold_answer": "a",
+         "gold_event_ids": [1], "gold_match": ["no-such-text"]},
+        {"id": "G4", "group": "G", "grant": ["Work"], "query": "q", "gold_answer": "a",
+         "gold_event_ids": [2]},
+        {"id": "G5", "group": "G", "grant": ["Work"], "query": "q", "gold_answer": "a",
+         "gold_event_ids": [2], "gold_match": ["secret title"]},
+        {"id": "G6", "group": "G", "grant": ["Work"], "query": "q", "gold_answer": "nothing", "expect": "not_found"},
+    ]]
+
+
+def test_validate_pass_fail_warn_on_synthetic_db(tmp_path):
+    db = tmp_path / "keypulse.db"
+    _gold_db(db)  # ids are 1 (alpha) and 2 (title) in a fresh DB
+    res = {r.qid: r for r in validate_mod.validate_gold(_gold_qs(), db)}
+    assert "G6" not in res  # not_found is not checked
+    assert (res["G1"].status, res["G1"].reasons) == ("PASS", [])  # evt_ prefix, case-insensitive match
+    assert (res["G2"].status, res["G2"].reasons) == ("FAIL", ["missing_event_id:9999"])
+    assert (res["G3"].status, res["G3"].reasons) == ("FAIL", ["gold_match_not_in_gold_rows:#0"])
+    assert (res["G4"].status, res["G4"].reasons) == ("WARN", ["no_gold_match"])
+    assert (res["G5"].status, res["G5"].reasons) == ("PASS", [])  # window_title of the gold row counts
+    lines = "\n".join(validate_mod.format_lines(list(res.values())))
+    assert "G2 FAIL missing_event_id:9999" in lines and "2 fail" in lines
+    assert "alpha" not in lines and "no-such-text" not in lines  # no row text, no gold text
+
+
+def test_validate_window_title_counts_and_answer_without_ids_warns(tmp_path):
+    db = tmp_path / "keypulse.db"
+    _gold_db(db)
+    qs = [parse_question({"id": "W1", "group": "W", "grant": ["Work"], "query": "q", "gold_answer": "a",
+                          "gold_match": ["secret title"]}),
+          parse_question({"id": "W2", "group": "W", "grant": ["Work"], "query": "q", "gold_answer": "a",
+                          "gold_event_ids": ["abc"], "gold_match": ["alpha-gold"]}),
+          parse_question({"id": "W3", "group": "W", "grant": ["Work"], "query": "q", "gold_answer": "a",
+                          "gold_event_ids": [2], "gold_match": ["secret title"]})]
+    res = {r.qid: r for r in validate_mod.validate_gold(qs, db)}
+    assert (res["W1"].status, res["W1"].reasons) == ("WARN", ["gold_match_unchecked_no_gold_rows", "no_gold_event_ids"])
+    assert res["W2"].status == "FAIL" and res["W2"].reasons == ["bad_event_id_format:#0"]  # no extra gold_match noise
+    assert (res["W3"].status, res["W3"].reasons) == ("PASS", [])  # window_title of gold row counts
+
+
+def test_validate_cli_exit_code_follows_fails(tmp_path, capsys):
+    db = tmp_path / "keypulse.db"
+    _gold_db(db)
+    data = tmp_path / "evals"
+    data.mkdir()
+    qpath = data / "questions.jsonl"
+    qpath.write_text(json.dumps({"id": "P1", "group": "P", "grant": ["Work"], "query": "q", "gold_answer": "a",
+                                 "gold_event_ids": [1], "gold_match": ["alpha-gold"]}) + "\n")
+    base = ["validate", "--data-dir", str(data), "--questions", str(qpath), "--run-dir", str(tmp_path)]
+    assert main(base) == 0
+    assert "P1 PASS" in capsys.readouterr().out
+    qpath.write_text(json.dumps({"id": "P1", "group": "P", "grant": ["Work"], "query": "q", "gold_answer": "a",
+                                 "gold_event_ids": [424242]}) + "\n")
+    assert main(base) == 1
+    assert "P1 FAIL missing_event_id:424242" in capsys.readouterr().out
+
+
+def test_all_stops_on_gold_fail_unless_flag_given(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "keypulse.db"
+    _gold_db(db)
+    data = tmp_path / "evals"
+    run = data / "runs" / "r1"
+    run.mkdir(parents=True)
+    (run / "keypulse.db").write_bytes(db.read_bytes())
+    qpath = data / "questions.jsonl"
+    qpath.write_text(json.dumps({"id": "F1", "group": "F", "grant": ["Work"], "query": "q", "gold_answer": "a",
+                                 "gold_event_ids": [777777], "gold_match": ["alpha-gold"]}) + "\n")
+    calls = []
+    for name in ("cmd_run", "cmd_replay", "cmd_judge", "cmd_report"):
+        monkeypatch.setattr(cli, name, lambda args, *a, _n=name: calls.append(_n) or 0)
+    base = ["all", "--data-dir", str(data), "--questions", str(qpath), "--run-dir", str(run)]
+
+    assert main(base) == 1 and calls == []  # stopped before any arm ran
+    assert "F1 FAIL missing_event_id:777777" in capsys.readouterr().out
+
+    assert main([*base, "--allow-invalid-gold"]) == 0
+    assert calls == ["cmd_run", "cmd_run", "cmd_replay", "cmd_judge", "cmd_report"]
+
+
+# ---- judge rubric v2 ----
+
+def test_judge_prompt_has_asked_only_rules_and_still_formats():
+    p = judge.JUDGE_PROMPT
+    assert "Grade only what the question asks" in p
+    assert "must not lower the verdict" in p
+    assert '"partial" when the core answer is right' in p
+    assert "presents nothing" in p and "related records" in p  # not_found clarification kept
+    p.format(query="q", gold="g", expect="answer", answer="a")  # placeholders intact
+
+
+def test_judged_rows_carry_rubric_version(tmp_path, monkeypatch):
+    run = tmp_path / "run"
+    run.mkdir()
+    q = parse_question({"id": "J1", "group": "J", "grant": ["Work"], "query": "when?",
+                        "gold_answer": "2026-01-01, commit abc1234"})
+    (run / "results-kp.jsonl").write_text(json.dumps(
+        {"id": "J1", "arm": "kp", "exit": 0, "is_error": False, "answer": "2026-01-01"}) + "\n")
+    prompts = []
+
+    def fake_judge(prompt, **kw):
+        prompts.append(prompt)
+        return '{"verdict": "correct", "reason": "asked fact matches"}'
+
+    monkeypatch.setattr(judge, "call_judge", fake_judge)
+    judge.judge_arm("kp", {"J1": q}, run, model="m", log=lambda *a: None)
+    row = json.loads((run / "judged-kp.jsonl").read_text().splitlines()[0])
+    assert row["rubric_version"] == judge.RUBRIC_VERSION == 2 and row["verdict"] == "correct"
+    assert "2026-01-01, commit abc1234" in prompts[0] and "Grade only what the question asks" in prompts[0]
 
