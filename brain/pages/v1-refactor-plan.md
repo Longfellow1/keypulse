@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [v1, refactor, plan]
 created: "2026-10-10T14:19:24"
-updated: "2026-10-13T19:29:15"
+updated: "2026-10-14T09:56:40"
 ---
 
 <!-- compiled_truth -->
@@ -80,4 +80,10 @@ V1 重构计划（docs/KeyPulse_V1_重构计划.md，v1.0，owner 2026-10-10 批
   kind: evidence
   summary: "M2 close-out 2026-10-13: R1 (per-keyword feedback, context labels, #83), R2 (cross-source page folding, superseded typing snapshots, #84), R2b (Chinese pinyin/edit snapshot rules + typed-text source hint, migration v34, #86). Codex gpt-6-luna, bank v2 (50 q), same gold for all rounds: R2 avg 45.7/50, R2b avg 46.7/50 (93%); isolation/bucket violations 0. Below the 95% exit bar. Remaining: Q05 (over-broad question), Q06 (misses a clause from the user's own typed note), Q23 (older vs latest decision), single-round judge flips. Gold fixes with record evidence: Q03 (over-specified), Q05 (ids pointed at intermediate drafts), Q08/Q11 (ambiguous: accept every answer the records support). Eval runs now parallel (--jobs 4, #85): ~10 min/round."
   source: "local evals ~/.keypulse/evals (not in repo)"
+  affects: [v1-refactor-plan]
+
+- time: 2026-10-14T09:56:40
+  kind: decision
+  summary: "2026-10-14 M2 recall accepted by owner under quant+experience rule (see product-positioning-memory-infra reversal). Open from the M2 scope: AX committed-text spike #64 (needs owner to grant Accessibility)."
+  source: owner 2026-10-14
   affects: [v1-refactor-plan]

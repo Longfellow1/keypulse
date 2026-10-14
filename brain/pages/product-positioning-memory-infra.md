@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [positioning, roadmap]
 created: "2026-10-12T15:20:36"
-updated: "2026-10-13T15:14:00"
+updated: "2026-10-14T09:56:40"
 ---
 
 <!-- compiled_truth -->
@@ -49,4 +49,10 @@ Not adopted yet: claims that KeyPulse "subsumes" Pieces/Memmy (unverified); agen
   kind: decision
   summary: "2026-10-13 多维验收评估：M2 未达标，不进入 M3。用户批准 M2 收口 4 步：保留策略（D32 全部永久保留）→ 修评测（gold 校验、判分只判所问）→ 修检索机制 R1（逐关键词命中反馈、零命中按时间浏览提示、上下文字段可搜）与 R2（入库层合并重复/跨来源同一事件）→ 补 Codex/Cursor 接入并同步 PRD/README。"
   source: user 2026-10-13
+  affects: [product-positioning-memory-infra]
+
+- time: 2026-10-14T09:56:40
+  kind: reversal
+  summary: "2026-10-14 owner: the ≥95% accuracy bar is not a hard gate. Milestone acceptance = quantitative + experience: pass when objective scores (accuracy, evidence, zero out-of-scope) and the owner's subjective experience judgement are both OK. Owner accepted the M2 recall state (R2b: 46.7/50 = 93%, 0 isolation/bucket violations) as passing."
+  source: owner 2026-10-14
   affects: [product-positioning-memory-infra]
