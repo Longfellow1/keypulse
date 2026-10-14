@@ -4,7 +4,6 @@ PYTHON := /Users/Harland/Go/keypulse/.venv/bin/python
 BOOTSTRAP_PYTHON := python3
 ROOT := /Users/Harland/Go/keypulse
 APP_DEST := /Applications/KeyPulse.app
-PLIST_SRC := $(ROOT)/integrations/launchd
 PLIST_DST := $(HOME)/Library/LaunchAgents
 LAUNCH_AGENTS := \
 	$(PLIST_DST)/com.keypulse.daemon.plist \
@@ -31,18 +30,12 @@ app-clean:
 preflight:
 	$(PYTHON) $(ROOT)/scripts/preflight_app.py $(ROOT)/dist/KeyPulse.app
 
-# install-plists: copy any plist sources that aren't yet present in LaunchAgents.
-# We only copy if the destination doesn't exist OR the source is newer, so we
-# don't blow away user-customized agents.
+# install-plists: write the launchd plists with the CLI itself (`keypulse install launchd`), so every
+# install path runs the `keypulse` console script. No static plist files to drift (D33).
+# --no-load: the `reload` target loads them. --force: they are KeyPulse-managed, regenerate on change.
 install-plists:
 	@mkdir -p $(PLIST_DST)
-	@for src in $(PLIST_SRC)/com.keypulse.*.plist; do \
-		dst="$(PLIST_DST)/$$(basename $$src)"; \
-		if [ ! -f "$$dst" ] || [ "$$src" -nt "$$dst" ]; then \
-			echo "installing $$dst"; \
-			cp "$$src" "$$dst"; \
-		fi; \
-	done
+	KEYPULSE_EXECUTABLE=$(ROOT)/.venv/bin/keypulse $(ROOT)/.venv/bin/keypulse install launchd --no-load --force
 
 # install: build .app, preflight, copy to /Applications, sync plists, reload all agents.
 # Always cleans dist/KeyPulse.app at the end — leaving it would create a duplicate

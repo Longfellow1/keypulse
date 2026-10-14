@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import tomllib
 from pathlib import Path
 from typing import Literal
@@ -264,3 +266,35 @@ class Config(BaseModel):
     @property
     def log_path_expanded(self) -> Path:
         return Path(self.app.log_path).expanduser()
+
+
+_OPT_IN_KEY_RE = re.compile(r"^[ \t]*chat_apps_opt_in[ \t]*=[ \t]*\[.*?\]", re.S | re.M)
+_TABLE_HEADER_RE = re.compile(r"^[ \t]*\[[^\]\n]+\][ \t]*(?:#.*)?$", re.M)
+
+
+def write_chat_apps_opt_in(path: Path, keys: list[str]) -> None:
+    """Persist `[privacy] chat_apps_opt_in` in a user config.toml, leaving the rest of the file as is.
+
+    Text edit (no TOML writer dependency): replaces the existing array, else adds the key under
+    [privacy], else appends a [privacy] table. The result is re-parsed and validated before it is written.
+    """
+    line = "chat_apps_opt_in = [" + ", ".join(json.dumps(k, ensure_ascii=False) for k in keys) + "]"
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    privacy = re.search(r"^[ \t]*\[privacy\][ \t]*(?:#.*)?$", text, re.M)
+    if privacy is None:
+        sep = "" if not text or text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+        new = f"{text}{sep}[privacy]\n{line}\n"
+    else:
+        nxt = _TABLE_HEADER_RE.search(text, privacy.end())
+        end = nxt.start() if nxt else len(text)
+        body = text[privacy.end():end]
+        if _OPT_IN_KEY_RE.search(body):
+            body = _OPT_IN_KEY_RE.sub(lambda _m: line, body, count=1)
+        else:
+            body = "\n" + line + body
+        new = text[: privacy.end()] + body + text[end:]
+    parsed = Config.model_validate(tomllib.loads(new))  # raises on a broken edit; nothing written yet
+    if parsed.privacy.chat_apps_opt_in != keys:
+        raise ValueError("could not update privacy.chat_apps_opt_in in " + str(path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new, encoding="utf-8")
