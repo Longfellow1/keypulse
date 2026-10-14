@@ -1,6 +1,6 @@
 # KeyPulse
 
-> **KeyPulse 是给 AI Agent 用的本地记忆层：在本机采集你的活动，经 MCP 提供给 Claude / Codex / Cursor，带出处与访问控制。**
+> **KeyPulse 是给 AI Agent 用的本地记忆层：在本机采集你的活动，经 MCP（Model Context Protocol）提供给 Claude / Codex / Cursor，带出处与访问控制。**
 
 KeyPulse 静静地记录你的工作活动 —— 你切换的应用、窗口、剪贴板边界、手动笔记 —— 并在敏感信息落盘之前就把它丢掉。
 
@@ -197,7 +197,7 @@ keypulse mcp grant codex  --host codex --buckets Work
 keypulse mcp grant cursor --host cursor --buckets Work
 ```
 
-命令只显示一次 token（本地只存哈希），并打印该客户端的配置：Claude Code 的 `claude mcp add` 命令；Codex 的 `~/.codex/config.toml` 片段；Cursor 的 `~/.cursor/mcp.json`；`--host generic` 为通用 JSON。配置中的命令使用 keypulse 的绝对路径，在 shell 之外也能启动。
+命令只显示一次 token（本地只存哈希），并打印该客户端的配置：Claude Code 的 `claude mcp add` 命令，以及可写入项目 `.mcp.json`（Claude Code）或 `claude_desktop_config.json`（Claude Desktop）的 JSON 片段；Codex 的 `~/.codex/config.toml` 片段；Cursor 的 `~/.cursor/mcp.json`；`--host generic` 为通用 JSON。配置中的命令使用 keypulse 的绝对路径，在 shell 之外也能启动。
 
 当前工具：`search_context`（关键词 / 时间 / 来源搜索，附覆盖说明）、`get_timeline`（时间线）、`get_evidence`（取回原始出处）、`rate_result`（对结果打分反馈）。
 
