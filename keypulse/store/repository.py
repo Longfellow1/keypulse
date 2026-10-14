@@ -130,8 +130,35 @@ def query_raw_events(
     return [dict(r) for r in rows]
 
 
-def purge_raw_events(since: Optional[str] = None, until: Optional[str] = None, app_name: Optional[str] = None):
-    conn = get_conn()
+PURGE_COUNT_KEYS = (
+    "raw_events", "raw_events_fts", "evidence", "mcp_returned_results", "mcp_feedback",
+    "search_docs", "sessions",
+)
+
+
+def purge_raw_events(
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    app_name: Optional[str] = None,
+    source: Optional[str] = None,
+    *,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Delete the raw_events matching the selector AND everything derived from them, in one transaction.
+
+    Selector: time range (ts_start, inclusive), app_name (exact, case-insensitive), source (exact).
+    At least one must be given; an empty selector is refused rather than meaning "everything".
+    Returns per-table row counts. dry_run=True counts and rolls back.
+
+    Derived data handled:
+      * raw_events_fts        kept in sync by the raw_events AFTER DELETE trigger (verified in tests)
+      * evidence              rows whose event_id is deleted (explicit: FK cascade is not enabled on the
+                              app connection)
+      * mcp_returned_results  rows for a deleted event or evidence id
+      * mcp_feedback          rows for a deleted event or evidence id (their note / query text goes too)
+      * search_docs           clipboard / manual docs whose ref_id is a deleted event id
+      * sessions              sessions whose events were all deleted (partially-emptied sessions are kept)
+    """
     clauses, params = [], []
     if since:
         clauses.append("ts_start >= ?")
@@ -139,12 +166,79 @@ def purge_raw_events(since: Optional[str] = None, until: Optional[str] = None, a
     if until:
         clauses.append("ts_start <= ?")
         params.append(until)
-    if app_name:
-        clauses.append("app_name LIKE ?")
-        params.append(f"%{app_name}%")
-    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    conn.execute(f"DELETE FROM raw_events {where}", params)
-    conn.commit()
+    if app_name is not None:
+        clauses.append("lower(app_name) = lower(?)")
+        params.append(app_name)
+    if source is not None:
+        clauses.append("source = ?")
+        params.append(source)
+    if not clauses:
+        raise ValueError("purge needs at least one selector: a time range, app_name or source")
+
+    conn = get_conn()
+    if conn.in_transaction:
+        conn.commit()
+    # Temp tables are created outside the transaction: a dry-run ROLLBACK would otherwise drop them.
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS purge_event_ids (id INTEGER PRIMARY KEY)")
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS purge_evidence_ids (id INTEGER PRIMARY KEY)")
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS purge_session_ids (id TEXT PRIMARY KEY)")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("DELETE FROM purge_event_ids")
+        conn.execute("DELETE FROM purge_evidence_ids")
+        conn.execute("DELETE FROM purge_session_ids")
+        conn.execute(
+            f"INSERT INTO purge_event_ids SELECT id FROM raw_events WHERE {' AND '.join(clauses)}", params
+        )
+        conn.execute(
+            "INSERT INTO purge_evidence_ids SELECT id FROM evidence WHERE event_id IN (SELECT id FROM purge_event_ids)"
+        )
+        # Sessions that lose every event. A session that keeps events outside the selector stays.
+        conn.execute(
+            """INSERT INTO purge_session_ids SELECT s.id FROM sessions s
+               WHERE s.id IN (SELECT session_id FROM raw_events
+                              WHERE id IN (SELECT id FROM purge_event_ids) AND session_id IS NOT NULL)
+                 AND NOT EXISTS (SELECT 1 FROM raw_events r
+                                 WHERE r.session_id = s.id AND r.id NOT IN (SELECT id FROM purge_event_ids))"""
+        )
+
+        ev = "event_id IN (SELECT id FROM purge_event_ids) OR evidence_id IN (SELECT id FROM purge_evidence_ids)"
+        doc = "ref_type IN ('clipboard', 'manual') AND ref_id IN (SELECT CAST(id AS TEXT) FROM purge_event_ids)"
+        targets = {
+            "raw_events": ("SELECT COUNT(*) FROM purge_event_ids", None),
+            "raw_events_fts": ("SELECT COUNT(*) FROM purge_event_ids", None),
+            "evidence": ("SELECT COUNT(*) FROM purge_evidence_ids", None),
+            "mcp_returned_results": (f"SELECT COUNT(*) FROM mcp_returned_results WHERE {ev}",
+                                     f"DELETE FROM mcp_returned_results WHERE {ev}"),
+            "mcp_feedback": (f"SELECT COUNT(*) FROM mcp_feedback WHERE {ev}",
+                             f"DELETE FROM mcp_feedback WHERE {ev}"),
+            "search_docs": (f"SELECT COUNT(*) FROM search_docs WHERE {doc}",
+                            f"DELETE FROM search_docs WHERE {doc}"),
+            "sessions": ("SELECT COUNT(*) FROM purge_session_ids",
+                         "DELETE FROM sessions WHERE id IN (SELECT id FROM purge_session_ids)"),
+        }
+        counts = {name: conn.execute(count_sql).fetchone()[0] for name, (count_sql, _) in targets.items()}
+        if dry_run:
+            conn.execute("ROLLBACK")
+            return counts
+
+        # Children first. raw_events last: its AFTER DELETE trigger removes the FTS rows.
+        for name in ("mcp_returned_results", "mcp_feedback", "search_docs", "sessions"):
+            conn.execute(targets[name][1])
+        conn.execute("DELETE FROM evidence WHERE id IN (SELECT id FROM purge_evidence_ids)")
+        conn.execute("DELETE FROM raw_events WHERE id IN (SELECT id FROM purge_event_ids)")
+        conn.execute("COMMIT")
+        return counts
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        # Temp tables only hold ids for this call; clear them so nothing lingers on the connection.
+        conn.execute("DELETE FROM purge_event_ids")
+        conn.execute("DELETE FROM purge_evidence_ids")
+        conn.execute("DELETE FROM purge_session_ids")
+        conn.commit()
 
 
 # ── Session ───────────────────────────────────────────────────────────────────
