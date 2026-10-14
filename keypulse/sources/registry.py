@@ -18,6 +18,7 @@ from keypulse.sources.plugins.safari_history import SafariHistorySource
 from keypulse.sources.plugins.spotlight import SpotlightSource
 from keypulse.sources.plugins.wechat import WechatSource
 from keypulse.sources.plugins.zsh_history import ZshHistorySource
+from keypulse.capture.capture_control import source_writes_allowed
 from keypulse.sources.sink import persist_semantic_event
 from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
 from keypulse.utils.logging import get_logger
@@ -81,6 +82,9 @@ def read_all(
     persist_failed: set[str] = set()
     discovered = discover_all(source)
     selected = _select_sources(source)
+    if persist_raw_events:
+        # Paused or switched-off plugins are not read at all, so their cursors do not advance (#28).
+        selected = [plugin for plugin in selected if source_writes_allowed(plugin.name)]
     cleaning_config = load_cleaning_config()
 
     for plugin in selected:

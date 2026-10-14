@@ -8,6 +8,11 @@ from pathlib import Path
 
 import click
 
+from keypulse.capture.capture_control import (
+    CAPTURE_SOURCES,
+    disabled_sources,
+    set_source_enabled,
+)
 from keypulse.config import Config
 from keypulse.sources.approval import ApprovalRecord, ApprovalStore
 from keypulse.sources.discoverers import CandidateSource, discover_all_candidates
@@ -30,9 +35,42 @@ def sources_group() -> None:
 
 @sources_group.command("list")
 def list_command() -> None:
+    init_db(Config.load().db_path_expanded)
+    disabled = disabled_sources()
     for plugin in list_sources():
         desc = getattr(plugin, "description", "") or ""
-        click.echo(f"{plugin.name}\t[{plugin.privacy_tier}/{plugin.liveness}]\t{desc}")
+        click.echo(
+            f"{plugin.name}\t[{plugin.privacy_tier}/{plugin.liveness}]\t{_switch_label(plugin.name, disabled)}\t{desc}"
+        )
+    for name in sorted(CAPTURE_SOURCES):
+        click.echo(f"{name}\t[capture watcher]\t{_switch_label(name, disabled)}")
+
+
+@sources_group.command("disable")
+@click.argument("name")
+def disable_command(name: str) -> None:
+    """Stop writing new content from NAME (persists across restarts). keyboard_chunk is the keyboard off switch."""
+    _set_switch(name, enabled=False)
+
+
+@sources_group.command("enable")
+@click.argument("name")
+def enable_command(name: str) -> None:
+    """Resume writing new content from NAME."""
+    _set_switch(name, enabled=True)
+
+
+def _set_switch(name: str, *, enabled: bool) -> None:
+    init_db(Config.load().db_path_expanded)
+    known = {plugin.name for plugin in list_sources()} | CAPTURE_SOURCES
+    if name not in known:
+        raise click.ClickException(f"unknown source: {name} (see `keypulse sources list`)")
+    set_source_enabled(name, enabled)
+    click.echo(f"{name}\t{'on' if enabled else 'off'}")
+
+
+def _switch_label(name: str, disabled: frozenset[str]) -> str:
+    return "[off]" if name in disabled else "[on]"
 
 
 @sources_group.command("discover")

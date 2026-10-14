@@ -263,6 +263,7 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
         "capabilities": capabilities_snapshot,
         "capture_error_code": capture_error_code,
         "paused": paused_flag,
+        "disabled_sources": _disabled_sources_snapshot(),
     }
     write_health_report(HEALTH_JSON_PATH, result)
     return result
@@ -323,6 +324,16 @@ def _trigger_self_heal() -> dict[str, Any]:
         "status": str(result.get("status") or ""),
         "failed_step": str(result.get("failed_step") or ""),
     }
+
+
+def _disabled_sources_snapshot() -> list[str]:
+    """Source names switched off via `keypulse sources disable` (#28). Empty on any read error."""
+    try:
+        from keypulse.capture.capture_control import disabled_sources
+
+        return sorted(disabled_sources())
+    except Exception:
+        return []
 
 
 def _capabilities_snapshot() -> tuple[dict[str, Any], str, bool]:

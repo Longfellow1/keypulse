@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterator, Protocol
 
+from keypulse.capture.capture_control import source_writes_allowed
 from keypulse.capture.workspace_events import NSWorkspaceEventSource
 from keypulse.sources.registry import list_sources, read_all
 from keypulse.sources.types import DataSource, SemanticEvent
@@ -243,6 +244,10 @@ class SourcesScheduler:
     def _schedule_scan(self, plugin_name: str, *, reason: str) -> None:
         if not self._running.is_set():
             return
+        if self._writes_blocked(plugin_name):
+            # No scan while paused or switched off, so the since-window keeps growing and resumes after re-enable.
+            LOGGER.debug("sources scheduler skip plugin=%s reason=%s (paused or disabled)", plugin_name, reason)
+            return
         if not self._check_and_mark_debounce(plugin_name):
             LOGGER.debug("sources scheduler debounce skip plugin=%s reason=%s", plugin_name, reason)
             return
@@ -250,6 +255,15 @@ class SourcesScheduler:
         if self._executor is None:
             return
         self._executor.submit(self._scan_plugin, plugin_name, reason)
+
+    @staticmethod
+    def _writes_blocked(plugin_name: str) -> bool:
+        try:
+            return not source_writes_allowed(plugin_name)
+        except Exception:
+            # read_all re-checks and fails closed, so a state read error here only skips the optimisation.
+            LOGGER.exception("capture switch read failed plugin=%s", plugin_name)
+            return False
 
     def _check_and_mark_debounce(self, plugin_name: str) -> bool:
         now_mono = self._monotonic_fn()

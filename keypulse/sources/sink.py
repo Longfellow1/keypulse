@@ -9,6 +9,7 @@ from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from keypulse.capture.capture_control import source_writes_allowed
 from keypulse.privacy.desensitizer import redact_secrets
 from keypulse.sources.entity_extractor import extract_named_entities
 from keypulse.sources.types import SemanticEvent
@@ -42,6 +43,8 @@ def redact_event(event: SemanticEvent) -> SemanticEvent:
 
 
 def persist_semantic_event(event: SemanticEvent, *, async_named_entities: bool = True) -> int:
+    if not source_writes_allowed(event.source):  # paused or switched off (#28)
+        return 0
     event = redact_event(event)
     source_id = None
     if event.external_id or event.source_locator:

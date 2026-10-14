@@ -53,6 +53,12 @@ class KeyboardChunkBuffer:
         self._process_name = process_name
         self._parts.append(text)
 
+    def discard(self) -> None:
+        """Drop buffered text without emitting it (used while paused or switched off)."""
+        self._parts.clear()
+        self._started_at = None
+        self._last_input_at = None
+
     def flush_if_due(self, now: float):
         if self._started_at is None or self._last_input_at is None:
             return None
@@ -138,8 +144,8 @@ class KeyboardChunkWatcher(BaseWatcher):
         secure_input: bool = False,
         denied: bool = False,
     ) -> None:
-        if secure_input or denied:
-            return
+        if secure_input or denied or self._paused.is_set():
+            return  # paused: keystrokes are not buffered at all
         self._buffer.add_text(
             text=text,
             app_name=app_name,
@@ -151,6 +157,7 @@ class KeyboardChunkWatcher(BaseWatcher):
     def _run(self):
         while self._running.is_set():
             if self._paused.is_set():
+                self._buffer.discard()
                 time.sleep(0.25)
                 continue
             event = self._buffer.flush_if_due(now=time.monotonic())

@@ -14,6 +14,11 @@ from keypulse.capture.aggregator import Aggregator
 from keypulse.capture.base import BaseWatcher
 from keypulse.capture.chat_apps import chat_app_key
 from keypulse.capture.camera_monitor import CameraMonitor
+from keypulse.capture.capture_control import (
+    disabled_sources,
+    is_capture_paused,
+    source_writes_allowed,
+)
 from keypulse.capture.fusion import CaptureFusionEngine
 from keypulse.capture.hygiene import (
     METADATA_ONLY,
@@ -203,6 +208,8 @@ class CaptureManager:
         self._source_last_event_at: dict[str, str] = {}
         # D27: gate hits by "source:reason" (counts only, never content)
         self._gate_hits: dict[str, int] = {}
+        # Disabled sources whose watchers we have already paused (#28).
+        self._disabled_applied: frozenset[str] = frozenset()
 
     def start(self):
         """Initialize DB, seed policies, start watchers and flush loop."""
@@ -224,7 +231,9 @@ class CaptureManager:
             target=self._heartbeat_loop, daemon=True, name="heartbeat-loop"
         )
         self._heartbeat_thread.start()
-        set_state("status", "running")
+        # A persisted pause (keypulse pause, HUD) survives restarts; only a non-paused daemon sets running.
+        if not is_capture_paused():
+            set_state("status", "running")
         set_state("started_at", datetime.now(timezone.utc).isoformat())
         self._persist_runtime_state(force=True)
         logger.info("CaptureManager started")
@@ -245,7 +254,8 @@ class CaptureManager:
             self._flush_thread.join(timeout=10)
         if self._heartbeat_thread:
             self._heartbeat_thread.join(timeout=5)
-        set_state("status", "stopped")
+        if not is_capture_paused():  # keep a persisted pause across daemon restarts
+            set_state("status", "stopped")
         self._persist_runtime_state(force=True)
         logger.info("CaptureManager stopped")
 
@@ -257,8 +267,10 @@ class CaptureManager:
 
     def resume(self):
         self._paused.clear()
-        for w in self._watchers.values():
-            w.resume()
+        disabled = disabled_sources()
+        for name, w in self._watchers.items():
+            if name not in disabled:  # a switched-off source stays quiet
+                w.resume()
         set_state("status", "running")
 
     def pause_watchers(self, names: list[str]) -> None:
@@ -460,10 +472,26 @@ class CaptureManager:
     def _flush_loop(self):
         while self._running.is_set():
             self._sync_control_state()
-            if not self._paused.is_set():
-                self._drain_queue()
+            self._sync_source_switches()
+            # Always drain: while paused or source-disabled, _process_event drops events at write time,
+            # so nothing queued during a pause is replayed after resume.
+            self._drain_queue()
             self._persist_runtime_state()
             time.sleep(self.config.app.flush_interval_sec)
+
+    def _sync_source_switches(self) -> None:
+        """Quiet watchers of disabled sources (keyboard listener included). The write gate still applies."""
+        disabled = disabled_sources()
+        for name in disabled:
+            watcher = self._watchers.get(name)
+            if watcher is not None:
+                watcher.pause()  # idempotent; re-applied every sync in case a watcher was restarted
+        if not self._paused.is_set():
+            for name in self._disabled_applied - disabled:
+                watcher = self._watchers.get(name)
+                if watcher is not None:
+                    watcher.resume()
+        self._disabled_applied = disabled
 
     def _sync_control_state(self):
         desired = get_state("status") or "running"
@@ -515,6 +543,11 @@ class CaptureManager:
         logger.debug("capture gate: %s (%s)", reason, event.source)  # never log content
 
     def _process_event(self, event: RawEvent):
+        # Write gate (#28): global pause or a switched-off source writes nothing new.
+        if not source_writes_allowed(event.source):
+            self._count_gate_hit(event, "paused_or_disabled")
+            return
+
         event.speaker = _derive_speaker(event)
 
         if self._is_blacklisted(event):
@@ -744,6 +777,7 @@ class CaptureManager:
             "host_executable": os.path.realpath(os.sys.executable),
             "running": self._running.is_set(),
             "paused": self._paused.is_set(),
+            "disabled_sources": sorted(disabled_sources()),
             "watchers": {
                 name: watcher.health() | {"heartbeat_timeout_sec": watcher.HEARTBEAT_TIMEOUT_SEC}
                 for name, watcher in self._watchers.items()
