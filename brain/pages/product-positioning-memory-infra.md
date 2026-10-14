@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [positioning, roadmap]
 created: "2026-10-12T15:20:36"
-updated: "2026-10-14T09:56:40"
+updated: "2026-10-14T13:52:22"
 ---
 
 <!-- compiled_truth -->
@@ -56,3 +56,9 @@ Not adopted yet: claims that KeyPulse "subsumes" Pieces/Memmy (unverified); agen
   summary: "2026-10-14 owner: the ≥95% accuracy bar is not a hard gate. Milestone acceptance = quantitative + experience: pass when objective scores (accuracy, evidence, zero out-of-scope) and the owner's subjective experience judgement are both OK. Owner accepted the M2 recall state (R2b: 46.7/50 = 93%, 0 isolation/bucket violations) as passing."
   source: owner 2026-10-14
   affects: [product-positioning-memory-infra]
+
+- time: 2026-10-14T13:52:22
+  kind: decision
+  summary: "D33: distribution split — CLI minimal install (core via MCP), desktop app optional superset (HUD first, later reports/graph in app layer). See cli-core-app-optional."
+  source: owner decision 2026-10-14
+  affects: [cli-core-app-optional]
