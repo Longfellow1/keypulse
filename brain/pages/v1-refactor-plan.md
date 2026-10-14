@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [v1, refactor, plan]
 created: "2026-10-10T14:19:24"
-updated: "2026-10-14T09:56:40"
+updated: "2026-10-14T19:20:20"
 ---
 
 <!-- compiled_truth -->
@@ -86,4 +86,10 @@ V1 重构计划（docs/KeyPulse_V1_重构计划.md，v1.0，owner 2026-10-10 批
   kind: decision
   summary: "2026-10-14 M2 recall accepted by owner under quant+experience rule (see product-positioning-memory-infra reversal). Open from the M2 scope: AX committed-text spike #64 (needs owner to grant Accessibility)."
   source: owner 2026-10-14
+  affects: [v1-refactor-plan]
+
+- time: 2026-10-14T19:20:20
+  kind: decision
+  summary: "D33 (2026-10-14): M3 gate changed from 'HUD fully usable + owner HUD review' to 'CLI control surface complete + failures visible without UI'; HUD/app moved to an optional app track (design baseline: v3 interaction draft). See cli-core-app-optional."
+  source: owner decision 2026-10-14
   affects: [v1-refactor-plan]

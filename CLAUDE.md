@@ -44,7 +44,7 @@ This project is indexed by GitNexus as **keypulse** (10292 symbols, 17189 relati
 
 ## 产品边界
 
-V1 是给 AI Agent 用的本地记忆层（MCP 优先）。旧日报 / 周报 / Obsidian 导出 / LLM pipeline 已在 D24 下线（旧代码见 `legacy-v0` 标签），不要重新引入。核心不内置大模型调用；质量评测以 `docs/KeyPulse_Eval_PRD.md` 为准。
+V1 是给 AI Agent 用的本地记忆层（MCP 优先）。旧日报 / 周报 / Obsidian 导出 / LLM pipeline 已在 D24 下线（旧代码见 `legacy-v0` 标签），不得回到 **core**；依 D33，依赖前端 UI 的日报 / 周报等功能只允许作为可选桌面 App 层的后续功能。核心不内置大模型调用；质量评测以 `docs/KeyPulse_Eval_PRD.md` 为准。
 
 <!-- BEGIN brain.md -->
 ## Project Brain
