@@ -1,8 +1,8 @@
-# KeyPulse·笔友
+# KeyPulse
 
-> **KeyPulse is a local memory layer for AI agents: it captures your activity on this Mac and serves it to Claude / Codex / Cursor over MCP, with evidence and access control.**
+> **KeyPulse is a local memory layer for AI agents: it captures your activity on this Mac and serves it to Claude / Codex / Cursor over the Model Context Protocol (MCP), with evidence and access control.**
 
-KeyPulse quietly records your work activity — the apps you switch between, the windows you visit, clipboard boundaries, manual notes — and forgets sensitive content before it is stored.
+KeyPulse (笔友, "pen pal") quietly records your work activity — the apps you switch between, the windows you visit, clipboard boundaries, manual notes — and forgets sensitive content before it is stored.
 
 Not a productivity dashboard.
 Not a screen-time tracker.
@@ -30,7 +30,7 @@ KeyPulse is a local-first tool for macOS. It captures your work activity on your
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
-[![Tests](https://img.shields.io/badge/tests-400%2B%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-800%2B%20passing-brightgreen.svg)](tests/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ---
@@ -196,7 +196,7 @@ keypulse mcp grant codex  --host codex --buckets Work
 keypulse mcp grant cursor --host cursor --buckets Work
 ```
 
-The token is shown once (only its hash is stored locally), followed by that client's config: the `claude mcp add` command for Claude Code; a `~/.codex/config.toml` block for Codex; `~/.cursor/mcp.json` for Cursor; `--host generic` prints plain JSON. The command in the config uses keypulse's absolute path, so it starts outside your shell PATH.
+The token is shown once (only its hash is stored locally), followed by that client's config: the `claude mcp add` command for Claude Code, plus a JSON snippet for a project `.mcp.json` (Claude Code) or `claude_desktop_config.json` (Claude Desktop); a `~/.codex/config.toml` block for Codex; `~/.cursor/mcp.json` for Cursor; `--host generic` prints plain JSON. The command in the config uses keypulse's absolute path, so it starts outside your shell PATH.
 
 Tools today: `search_context` (keyword / time / source search, with a coverage note), `get_timeline`, `get_evidence` (fetch the original source), `rate_result` (feedback on a result).
 
@@ -224,6 +224,8 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 ## Author
 Built by [Harland](https://github.com/Longfellow1) · reach out: Harland5588@outlook.com
+
+More from the author: [CorpusFlow](https://github.com/Longfellow1/CorpusFlow) (data tooling for LLM fine-tuning and eval) · agent skills [Principled-Simplicity-skill](https://github.com/Longfellow1/Principled-Simplicity-skill) and [Product-Judgment-skill](https://github.com/Longfellow1/Product-Judgment-skill)
 
 > *The goal of KeyPulse is not to make you more efficient.*
 > *It's to help you recognize who you are — and who you're becoming.*

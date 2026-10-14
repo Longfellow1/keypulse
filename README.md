@@ -1,6 +1,6 @@
 # KeyPulse
 
-> **KeyPulse 是给 AI Agent 用的本地记忆层：在本机采集你的活动，经 MCP 提供给 Claude / Codex / Cursor，带出处与访问控制。**
+> **KeyPulse 是给 AI Agent 用的本地记忆层：在本机采集你的活动，经 MCP（Model Context Protocol）提供给 Claude / Codex / Cursor，带出处与访问控制。**
 
 KeyPulse 静静地记录你的工作活动 —— 你切换的应用、窗口、剪贴板边界、手动笔记 —— 并在敏感信息落盘之前就把它丢掉。
 
@@ -26,11 +26,11 @@ Star KeyPulse if you care about:
 
 ## 中文介绍
 
-KeyPulse 是一个本地优先的 macOS 工具。它在你的机器上采集工作活动 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉。采集到的记忆目前可以通过命令行（CLI）与菜单栏 HUD 查看；已经 MCP（一种让 AI 工具读取外部数据的标准协议）把记忆只读地提供给 Claude / Codex / Cursor，按 AI 单独授权。
+KeyPulse 是一个本地优先的 macOS 工具。它在你的机器上采集工作活动 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉。采集到的记忆目前可以通过命令行（CLI）与菜单栏 HUD 查看；已经通过 MCP（一种让 AI 工具读取外部数据的标准协议）把记忆只读地提供给 Claude / Codex / Cursor，按 AI 单独授权。
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
-[![Tests](https://img.shields.io/badge/tests-400%2B%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-800%2B%20passing-brightgreen.svg)](tests/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ---
@@ -197,7 +197,7 @@ keypulse mcp grant codex  --host codex --buckets Work
 keypulse mcp grant cursor --host cursor --buckets Work
 ```
 
-命令只显示一次 token（本地只存哈希），并打印该客户端的配置：Claude Code 的 `claude mcp add` 命令；Codex 的 `~/.codex/config.toml` 片段；Cursor 的 `~/.cursor/mcp.json`；`--host generic` 为通用 JSON。配置中的命令使用 keypulse 的绝对路径，在 shell 之外也能启动。
+命令只显示一次 token（本地只存哈希），并打印该客户端的配置：Claude Code 的 `claude mcp add` 命令，以及可写入项目 `.mcp.json`（Claude Code）或 `claude_desktop_config.json`（Claude Desktop）的 JSON 片段；Codex 的 `~/.codex/config.toml` 片段；Cursor 的 `~/.cursor/mcp.json`；`--host generic` 为通用 JSON。配置中的命令使用 keypulse 的绝对路径，在 shell 之外也能启动。
 
 当前工具：`search_context`（关键词 / 时间 / 来源搜索，附覆盖说明）、`get_timeline`（时间线）、`get_evidence`（取回原始出处）、`rate_result`（对结果打分反馈）。
 
@@ -227,6 +227,7 @@ Apache 2.0 —— 见 [LICENSE](LICENSE)。
 **Harland** —— AI Native 产品经理。
 
 - 邮箱: Harland5588@outlook.com
+- 作者的其他项目：[CorpusFlow](https://github.com/Longfellow1/CorpusFlow)（LLM 微调与评测数据工具）· Agent Skill：[Principled-Simplicity-skill](https://github.com/Longfellow1/Principled-Simplicity-skill)、[Product-Judgment-skill](https://github.com/Longfellow1/Product-Judgment-skill)
 
 > *KeyPulse 的目标不是让你更高效。*
 > *是帮你认清你是谁，你在变成谁。*
