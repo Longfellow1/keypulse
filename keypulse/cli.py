@@ -1556,71 +1556,56 @@ def export(format, days, date, output):
 @main.command(help=T("删除活动数据。", "Delete activity data."))
 @click.option("--today", is_flag=True, default=False, help=T("清理今天的数据", "Purge today's data"))
 @click.option("--last-hours", type=int, default=None, help=T("清理最近 N 小时数据", "Purge last N hours"))
-@click.option("--app", default=None, help=T("清理指定应用的数据", "Purge data for specific app"))
+@click.option("--app", default=None, help=T("清理指定应用的数据（精确匹配，不区分大小写）", "Purge data for one app (exact name, case-insensitive)"))
+@click.option("--source", default=None, help=T("清理指定来源的数据（精确匹配）", "Purge data from one source (exact match)"))
+@click.option("--dry-run", is_flag=True, default=False, help=T("只统计将删除的数量，不删除", "Only count what would be deleted; delete nothing"))
 @click.option("--confirm", is_flag=True, default=False, help=T("无需确认提示直接删除", "Confirm deletion without prompt"))
-def purge(today, last_hours, app, confirm):
-    """Purge data."""
+def purge(today, last_hours, app, source, dry_run, confirm):
+    """Purge data (raw events plus their derived rows: FTS, evidence, feedback, search docs, sessions)."""
     cfg = get_config()
     require_db(cfg)
 
-    # Compute since/until
     now = datetime.now(timezone.utc)
-
+    since = until = None
     if today:
         since = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         until = now.isoformat()
     elif last_hours is not None:
         since = (now - timedelta(hours=last_hours)).isoformat()
         until = now.isoformat()
-    else:
-        err_console.print("[red]Specify --today or --last-hours[/red]")
+
+    if since is None and app is None and source is None:
+        err_console.print("[red]Specify --today, --last-hours, --app or --source[/red]")
         sys.exit(1)
 
-    # Count what would be deleted
-    from keypulse.store.db import get_conn
-    conn = get_conn()
-    clauses = ["ts_start >= ?"]
-    params = [since]
-
-    if until:
-        clauses.append("ts_start <= ?")
-        params.append(until)
-    if app:
-        clauses.append("app_name LIKE ?")
-        params.append(f"%{app}%")
-
-    where = "WHERE " + " AND ".join(clauses)
-    count = conn.execute(f"SELECT COUNT(*) FROM raw_events {where}", params).fetchone()[0]
-
-    if count == 0:
+    selector = dict(since=since, until=until, app_name=app, source=source)
+    counts = purge_raw_events(**selector, dry_run=True)
+    if counts["raw_events"] == 0:
         console.print("[yellow]No data found to delete.[/yellow]")
         return
 
-    # Prompt if not confirmed
+    console.print("Would delete:" if dry_run else "Will delete:")
+    for name, n in counts.items():
+        console.print(f"  {name}: {n}")
+    if dry_run:
+        console.print("[yellow]Dry run: nothing deleted.[/yellow]")
+        return
+
     if not confirm:
-        msg = f"Delete {count} events"
+        msg = f"Delete {counts['raw_events']} events"
         if app:
-            msg += f" from {app}"
-        msg += "?"
+            msg += f" from app {app}"
+        if source:
+            msg += f" from source {source}"
+        msg += " and their derived data?"
         if not click.confirm(msg):
             console.print("[yellow]Cancelled.[/yellow]")
             return
 
-    # Delete
-    purge_raw_events(since=since, until=until, app_name=app)
-
-    # Also delete associated sessions and search docs
-    conn.execute(
-        f"DELETE FROM sessions WHERE started_at >= ? {'AND started_at <= ?' if until else ''}",
-        (since, until) if until else (since,)
-    )
-    conn.execute(
-        f"DELETE FROM search_docs WHERE created_at >= ? {'AND created_at <= ?' if until else ''}",
-        (since, until) if until else (since,)
-    )
-    conn.commit()
-
-    console.print(f"[green]Deleted {count} events.[/green]")
+    counts = purge_raw_events(**selector)
+    console.print("[green]Deleted:[/green]")
+    for name, n in counts.items():
+        console.print(f"  {name}: {n}")
 
 
 
