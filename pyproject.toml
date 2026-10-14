@@ -7,6 +7,18 @@ name = "keypulse"
 version = "0.1.0"
 description = "Local-first personal activity memory layer for macOS"
 requires-python = ">=3.11"
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "local-first",
+    "macos",
+    "ai-agent",
+    "memory",
+    "privacy",
+    "claude",
+    "cursor",
+    "codex",
+]
 dependencies = [
     "click>=8.1",
     "rich>=13.7",
@@ -30,6 +42,12 @@ dev = [
     "pytest>=8.0",
     "import-linter>=2.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Longfellow1/keypulse"
+Repository = "https://github.com/Longfellow1/keypulse"
+Issues = "https://github.com/Longfellow1/keypulse/issues"
+Changelog = "https://github.com/Longfellow1/keypulse/blob/main/CHANGELOG.md"
 
 [project.scripts]
 keypulse = "keypulse.cli:main"
