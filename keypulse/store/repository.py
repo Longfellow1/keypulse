@@ -157,7 +157,9 @@ def purge_raw_events(
       * mcp_returned_results  rows for a deleted event or evidence id
       * mcp_feedback          rows for a deleted event or evidence id (their note / query text goes too)
       * search_docs           clipboard / manual docs whose ref_id is a deleted event id
-      * sessions              sessions whose events were all deleted (partially-emptied sessions are kept)
+      * sessions              sessions whose events were all deleted are removed; a session that keeps
+                              other events is rebuilt from what is left (count, title) and its summary
+                              cleared, so no deleted text survives in it
     """
     clauses, params = [], []
     if since:
@@ -182,11 +184,13 @@ def purge_raw_events(
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS purge_event_ids (id INTEGER PRIMARY KEY)")
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS purge_evidence_ids (id INTEGER PRIMARY KEY)")
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS purge_session_ids (id TEXT PRIMARY KEY)")
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS purge_partial_session_ids (id TEXT PRIMARY KEY)")
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute("DELETE FROM purge_event_ids")
         conn.execute("DELETE FROM purge_evidence_ids")
         conn.execute("DELETE FROM purge_session_ids")
+        conn.execute("DELETE FROM purge_partial_session_ids")
         conn.execute(
             f"INSERT INTO purge_event_ids SELECT id FROM raw_events WHERE {' AND '.join(clauses)}", params
         )
@@ -200,6 +204,11 @@ def purge_raw_events(
                               WHERE id IN (SELECT id FROM purge_event_ids) AND session_id IS NOT NULL)
                  AND NOT EXISTS (SELECT 1 FROM raw_events r
                                  WHERE r.session_id = s.id AND r.id NOT IN (SELECT id FROM purge_event_ids))"""
+        )
+        conn.execute(
+            """INSERT INTO purge_partial_session_ids SELECT DISTINCT session_id FROM raw_events
+               WHERE id IN (SELECT id FROM purge_event_ids) AND session_id IS NOT NULL
+                 AND session_id NOT IN (SELECT id FROM purge_session_ids)"""
         )
 
         ev = "event_id IN (SELECT id FROM purge_event_ids) OR evidence_id IN (SELECT id FROM purge_evidence_ids)"
@@ -227,6 +236,15 @@ def purge_raw_events(
             conn.execute(targets[name][1])
         conn.execute("DELETE FROM evidence WHERE id IN (SELECT id FROM purge_evidence_ids)")
         conn.execute("DELETE FROM raw_events WHERE id IN (SELECT id FROM purge_event_ids)")
+        conn.execute(
+            """UPDATE sessions SET
+                 event_count = (SELECT COUNT(*) FROM raw_events r WHERE r.session_id = sessions.id),
+                 primary_window_title = (SELECT r.window_title FROM raw_events r
+                                         WHERE r.session_id = sessions.id AND r.window_title IS NOT NULL
+                                         GROUP BY r.window_title ORDER BY COUNT(*) DESC LIMIT 1),
+                 summary = NULL
+               WHERE id IN (SELECT id FROM purge_partial_session_ids)"""
+        )
         conn.execute("COMMIT")
         return counts
     except BaseException:
@@ -238,6 +256,7 @@ def purge_raw_events(
         conn.execute("DELETE FROM purge_event_ids")
         conn.execute("DELETE FROM purge_evidence_ids")
         conn.execute("DELETE FROM purge_session_ids")
+        conn.execute("DELETE FROM purge_partial_session_ids")
         conn.commit()
 
 

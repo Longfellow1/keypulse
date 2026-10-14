@@ -1578,6 +1578,8 @@ def purge(today, last_hours, app, source, dry_run, confirm):
         err_console.print("[red]Specify --today, --last-hours, --app or --source[/red]")
         sys.exit(1)
 
+    # Fix the upper bound now, so events captured between the prompt and the delete are not included.
+    until = until or now.isoformat()
     selector = dict(since=since, until=until, app_name=app, source=source)
     counts = purge_raw_events(**selector, dry_run=True)
     if counts["raw_events"] == 0:
@@ -1606,6 +1608,9 @@ def purge(today, last_hours, app, source, dry_run, confirm):
     console.print("[green]Deleted:[/green]")
     for name, n in counts.items():
         console.print(f"  {name}: {n}")
+    if source:
+        console.print(T("提示：这只删除 KeyPulse 里的副本，原始文件不受影响；若不想再导入，请用 `keypulse source disable` 停用该来源。",
+                        "Note: only KeyPulse's copy is deleted, the original file is untouched; to stop re-importing it, disable the source."))
 
 
 
