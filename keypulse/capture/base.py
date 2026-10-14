@@ -14,6 +14,20 @@ from keypulse.utils.logging import get_logger
 _LOGGER = get_logger("capture.watcher")
 
 
+def watcher_status(*, crashes: int, gave_up: bool, heartbeat_gave_up: bool) -> str:
+    """Per-collector status shown in the health output.
+
+    "error": the supervisor or heartbeat gave up, the collector is off until restart.
+    "warning": at least one crash was absorbed (the collector may be running again).
+    "ok": no crash recorded since the last start.
+    """
+    if gave_up or heartbeat_gave_up:
+        return "error"
+    if crashes > 0:
+        return "warning"
+    return "ok"
+
+
 def reconcile_orphan_lock(lock_path: str | Path, current_pid: int) -> bool:
     """Ensure stale/orphan lock files do not block watcher startup.
 
@@ -154,6 +168,11 @@ class BaseWatcher(abc.ABC):
             "gave_up": self._gave_up,
             "heartbeat_revivals": self._heartbeat_revival_count,
             "heartbeat_gave_up": self._heartbeat_gave_up,
+            "status": watcher_status(
+                crashes=self._crash_count,
+                gave_up=self._gave_up,
+                heartbeat_gave_up=self._heartbeat_gave_up,
+            ),
             "last_emit_age_sec": last_emit_age_sec,
             "last_beat_age_sec": last_beat_age_sec,
         }

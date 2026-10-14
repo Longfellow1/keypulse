@@ -26,6 +26,7 @@ from keypulse.capabilities.builtin.accessibility_permission import Accessibility
 from keypulse.capabilities.builtin.appkit_runtime import AppKitRuntimeCapability
 from keypulse.capabilities.builtin.bundle_integrity import BundleIntegrityCapability
 from keypulse.capabilities.builtin.browser_automation import BrowserAutomationCapability
+from keypulse.capabilities.builtin.capture_storage import CaptureStorageCapability
 from keypulse.capabilities.builtin.health_freshness import HealthFreshnessCapability
 from keypulse.capabilities.builtin.pause_state import PauseStateCapability
 # from keypulse.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
@@ -38,6 +39,7 @@ _DEFAULT_CAPABILITY_FACTORIES: list[Callable[..., Capability]] = [
     AppKitRuntimeCapability,
     AccessibilityPermissionCapability,
     BrowserAutomationCapability,
+    CaptureStorageCapability,
     # === OCR watcher 已下线 2026-05-14 ===
     # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
     # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
