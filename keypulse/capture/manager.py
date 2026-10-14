@@ -4,6 +4,7 @@ from fnmatch import fnmatch
 import os
 import queue
 import signal
+import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
@@ -39,7 +40,7 @@ from keypulse.capture.normalizer import (
 from keypulse.capture.user_presence import is_user_present
 from keypulse.config import Config
 from keypulse.privacy.desensitizer import desensitize, desensitize_json_value, truncate
-from keypulse.store.db import init_db
+from keypulse.store.db import get_conn, init_db
 from keypulse.store.models import RawEvent, SearchDoc
 from keypulse.store.repository import (
     get_state,
@@ -190,7 +191,14 @@ def _strip_metadata_urls(metadata_json: str | None) -> str | None:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _is_disk_full(exc: BaseException) -> bool:
+    return isinstance(exc, sqlite3.OperationalError) and "database or disk is full" in str(exc)
+
+
 class CaptureManager:
+    # While the disk is full, capture writes nothing and attempts one probe write per interval.
+    DISK_FULL_PROBE_SEC: float = 60.0
+
     def __init__(self, config: Config):
         self.config = config
         self._queue: queue.Queue = queue.Queue()
@@ -210,6 +218,12 @@ class CaptureManager:
         self._gate_hits: dict[str, int] = {}
         # Disabled sources whose watchers we have already paused (#28).
         self._disabled_applied: frozenset[str] = frozenset()
+        # Storage state: None = writing normally; "disk_full" = writes paused until the next probe.
+        self._storage_error: Optional[str] = None
+        self._storage_error_since: Optional[str] = None
+        self._storage_dropped = 0
+        self._storage_next_probe_mono = 0.0
+        self._runtime_persist_failed = False
 
     def start(self):
         """Initialize DB, seed policies, start watchers and flush loop."""
@@ -476,7 +490,14 @@ class CaptureManager:
             # Always drain: while paused or source-disabled, _process_event drops events at write time,
             # so nothing queued during a pause is replayed after resume.
             self._drain_queue()
-            self._persist_runtime_state()
+            try:
+                self._persist_runtime_state()
+            except Exception as exc:  # e.g. disk full: keep the flush loop alive, report once
+                if not self._runtime_persist_failed:
+                    logger.error("capture runtime state not persisted: %s", type(exc).__name__)
+                self._runtime_persist_failed = True
+            else:
+                self._runtime_persist_failed = False
             time.sleep(self.config.app.flush_interval_sec)
 
     def _sync_source_switches(self) -> None:
@@ -548,6 +569,9 @@ class CaptureManager:
             self._count_gate_hit(event, "paused_or_disabled")
             return
 
+        if self._storage_write_blocked():
+            self._storage_dropped += 1
+            return
         event.speaker = _derive_speaker(event)
 
         if self._is_blacklisted(event):
@@ -682,7 +706,14 @@ class CaptureManager:
         result.user_present = 1 if is_user_present() else 0
 
         # 5. Persist raw event
-        row_id = insert_raw_event(result)
+        try:
+            row_id = insert_raw_event(result)
+        except sqlite3.OperationalError as exc:
+            if not _is_disk_full(exc):
+                raise
+            self._enter_disk_full()
+            return
+        self._leave_disk_full()
         result.id = row_id
         self._record_runtime_event(result)
 
@@ -761,6 +792,47 @@ class CaptureManager:
         self._source_counts[event.source] = self._source_counts.get(event.source, 0) + 1
         self._source_last_event_at[event.source] = event.ts_start or datetime.now(timezone.utc).isoformat()
 
+    def _storage_write_blocked(self) -> bool:
+        return self._storage_error is not None and time.monotonic() < self._storage_next_probe_mono
+
+    def _enter_disk_full(self) -> None:
+        # Roll back the failed statement so the shared connection is not left mid-transaction.
+        try:
+            get_conn().rollback()
+        except Exception:
+            pass
+        if self._storage_error is None:
+            self._storage_error_since = datetime.now(timezone.utc).isoformat()
+            logger.error("capture paused: database or disk is full; will probe again in %.0fs", self.DISK_FULL_PROBE_SEC)
+        self._storage_error = "disk_full"
+        self._storage_next_probe_mono = time.monotonic() + self.DISK_FULL_PROBE_SEC
+        self._persist_storage_state()
+
+    def _leave_disk_full(self) -> None:
+        if self._storage_error is None:
+            return
+        logger.info("capture storage writes recovered after disk_full (dropped %d events)", self._storage_dropped)
+        self._storage_error = None
+        self._storage_error_since = None
+        self._persist_storage_state()
+
+    def _persist_storage_state(self) -> None:
+        # Best effort: when the disk is really full this write can fail too; the in-process state is authoritative.
+        try:
+            self._persist_runtime_state(force=True)
+        except Exception as exc:
+            logger.warning("capture storage state not persisted: %s", type(exc).__name__)
+
+    def _storage_status(self) -> dict:
+        if self._storage_error is None:
+            return {"status": "ok"}
+        return {
+            "status": "error",
+            "reason": self._storage_error,
+            "since": self._storage_error_since,
+            "dropped_events": self._storage_dropped,
+        }
+
     def _runtime_snapshot(self) -> dict:
         multi_source_counts = {
             source: self._source_counts.get(source, 0)
@@ -786,6 +858,7 @@ class CaptureManager:
             "multi_source_counts": multi_source_counts,
             "gate_hits": dict(self._gate_hits),
             "last_seen": last_seen,
+            "storage": self._storage_status(),
         }
 
     def _persist_runtime_state(self, force: bool = False) -> None:

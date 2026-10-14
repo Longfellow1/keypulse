@@ -48,6 +48,7 @@ class WatcherHealthCapability(Capability):
         self.error_codes = {
             f"{spec.watcher_name}_watcher_gave_up",
             f"{spec.watcher_name}_heartbeat_gave_up",
+            f"{spec.watcher_name}_watcher_crashed",
         }
 
     def _probe(self) -> CheckResult:
@@ -73,6 +74,16 @@ class WatcherHealthCapability(Capability):
                 ok=False,
                 code=f"{self._spec.watcher_name}_heartbeat_gave_up",
                 hint=self._spec.hint,
+            )
+        crashes = health.get("crashes")
+        if isinstance(crashes, int) and crashes > 0:
+            # Supervised crash: the collector is restarting, other collectors are unaffected.
+            # Only the exception class is surfaced, never its message (it may carry captured text).
+            error_type = str(health.get("last_error") or "").split(":", 1)[0].strip()[:60] or "unknown"
+            return CheckResult(
+                ok=False,
+                code=f"{self._spec.watcher_name}_watcher_crashed",
+                hint=f"{self._spec.hint}（最近错误类型：{error_type}，监督器已重启 {crashes} 次）",
             )
         timeout = self._spec.silent_timeout_sec
         last_emit_age = health.get("last_emit_age_sec")
