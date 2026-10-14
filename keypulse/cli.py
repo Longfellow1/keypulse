@@ -359,7 +359,7 @@ def _load_capture_runtime_state() -> dict | None:
         "  keypulse doctor                诊断安装 / 配置 / 权限问题\n"
         "  keypulse start                 启动后台采集\n"
         "  keypulse stop                  停止后台采集\n"
-        "  keypulse healthcheck           运行健康检查\n"
+        "  keypulse health                运行健康检查（同 healthcheck）\n"
         "  keypulse search \"<关键词>\"     搜索历史活动\n\n"
         "完整命令列表见下方 Commands。\n\n"
         "> 语言：中文（设置 KEYPULSE_LANG=en 切英文）",
@@ -370,7 +370,7 @@ def _load_capture_runtime_state() -> dict | None:
         "  keypulse doctor                Diagnose install, config, and permission issues\n"
         "  keypulse start                 Start background capture daemon\n"
         "  keypulse stop                  Stop background capture daemon\n"
-        "  keypulse healthcheck           Run health diagnostics and emit JSON\n"
+        "  keypulse health                Run health diagnostics and emit JSON (alias: healthcheck)\n"
         "  keypulse search \"<keyword>\"    Search historical activity records\n\n"
         "See Commands below for the full command list.\n\n"
         "> Language: English (set KEYPULSE_LANG=zh to switch to Chinese)"
@@ -988,6 +988,9 @@ def healthcheck(config_path):
     click.echo(json.dumps(result, indent=2, ensure_ascii=False))
     if result["overall"] == "alert" and any(alert["severity"] == "error" for alert in result["alerts"]):
         raise SystemExit(1)
+
+
+main.add_command(healthcheck, name="health")  # D33: the short, discoverable spelling; `healthcheck` stays (launchd uses it)
 
 
 @main.command("self-heal", hidden=True, help=T("执行自愈流程（HUD/手动恢复）。", "Run product self-heal sequence for HUD/manual recovery."))
@@ -1673,6 +1676,80 @@ def config_path():
 def rules():
     """Rules group."""
     pass
+
+
+@main.group("privacy", help=T("隐私开关（聊天 App 白名单等）。", "Privacy switches (chat app opt-in, ...)."))
+def privacy_group():
+    """Privacy group."""
+
+
+@privacy_group.group("chat-apps", help=T("聊天 App 默认不采集；可逐个放行（放行后归入 Private 桶）。", "Chat apps are not captured by default; opt individual apps in (they land in the Private bucket)."))
+def privacy_chat_apps():
+    """Chat app opt-in."""
+
+
+def _chat_app_key_or_error(name: str) -> str:
+    from keypulse.capture.chat_apps import normalize_opt_ins
+
+    try:
+        return normalize_opt_ins([name])[0]
+    except ValueError:
+        from keypulse.capture.chat_apps import CHAT_APPS
+
+        valid = ", ".join(app.key for app in CHAT_APPS)
+        raise click.ClickException(f"Unknown chat app {name!r}. Valid names: {valid}")
+
+
+def _set_chat_app_opt_in(name: str, allowed: bool) -> list[str]:
+    from keypulse.config import write_chat_apps_opt_in
+
+    key = _chat_app_key_or_error(name)
+    current = list(get_config().privacy.chat_apps_opt_in)
+    if allowed and key not in current:
+        current.append(key)
+    elif not allowed:
+        current = [k for k in current if k != key]
+    path = get_config_path()
+    write_chat_apps_opt_in(path, current)
+    verb = "allowed" if allowed else "denied"
+    console.print(f"[green]{key} {verb}.[/green] Config: {path}")
+    if allowed:
+        console.print("Note: an allowed chat app is captured into the Private bucket.")
+    console.print("Restart the daemon (`keypulse stop && keypulse start`) for this to take effect.")
+    return current
+
+
+@privacy_chat_apps.command("list", help=T("列出所有已知聊天 App 及是否放行。", "List known chat apps and whether each is allowed."))
+@click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
+def privacy_chat_apps_list(plain):
+    """List chat apps."""
+    from keypulse.capture.chat_apps import CHAT_APPS
+
+    allowed = set(get_config().privacy.chat_apps_opt_in)
+    if plain:
+        for app in CHAT_APPS:
+            print(f"{app.key}\t{'allowed' if app.key in allowed else 'denied'}")
+        return
+    table = Table(title="Chat apps", show_header=True, header_style="bold cyan")
+    table.add_column("App")
+    table.add_column("Status")
+    for app in CHAT_APPS:
+        table.add_row(app.key, "allowed (Private bucket)" if app.key in allowed else "denied (not captured)")
+    console.print(table)
+
+
+@privacy_chat_apps.command("allow", help=T("放行某个聊天 App（数据归入 Private 桶）。", "Allow a chat app (its data lands in the Private bucket)."))
+@click.argument("name")
+def privacy_chat_apps_allow(name):
+    """Allow a chat app."""
+    _set_chat_app_opt_in(name, True)
+
+
+@privacy_chat_apps.command("deny", help=T("取消放行某个聊天 App（恢复默认不采集）。", "Deny a chat app again (back to the default: not captured)."))
+@click.argument("name")
+def privacy_chat_apps_deny(name):
+    """Deny a chat app."""
+    _set_chat_app_opt_in(name, False)
 
 
 @rules.command("list", help=T("列出全部隐私策略。", "List all privacy policies."))
