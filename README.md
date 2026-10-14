@@ -227,6 +227,7 @@ Apache 2.0 —— 见 [LICENSE](LICENSE)。
 **Harland** —— AI Native 产品经理。
 
 - 邮箱: Harland5588@outlook.com
+- 作者的其他项目：[CorpusFlow](https://github.com/Longfellow1/CorpusFlow)（LLM 微调与评测数据工具）· Agent Skill：[Principled-Simplicity-skill](https://github.com/Longfellow1/Principled-Simplicity-skill)、[Product-Judgment-skill](https://github.com/Longfellow1/Product-Judgment-skill)
 
 > *KeyPulse 的目标不是让你更高效。*
 > *是帮你认清你是谁，你在变成谁。*

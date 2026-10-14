@@ -225,5 +225,7 @@ Apache 2.0 — see [LICENSE](LICENSE).
 ## Author
 Built by [Harland](https://github.com/Longfellow1) · reach out: Harland5588@outlook.com
 
+More from the author: [CorpusFlow](https://github.com/Longfellow1/CorpusFlow) (data tooling for LLM fine-tuning and eval) · agent skills [Principled-Simplicity-skill](https://github.com/Longfellow1/Principled-Simplicity-skill) and [Product-Judgment-skill](https://github.com/Longfellow1/Product-Judgment-skill)
+
 > *The goal of KeyPulse is not to make you more efficient.*
 > *It's to help you recognize who you are — and who you're becoming.*
