@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-14T02:31:31.060Z._
+_Auto-generated. Last updated 2026-10-14T05:52:22.492Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -8,6 +8,7 @@ _Auto-generated. Last updated 2026-10-14T02:31:31.060Z._
 - [capability-fact-vs-probe](pages/capability-fact-vs-probe.md) — category: decision | ## Decision
 - [capture-hygiene-at-write](pages/capture-hygiene-at-write.md) — category: decision | tags: [v1, capture, privacy, pipeline, decision] | <current best understanding — replace this with the real content>
 - [capture-streams-queryable](pages/capture-streams-queryable.md) — category: decision | tags: [v1, privacy, mcp, capture, decision] | <current best understanding — replace this with the real content>
+- [cli-core-app-optional](pages/cli-core-app-optional.md) — category: decision | tags: [product, distribution, hud, app] | **Decision (owner, 2026-10-14):** split the product route into two install tiers.
 - [core-no-embedded-llm](pages/core-no-embedded-llm.md) — category: decision | tags: [core, llm, privacy] | ## Decision
 - [daily-single-render-entry](pages/daily-single-render-entry.md) — category: decision | status: archived | ## Decision
 - [db-direct-read-over-screen-capture](pages/db-direct-read-over-screen-capture.md) — category: decision | ## Decision
