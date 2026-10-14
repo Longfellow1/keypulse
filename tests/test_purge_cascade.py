@@ -306,3 +306,14 @@ def test_cli_requires_a_selector(cli_db):
     result = CliRunner().invoke(cli_module.main, ["purge", "--confirm"])
     assert result.exit_code != 0
     assert _snapshot()["raw_events"] > 0
+
+
+def test_partially_emptied_session_is_rebuilt_without_deleted_text(seeded):
+    get_conn().execute("UPDATE sessions SET primary_window_title = 'zebrasecret title', summary = 'zebrasecret summary', "
+                       "event_count = 2 WHERE id = 'sess-mixed'")
+    get_conn().execute("UPDATE raw_events SET window_title = 'zebrasecret title' WHERE id = ?", (seeded["sess_mixed_notes"],))
+    get_conn().execute("UPDATE raw_events SET window_title = 'cursor editor' WHERE id = ?", (seeded["sess_mixed_cursor"],))
+    get_conn().commit()
+    purge_raw_events(app_name="Notes")
+    row = get_conn().execute("SELECT event_count, primary_window_title, summary FROM sessions WHERE id = 'sess-mixed'").fetchone()
+    assert tuple(row) == (1, "cursor editor", None)
