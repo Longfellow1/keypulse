@@ -7,8 +7,9 @@ Resolution order for an event:
   2. config `[buckets.source_defaults]` overrides, then DEFAULT_SOURCE_BUCKETS.
      chrome_history / safari_history have no default here: they are site-classified (below).
   3. KeyPulse's own capture streams (CAPTURE_SOURCES, D26) are classified by app: config
-     `[buckets.app_defaults]` (substring on app / process name), then the preset table in
-     `store.app_categories`, then Personal (unknown apps are Personal).
+     `[buckets.app_defaults]` (substring on app / process name), then a chat app the user opted in
+     (`[privacy] chat_apps_opt_in`) is Private, then the preset table in `store.app_categories`,
+     then Personal (unknown apps are Personal).
      Browser content (D28) is classified by site first: config `[buckets.site_defaults]`, then the
      preset table in `store.site_categories`; a site with no entry falls back to the app level (so
      Personal). Browser-history plugin rows (chrome_history / safari_history) take the same site
@@ -61,6 +62,7 @@ SITE_HISTORY_SOURCES = frozenset({"chrome_history", "safari_history"})
 _overrides: Optional[dict[str, str]] = None
 _app_overrides: Optional[dict[str, str]] = None
 _site_overrides: Optional[dict[str, str]] = None
+_chat_opt_ins: Optional[frozenset[str]] = None
 
 
 def normalize_bucket(name: str) -> str:
@@ -72,10 +74,11 @@ def normalize_bucket(name: str) -> str:
 
 
 def reset_cache() -> None:
-    global _overrides, _app_overrides, _site_overrides
+    global _overrides, _app_overrides, _site_overrides, _chat_opt_ins
     _overrides = None
     _app_overrides = None
     _site_overrides = None
+    _chat_opt_ins = None
 
 
 def _config_app_overrides() -> dict[str, str]:
@@ -254,10 +257,28 @@ class BrowserUrlTimeline:
         return None
 
 
+def _config_chat_opt_ins() -> frozenset[str]:
+    global _chat_opt_ins
+    if _chat_opt_ins is None:
+        try:
+            from keypulse.config import Config
+
+            found = frozenset(Config.load().privacy.chat_apps_opt_in)
+        except Exception:
+            found = frozenset()  # fail closed: no opt-in when the config cannot be read
+        _chat_opt_ins = found
+    return _chat_opt_ins
+
+
 def classify_capture_app(
-    app_name: Optional[str], process_name: Optional[str] = None, app_overrides: Optional[dict[str, str]] = None
+    app_name: Optional[str],
+    process_name: Optional[str] = None,
+    app_overrides: Optional[dict[str, str]] = None,
+    chat_opt_ins: Optional[frozenset[str]] = None,
 ) -> str:
-    """Capture-stream bucket from the app alone: config overrides > preset table > Personal."""
+    """Capture-stream bucket from the app alone: config overrides > opted-in chat app (Private) > preset
+    table > Personal."""
+    from keypulse.capture.chat_apps import PRIVATE_BUCKET, chat_app_key
     from keypulse.store.app_categories import DEFAULT_APP_BUCKET, classify_app
 
     merged = _config_app_overrides() if app_overrides is None else app_overrides
@@ -265,6 +286,10 @@ def classify_capture_app(
     for key, bucket in merged.items():
         if key and any(key in n for n in names):
             return bucket
+    opted = _config_chat_opt_ins() if chat_opt_ins is None else chat_opt_ins
+    chat = chat_app_key(app_name, process_name)
+    if chat is not None and chat in opted:
+        return PRIVATE_BUCKET
     return classify_app(app_name, process_name) or DEFAULT_APP_BUCKET
 
 
