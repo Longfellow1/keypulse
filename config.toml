@@ -57,6 +57,9 @@ redact_emails = true
 redact_phones = true
 redact_tokens = true
 camera_scene_pause = true
+# Chat apps (WeChat, Slack, Telegram, ...) are excluded from capture by default. Opt a specific app in
+# to store its content as Private, e.g. chat_apps_opt_in = ["WeChat"]. Known names: keypulse/capture/chat_apps.py
+chat_apps_opt_in = []
 
 [sources.scheduler]
 enabled = true

@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AppConfig(BaseModel):
@@ -178,6 +178,16 @@ class PrivacyConfig(BaseModel):
             "1Password", "Keychain Access", "钥匙串", "密码",
         ]
     )
+    # Chat apps (keypulse.capture.chat_apps) are excluded from capture by default. Listing one here
+    # opts it in: its rows are stored and bucketed as Private. Keys or listed names, e.g. ["WeChat", "Slack"].
+    chat_apps_opt_in: list[str] = Field(default_factory=list)
+
+    @field_validator("chat_apps_opt_in")
+    @classmethod
+    def _chat_apps_opt_in_known(cls, value: list[str]) -> list[str]:
+        from keypulse.capture.chat_apps import normalize_opt_ins
+
+        return normalize_opt_ins(value)
 
 
 class MarkdownVaultSourceConfig(BaseModel):

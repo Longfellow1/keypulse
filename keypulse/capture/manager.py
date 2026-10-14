@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from keypulse.capture.aggregator import Aggregator
 from keypulse.capture.base import BaseWatcher
+from keypulse.capture.chat_apps import chat_app_key
 from keypulse.capture.camera_monitor import CameraMonitor
 from keypulse.capture.fusion import CaptureFusionEngine
 from keypulse.capture.hygiene import (
@@ -495,6 +496,11 @@ class CaptureManager:
 
     def _is_blacklisted(self, event: RawEvent) -> bool:
         privacy = self.config.privacy
+        chat = chat_app_key(event.app_name, event.process_name)
+        if chat is not None:
+            # Chat apps are excluded by default (D19). An explicit opt-in overrides the default blacklist
+            # entries for that app (bundle ids, com.tencent.* pattern, app names).
+            return chat not in privacy.chat_apps_opt_in
         return is_blacklisted_app(
             event.app_name,
             event.process_name,
