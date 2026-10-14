@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [scope, capture, privacy]
 created: "2026-10-10T11:19:05"
-updated: "2026-10-10T11:19:05"
+updated: "2026-10-14T10:31:31"
 ---
 
 <!-- compiled_truth -->
@@ -34,4 +34,10 @@ Keyboard capture remains **P0**: opt-in, filtered text chunks only.
   kind: decision
   summary: "Owner decision D-a: keyboard capture kept at P0; redaction is best-effort P1 hardening"
   source: Owner decision 2026-10-10
+  affects: [keyboard-capture-p0-experimental]
+
+- time: 2026-10-14T10:31:31
+  kind: decision
+  summary: "2026-10-14 owner: keyboard capture stays ON by default (keeps D26 'all streams open incl. keyboard' and 'captured but tagged, excluded from search by default'). Issue #29 is rewritten from 'default off' to 'stays on + clear risk notice + easy off switch'."
+  source: owner 2026-10-14
   affects: [keyboard-capture-p0-experimental]
