@@ -44,6 +44,7 @@ from keypulse.services.export import export_json, export_csv, export_markdown
 from keypulse.services.sessionizer import sessions_for_today, recent_sessions
 from keypulse.search.engine import search, recent_clipboard, recent_manual, recent_sessions_docs
 from keypulse.capture.normalizer import normalize_manual_event
+from keypulse.capture.capture_control import disabled_sources, is_capture_paused
 from keypulse.utils.dates import local_day_bounds, resolve_local_date, local_timezone
 from keypulse.hud import run_hud
 from keypulse.i18n import CLI_LANG as _CLI_LANG, T, current_lang
@@ -831,11 +832,16 @@ def status(plain):
     if getattr(cfg.watchers, "ocr", False):
         enabled.append("屏幕识别补充")
 
+    paused_now = is_capture_paused()
+    disabled_now = sorted(disabled_sources())
+
     if plain:
         print(f"running={is_running}")
         print(f"pid={pid or 'none'}")
         print(f"supervised_by_launchd={supervised}")
         print(f"status={status_val}")
+        print(f"paused={paused_now}")
+        print(f"disabled_sources={','.join(disabled_now)}")
         print(f"started_at={started_at}")
         print(f"db_path={db_path}")
         print(f"db_size_mb={db_size_mb:.2f}")
@@ -860,6 +866,8 @@ def status(plain):
             table.add_row("进程 PID", str(pid))
         table.add_row("运行方式", "launchd 托管" if supervised else "手动启动")
         table.add_row("采集阶段", status_label)
+        table.add_row("全局暂停", "[yellow]是[/yellow]" if paused_now else "否")
+        table.add_row("已关闭的数据源", "、".join(disabled_now) if disabled_now else "无")
         table.add_row("启动时间", started_at)
         table.add_row("数据库路径", str(db_path))
         table.add_row("数据库大小", f"{db_size_mb:.2f} MB")
@@ -1839,6 +1847,7 @@ def maintenance_scrub_secrets(dry_run, apply):
 from keypulse.sources.discover import sources_group
 
 main.add_command(sources_group)
+main.add_command(sources_group, name="source")  # issue #28 spelling: `keypulse source disable NAME`
 
 from keypulse.mcp.cli import mcp_group
 
