@@ -26,7 +26,7 @@ Star KeyPulse if you care about:
 
 ## 中文介绍
 
-KeyPulse 是一个本地优先的 macOS 工具。它在你的机器上采集工作活动 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉。采集到的记忆目前可以通过命令行（CLI）与菜单栏 HUD 查看；已经 MCP（一种让 AI 工具读取外部数据的标准协议）把记忆只读地提供给 Claude / Codex / Cursor，按 AI 单独授权。
+KeyPulse 是一个本地优先的 macOS 工具。它在你的机器上采集工作活动 —— 你切到哪个 App、粘了一段什么、反复回到哪扇窗 —— 在敏感信息落盘之前就把它忘掉。采集到的记忆目前可以通过命令行（CLI）与菜单栏 HUD 查看；已经通过 MCP（一种让 AI 工具读取外部数据的标准协议）把记忆只读地提供给 Claude / Codex / Cursor，按 AI 单独授权。
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
