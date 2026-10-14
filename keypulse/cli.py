@@ -919,26 +919,13 @@ def doctor(plain):
     except ImportError:
         checks["本地屏幕识别能力"] = False
 
-    # Accessibility permission
-    try:
-        from ApplicationServices import AXIsProcessTrusted
-        checks["辅助功能权限"] = AXIsProcessTrusted()
-    except Exception:
-        checks["辅助功能权限"] = False
+    # macOS permissions needed by the sources that are switched on (read-only; never prompts).
+    from keypulse.health.capture_health import permission_report
 
-    try:
-        import Quartz
-        preflight_listen = getattr(Quartz, "CGPreflightListenEventAccess", None)
-        checks["键盘监听权限"] = bool(preflight_listen()) if callable(preflight_listen) else False
-    except Exception:
-        checks["键盘监听权限"] = False
-
-    try:
-        import Quartz
-        preflight_screen = getattr(Quartz, "CGPreflightScreenCaptureAccess", None)
-        checks["屏幕录制权限"] = bool(preflight_screen()) if callable(preflight_screen) else False
-    except Exception:
-        checks["屏幕录制权限"] = False
+    runtime_for_perm = _load_capture_runtime_state() or {}
+    perm_findings = permission_report(cfg, runtime=runtime_for_perm)
+    for finding in perm_findings:
+        checks[f"{finding.label} 权限（{', '.join(finding.sources)}）"] = finding.granted
 
     # DB path writable
     db_path = cfg.db_path_expanded
@@ -973,6 +960,18 @@ def doctor(plain):
             status = "[green]正常[/green]" if passed else "[red]未通过[/red]"
             table.add_row(check_name, status)
         console.print(table)
+    missing = [f for f in perm_findings if not f.granted]
+    for finding in missing:
+        lines = [
+            f"缺少权限：{finding.label}（{', '.join(finding.sources)} 需要）。请在系统设置里授予下面的程序：",
+            *[f"  - {exe}" for exe in finding.executables],
+            f"  打开设置面板：open \"{finding.settings_pane}\"",
+        ]
+        if plain:
+            for line in lines:
+                print(line)
+        else:
+            console.print("\n".join(lines), markup=False)
     # Exit with error if any check failed
     if not all(checks.values()):
         sys.exit(1)

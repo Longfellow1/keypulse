@@ -125,6 +125,25 @@ PERMISSION_SPECS: tuple[PermissionSpec, ...] = (
 )
 
 
+# Not in PERMISSION_SPECS on purpose: trigger_required_prompts() iterates that tuple and would pop a
+# Screen Recording dialog at daemon start. Only the read-only doctor check needs this one (OCR is off).
+SCREEN_RECORDING_SPEC = PermissionSpec(
+    key="screen_recording",
+    label="屏幕录制（Screen Recording）",
+    settings_pane="x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+    check=_screen_capture_check,
+    request=_screen_capture_request,
+)
+
+
+def spec_by_key(key: str) -> PermissionSpec | None:
+    """Look up any known permission spec (including Screen Recording). Read-only; never prompts."""
+    for spec in (*PERMISSION_SPECS, SCREEN_RECORDING_SPEC):
+        if spec.key == key:
+            return spec
+    return None
+
+
 def trigger_required_prompts() -> dict[str, PermissionStatus]:
     """Trigger native authorization prompts for any permission not yet granted.
 

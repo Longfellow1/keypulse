@@ -18,3 +18,15 @@ def _no_object_object_artifacts() -> None:
     yield
     leaked = sorted(path.name for path in ROOT.glob("<object object*"))
     assert leaked == [], f"unexpected root artifacts: {', '.join(leaked)}"
+
+
+@pytest.fixture(autouse=True)
+def _mcp_capture_health_off_by_default(monkeypatch):
+    """MCP tests assert exact payloads; a fresh test DB has no daemon heartbeat, which would add a
+    capture_health warning. tests/test_capture_health.py exercises the real thing explicitly."""
+    from keypulse.health import capture_health
+
+    capture_health.reset_cache()
+    monkeypatch.setattr("keypulse.mcp.server.current_capture_health", lambda: None)
+    yield
+    capture_health.reset_cache()

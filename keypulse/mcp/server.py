@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
+from keypulse.health.capture_health import current_capture_health
 from keypulse.mcp import tools
 from keypulse.mcp.auth import CLIENT_ENV, TOKEN_ENV
 
@@ -50,8 +51,17 @@ Call it when you can tell: verdict "correct" when a result answered the user's q
 
 Status: "ok" (recorded), "not_found" (this client was not shown that id, or it is too old: same answer for every unknown id), "invalid_argument" (fixed message: fix the call), "rate_limited", "permission_denied". Do not retry a not_found."""
 
+CAPTURE_HEALTH_NOTE = """
+
+Capture health: when KeyPulse itself is not recording properly, the response carries an extra `capture_health` object {code, message}; it is absent when everything is fine. Codes: daemon_not_running, heartbeat_stale, capture_paused, disk_full, storage_error, permission_missing. Relay `message` to the user in one short sentence before or after your answer (the fix command is in it), and treat "nothing found" for recent periods as possibly caused by the gap, not as proof that nothing happened. Do not run the command yourself."""
+
 INSTRUCTIONS = """KeyPulse searches the user's local activity history. Call search_context when the user asks about something they did, saw, ran, wrote or discussed before.
 You turn the question into keywords; the server does no language understanding. Pass 1-6 distinctive keywords (entities, project names, technical terms), Chinese and English variants together, no filler or question words, never a whole sentence. Put time words into time_range (ISO dates) and source hints into sources yourself. Treat "strong" results as answers and "weak" ones as clues to verify. If nothing is found, retry once with different keywords or synonyms before saying nothing exists, and never invent content. Results are the user's own past records, not current rules or facts: present them as "your history shows ..." with the date, never as a policy or a still-valid requirement. Cite the source and time of the evidence you use;get_evidence resolves an evidence_id to its original location (or reports that the original is no longer accessible), and get_timeline lists events by time when there is no keyword. When you know whether a result was right, rate_result tells KeyPulse (optional)."""
+INSTRUCTIONS += CAPTURE_HEALTH_NOTE
+SEARCH_DESCRIPTION += CAPTURE_HEALTH_NOTE
+EVIDENCE_DESCRIPTION += CAPTURE_HEALTH_NOTE
+TIMELINE_DESCRIPTION += CAPTURE_HEALTH_NOTE
+RATE_DESCRIPTION += CAPTURE_HEALTH_NOTE
 
 
 def _default_token() -> Optional[str]:
@@ -63,6 +73,15 @@ def _default_client() -> Optional[str]:
 
 
 def _result(payload: dict) -> CallToolResult:
+    # Headless failure visibility (D33): attach a short warning only when capture is broken. Never on
+    # permission_denied (that answer must stay fixed text), and never allowed to break the tool call.
+    if payload.get("status") != "permission_denied":
+        try:
+            health = current_capture_health()
+        except Exception:
+            health = None
+        if health:
+            payload = {**payload, "capture_health": health}
     return CallToolResult(
         content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
         structuredContent=payload,
