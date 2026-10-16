@@ -278,14 +278,14 @@ success "Penpal installed"
 
 # Install macOS-specific pyobjc — try prebuilt wheel first, then source
 info "Installing macOS dependencies (pyobjc)…"
-if "$VENV_PIP" install \
+if "$VENV_PIP" install --no-user \
     "pyobjc-framework-AppKit" \
     "pyobjc-framework-Quartz" \
     --quiet 2>/dev/null; then
   success "pyobjc installed"
 else
   warn "pyobjc wheel not available for this Python — trying with --no-binary (slower)…"
-  if "$VENV_PIP" install \
+  if "$VENV_PIP" install --no-user \
       "pyobjc-framework-AppKit" \
       "pyobjc-framework-Quartz" \
       --no-binary pyobjc-framework-AppKit,pyobjc-framework-Quartz \
