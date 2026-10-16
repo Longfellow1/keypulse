@@ -6,11 +6,11 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from keypulse.cli import main
+from penpal.cli import main
 
 
 def test_stop_uses_launchd_bootout_when_supervised(monkeypatch, tmp_path):
-    plist_path = tmp_path / "com.keypulse.daemon.plist"
+    plist_path = tmp_path / "com.penpal.daemon.plist"
     plist_path.write_text("plist")
     calls = []
 
@@ -21,11 +21,11 @@ def test_stop_uses_launchd_bootout_when_supervised(monkeypatch, tmp_path):
         def is_running(self):
             return False
 
-    monkeypatch.setattr("keypulse.cli._launchd_daemon_plist_path", lambda: plist_path)
-    monkeypatch.setattr("keypulse.cli._launchd_label_loaded", lambda label: True)
-    monkeypatch.setattr("keypulse.cli._launchd_bootout", lambda path: True)
-    monkeypatch.setattr("keypulse.cli.SingleInstanceLock", lambda: FakeLock())
-    monkeypatch.setattr("keypulse.cli.os.kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr("penpal.cli._launchd_daemon_plist_path", lambda: plist_path)
+    monkeypatch.setattr("penpal.cli._launchd_label_loaded", lambda label: True)
+    monkeypatch.setattr("penpal.cli._launchd_bootout", lambda path: True)
+    monkeypatch.setattr("penpal.cli.SingleInstanceLock", lambda: FakeLock())
+    monkeypatch.setattr("penpal.cli.os.kill", lambda pid, sig: calls.append((pid, sig)))
 
     result = CliRunner().invoke(main, ["stop"])
 
@@ -35,7 +35,7 @@ def test_stop_uses_launchd_bootout_when_supervised(monkeypatch, tmp_path):
 
 
 def test_start_uses_launchd_bootstrap_when_plist_exists(monkeypatch, tmp_path):
-    plist_path = tmp_path / "com.keypulse.daemon.plist"
+    plist_path = tmp_path / "com.penpal.daemon.plist"
     plist_path.write_text("plist")
 
     class FakeLock:
@@ -45,10 +45,10 @@ def test_start_uses_launchd_bootstrap_when_plist_exists(monkeypatch, tmp_path):
         def is_running(self):
             return False
 
-    monkeypatch.setattr("keypulse.cli._launchd_daemon_plist_path", lambda: plist_path)
-    monkeypatch.setattr("keypulse.cli._launchd_label_loaded", lambda label: False)
-    monkeypatch.setattr("keypulse.cli._launchd_bootstrap", lambda path: True)
-    monkeypatch.setattr("keypulse.cli.SingleInstanceLock", lambda: FakeLock())
+    monkeypatch.setattr("penpal.cli._launchd_daemon_plist_path", lambda: plist_path)
+    monkeypatch.setattr("penpal.cli._launchd_label_loaded", lambda label: False)
+    monkeypatch.setattr("penpal.cli._launchd_bootstrap", lambda path: True)
+    monkeypatch.setattr("penpal.cli.SingleInstanceLock", lambda: FakeLock())
 
     result = CliRunner().invoke(main, ["start"])
 
@@ -58,7 +58,7 @@ def test_start_uses_launchd_bootstrap_when_plist_exists(monkeypatch, tmp_path):
 
 @pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
-    db_path = tmp_path / "keypulse.db"
+    db_path = tmp_path / "penpal.db"
     db_path.write_text("db")
 
     class FakeLock:
@@ -75,16 +75,16 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
         "ocr": True,
     })()})()
 
-    monkeypatch.setattr("keypulse.cli.get_config", lambda: cfg)
-    monkeypatch.setattr("keypulse.cli.require_db", lambda cfg: None)
-    monkeypatch.setattr("keypulse.cli.SingleInstanceLock", lambda: FakeLock())
-    monkeypatch.setattr("keypulse.cli._launchd_label_loaded", lambda label: True)
-    monkeypatch.setattr("keypulse.cli.get_state", lambda key: {
+    monkeypatch.setattr("penpal.cli.get_config", lambda: cfg)
+    monkeypatch.setattr("penpal.cli.require_db", lambda cfg: None)
+    monkeypatch.setattr("penpal.cli.SingleInstanceLock", lambda: FakeLock())
+    monkeypatch.setattr("penpal.cli._launchd_label_loaded", lambda label: True)
+    monkeypatch.setattr("penpal.cli.get_state", lambda key: {
         "status": "running",
         "started_at": "2026-04-19T10:00:00+00:00",
         "last_flush": "2026-04-19T10:00:05+00:00",
     }.get(key))
-    monkeypatch.setattr("keypulse.cli._load_capture_runtime_state", lambda: {
+    monkeypatch.setattr("penpal.cli._load_capture_runtime_state", lambda: {
         "pid": 4242,
         "host_executable": "/usr/local/bin/python3",
         "watchers": {
@@ -107,12 +107,12 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
 
 @pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
-    cfg = type("Cfg", (), {"db_path_expanded": tmp_path / "keypulse.db"})()
+    cfg = type("Cfg", (), {"db_path_expanded": tmp_path / "penpal.db"})()
     cfg.db_path_expanded.parent.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr("keypulse.cli.get_config", lambda: cfg)
-    monkeypatch.setattr("keypulse.cli.get_config_path", lambda: tmp_path / "config.toml")
+    monkeypatch.setattr("penpal.cli.get_config", lambda: cfg)
+    monkeypatch.setattr("penpal.cli.get_config_path", lambda: tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text("x=1")
-    monkeypatch.setattr("keypulse.cli._load_capture_runtime_state", lambda: {
+    monkeypatch.setattr("penpal.cli._load_capture_runtime_state", lambda: {
         "watchers": {
             "ax_text": {"running": True},
             "ocr": {"running": True},

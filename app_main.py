@@ -11,7 +11,7 @@ def _force_utf8_locale() -> None:
     boot, leaving locale.getpreferredencoding()='US-ASCII'. This breaks any
     `Path.read_text()` / `open()` without explicit encoding when files contain
     non-ASCII bytes (Chinese topic names, anchors, etc.). Set locale before
-    any keypulse imports happen.
+    any penpal imports happen.
     """
     for candidate in ("en_US.UTF-8", "C.UTF-8", "UTF-8"):
         try:
@@ -25,13 +25,13 @@ _force_utf8_locale()
 
 
 def _load_secrets_env() -> None:
-    """Load ~/.keypulse/secrets.env into os.environ.
+    """Load ~/.penpal/secrets.env into os.environ.
 
     Why: the .app is launched directly by launchd (no shell wrapper), so
-    KEY=value lines need to be parsed in-process before keypulse.cli imports
+    KEY=value lines need to be parsed in-process before penpal.cli imports
     anything that reads them.
     """
-    path = Path.home() / ".keypulse" / "secrets.env"
+    path = Path.home() / ".penpal" / "secrets.env"
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -55,7 +55,7 @@ def _load_secrets_env() -> None:
 
 _load_secrets_env()
 
-from keypulse.cli import main  # noqa: E402
+from penpal.cli import main  # noqa: E402
 
 
 if __name__ == "__main__":

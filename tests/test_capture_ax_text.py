@@ -3,8 +3,8 @@ from __future__ import annotations
 import queue
 import time
 
-from keypulse.capture.watchers.ax_text import AXTextWatcher
-from keypulse.capture.watchers.ax_text import read_frontmost_ax_text
+from penpal.capture.watchers.ax_text import AXTextWatcher
+from penpal.capture.watchers.ax_text import read_frontmost_ax_text
 
 
 class _FakeApp:

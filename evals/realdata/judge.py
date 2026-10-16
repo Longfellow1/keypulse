@@ -63,7 +63,7 @@ def parse_judge_output(text: str) -> dict:
 
 def call_judge(prompt: str, *, model: str, claude: str = "claude", host: str = "claude", codex: str = "codex",
                timeout: int = 300, retries: int = 2, wait: float = 30) -> str:
-    if host == "codex":  # same isolation as the KeyPulse arm, but no MCP wrapper: the judge gets no tools
+    if host == "codex":  # same isolation as the Penpal arm, but no MCP wrapper: the judge gets no tools
         cmd = build_codex_command(prompt, model=model, codex=codex)
     else:
         cmd = [claude, "-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose",
@@ -119,7 +119,7 @@ def judge_arm(arm: str, questions: dict[str, Question], run_dir: Path, *, model:
             judge_host = judge_model = None
             if q.expect == "must_not_see":
                 v = mechanical_must_not_see(q, (replay.get("per_question") or {}).get(q.id)) if arm == "kp" \
-                    else {"verdict": "n/a", "reason": "must_not_see is only checked on the KeyPulse arm"}
+                    else {"verdict": "n/a", "reason": "must_not_see is only checked on the Penpal arm"}
                 method = "mechanical"
             elif r.get("exit") != 0 or r.get("is_error") or not (r.get("answer") or "").strip():
                 v, method = error_verdict(f"run produced no answer (exit={r.get('exit')})"), "none"

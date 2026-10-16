@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from keypulse.health.product_delivery import evaluate_delivery_health
-from keypulse.store.db import init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event, set_state
+from penpal.health.product_delivery import evaluate_delivery_health
+from penpal.store.db import init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event, set_state
 
 
 def _seed_event(source: str, ts_start: str) -> None:
@@ -45,7 +45,7 @@ def _seed_capture_runtime(watchers: dict[str, dict]) -> None:
 
 def _seed_all_healthy_watchers() -> None:
     """Seed every WATCHER_TIERS source as healthy so default cases stay quiet."""
-    from keypulse.observability.watcher_tiers import WATCHER_TIERS
+    from penpal.observability.watcher_tiers import WATCHER_TIERS
 
     _seed_capture_runtime({name: _healthy_watcher(name) for name in WATCHER_TIERS})
 
@@ -53,7 +53,7 @@ def _seed_all_healthy_watchers() -> None:
 def test_delivery_health_silent_when_user_idle_but_watchers_healthy(tmp_path, monkeypatch):
     """Zero emits across all sources should NOT alert when watchers heartbeat OK."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    init_db(tmp_path / ".penpal" / "penpal.db")
     _seed_all_healthy_watchers()
 
     result = evaluate_delivery_health(
@@ -66,7 +66,7 @@ def test_delivery_health_silent_when_user_idle_but_watchers_healthy(tmp_path, mo
 
 def test_delivery_health_flags_watcher_beat_stale(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    init_db(tmp_path / ".penpal" / "penpal.db")
     stale = _healthy_watcher("keyboard_chunk")
     stale["last_beat_age_sec"] = 4000.0  # > 2x heartbeat_timeout_sec (1800)
     _seed_capture_runtime({"keyboard_chunk": stale})
@@ -83,7 +83,7 @@ def test_delivery_health_flags_watcher_beat_stale(tmp_path, monkeypatch):
 
 def test_delivery_health_flags_watcher_last_error(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    init_db(tmp_path / ".penpal" / "penpal.db")
     broken = _healthy_watcher("clipboard")
     broken["last_error"] = "permission denied"
     _seed_capture_runtime({"clipboard": broken})
@@ -101,7 +101,7 @@ def test_delivery_health_flags_watcher_last_error(tmp_path, monkeypatch):
 def test_delivery_health_silent_for_unregistered_watcher(tmp_path, monkeypatch):
     """camera/browser_history/etc not in runtime payload should not alert."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    init_db(tmp_path / ".penpal" / "penpal.db")
     # Only seed core watchers — camera / browser_history / ax_text absent
     _seed_capture_runtime({name: _healthy_watcher(name) for name in ("keyboard_chunk", "clipboard", "browser_url", "window", "idle")})
 

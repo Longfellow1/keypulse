@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from keypulse.hud.state import (
+from penpal.hud.state import (
     add_attention_item,
     read_hud_state,
     remove_attention_item,

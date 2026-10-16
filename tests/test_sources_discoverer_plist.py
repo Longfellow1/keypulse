@@ -3,7 +3,7 @@ from __future__ import annotations
 import plistlib
 from pathlib import Path
 
-from keypulse.sources.discoverers.plist import discover_plist_candidates
+from penpal.sources.discoverers.plist import discover_plist_candidates
 
 
 def test_discover_plist_candidates_finds_recent_keys(monkeypatch, tmp_path: Path) -> None:

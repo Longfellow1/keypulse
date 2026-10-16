@@ -5,12 +5,12 @@ import pytest
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from keypulse.config import Config
-from keypulse.hud.state import add_attention_item, set_today_focus
-from keypulse.hud.summary import _status_symbol, build_hud_snapshot
-from keypulse.store.db import init_db
-from keypulse.capture.normalizer import normalize_manual_event
-from keypulse.store.repository import insert_raw_event, set_state
+from penpal.config import Config
+from penpal.hud.state import add_attention_item, set_today_focus
+from penpal.hud.summary import _status_symbol, build_hud_snapshot
+from penpal.store.db import init_db
+from penpal.capture.normalizer import normalize_manual_event
+from penpal.store.repository import insert_raw_event, set_state
 
 
 def test_build_hud_snapshot_uses_today_focus_and_attention_items(tmp_path):

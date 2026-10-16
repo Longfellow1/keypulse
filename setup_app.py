@@ -13,7 +13,7 @@ PYPROJECT = ROOT / "pyproject.toml"
 # On this Python build it can be a builtin without __file__, which breaks the
 # standalone bundle step, so provide a stable path marker for py2app.
 if getattr(zlib, "__file__", None) is None:
-    zlib.__file__ = "/tmp/keypulse-libz.dylib"
+    zlib.__file__ = "/tmp/penpal-libz.dylib"
 
 
 def read_version() -> str:
@@ -26,24 +26,24 @@ DATA_FILES = []
 OPTIONS = {
     "argv_emulation": False,
     "plist": {
-        "CFBundleName": "KeyPulse",
-        "CFBundleDisplayName": "KeyPulse",
-        "CFBundleIdentifier": "com.keypulse.app",
+        "CFBundleName": "Penpal",
+        "CFBundleDisplayName": "Penpal",
+        "CFBundleIdentifier": "com.penpal.app",
         "CFBundleVersion": read_version(),
         "CFBundleShortVersionString": read_version(),
         "LSUIElement": True,
         "NSHighResolutionCapable": True,
-        "NSAppleEventsUsageDescription": "KeyPulse needs to observe app activity to summarize your day.",
-        "NSScreenCaptureDescription": "KeyPulse uses screen capture for OCR-based activity insights.",
-        "NSAccessibilityUsageDescription": "KeyPulse reads frontmost window titles and accessibility text to understand what you're working on.",
-        "NSCameraUsageDescription": "KeyPulse uses the camera only when you explicitly enable presence detection.",
-        "NSMicrophoneUsageDescription": "KeyPulse uses the microphone only when you explicitly enable voice features.",
-        "NSDesktopFolderUsageDescription": "KeyPulse may read recent files you open from the Desktop.",
-        "NSDocumentsFolderUsageDescription": "KeyPulse may read recent files you open from Documents.",
-        "NSDownloadsFolderUsageDescription": "KeyPulse may read recent files you open from Downloads.",
+        "NSAppleEventsUsageDescription": "Penpal needs to observe app activity to summarize your day.",
+        "NSScreenCaptureDescription": "Penpal uses screen capture for OCR-based activity insights.",
+        "NSAccessibilityUsageDescription": "Penpal reads frontmost window titles and accessibility text to understand what you're working on.",
+        "NSCameraUsageDescription": "Penpal uses the camera only when you explicitly enable presence detection.",
+        "NSMicrophoneUsageDescription": "Penpal uses the microphone only when you explicitly enable voice features.",
+        "NSDesktopFolderUsageDescription": "Penpal may read recent files you open from the Desktop.",
+        "NSDocumentsFolderUsageDescription": "Penpal may read recent files you open from Documents.",
+        "NSDownloadsFolderUsageDescription": "Penpal may read recent files you open from Downloads.",
     },
     "packages": [
-        "keypulse",
+        "penpal",
         "rich",
         # pyobjc framework wrappers — must be in `packages` (not just `includes`)
         # so py2app pulls all submodules; otherwise watchers crash at runtime.

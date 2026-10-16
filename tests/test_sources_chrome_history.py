@@ -4,8 +4,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.plugins.chrome_history import ChromeHistorySource
-from keypulse.sources.types import DataSourceInstance
+from penpal.sources.plugins.chrome_history import ChromeHistorySource
+from penpal.sources.types import DataSourceInstance
 
 
 WEBKIT_EPOCH_OFFSET_US = 11_644_473_600 * 1_000_000
@@ -75,7 +75,7 @@ def test_chrome_read_uses_temp_copy_and_maps_event(monkeypatch, tmp_path: Path) 
         copied.append((str(src), str(dst)))
         return original_copy2(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr("keypulse.sources.plugins.chrome_history.shutil.copy2", tracking_copy2)
+    monkeypatch.setattr("penpal.sources.plugins.chrome_history.shutil.copy2", tracking_copy2)
 
     events = list(
         source.read(

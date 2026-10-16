@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from keypulse.capture.aggregator import Aggregator
-from keypulse.capture.normalizer import normalize_window_event
+from penpal.capture.aggregator import Aggregator
+from penpal.capture.normalizer import normalize_window_event
 
 
 def test_aggregator_tracks_window_title_changes_within_current_session(monkeypatch):
     aggregator = Aggregator()
-    monkeypatch.setattr("keypulse.capture.aggregator.upsert_session", lambda _session: None)
+    monkeypatch.setattr("penpal.capture.aggregator.upsert_session", lambda _session: None)
 
     focus = normalize_window_event(
         event_type="window_focus",
@@ -34,7 +34,7 @@ def test_aggregator_tracks_window_title_changes_within_current_session(monkeypat
 def test_aggregator_persists_window_focus_session(monkeypatch):
     aggregator = Aggregator()
     writes = []
-    monkeypatch.setattr("keypulse.capture.aggregator.upsert_session", lambda session: writes.append(session))
+    monkeypatch.setattr("penpal.capture.aggregator.upsert_session", lambda session: writes.append(session))
 
     session_event = normalize_window_event(
         event_type="window_focus_session",
@@ -60,7 +60,7 @@ def test_aggregator_persists_window_focus_session(monkeypatch):
 
 def test_aggregator_starts_session_from_window_title_change(monkeypatch):
     aggregator = Aggregator()
-    monkeypatch.setattr("keypulse.capture.aggregator.upsert_session", lambda _session: None)
+    monkeypatch.setattr("penpal.capture.aggregator.upsert_session", lambda _session: None)
 
     title_change = normalize_window_event(
         event_type="window_title_changed",

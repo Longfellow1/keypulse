@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from keypulse.hud.monitor_html import build_monitor_html
-from keypulse.hud.summary import HUDSnapshot
+from penpal.hud.monitor_html import build_monitor_html
+from penpal.hud.summary import HUDSnapshot
 
 
 def _snapshot(**overrides) -> HUDSnapshot:
@@ -76,7 +76,7 @@ def test_monitor_html_v1_1_structure():
 def test_monitor_html_uses_snapshot_values_and_delta_classes():
     html = build_monitor_html(_snapshot(), capture_status="running")
 
-    assert '<span class="brand">KeyPulse</span>' in html
+    assert '<span class="brand">Penpal</span>' in html
     assert '<span class="dot"></span>' in html
     assert '<span class="status-pill">都好</span>' in html
     # stats 砍成两格：记下来 / 丢掉了
@@ -105,10 +105,10 @@ def test_monitor_html_emits_v1_1_action_links():
     html = build_monitor_html(_snapshot(), capture_status="running")
 
     # today_focus 走 inline input，JS 拼 save-today-focus URL
-    assert "keypulse://action/save-today-focus?v=" in html
-    assert 'href="keypulse://action/toggle-pause"' in html
-    assert 'href="keypulse://action/restart-daemon"' in html
-    assert 'href="keypulse://action/quit"' in html
+    assert "penpal://action/save-today-focus?v=" in html
+    assert 'href="penpal://action/toggle-pause"' in html
+    assert 'href="penpal://action/restart-daemon"' in html
+    assert 'href="penpal://action/quit"' in html
     assert "⏸ 暂停" in html
 
 
@@ -125,7 +125,7 @@ def test_monitor_html_emits_close_popover_handler():
     """点击 HUD 非交互区域时关闭 popover —— JS 监听 click 发 close-popover。"""
     html = build_monitor_html(_snapshot(), capture_status="running")
 
-    assert "keypulse://action/close-popover" in html
+    assert "penpal://action/close-popover" in html
 
 
 def test_monitor_html_pause_state_shows_resume_and_gray_dot():
@@ -164,7 +164,7 @@ def test_monitor_html_hint_bar_renders_action_button():
     html = build_monitor_html(snap, capture_status="running")
 
     assert "打开设置" in html
-    assert "keypulse://action/open-url?u=" in html
+    assert "penpal://action/open-url?u=" in html
     # 编码后的目标 URL 必须含原协议
     assert "x-apple.systempreferences" in html
 

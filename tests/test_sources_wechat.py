@@ -6,11 +6,11 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from keypulse.sources import discover as discover_module
-from keypulse.sources.discover import sources_group
-from keypulse.sources.plugins.wechat import WechatSource
-from keypulse.sources.registry import get_source
-from keypulse.sources.wechat_probe import (
+from penpal.sources import discover as discover_module
+from penpal.sources.discover import sources_group
+from penpal.sources.plugins.wechat import WechatSource
+from penpal.sources.registry import get_source
+from penpal.sources.wechat_probe import (
     WechatProbeResult,
     is_authorized,
     mark_authorized,
@@ -31,7 +31,7 @@ def test_probe_collects_chatlog_wechat_and_authorization(monkeypatch, tmp_path: 
     app_path = tmp_path / "Applications" / "WeChat.app"
     app_path.parent.mkdir(parents=True, exist_ok=True)
     app_path.mkdir()
-    monkeypatch.setattr("keypulse.sources.wechat_probe._WECHAT_APP_CANDIDATES", (app_path,))
+    monkeypatch.setattr("penpal.sources.wechat_probe._WECHAT_APP_CANDIDATES", (app_path,))
 
     def fake_run(command, **kwargs):
         if command == ["which", "chatlog"]:
@@ -42,7 +42,7 @@ def test_probe_collects_chatlog_wechat_and_authorization(monkeypatch, tmp_path: 
             return _completed(command, code=0, stdout="1234\n")
         raise AssertionError(f"unexpected command: {command!r}")
 
-    monkeypatch.setattr("keypulse.sources.wechat_probe.subprocess.run", fake_run)
+    monkeypatch.setattr("penpal.sources.wechat_probe.subprocess.run", fake_run)
 
     result = probe()
 
@@ -57,12 +57,12 @@ def test_probe_collects_chatlog_wechat_and_authorization(monkeypatch, tmp_path: 
 def test_probe_is_graceful_when_subprocess_fails(monkeypatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
-    monkeypatch.setattr("keypulse.sources.wechat_probe._WECHAT_APP_CANDIDATES", (tmp_path / "missing.app",))
+    monkeypatch.setattr("penpal.sources.wechat_probe._WECHAT_APP_CANDIDATES", (tmp_path / "missing.app",))
 
     def boom(*args, **kwargs):
         raise OSError("boom")
 
-    monkeypatch.setattr("keypulse.sources.wechat_probe.subprocess.run", boom)
+    monkeypatch.setattr("penpal.sources.wechat_probe.subprocess.run", boom)
 
     result = probe()
 
@@ -82,7 +82,7 @@ def test_authorization_marker_lifecycle(monkeypatch, tmp_path: Path) -> None:
 
     mark_authorized()
     assert is_authorized() is True
-    marker = home / ".keypulse" / "wechat-authorized"
+    marker = home / ".penpal" / "wechat-authorized"
     content = marker.read_text(encoding="utf-8").strip()
     assert content.startswith("authorized_at=")
 
@@ -99,7 +99,7 @@ def test_wechat_source_is_registered() -> None:
 def test_wechat_source_discover_and_read_probe_only(monkeypatch) -> None:
     source = WechatSource()
     monkeypatch.setattr(
-        "keypulse.sources.plugins.wechat.probe",
+        "penpal.sources.plugins.wechat.probe",
         lambda: WechatProbeResult(
             chatlog_installed=True,
             chatlog_path="/opt/homebrew/bin/chatlog",
@@ -129,7 +129,7 @@ def test_wechat_source_discover_and_read_probe_only(monkeypatch) -> None:
 def test_wechat_source_discover_returns_empty_when_preconditions_missing(monkeypatch) -> None:
     source = WechatSource()
     monkeypatch.setattr(
-        "keypulse.sources.plugins.wechat.probe",
+        "penpal.sources.plugins.wechat.probe",
         lambda: WechatProbeResult(
             chatlog_installed=True,
             chatlog_path="/opt/homebrew/bin/chatlog",
@@ -202,7 +202,7 @@ def test_wechat_authorize_requires_explicit_yes(monkeypatch, tmp_path: Path) -> 
 
     accepted = CliRunner().invoke(sources_group, ["wechat", "authorize"], input="yes\n")
     assert accepted.exit_code == 0
-    assert "你即将授权 KeyPulse 接入你的微信本地消息" in accepted.output
+    assert "你即将授权 Penpal 接入你的微信本地消息" in accepted.output
     assert "输入 \"yes\" 继续，其它取消：" in accepted.output
     assert "✅ 微信红区已授权" in accepted.output
     assert is_authorized() is True

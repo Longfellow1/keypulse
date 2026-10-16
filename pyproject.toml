@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "keypulse"
+name = "penpal-mcp"
 version = "0.1.0"
 description = "Local-first personal activity memory layer for macOS"
 requires-python = ">=3.11"
@@ -50,11 +50,12 @@ Issues = "https://github.com/Longfellow1/keypulse/issues"
 Changelog = "https://github.com/Longfellow1/keypulse/blob/main/CHANGELOG.md"
 
 [project.scripts]
-keypulse = "keypulse.cli:main"
+penpal = "penpal.cli:main"
+keypulse = "penpal.cli:legacy_main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["keypulse*"]
+include = ["penpal*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]  # lets tests import the top-level evals/ harness

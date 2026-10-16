@@ -16,15 +16,15 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.capabilities.base import HealthState
-from keypulse.capabilities.registry import CapabilityRegistry
-from keypulse.capabilities.store import load_states, save_states
-from keypulse.store.db import close, init_db
-from keypulse.store.repository import get_state, set_state
+from penpal.capabilities.base import HealthState
+from penpal.capabilities.registry import CapabilityRegistry
+from penpal.capabilities.store import load_states, save_states
+from penpal.store.db import close, init_db
+from penpal.store.repository import get_state, set_state
 
 
 def _init_test_db(tmp_path: Path) -> Path:
-    db_path = tmp_path / "keypulse.db"
+    db_path = tmp_path / "penpal.db"
     init_db(db_path)
     return db_path
 
@@ -49,12 +49,12 @@ def test_supervisor_does_not_write_health_json(tmp_path, monkeypatch) -> None:
     try:
         out_path = tmp_path / "health.json"
         # Redirect every consumer of HEALTH_JSON_PATH so the test stays sandboxed
-        monkeypatch.setattr("keypulse.health.report.HEALTH_JSON_PATH", out_path)
-        monkeypatch.setattr("keypulse.hud.health.HEALTH_JSON_PATH", out_path)
-        monkeypatch.setattr("keypulse.health.check.HEALTH_JSON_PATH", out_path)
+        monkeypatch.setattr("penpal.health.report.HEALTH_JSON_PATH", out_path)
+        monkeypatch.setattr("penpal.hud.health.HEALTH_JSON_PATH", out_path)
+        monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
 
-        from keypulse.app import _run_capability_self_check
-        from keypulse.capabilities.registry import build_default_registry
+        from penpal.app import _run_capability_self_check
+        from penpal.capabilities.registry import build_default_registry
 
         registry = build_default_registry()
         _run_capability_self_check(registry)
@@ -85,7 +85,7 @@ def test_healthcheck_embeds_capabilities_from_state_repo(tmp_path, monkeypatch) 
             "Cfg",
             (),
             {
-                "db_path_expanded": tmp_path / "keypulse.db",
+                "db_path_expanded": tmp_path / "penpal.db",
                 "obsidian": type("Obs", (), {"vault_path": str(vault_path)})(),
                 "watchers": type("W", (), {
                     "window": False, "idle": False, "clipboard": False, "manual": False,
@@ -99,12 +99,12 @@ def test_healthcheck_embeds_capabilities_from_state_repo(tmp_path, monkeypatch) 
             stdout = "PID = 1\n"
             stderr = ""
 
-        monkeypatch.setattr("keypulse.health.check.Config.load", lambda: config)
-        monkeypatch.setattr("keypulse.health.check.HEALTH_JSON_PATH", out_path)
-        monkeypatch.setattr("keypulse.health.check.subprocess.run", lambda *a, **kw: FakeRun())
-        monkeypatch.setattr("keypulse.health.check.os.kill", lambda pid, sig: None)
+        monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
+        monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
+        monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *a, **kw: FakeRun())
+        monkeypatch.setattr("penpal.health.check.os.kill", lambda pid, sig: None)
 
-        from keypulse.health.check import run_healthcheck
+        from penpal.health.check import run_healthcheck
 
         result = run_healthcheck()
         assert "capabilities" in result
@@ -127,14 +127,14 @@ def test_registry_monitor_isolates_failing_capability() -> None:
         label_when_failed = "boom"
 
         def precheck(self):
-            from keypulse.capabilities.base import CheckResult
+            from penpal.capabilities.base import CheckResult
             return CheckResult(ok=True, code="ok")
 
         def monitor(self):
             raise RuntimeError("intentional crash")
 
         def diagnose(self, state):
-            from keypulse.capabilities.base import Signal
+            from penpal.capabilities.base import Signal
             return Signal(level="err", label="boom", hint=state.detail, action=None)
 
     class GoodCap:
@@ -143,14 +143,14 @@ def test_registry_monitor_isolates_failing_capability() -> None:
         label_when_failed = "ok"
 
         def precheck(self):
-            from keypulse.capabilities.base import CheckResult
+            from penpal.capabilities.base import CheckResult
             return CheckResult(ok=True, code="ok")
 
         def monitor(self):
             return HealthState(ok=True, code="ok", last_checked=time.time())
 
         def diagnose(self, state):
-            from keypulse.capabilities.base import Signal
+            from penpal.capabilities.base import Signal
             return Signal(level="ok", label="ok", hint=None, action=None)
 
     registry = CapabilityRegistry()
@@ -181,9 +181,9 @@ def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) 
         # health.json: paint a stale "all ok" picture - it must NOT win.
         out_path = tmp_path / "health.json"
         out_path.write_text(json.dumps({"capabilities": {}}))
-        monkeypatch.setattr("keypulse.hud.health.HEALTH_JSON_PATH", out_path)
+        monkeypatch.setattr("penpal.hud.health.HEALTH_JSON_PATH", out_path)
 
-        from keypulse.hud.summary import determine_service_status
+        from penpal.hud.summary import determine_service_status
 
         level, label, hint, action = determine_service_status(
             capture_status="running",
@@ -198,7 +198,7 @@ def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) 
 def test_ax_denied_forces_ax_dependent_watcher_facts_false(tmp_path) -> None:
     _init_test_db(tmp_path)
     try:
-        from keypulse.app import _run_capability_self_check
+        from penpal.app import _run_capability_self_check
 
         class _FakeRegistry:
             def monitor_all(self):

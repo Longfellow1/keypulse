@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from keypulse.capture.policy import METADATA_ONLY, PolicyEngine
-from keypulse.store.models import RawEvent
+from penpal.capture.policy import METADATA_ONLY, PolicyEngine
+from penpal.store.models import RawEvent
 
 
 def test_metadata_only_policy_returns_new_event_without_leaking_window_or_content():

@@ -4,8 +4,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.plugins.claude_code import ClaudeCodeSource
-from keypulse.sources.types import DataSourceInstance
+from penpal.sources.plugins.claude_code import ClaudeCodeSource
+from penpal.sources.types import DataSourceInstance
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
@@ -17,7 +17,7 @@ def test_discover_claude_projects(monkeypatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    project_dir = home / ".claude" / "projects" / "-Users-someone-Work-keypulse"
+    project_dir = home / ".claude" / "projects" / "-Users-someone-Work-penpal"
     _write_jsonl(project_dir / "session-a.jsonl", [{"type": "user", "timestamp": "2026-04-28T01:00:00Z"}])
     _write_jsonl(project_dir / "session-b.jsonl", [{"type": "assistant", "timestamp": "2026-04-28T02:00:00Z"}])
 
@@ -28,8 +28,8 @@ def test_discover_claude_projects(monkeypatch, tmp_path: Path) -> None:
     instance = instances[0]
     assert instance.plugin == "claude_code"
     assert instance.locator == str(project_dir.resolve())
-    assert instance.label == "keypulse"
-    assert instance.metadata["project_path"] == "/Users/someone/Work/keypulse"
+    assert instance.label == "penpal"
+    assert instance.metadata["project_path"] == "/Users/someone/Work/penpal"
     assert instance.metadata["session_count"] == 2
 
 
@@ -37,7 +37,7 @@ def test_read_claude_jsonl_handles_dict_and_stringified_message(monkeypatch, tmp
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    project_dir = home / ".claude" / "projects" / "-Users-someone-Work-keypulse"
+    project_dir = home / ".claude" / "projects" / "-Users-someone-Work-penpal"
     session_file = project_dir / "abc-session.jsonl"
     rows = [
         {
@@ -97,7 +97,7 @@ def test_read_claude_jsonl_handles_dict_and_stringified_message(monkeypatch, tmp
     ]
     _write_jsonl(session_file, rows)
 
-    instance = DataSourceInstance(plugin="claude_code", locator=str(project_dir.resolve()), label="keypulse")
+    instance = DataSourceInstance(plugin="claude_code", locator=str(project_dir.resolve()), label="penpal")
     source = ClaudeCodeSource()
 
     events = list(
@@ -133,12 +133,12 @@ def test_self_exclude_skips_keypulse_own_project_dir(monkeypatch, tmp_path: Path
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    skip_dir = home / ".claude" / "projects" / "-Users-Harland-Go-keypulse"
+    skip_dir = home / ".claude" / "projects" / "-Users-Harland-Go-penpal"
     keep_dir = home / ".claude" / "projects" / "-Users-someone-Work-other-app"
     _write_jsonl(skip_dir / "s1.jsonl", [{"type": "user", "timestamp": "2026-04-28T01:00:00Z"}])
     _write_jsonl(keep_dir / "s1.jsonl", [{"type": "user", "timestamp": "2026-04-28T01:00:00Z"}])
 
-    source = ClaudeCodeSource(self_exclude_dirs={"-Users-Harland-Go-keypulse"})
+    source = ClaudeCodeSource(self_exclude_dirs={"-Users-Harland-Go-penpal"})
 
     instances = source.discover()
     assert len(instances) == 1
@@ -146,7 +146,7 @@ def test_self_exclude_skips_keypulse_own_project_dir(monkeypatch, tmp_path: Path
 
     # read() also returns empty when called on an excluded instance directly
     excluded_instance = DataSourceInstance(
-        plugin="claude_code", locator=str(skip_dir.resolve()), label="keypulse"
+        plugin="claude_code", locator=str(skip_dir.resolve()), label="penpal"
     )
     events = list(
         source.read(
@@ -163,7 +163,7 @@ def test_default_does_not_exclude_keypulse_named_project_dir(monkeypatch, tmp_pa
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    main_dir = home / ".claude" / "projects" / "-Users-Harland-Go-keypulse"
+    main_dir = home / ".claude" / "projects" / "-Users-Harland-Go-penpal"
     _write_jsonl(main_dir / "s1.jsonl", [{"type": "user", "timestamp": "2026-04-28T01:00:00Z"}])
 
     source = ClaudeCodeSource()

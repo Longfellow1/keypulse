@@ -3,8 +3,8 @@ Tests for privacy detector patterns and desensitization.
 Covers all secret formats that need to be redacted.
 """
 import pytest
-from keypulse.privacy.detectors import detect, has_sensitive_content
-from keypulse.privacy.desensitizer import desensitize, desensitize_json_value
+from penpal.privacy.detectors import detect, has_sensitive_content
+from penpal.privacy.desensitizer import desensitize, desensitize_json_value
 
 
 class TestUUIDDetection:

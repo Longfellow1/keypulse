@@ -50,9 +50,9 @@ env/
 .tmp_*
 
 # Internal design docs (not for public repo)
-keypulse-*-design.md
-keypulse-*-strategy.md
-keypulse-*-pipeline.md
+penpal-*-design.md
+penpal-*-strategy.md
+penpal-*-pipeline.md
 
 # Local config backups
 config.toml.bak*
@@ -60,10 +60,10 @@ config.toml.bak*
 
 # Local IDE / agent / runtime state (not for repo)
 .claude/
-.keypulse/
+.penpal/
 Go/
 
-# Real-data eval artifacts must never be committed (see docs/KeyPulse_Eval_PRD.md)
+# Real-data eval artifacts must never be committed (see docs/Penpal_Eval_PRD.md)
 docs/*-eval-*.json
 evals/report.json
 eval-report.json

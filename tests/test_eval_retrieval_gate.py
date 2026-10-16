@@ -46,10 +46,10 @@ def test_question_set_has_required_shape() -> None:
 
 def test_run_is_isolated_from_real_home(report) -> None:
     # the run must restore HOME and leave no fixture plugin registered
-    from keypulse.sources import registry
+    from penpal.sources import registry
 
-    assert "keypulse-eval-" not in os.environ.get("HOME", "")
-    assert not any("keypulse-eval-" in str(getattr(p, "_history_path", "")) for p in registry._PLUGINS.values())
+    assert "penpal-eval-" not in os.environ.get("HOME", "")
+    assert not any("penpal-eval-" in str(getattr(p, "_history_path", "")) for p in registry._PLUGINS.values())
 
 
 def test_fake_secret_never_searchable_in_eval(report) -> None:
@@ -85,7 +85,7 @@ def test_gate_fails_when_the_eval_set_changes_without_rebaseline(report, baselin
 
 def test_gate_fails_on_a_really_degraded_retriever(baseline, monkeypatch) -> None:
     """Break search for real (returns nothing); the end-to-end run must trip the gate."""
-    from keypulse.mcp import tools
+    from penpal.mcp import tools
 
     monkeypatch.setattr(tools, "search_events", lambda *a, **k: [])
     degraded = run_eval()

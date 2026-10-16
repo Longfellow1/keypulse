@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from keypulse.sources.discoverers.leveldb import discover_leveldb_candidates
+from penpal.sources.discoverers.leveldb import discover_leveldb_candidates
 
 
 def _make_leveldb_instance(path: Path, *, ldb_files: int = 2) -> None:

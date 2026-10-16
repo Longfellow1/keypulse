@@ -6,8 +6,8 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta, timezone
 
-import keypulse.sources.sink as sink
-from keypulse.sources.types import SemanticEvent
+import penpal.sources.sink as sink
+from penpal.sources.types import SemanticEvent
 
 
 def _build_events(total: int = 100) -> list[SemanticEvent]:
@@ -17,7 +17,7 @@ def _build_events(total: int = 100) -> list[SemanticEvent]:
         source = ("git_log", "claude_code", "chrome_history")[idx % 3]
         metadata = {
             "session_id": f"s-{idx}",
-            "repo_path": "/Users/harland/Go/keypulse",
+            "repo_path": "/Users/harland/Go/penpal",
             "full_hash": f"abc1234def{idx:04d}",
             "full_url": f"https://example.com/docs/{idx}?token=secret",
         }
@@ -26,8 +26,8 @@ def _build_events(total: int = 100) -> list[SemanticEvent]:
                 time=base + timedelta(seconds=idx),
                 source=source,
                 actor="user",
-                intent=f"修复 keypulse pipeline bug #{idx}",
-                artifact=f"commit:abc1234 file:keypulse/pipeline/sink_{idx}.py",
+                intent=f"修复 penpal pipeline bug #{idx}",
+                artifact=f"commit:abc1234 file:penpal/pipeline/sink_{idx}.py",
                 raw_ref=f"{source}:{idx}",
                 privacy_tier="green",
                 metadata=metadata,

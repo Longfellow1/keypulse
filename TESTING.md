@@ -1,4 +1,4 @@
-# KeyPulse — Testing Guide
+# Penpal — Testing Guide
 
 > Platform: macOS 12.0+  
 > Runtime: Python 3.11+
@@ -8,15 +8,15 @@
 ## 1. Environment Setup
 
 ```bash
-git clone https://github.com/longfellow1/keypulse
-cd keypulse
+git clone https://github.com/longfellow1/penpal
+cd penpal
 pip install -e .
 ```
 
 Verify installation:
 
 ```bash
-keypulse --help
+penpal --help
 ```
 
 ---
@@ -26,7 +26,7 @@ keypulse --help
 Run the doctor command to verify dependencies and permissions:
 
 ```bash
-keypulse doctor
+penpal doctor
 ```
 
 Expected output:
@@ -49,32 +49,32 @@ System Settings → Privacy & Security → Accessibility → add your terminal a
 ### Start
 
 ```bash
-keypulse start
-# Expected: KeyPulse started (PID 12345)
+penpal start
+# Expected: Penpal started (PID 12345)
 ```
 
 ### Status
 
 ```bash
-keypulse status
+penpal status
 # Expected: running=yes, enabled_watchers=window,idle,clipboard,manual
 ```
 
 ### Pause / Resume
 
 ```bash
-keypulse pause
-keypulse status   # status=paused
-keypulse resume
-keypulse status   # status=running
+penpal pause
+penpal status   # status=paused
+penpal resume
+penpal status   # status=running
 ```
 
 ### Stop
 
 ```bash
-keypulse stop
-# Expected: KeyPulse stopped.
-keypulse status   # running=no
+penpal stop
+# Expected: Penpal stopped.
+penpal status   # running=no
 ```
 
 ---
@@ -84,7 +84,7 @@ keypulse status   # running=no
 Start the daemon, switch between a few apps, then:
 
 ```bash
-keypulse timeline --today
+penpal timeline --today
 ```
 
 Expected: table of sessions showing app names, window titles, duration.
@@ -94,7 +94,7 @@ Expected: table of sessions showing app names, window titles, duration.
 Copy some text in any app, wait 2 seconds, then:
 
 ```bash
-keypulse recent --type clipboard --limit 5
+penpal recent --type clipboard --limit 5
 ```
 
 Expected: your copied text appears (possibly desensitised if it matched privacy patterns).
@@ -102,8 +102,8 @@ Expected: your copied text appears (possibly desensitised if it matched privacy 
 ### Manual save
 
 ```bash
-keypulse save --text "Test note for keypulse" --tag test
-keypulse recent --type manual
+penpal save --text "Test note for penpal" --tag test
+penpal recent --type manual
 ```
 
 Expected: your note appears.
@@ -111,7 +111,7 @@ Expected: your note appears.
 Via stdin:
 
 ```bash
-echo "stdin note" | keypulse save --tag test
+echo "stdin note" | penpal save --tag test
 ```
 
 ---
@@ -119,10 +119,10 @@ echo "stdin note" | keypulse save --tag test
 ## 5. Search
 
 ```bash
-keypulse search "keypulse"
-keypulse search "keypulse" --app Terminal
-keypulse search "keypulse" --since 1d
-keypulse search "keypulse" --source manual
+penpal search "penpal"
+penpal search "penpal" --app Terminal
+penpal search "penpal" --since 1d
+penpal search "penpal" --source manual
 ```
 
 Expected: results table with Time / Type / App / Content columns.
@@ -130,7 +130,7 @@ Expected: results table with Time / Type / App / Content columns.
 Plain output (for scripting / skill use):
 
 ```bash
-keypulse search "keypulse" --plain
+penpal search "penpal" --plain
 # TSV: timestamp\ttype\tapp\ttitle\tbody
 ```
 
@@ -139,15 +139,15 @@ keypulse search "keypulse" --plain
 ## 6. Stats & Export
 
 ```bash
-keypulse stats --days 7
-keypulse stats --days 7 --plain
+penpal stats --days 7
+penpal stats --days 7 --plain
 ```
 
 ```bash
-keypulse export --format json --days 1
-keypulse export --format csv  --days 1
-keypulse export --format md   --date $(date +%Y-%m-%d)
-keypulse export --format json --output /tmp/kp_export.json --days 7
+penpal export --format json --days 1
+penpal export --format csv  --days 1
+penpal export --format md   --date $(date +%Y-%m-%d)
+penpal export --format json --output /tmp/kp_export.json --days 7
 ```
 
 ---
@@ -155,14 +155,14 @@ keypulse export --format json --output /tmp/kp_export.json --days 7
 ## 7. Session Commands
 
 ```bash
-keypulse session list
-keypulse session list --date $(date +%Y-%m-%d)
+penpal session list
+penpal session list --date $(date +%Y-%m-%d)
 ```
 
 Grab an ID from the output, then:
 
 ```bash
-keypulse session show <session-id>
+penpal session show <session-id>
 ```
 
 ---
@@ -177,7 +177,7 @@ Copy a string containing a fake email or token, e.g.:
 Then check:
 
 ```bash
-keypulse recent --type clipboard --limit 1
+penpal recent --type clipboard --limit 1
 ```
 
 Expected: email and token replaced with `[EMAIL]` / `[API_KEY]` markers.
@@ -185,10 +185,10 @@ Expected: email and token replaced with `[EMAIL]` / `[API_KEY]` markers.
 ### Policy rules
 
 ```bash
-keypulse rules list
-keypulse rules add --scope-type app --scope-value "1Password" --mode deny
-keypulse rules list   # new rule appears
-keypulse rules disable <id>
+penpal rules list
+penpal rules add --scope-type app --scope-value "1Password" --mode deny
+penpal rules list   # new rule appears
+penpal rules disable <id>
 ```
 
 ---
@@ -197,16 +197,16 @@ keypulse rules disable <id>
 
 ```bash
 # Dry-run (shows what would be deleted)
-keypulse purge --last-hours 1
+penpal purge --last-hours 1
 
 # Confirm deletion
-keypulse purge --last-hours 1 --confirm
+penpal purge --last-hours 1 --confirm
 
 # Delete by app
-keypulse purge --app Slack --confirm
+penpal purge --app Slack --confirm
 
 # Clear everything from today
-keypulse purge --today --confirm
+penpal purge --today --confirm
 ```
 
 ---
@@ -214,14 +214,14 @@ keypulse purge --today --confirm
 ## 10. Config
 
 ```bash
-keypulse config show
-keypulse config path
+penpal config show
+penpal config path
 ```
 
-Edit `~/.keypulse/config.toml` to toggle watchers or adjust thresholds, then restart:
+Edit `~/.penpal/config.toml` to toggle watchers or adjust thresholds, then restart:
 
 ```bash
-keypulse stop && keypulse start
+penpal stop && penpal start
 ```
 
 ---
@@ -229,7 +229,7 @@ keypulse stop && keypulse start
 ## 11. Database Schema Verification
 
 ```bash
-sqlite3 ~/.keypulse/keypulse.db ".tables"
+sqlite3 ~/.penpal/penpal.db ".tables"
 ```
 
 Expected tables:
@@ -242,7 +242,7 @@ search_docs       search_docs_fts        sessions
 Check migration version:
 
 ```bash
-sqlite3 ~/.keypulse/keypulse.db "SELECT * FROM _schema_version;"
+sqlite3 ~/.penpal/penpal.db "SELECT * FROM _schema_version;"
 # 1|<timestamp>
 ```
 
@@ -251,16 +251,16 @@ sqlite3 ~/.keypulse/keypulse.db "SELECT * FROM _schema_version;"
 ## 12. Single Instance Lock
 
 ```bash
-keypulse start
-keypulse start   # Expected: "Already running (PID ...)"
+penpal start
+penpal start   # Expected: "Already running (PID ...)"
 ```
 
 Simulate crash recovery:
 
 ```bash
 # Manually write a fake stale PID
-echo "99999" > ~/.keypulse/keypulse.pid
-keypulse start   # Should detect stale lock, start normally
+echo "99999" > ~/.penpal/penpal.pid
+penpal start   # Should detect stale lock, start normally
 ```
 
 ---
@@ -270,12 +270,12 @@ keypulse start   # Should detect stale lock, start normally
 After 30 minutes of normal use:
 
 ```bash
-ps aux | grep keypulse
+ps aux | grep penpal
 # CPU should be < 1%, RSS < 60 MB
 ```
 
 ```bash
-ls -lh ~/.keypulse/keypulse.db
+ls -lh ~/.penpal/penpal.db
 # Size should be reasonable (< 5 MB for a day of use)
 ```
 

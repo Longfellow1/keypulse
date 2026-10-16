@@ -1,4 +1,4 @@
-"""D27 / P0-12b: shared transcript noise filter, via_keypulse self-echo marking, ranking tie-break.
+"""D27 / P0-12b: shared transcript noise filter, via_penpal self-echo marking, ranking tie-break.
 
 Synthetic data only. JSONL fixtures follow the current Claude Code transcript format
 (content blocks: text / tool_use / tool_result) and the Codex rollout format.
@@ -11,16 +11,16 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.mcp import auth, tools
-from keypulse.search.engine import search_events, timeline_events
-from keypulse.sources.cleaning.noise import clean_message_part, is_keypulse_call, is_noise_part
-from keypulse.sources.plugins.claude_code import ClaudeCodeSource
-from keypulse.sources.plugins.codex_cli import CodexCliSource
-from keypulse.sources.types import DataSourceInstance
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.store.sync_repo import add_evidence
+from penpal.mcp import auth, tools
+from penpal.search.engine import search_events, timeline_events
+from penpal.sources.cleaning.noise import clean_message_part, is_keypulse_call, is_noise_part
+from penpal.sources.plugins.claude_code import ClaudeCodeSource
+from penpal.sources.plugins.codex_cli import CodexCliSource
+from penpal.sources.types import DataSourceInstance
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.store.sync_repo import add_evidence
 
 EPOCH = datetime(2000, 1, 1, tzinfo=timezone.utc)
 FAR = datetime(2999, 1, 1, tzinfo=timezone.utc)
@@ -111,7 +111,7 @@ def test_claude_code_filters_wrappers_keeps_conversation(tmp_path) -> None:
     assert [e.actor for e in events] == ["user", "assistant", "user", "user"]
 
 
-# ── F6: via_keypulse, Claude Code ────────────────────────────────────────────────────────────
+# ── F6: via_penpal, Claude Code ────────────────────────────────────────────────────────────
 def _echo_rows() -> list[dict]:
     return [
         _c("user", 1, _text("what did I plan for pelican")),
@@ -129,7 +129,7 @@ def _echo_rows() -> list[dict]:
 
 
 def _marks(events) -> dict[str, bool]:
-    return {e.intent: bool(e.metadata.get("via_keypulse")) for e in events}
+    return {e.intent: bool(e.metadata.get("via_penpal")) for e in events}
 
 
 def test_claude_code_marks_assistant_text_after_keypulse_tool(tmp_path) -> None:
@@ -149,16 +149,27 @@ def test_claude_code_server_name_is_configurable(tmp_path) -> None:
     rows = [_c("assistant", 1, _tool_use("mcp__memory-layer__search_context")),
             _c("assistant", 2, _text("restated results"))]
     assert not any(_marks(_claude_events(tmp_path, rows)).values())
-    assert _marks(_claude_events(tmp_path, rows, keypulse_server_names=["memory-layer"]))["restated results"]
+    assert _marks(_claude_events(tmp_path, rows, penpal_server_names=["memory-layer"]))["restated results"]
 
 
 def test_claude_code_server_name_from_cleaning_toml(tmp_path) -> None:
-    cfg = Path.home() / ".keypulse" / "cleaning.toml"
+    cfg = Path.home() / ".penpal" / "cleaning.toml"
     cfg.parent.mkdir(parents=True)
-    cfg.write_text('keypulse_server_names = ["memory-layer"]\n', encoding="utf-8")
+    cfg.write_text('penpal_server_names = ["memory-layer"]\n', encoding="utf-8")
     rows = [_c("assistant", 1, _tool_use("mcp__memory-layer__get_timeline")),
             _c("assistant", 2, _text("restated timeline"))]
     assert _marks(_claude_events(tmp_path, rows))["restated timeline"]
+
+
+def test_old_cleaning_key_and_old_server_name_still_match(tmp_path, capsys) -> None:
+    cfg = Path.home() / ".penpal" / "cleaning.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('keypulse_server_names = ["keypulse"]\n', encoding="utf-8")
+    rows = [_c("assistant", 1, _tool_use("mcp__keypulse__search_context")),
+            _c("assistant", 2, _text("old server response"))]
+
+    assert _marks(_claude_events(tmp_path, rows))["old server response"]
+    assert "Deprecated cleaning config key keypulse_server_names" in capsys.readouterr().err
 
 
 def test_claude_code_echo_state_survives_cursor_sync(tmp_path) -> None:
@@ -167,12 +178,12 @@ def test_claude_code_echo_state_survives_cursor_sync(tmp_path) -> None:
     root = tmp_path / "projects"
     path = root / "-tmp-demo" / "s1.jsonl"
     rows = _echo_rows()
-    _write(path, rows[:4])  # sync 1 ends right after the keypulse tool call + its result
+    _write(path, rows[:4])  # sync 1 ends right after the penpal tool call + its result
     src = ClaudeCodeSource(projects_root=root, self_exclude_dirs=set(), use_cursor=True)
     inst = src.discover()[0]
     first = list(src.read(inst, EPOCH, FAR))
     src.commit_cursors()
-    assert not any(e.metadata.get("via_keypulse") for e in first)
+    assert not any(e.metadata.get("via_penpal") for e in first)
     _write(path, rows)  # sync 2 sees only the appended lines
     second = list(src.read(inst, EPOCH, FAR))
     src.commit_cursors()
@@ -181,7 +192,7 @@ def test_claude_code_echo_state_survives_cursor_sync(tmp_path) -> None:
     assert _marks(second)["fixing the bug now"] is False
 
 
-# ── F6: via_keypulse, Codex ──────────────────────────────────────────────────────────────────
+# ── F6: via_penpal, Codex ──────────────────────────────────────────────────────────────────
 def _x(n: int, payload: dict, rtype: str = "response_item") -> dict:
     return {"timestamp": f"2026-05-01T10:{n:02d}:00Z", "ordinal": n, "type": rtype, "payload": payload}
 
@@ -194,9 +205,9 @@ def _msg(role: str, text: str) -> dict:
 CALL_SHAPES = {
     "function_call_prefixed": {"type": "function_call", "name": "mcp__keypulse__search_context", "arguments": "{}", "call_id": "c1"},
     "function_call_namespace": {"type": "function_call", "namespace": "mcp__keypulse__", "name": "search_context", "arguments": "{}"},
-    "mcp_tool_call_server": {"type": "mcp_tool_call", "server": "keypulse", "tool": "search_context", "arguments": {}},
+    "mcp_tool_call_server": {"type": "mcp_tool_call", "server": "penpal", "tool": "search_context", "arguments": {}},
     "mcp_tool_call_invocation": {"type": "mcp_tool_call_begin", "call_id": "c1",
-                                "invocation": {"server": "keypulse", "tool": "get_timeline", "arguments": {}}},
+                                "invocation": {"server": "penpal", "tool": "get_timeline", "arguments": {}}},
 }
 
 
@@ -233,28 +244,30 @@ def test_codex_foreign_tool_and_custom_server_name(tmp_path) -> None:
     assert not any(_marks(_codex_events(tmp_path, foreign)).values())
     custom = [{"type": "function_call", "name": "mcp__memory-layer__search_context"}, _msg("assistant", "restated")]
     assert not any(_marks(_codex_events(tmp_path, custom)).values())
-    assert _marks(_codex_events(tmp_path, custom, keypulse_server_names=["memory-layer"]))["restated"]
+    assert _marks(_codex_events(tmp_path, custom, penpal_server_names=["memory-layer"]))["restated"]
 
 
 def test_codex_message_mentioning_keypulse_is_not_swallowed(tmp_path) -> None:
-    events = _codex_events(tmp_path, [_msg("user", 'explain the "function_call" record that keypulse writes')])
-    assert [e.intent for e in events] == ['explain the "function_call" record that keypulse writes']
+    events = _codex_events(tmp_path, [_msg("user", 'explain the "function_call" record that penpal writes')])
+    assert [e.intent for e in events] == ['explain the "function_call" record that penpal writes']
 
 
 def test_is_keypulse_call_shapes() -> None:
-    names = ("keypulse",)
+    names = ("penpal",)
     assert is_keypulse_call({"type": "tool_use", "name": "mcp__keypulse__get_evidence"}, names)
     assert not is_keypulse_call({"type": "tool_use", "name": "mcp__keypulse2__x"}, names)
     assert not is_keypulse_call({"type": "tool_use", "name": "Read"}, names)
 
 
 # ── search / timeline: default exclusion, switch, ranking ────────────────────────────────────
-def _ins(text: str, ts: str, *, source="claude_code", weight=0.5, echo=False, n=[0]) -> int:
+def _ins(text: str, ts: str, *, source="claude_code", weight=0.5, echo=False, legacy_echo=False, n=[0]) -> int:
     n[0] += 1
     row_id = insert_raw_event(RawEvent(
         source=source, event_type="semantic_event", ts_start=ts, content_text=text,
         content_hash=f"h{n[0]}", bucket="Work", semantic_weight=weight,
-        metadata_json=json.dumps({"via_keypulse": True} if echo else {"session_id": "s"}),
+        metadata_json=json.dumps(
+            {"via_keypulse": True} if legacy_echo else {"via_penpal": True} if echo else {"session_id": "s"}
+        ),
     ))
     add_evidence(row_id, f"/synthetic/{source}.jsonl", 1, None)
     return row_id
@@ -271,6 +284,7 @@ def db(tmp_path):
 def test_search_and_timeline_exclude_echoes_by_default(db) -> None:
     keep = _ins("pelican plan from the user", "2026-05-01T10:00:00+00:00")
     echo = _ins("pelican plan restated by the assistant", "2026-05-01T10:01:00+00:00", echo=True)
+    legacy_echo = _ins("pelican plan restated before the rename", "2026-05-01T10:02:00+00:00", legacy_echo=True)
     token = auth.create_grant("host", buckets=["Work"])
     from mcp_helpers import client_of
 
@@ -280,12 +294,12 @@ def test_search_and_timeline_exclude_echoes_by_default(db) -> None:
     s = tools.search_context(token, ["pelican"], client=client_of(token))
     assert ids(s) == {f"evt_{keep}"}
     s = tools.search_context(token, ["pelican"], None, None, 10, True, client=client_of(token))
-    assert ids(s) == {f"evt_{keep}", f"evt_{echo}"}
+    assert ids(s) == {f"evt_{keep}", f"evt_{echo}", f"evt_{legacy_echo}"}
     kw = dict(client=client_of(token))
     t = tools.get_timeline(token, "2026-05-01", "2026-05-01", **kw)
     assert ids(t) == {f"evt_{keep}"}
     t = tools.get_timeline(token, "2026-05-01", "2026-05-01", None, 50, None, True, **kw)
-    assert ids(t) == {f"evt_{keep}", f"evt_{echo}"}
+    assert ids(t) == {f"evt_{keep}", f"evt_{echo}", f"evt_{legacy_echo}"}
     bad = tools.search_context(token, ["pelican"], None, None, 10, "yes", client=client_of(token))
     assert bad["status"] == "invalid_argument"
 
@@ -364,12 +378,18 @@ def test_query_time_redaction_fails_closed(db, monkeypatch) -> None:
 
 def test_codex_namespace_shape_matches_exact_server_only() -> None:
     # Shape observed in current Codex rollouts: namespace "mcp__<server>", bare tool name.
-    from keypulse.sources.cleaning.noise import is_keypulse_call
+    from penpal.sources.cleaning.noise import is_keypulse_call
 
-    names = ("keypulse",)
+    names = ("penpal",)
     assert is_keypulse_call({"type": "function_call", "namespace": "mcp__keypulse", "name": "search_context"}, names)
     assert not is_keypulse_call({"type": "function_call", "namespace": "mcp__keypulse_x", "name": "a"}, names)
     assert not is_keypulse_call({"type": "function_call", "namespace": "mcp__cua_repl", "name": "js"}, names)
+
+
+def test_penpal_default_server_names_accept_legacy_keypulse_tool_names() -> None:
+    from penpal.sources.cleaning.noise import is_keypulse_call
+
+    assert is_keypulse_call({"type": "tool_use", "name": "mcp__keypulse__search_context"}, ("penpal",))
 
 
 @pytest.mark.parametrize(
@@ -381,13 +401,13 @@ def test_codex_namespace_shape_matches_exact_server_only() -> None:
     ],
 )
 def test_claude_injected_turns_seen_in_real_transcripts_are_noise(text) -> None:
-    from keypulse.sources.cleaning.noise import is_noise_part
+    from penpal.sources.cleaning.noise import is_noise_part
 
     assert is_noise_part(text)
 
 
 def test_user_content_wrappers_are_kept() -> None:
-    from keypulse.sources.cleaning.noise import is_noise_part
+    from penpal.sources.cleaning.noise import is_noise_part
 
     assert not is_noise_part("<pasted_content>my notes</pasted_content>")
     assert not is_noise_part("<bash-input>git status</bash-input>")

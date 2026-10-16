@@ -21,10 +21,10 @@ COMMON = (
     "Answer in Chinese, concisely. Cite where the answer came from. "
     "If you cannot find it, say 没有找到 and do not guess."
 )
-KP_PROMPT = COMMON + " Use only the keypulse MCP tools."
+KP_PROMPT = COMMON + " Use only the penpal MCP tools."
 BASH_PROMPT = (
     COMMON + " Use shell and file tools to search local files (shell history, AI tool transcripts, "
-    "browser data, documents, git repos, etc.). Do not use any KeyPulse database or KeyPulse tools."
+    "browser data, documents, git repos, etc.). Do not use any Penpal database or Penpal tools."
 )
 INPUT_TRUNC = 300
 BASE_FLAGS = ["--output-format", "stream-json", "--verbose", "--no-session-persistence",
@@ -48,7 +48,7 @@ def check_host(arm: str, host: str) -> None:
     if host not in HOSTS:
         raise ValueError(f"unknown host {host!r}")
     if host == "codex" and arm != "kp":
-        raise ValueError("--host codex runs only the KeyPulse arm; the bash arm stays on Claude (--host claude)")
+        raise ValueError("--host codex runs only the Penpal arm; the bash arm stays on Claude (--host claude)")
 
 
 def build_command(arm: str, q: Question, *, model: str, max_turns: int, mcp_config: Path | None,
@@ -56,7 +56,7 @@ def build_command(arm: str, q: Question, *, model: str, max_turns: int, mcp_conf
     cmd = [claude, "-p", q.query, "--model", model, "--max-turns", str(max_turns), *BASE_FLAGS]
     if arm == "kp":
         assert mcp_config is not None
-        cmd += ["--mcp-config", str(mcp_config), "--allowedTools", "mcp__keypulse__*",
+        cmd += ["--mcp-config", str(mcp_config), "--allowedTools", "mcp__penpal__*",
                 "--disallowedTools", "Bash", "Read", "Grep", "Glob", "WebFetch", "WebSearch", "Agent",
                 "--append-system-prompt", KP_PROMPT]
         return cmd
@@ -67,7 +67,7 @@ def build_command(arm: str, q: Question, *, model: str, max_turns: int, mcp_conf
 
 
 def build_codex_command(prompt: str, *, model: str, codex: str = "codex", wrapper: Path | None = None) -> list[str]:
-    """Isolated, tool-less `codex exec`. With `wrapper`, the KeyPulse MCP server is started through it.
+    """Isolated, tool-less `codex exec`. With `wrapper`, the Penpal MCP server is started through it.
     The token lives only inside the wrapper file, never in argv."""
     cmd = [codex, "exec", "--json", "--ephemeral", "--ignore-user-config", "--skip-git-repo-check",
            "-s", "read-only", "-m", model]
@@ -75,9 +75,9 @@ def build_codex_command(prompt: str, *, model: str, codex: str = "codex", wrappe
         cmd += ["--disable", feature]
     cmd += ["-c", 'web_search="disabled"']
     if wrapper is not None:
-        cmd += ["-c", f"mcp_servers.keypulse.command={json.dumps(str(wrapper))}",
+        cmd += ["-c", f"mcp_servers.penpal.command={json.dumps(str(wrapper))}",
                 # exec runs with approval_policy=never: without this every MCP call is refused
-                "-c", 'mcp_servers.keypulse.default_tools_approval_mode="approve"']
+                "-c", 'mcp_servers.penpal.default_tools_approval_mode="approve"']
     return [*cmd, prompt]
 
 
@@ -87,11 +87,11 @@ def codex_kp_prompt(query: str) -> str:
 
 
 def write_codex_wrapper(path: Path, *, keypulse_bin: str, token: str, client: str, home: Path) -> None:
-    """0700 shell script that exports the grant and execs `keypulse mcp serve`. Deleted after each question."""
+    """0700 shell script that exports the grant and execs `penpal mcp serve`. Deleted after each question."""
     body = "\n".join([
         "#!/bin/sh",
-        f"export KEYPULSE_TOKEN={shlex.quote(token)}",
-        f"export KEYPULSE_CLIENT={shlex.quote(client)}",
+        f"export PENPAL_TOKEN={shlex.quote(token)}",
+        f"export PENPAL_CLIENT={shlex.quote(client)}",
         f"export HOME={shlex.quote(str(home))}",
         f"exec {shlex.quote(keypulse_bin)} mcp serve",
         "",
@@ -121,8 +121,8 @@ def parse_stream(stdout: str) -> dict:
                     inp = b.get("input")
                     tools.append({"name": b.get("name", ""),
                                   "input": json.dumps(inp, ensure_ascii=False)[:INPUT_TRUNC],
-                                  # full args kept only for KeyPulse tools (small, needed for replay)
-                                  **({"args": inp} if str(b.get("name", "")).startswith("mcp__keypulse__") else {})})
+                                  # full args kept only for Penpal tools (small, needed for replay)
+                                  **({"args": inp} if str(b.get("name", "")).startswith("mcp__penpal__") else {})})
         elif ev.get("type") == "result":
             is_error = bool(ev.get("is_error"))
             answer = "" if is_error else (ev.get("result") or "")
@@ -156,7 +156,7 @@ def _error_text(v) -> str:
 
 def parse_codex_stream(stdout: str) -> dict:
     """Same keys as parse_stream, read from `codex exec --json` events. The answer is the last agent message.
-    Anything other than KeyPulse MCP calls and messages is recorded in non_kp_tools (an isolation violation)."""
+    Anything other than Penpal MCP calls and messages is recorded in non_kp_tools (an isolation violation)."""
     tools, messages, non_kp, usage = [], [], [], None
     is_error, error = False, ""
     for line in stdout.splitlines():
@@ -175,11 +175,11 @@ def parse_codex_stream(stdout: str) -> dict:
             if itype == "agent_message":
                 messages.append(str(item.get("text") or ""))
             elif itype == "mcp_tool_call":
-                if item.get("server") != "keypulse":
+                if item.get("server") != "penpal":
                     non_kp.append(f"mcp_tool_call:{item.get('server')}")
                     continue
                 args = _codex_args(item.get("arguments"))
-                tools.append({"name": f"mcp__keypulse__{item.get('tool', '')}",
+                tools.append({"name": f"mcp__penpal__{item.get('tool', '')}",
                               "input": json.dumps(args, ensure_ascii=False)[:INPUT_TRUNC], "args": args})
             elif itype in ("reasoning", "error"):
                 continue
@@ -254,7 +254,7 @@ def run_one(arm: str, q: Question, workdir: Path, *, model: str, max_turns: int,
     parsed = parse_codex_stream(stdout) if host == "codex" else parse_stream(stdout)
     for s in secrets:
         stderr = stderr.replace(s, "[REDACTED]")
-    touched = arm == "bash" and any("keypulse" in t["input"].lower() for t in parsed["tools"])
+    touched = arm == "bash" and any("penpal" in t["input"].lower() for t in parsed["tools"])
     row = {"id": q.id, "arm": arm, "host": host, "model": model, "group": q.group, "grant": list(q.grant),
            "query": q.query, "gold_answer": q.gold_answer, "expect": q.expect, "answer": parsed["answer"],
            "tool_calls": len(parsed["tools"]), "tools": parsed["tools"], "seconds": dur,
@@ -274,11 +274,11 @@ def run_arm(arm: str, questions: list[Question], run_dir: Path, *, keypulse_bin:
     model = model or default_model(host)
     out = run_dir / f"results-{arm}.jsonl"
     todo = [q for q in questions if q.id not in done_ids(out)]
-    if arm == "bash":  # must_not_see is a grant-boundary check: only meaningful for KeyPulse
+    if arm == "bash":  # must_not_see is a grant-boundary check: only meaningful for Penpal
         todo = [q for q in todo if q.expect != "must_not_see"]
     if not todo:
         return out
-    grants, db = {}, run_dir / "keypulse.db"
+    grants, db = {}, run_dir / "penpal.db"
     if arm == "kp":
         grants = make_grants(run_dir / "home", db, {q.grant for q in todo}, "rdeval")
     lock = threading.Lock()
@@ -295,9 +295,9 @@ def run_arm(arm: str, questions: list[Question], run_dir: Path, *, keypulse_bin:
                                         home=run_dir / "home")
                 else:
                     cfg = work / f"mcp-{q.id}.json"
-                    cfg.write_text(json.dumps({"mcpServers": {"keypulse": {
+                    cfg.write_text(json.dumps({"mcpServers": {"penpal": {
                         "command": keypulse_bin, "args": ["mcp", "serve"],
-                        "env": {"KEYPULSE_TOKEN": token, "KEYPULSE_CLIENT": cid, "HOME": str(run_dir / "home")}}}}))
+                        "env": {"PENPAL_TOKEN": token, "PENPAL_CLIENT": cid, "HOME": str(run_dir / "home")}}}}))
                     cfg.chmod(0o600)
                 secrets = (token,)
             for attempt in range(RETRIES + 1):

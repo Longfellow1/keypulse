@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from AppKit import NSURL
 
-from keypulse.capture.watchers.browser import DEFAULT_SUPPORTED_BROWSERS
-from keypulse.capture.watchers.browser_discovery import discover_http_handler_apps
+from penpal.capture.watchers.browser import DEFAULT_SUPPORTED_BROWSERS
+from penpal.capture.watchers.browser_discovery import discover_http_handler_apps
 
 
 @pytest.fixture(autouse=True)
@@ -75,11 +75,11 @@ def test_discover_http_handler_apps_uses_launch_services_urls_and_bundle_names(
     )
 
     monkeypatch.setattr(
-        "keypulse.capture.watchers.browser_discovery._discover_application_urls_from_filesystem",
+        "penpal.capture.watchers.browser_discovery._discover_application_urls_from_filesystem",
         lambda: (),
     )
     monkeypatch.setattr(
-        "keypulse.capture.watchers.browser_discovery.LSCopyApplicationURLsForURL",
+        "penpal.capture.watchers.browser_discovery.LSCopyApplicationURLsForURL",
         lambda _url, _role_mask=0xFFFFFFFF: (
             NSURL.fileURLWithPath_(str(atlas_app)),
             NSURL.fileURLWithPath_(str(chrome_app)),
@@ -101,11 +101,11 @@ def test_discover_http_handler_apps_falls_back_to_default_on_launch_services_fai
         raise RuntimeError("boom")
 
     monkeypatch.setattr(
-        "keypulse.capture.watchers.browser_discovery.LSCopyApplicationURLsForURL",
+        "penpal.capture.watchers.browser_discovery.LSCopyApplicationURLsForURL",
         _boom,
     )
     monkeypatch.setattr(
-        "keypulse.capture.watchers.browser_discovery._discover_application_urls_from_filesystem",
+        "penpal.capture.watchers.browser_discovery._discover_application_urls_from_filesystem",
         lambda: (),
     )
 

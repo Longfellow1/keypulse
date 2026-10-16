@@ -4,7 +4,7 @@ import queue
 import threading
 import time
 
-from keypulse.capture.base import BaseWatcher
+from penpal.capture.base import BaseWatcher
 
 
 class _SilentWatcher(BaseWatcher):

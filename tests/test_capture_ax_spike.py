@@ -1,7 +1,7 @@
 """M2-4 spike (#64): pure diff/role/accounting logic, CLI permission and output path guards.
 
 No real AX: every test drives the spike through a fake adapter. Output always goes to tmp_path,
-never to ~/.keypulse.
+never to ~/.penpal.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import stat
 
 from click.testing import CliRunner
 
-from keypulse.capture.ax_spike import (
+from penpal.capture.ax_spike import (
     PERMISSION_MISSING_MESSAGE,
     R_NO_FOCUS,
     R_ROLE,
@@ -28,8 +28,8 @@ from keypulse.capture.ax_spike import (
     run_spike,
     utf16_to_index,
 )
-from keypulse.capture.hygiene import DEFAULT_TITLE_DENY_PATTERNS
-from keypulse.config import Config
+from penpal.capture.hygiene import DEFAULT_TITLE_DENY_PATTERNS
+from penpal.config import Config
 
 
 # --- fakes -------------------------------------------------------------------------------------
@@ -408,8 +408,8 @@ def test_chrome_gets_enhanced_ui_attempt_and_manual_flag_recorded(tmp_path):
 
 
 def test_cli_permission_missing_exits_nonzero(tmp_path, monkeypatch):
-    import keypulse.capture.ax_spike_adapter as adapter_module
-    from keypulse.cli import main
+    import penpal.capture.ax_spike_adapter as adapter_module
+    from penpal.cli import main
 
     monkeypatch.setattr(adapter_module, "PyObjCAXAdapter", lambda: FakeAdapter(trusted=False))
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("no config"))))

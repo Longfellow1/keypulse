@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 
 
 def _row_count() -> int:
@@ -30,7 +30,7 @@ def _make_event(
 
 def test_insert_raw_event_idempotent_returns_same_id(tmp_path) -> None:
     close()
-    init_db(tmp_path / "keypulse.db")
+    init_db(tmp_path / "penpal.db")
     try:
         event = _make_event()
 
@@ -47,7 +47,7 @@ def test_insert_raw_event_idempotent_returns_same_id(tmp_path) -> None:
 def test_insert_raw_event_different_content_hash_inserted(tmp_path) -> None:
     """Same (source, ts_start) but different content_hash → both kept."""
     close()
-    init_db(tmp_path / "keypulse.db")
+    init_db(tmp_path / "penpal.db")
     try:
         first = insert_raw_event(_make_event(content_hash="hash-a", content_text="a"))
         second = insert_raw_event(_make_event(content_hash="hash-b", content_text="b"))
@@ -61,7 +61,7 @@ def test_insert_raw_event_different_content_hash_inserted(tmp_path) -> None:
 def test_insert_raw_event_null_content_hash_dedupes(tmp_path) -> None:
     """Two events with content_hash=NULL and same (source, ts_start) collide."""
     close()
-    init_db(tmp_path / "keypulse.db")
+    init_db(tmp_path / "penpal.db")
     try:
         ev = _make_event(content_hash=None, content_text=None)
 
@@ -76,7 +76,7 @@ def test_insert_raw_event_null_content_hash_dedupes(tmp_path) -> None:
 
 def test_insert_raw_event_different_ts_start_inserted(tmp_path) -> None:
     close()
-    init_db(tmp_path / "keypulse.db")
+    init_db(tmp_path / "penpal.db")
     try:
         first = insert_raw_event(_make_event(ts_start="2026-04-30T01:00:00+00:00"))
         second = insert_raw_event(_make_event(ts_start="2026-04-30T02:00:00+00:00"))
@@ -96,7 +96,7 @@ def test_migration_dedupes_existing_rows(tmp_path, monkeypatch) -> None:
     in run_migrations honors a deletion of v17), bring the DB up via
     normal migration path, seed duplicates, then re-init to apply v17.
     """
-    import keypulse.store.migrations as _m
+    import penpal.store.migrations as _m
     monkeypatch.setattr(_m, "MIGRATIONS", _m.MIGRATIONS[:17])
     monkeypatch.setattr(_m, "SCHEMA_VERSION", 17)
 

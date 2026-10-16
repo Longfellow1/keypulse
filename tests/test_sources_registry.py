@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from keypulse.sources import registry
-from keypulse.sources.cleaning.config import CleaningConfig
-from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
+from penpal.sources import registry
+from penpal.sources.cleaning.config import CleaningConfig
+from penpal.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
 class _FakeSource(DataSource):

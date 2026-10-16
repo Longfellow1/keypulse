@@ -19,7 +19,7 @@ from urllib.parse import urlsplit, urlunsplit
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from keypulse.config import Config  # noqa: E402
+from penpal.config import Config  # noqa: E402
 
 
 _COMMIT_RE = re.compile(r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b", re.IGNORECASE)

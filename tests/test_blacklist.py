@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 
-from keypulse.capture.manager import CaptureManager
-from keypulse.capture.normalizer import normalize_ax_text_event, normalize_browser_tab_event
-from keypulse.config import Config
-from keypulse.store.models import RawEvent
+from penpal.capture.manager import CaptureManager
+from penpal.capture.normalizer import normalize_ax_text_event, normalize_browser_tab_event
+from penpal.config import Config
+from penpal.store.models import RawEvent
 
 
 def test_blacklisted_exact_bundle_id_matches():
@@ -111,7 +111,7 @@ def test_blacklisted_event_is_dropped_before_policy_and_persistence(monkeypatch)
         lambda _event: (_ for _ in ()).throw(AssertionError("policy should not run")),
     )
     monkeypatch.setattr(
-        "keypulse.capture.manager.insert_raw_event",
+        "penpal.capture.manager.insert_raw_event",
         lambda raw_event: inserts.append(raw_event),
     )
 
@@ -136,11 +136,11 @@ def test_window_title_is_desensitized_before_persistence(monkeypatch):
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
     monkeypatch.setattr(
-        "keypulse.capture.manager.insert_raw_event",
+        "penpal.capture.manager.insert_raw_event",
         lambda raw_event: captured.append(raw_event) or 1,
     )
-    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(event)
 
@@ -156,20 +156,20 @@ def test_terminal_ax_text_is_dropped_and_marked(monkeypatch):
         app_name="Terminal",
         window_title="zsh",
         ts_start="2026-04-18T09:00:00+00:00",
-        metadata={"workspace": "keypulse"},
+        metadata={"workspace": "penpal"},
     )
 
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
     monkeypatch.setattr(
-        "keypulse.capture.manager.insert_raw_event",
+        "penpal.capture.manager.insert_raw_event",
         lambda raw_event: captured.append(raw_event) or 1,
     )
     monkeypatch.setattr(
-        "keypulse.capture.manager.insert_search_doc",
+        "penpal.capture.manager.insert_search_doc",
         lambda _doc: (_ for _ in ()).throw(AssertionError("search doc should not be inserted")),
     )
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(event)
 
@@ -182,7 +182,7 @@ def test_terminal_ax_text_is_dropped_and_marked(monkeypatch):
     assert persisted.sensitivity_level == event.sensitivity_level
     assert persisted.content_text is None
     metadata = json.loads(persisted.metadata_json or "{}")
-    assert metadata["workspace"] == "keypulse"
+    assert metadata["workspace"] == "penpal"
     assert metadata["text_dropped"] == "terminal_app"
 
 
@@ -201,7 +201,7 @@ def test_browser_url_denylist_drops_matching_host_before_persistence(monkeypatch
         lambda _event: (_ for _ in ()).throw(AssertionError("aggregator should not run")),
     )
     monkeypatch.setattr(
-        "keypulse.capture.manager.insert_raw_event",
+        "penpal.capture.manager.insert_raw_event",
         lambda raw_event: inserts.append(raw_event),
     )
 
@@ -224,11 +224,11 @@ def test_browser_url_denylist_ignores_invalid_url_and_persists_event(monkeypatch
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
     monkeypatch.setattr(
-        "keypulse.capture.manager.insert_raw_event",
+        "penpal.capture.manager.insert_raw_event",
         lambda raw_event: captured.append(raw_event) or 1,
     )
-    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         normalize_browser_tab_event(
@@ -260,11 +260,11 @@ def test_metadata_json_parse_failure_is_preserved(monkeypatch):
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
     monkeypatch.setattr(
-        "keypulse.capture.manager.insert_raw_event",
+        "penpal.capture.manager.insert_raw_event",
         lambda raw_event: captured.append(raw_event) or 1,
     )
-    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(event)
 

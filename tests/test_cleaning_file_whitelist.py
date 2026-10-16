@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from keypulse.sources.cleaning.file_whitelist import is_blocked_sqlite
+from penpal.sources.cleaning.file_whitelist import is_blocked_sqlite
 
 
 def test_sqlite_whitelist_blocks_sensitive_files() -> None:

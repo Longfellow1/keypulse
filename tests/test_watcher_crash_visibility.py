@@ -6,9 +6,9 @@ import json
 import queue
 import time
 
-from keypulse.capabilities.builtin import _watcher_health
-from keypulse.capabilities.builtin._watcher_health import WatcherHealthCapability, WatcherHealthSpec
-from keypulse.capture.base import BaseWatcher, watcher_status
+from penpal.capabilities.builtin import _watcher_health
+from penpal.capabilities.builtin._watcher_health import WatcherHealthCapability, WatcherHealthSpec
+from penpal.capture.base import BaseWatcher, watcher_status
 
 SECRET = "secret window title 工资 1234"
 
@@ -72,7 +72,7 @@ def test_crashed_collector_does_not_stop_others_and_reports_warning(monkeypatch)
 
         runtime = {"watchers": {"flaky_test": flaky.health(), "steady_test": steady.health()}}
         monkeypatch.setattr(
-            "keypulse.capabilities.builtin._watcher_health.get_state",
+            "penpal.capabilities.builtin._watcher_health.get_state",
             lambda _key: json.dumps(runtime, ensure_ascii=False),
         )
         flaky_cap = WatcherHealthCapability(

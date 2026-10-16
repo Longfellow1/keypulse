@@ -5,10 +5,10 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.approval import ApprovalStore
-from keypulse.sources.discoverers import CandidateSource
-from keypulse.sources.plugins.leveldb_reader import LevelDbReaderSource
-from keypulse.sources.registry import get_source
+from penpal.sources.approval import ApprovalStore
+from penpal.sources.discoverers import CandidateSource
+from penpal.sources.plugins.leveldb_reader import LevelDbReaderSource
+from penpal.sources.registry import get_source
 
 
 def _approve_leveldb(store: ApprovalStore, path: Path, *, app_hint: str = "Cursor") -> str:
@@ -141,7 +141,7 @@ def test_read_prefers_strings_subprocess_when_available(monkeypatch, tmp_path: P
             stderr="",
         )
 
-    monkeypatch.setattr("keypulse.sources.plugins.leveldb_reader.subprocess.run", fake_run)
+    monkeypatch.setattr("penpal.sources.plugins.leveldb_reader.subprocess.run", fake_run)
 
     events = list(
         source.read(

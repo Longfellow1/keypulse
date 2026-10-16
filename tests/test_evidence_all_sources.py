@@ -10,24 +10,24 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.mcp import auth, tools
-from keypulse.sources import sink
-from keypulse.sources.plugins import spotlight as spotlight_mod
-from keypulse.sources.plugins.approved_sqlite import ApprovedSqliteSource
-from keypulse.sources.plugins.chrome_history import ChromeHistorySource
-from keypulse.sources.plugins.knowledgec import KnowledgeCSource
-from keypulse.sources.plugins.markdown_vault import MarkdownVaultSource
-from keypulse.sources.plugins.safari_history import SafariHistorySource
-from keypulse.sources.plugins.spotlight import SpotlightSource
-from keypulse.sources.plugins.zsh_history import ZshHistorySource
-from keypulse.sources.types import DataSourceInstance
-from keypulse.store import evidence_original
-from keypulse.store.buckets import BUCKETS
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v28 import migrate_v28
-from keypulse.store.migrations import MIGRATIONS, _apply_transactional
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.mcp import auth, tools
+from penpal.sources import sink
+from penpal.sources.plugins import spotlight as spotlight_mod
+from penpal.sources.plugins.approved_sqlite import ApprovedSqliteSource
+from penpal.sources.plugins.chrome_history import ChromeHistorySource
+from penpal.sources.plugins.knowledgec import KnowledgeCSource
+from penpal.sources.plugins.markdown_vault import MarkdownVaultSource
+from penpal.sources.plugins.safari_history import SafariHistorySource
+from penpal.sources.plugins.spotlight import SpotlightSource
+from penpal.sources.plugins.zsh_history import ZshHistorySource
+from penpal.sources.types import DataSourceInstance
+from penpal.store import evidence_original
+from penpal.store.buckets import BUCKETS
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v28 import migrate_v28
+from penpal.store.migrations import MIGRATIONS, _apply_transactional
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 from mcp_helpers import client_of
 
 SINCE = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -274,8 +274,8 @@ def test_knowledgec_not_resolvable(db):
 
 
 def test_approved_sqlite_not_resolvable(db):
-    from keypulse.sources.approval import ApprovalStore
-    from keypulse.sources.discoverers import CandidateSource
+    from penpal.sources.approval import ApprovalStore
+    from penpal.sources.discoverers import CandidateSource
 
     adb = db / "app.db"
     c = sqlite3.connect(adb)
@@ -360,7 +360,7 @@ def test_v28_backfills_from_stored_metadata_and_counts_the_rest(db, caplog):
                        (insert_before, "/keep/me.jsonl", 1, 1, "x"))
     get_conn().commit()
 
-    with caplog.at_level("INFO", logger="keypulse.store.migration_v28"):
+    with caplog.at_level("INFO", logger="penpal.store.migration_v28"):
         stats = migrate_v28(get_conn())
     get_conn().commit()
 

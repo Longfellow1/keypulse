@@ -4,9 +4,9 @@ import sqlite3
 import tempfile
 from datetime import datetime, timezone
 
-from keypulse.store.migrations import run_migrations
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.store.migrations import run_migrations
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 
 
 def test_migration_v13_column_exists():
@@ -32,7 +32,7 @@ def test_migration_v13_column_exists():
 def test_migration_v13_default_value():
     """New rows inserted via insert_raw_event default to user_present=1."""
     from pathlib import Path
-    from keypulse.store.db import init_db, close
+    from penpal.store.db import init_db, close
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = Path(f.name)

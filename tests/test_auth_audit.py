@@ -11,16 +11,16 @@ import pytest
 from click.testing import CliRunner
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from keypulse.config import Config
-from keypulse.mcp import audit, auth, tools
-from keypulse.mcp.cli import mcp_group
-from keypulse.mcp.server import build_server
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migrations import run_migrations
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.utils.logging import setup_logging
+from penpal.config import Config
+from penpal.mcp import audit, auth, tools
+from penpal.mcp.cli import mcp_group
+from penpal.mcp.server import build_server
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migrations import run_migrations
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.utils.logging import setup_logging
 
 WORD = "pelican"
 SECRET_QUERY = "needle-query-text-9137"  # must never appear in the audit table
@@ -32,8 +32,8 @@ def home(tmp_path, monkeypatch):
     h.mkdir()
     monkeypatch.setenv("HOME", str(h))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("KEYPULSE_TOKEN", raising=False)
-    monkeypatch.delenv("KEYPULSE_CLIENT", raising=False)
+    monkeypatch.delenv("PENPAL_TOKEN", raising=False)
+    monkeypatch.delenv("PENPAL_CLIENT", raising=False)
     buckets.reset_cache()
     init_db(Config.load().db_path_expanded)
     insert_raw_event(RawEvent(source="claude_code", event_type="semantic_event", ts_start="2026-03-01T09:00:00+00:00",
@@ -210,7 +210,7 @@ def test_token_shaped_client_id_is_refused_and_never_audited(home) -> None:
     with pytest.raises(ValueError):
         auth.create_grant("kp_looks-like-a-token")
     token = auth.create_grant("claude")
-    call(token, token)  # Host config mistake: token pasted into KEYPULSE_CLIENT
+    call(token, token)  # Host config mistake: token pasted into PENPAL_CLIENT
     assert last_audit()["client_id"] == "unknown"
     assert token not in json.dumps(audit_rows())
 
@@ -221,15 +221,15 @@ def test_cli_grant_rotate_revoke_audit(home) -> None:
     out = r.invoke(mcp_group, ["grant", "claude", "--buckets", "Work,Personal"])
     assert out.exit_code == 0, out.output
     token1 = next(w for w in out.output.split() if w.startswith("kp_"))
-    assert f"-e KEYPULSE_TOKEN={token1} -e KEYPULSE_CLIENT=claude --" in out.output
-    assert '"KEYPULSE_CLIENT": "claude"' in out.output
+    assert f"-e PENPAL_TOKEN={token1} -e PENPAL_CLIENT=claude --" in out.output
+    assert '"PENPAL_CLIENT": "claude"' in out.output
     assert auth.is_whitelisted("claude")
 
     rot = r.invoke(mcp_group, ["rotate", "claude"])
     assert rot.exit_code == 0, rot.output
     token2 = next(w for w in rot.output.split() if w.startswith("kp_"))
     assert token2 != token1 and token1 not in rot.output
-    assert "-e KEYPULSE_CLIENT=claude" in rot.output and '"KEYPULSE_CLIENT": "claude"' in rot.output
+    assert "-e PENPAL_CLIENT=claude" in rot.output and '"PENPAL_CLIENT": "claude"' in rot.output
     assert call(token1, "claude")["status"] == "permission_denied" and call(token2, "claude")["status"] == "ok"
 
     shown = r.invoke(mcp_group, ["audit", "--limit", "5"])
@@ -245,7 +245,7 @@ def test_cli_grant_rotate_revoke_audit(home) -> None:
 
 # ── migration ────────────────────────────────────────────────────────────────────────────────
 def test_v22_migration_backfills_whitelist_from_active_grants(tmp_path) -> None:
-    from keypulse.store import migrations
+    from penpal.store import migrations
 
     conn = sqlite3.connect(tmp_path / "m.db")
     conn.row_factory = sqlite3.Row
@@ -267,7 +267,7 @@ def test_v22_migration_backfills_whitelist_from_active_grants(tmp_path) -> None:
 
 # ── G5: credential exposure scan ─────────────────────────────────────────────────────────────
 def test_g5_no_plaintext_token_or_hash_in_db_wal_logs_audit_or_cli_output(home, tmp_path) -> None:
-    log_file = tmp_path / "keypulse.log"
+    log_file = tmp_path / "penpal.log"
     kp_logger = setup_logging(log_file, "DEBUG")
     handler = kp_logger.handlers[-1]
     mcp_logger = logging.getLogger("mcp")
@@ -305,7 +305,7 @@ def test_g5_no_plaintext_token_or_hash_in_db_wal_logs_audit_or_cli_output(home, 
         audit.record(client="claude", tool="search_context", allowed=True, reason_code="ok")
 
         # other CLI surfaces + diagnostics (runs under the isolated HOME, so it never touches real state)
-        from keypulse import cli as kp_cli
+        from penpal import cli as kp_cli
 
         outputs = {
             "mcp list": runner.invoke(mcp_group, ["list"]).output,
@@ -331,7 +331,7 @@ def test_g5_no_plaintext_token_or_hash_in_db_wal_logs_audit_or_cli_output(home, 
                 scanned.append(path.name)
                 for n in needles:
                     assert n not in data, f"G5 FAIL: plaintext token in {path}"
-        assert any(n.endswith(".db") for n in scanned) and "keypulse.log" in scanned
+        assert any(n.endswith(".db") for n in scanned) and "penpal.log" in scanned
 
         # 2) audit rows + non-print CLI outputs: no plaintext token, no hash
         haystacks = {"audit rows": json.dumps(audit_rows()), "log": log_file.read_text(encoding="utf-8"), **outputs}
@@ -355,11 +355,11 @@ def test_g5_no_plaintext_token_or_hash_in_db_wal_logs_audit_or_cli_output(home, 
 
 
 def test_keypulse_token_in_ingested_text_is_redacted() -> None:
-    # A host transcript can contain the `claude mcp add -e KEYPULSE_TOKEN=...` command (B6).
+    # A host transcript can contain the `claude mcp add -e PENPAL_TOKEN=...` command (B6).
     import secrets
 
-    from keypulse.privacy.desensitizer import redact_secrets
+    from penpal.privacy.desensitizer import redact_secrets
 
     token = "kp_" + secrets.token_urlsafe(32)
-    out = redact_secrets(f"claude mcp add keypulse -e KEYPULSE_TOKEN={token} -- keypulse mcp serve")
+    out = redact_secrets(f"claude mcp add penpal -e PENPAL_TOKEN={token} -- penpal mcp serve")
     assert token not in out and "[REDACTED]" in out

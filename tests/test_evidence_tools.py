@@ -11,12 +11,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from keypulse.mcp import audit, auth, tools
-from keypulse.store import evidence as evidence_mod
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.store.sync_repo import add_evidence
+from penpal.mcp import audit, auth, tools
+from penpal.store import evidence as evidence_mod
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.store.sync_repo import add_evidence
 from mcp_helpers import client_of, server_for
 from test_mainline_codex_git import _read_all, env  # noqa: F401  (fixture reused: claude + codex + repo)
 
@@ -309,12 +309,12 @@ def test_at15_denial_uniform_across_all_tools_and_audited(db) -> None:
 
 
 def build_server_for(token, client):
-    from keypulse.mcp.server import build_server
+    from penpal.mcp.server import build_server
     return build_server(token_provider=lambda: token, client_provider=lambda: client)
 
 
 def test_tool_descriptions_state_the_contract() -> None:
-    from keypulse.mcp.server import EVIDENCE_DESCRIPTION, INSTRUCTIONS, TIMELINE_DESCRIPTION
+    from penpal.mcp.server import EVIDENCE_DESCRIPTION, INSTRUCTIONS, TIMELINE_DESCRIPTION
     for must in ("evidence_id", "source_unavailable", "no longer accessible", "not_found"):
         assert must in EVIDENCE_DESCRIPTION
     for must in ("start", "end", "next_cursor", "oldest first", "ISO"):

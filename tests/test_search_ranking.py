@@ -6,12 +6,12 @@ from itertools import count
 
 import pytest
 
-from keypulse.mcp import auth
-from keypulse.search.engine import _is_rare_token, search_events
-from keypulse.store.db import close, init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.store.sync_repo import add_evidence
+from penpal.mcp import auth
+from penpal.search.engine import _is_rare_token, search_events
+from penpal.store.db import close, init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.store.sync_repo import add_evidence
 from mcp_helpers import search
 
 _n = count(1)
@@ -89,7 +89,7 @@ def test_collapse_cannot_see_or_count_out_of_scope_rows(db) -> None:
 
 def test_window_sessions_fold_on_app_and_title_not_duration(db) -> None:
     for h in (1, 2, 3):
-        _ins("", f"2026-05-01T0{h}:00:00+00:00", source="window", app="Cursor", title="ops.md - keypulse",
+        _ins("", f"2026-05-01T0{h}:00:00+00:00", source="window", app="Cursor", title="ops.md - penpal",
              event_type="window_focus_session")
     hits = search_events(["ops.md"], buckets=["Work"], event_type="window_focus_session")
     assert len(hits) == 1 and hits[0]["occurrences"] == 3

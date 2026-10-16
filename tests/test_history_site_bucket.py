@@ -12,19 +12,19 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.sources.sink import persist_semantic_event
-from keypulse.sources.types import SemanticEvent
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v27 import migrate_v27
-from keypulse.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
-from keypulse.store.models import Policy
-from keypulse.store.repository import insert_policy
+from penpal.sources.sink import persist_semantic_event
+from penpal.sources.types import SemanticEvent
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v27 import migrate_v27
+from penpal.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
+from penpal.store.models import Policy
+from penpal.store.repository import insert_policy
 
 
 @pytest.fixture(autouse=True)
 def _isolated_home(tmp_path, monkeypatch):
-    """Config.load() must never see a real ~/.keypulse/config.toml or a cwd config."""
+    """Config.load() must never see a real ~/.penpal/config.toml or a cwd config."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -160,7 +160,7 @@ def test_v27_is_atomic_with_version_stamp(tmp_path, monkeypatch):
     conn = _db_at_v26(tmp_path / "old.db")
     gh = _row(conn, "chrome_history", url="https://github.com/o/r")
     conn.commit()
-    import keypulse.store.migration_v27 as m
+    import penpal.store.migration_v27 as m
 
     real = m.resolve_bucket
     calls = {"n": 0}
@@ -176,7 +176,7 @@ def test_v27_is_atomic_with_version_stamp(tmp_path, monkeypatch):
     conn.commit()
     steps = list(MIGRATIONS)
     steps[26] = m.migrate_v27
-    monkeypatch.setattr("keypulse.store.migrations.MIGRATIONS", steps)
+    monkeypatch.setattr("penpal.store.migrations.MIGRATIONS", steps)
     with pytest.raises(RuntimeError):
         run_migrations(conn)
     assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 26

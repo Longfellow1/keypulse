@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from keypulse.capture.base import reconcile_orphan_lock
+from penpal.capture.base import reconcile_orphan_lock
 
 
 def test_reconcile_orphan_lock_happy_path_terminates_and_cleans(monkeypatch, tmp_path):
@@ -16,7 +16,7 @@ def test_reconcile_orphan_lock_happy_path_terminates_and_cleans(monkeypatch, tmp
             if alive_checks["count"] >= 2:
                 raise ProcessLookupError()
 
-    monkeypatch.setattr("keypulse.capture.base.os.kill", fake_kill)
+    monkeypatch.setattr("penpal.capture.base.os.kill", fake_kill)
 
     assert reconcile_orphan_lock(lock_path, current_pid=9999) is True
     assert not lock_path.exists()
@@ -30,7 +30,7 @@ def test_reconcile_orphan_lock_removes_stale_pid(monkeypatch, tmp_path):
     def fake_kill(pid: int, sig: int):
         raise ProcessLookupError()
 
-    monkeypatch.setattr("keypulse.capture.base.os.kill", fake_kill)
+    monkeypatch.setattr("penpal.capture.base.os.kill", fake_kill)
 
     assert reconcile_orphan_lock(lock_path, current_pid=7777) is True
     assert not lock_path.exists()

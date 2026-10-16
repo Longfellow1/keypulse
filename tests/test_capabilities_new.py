@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.capabilities.builtin._watcher_health import (
+from penpal.capabilities.builtin._watcher_health import (
     WATCHER_HEALTH_SPECS,
     WatcherHealthCapability,
     WatcherHealthSpec,
 )
-from keypulse.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
+from penpal.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
 
 
 # ---- WatcherHealthCapability ---------------------------------------------------
@@ -25,7 +25,7 @@ from keypulse.capabilities.builtin.screen_recording_permission import ScreenReco
 def test_watcher_health_capability_ok_when_no_runtime(monkeypatch):
     """Without capture_runtime state set, capability is OK (not a failure)."""
     monkeypatch.setattr(
-        "keypulse.capabilities.builtin._watcher_health.get_state",
+        "penpal.capabilities.builtin._watcher_health.get_state",
         lambda _key: "",
     )
     spec = WatcherHealthSpec(watcher_name="browser", capability_name="watcher_browser")
@@ -39,7 +39,7 @@ def test_watcher_health_capability_flags_gave_up(monkeypatch):
     """When watcher.health.gave_up=True, capability is failing."""
     runtime = {"watchers": {"browser": {"gave_up": True, "heartbeat_gave_up": False}}}
     monkeypatch.setattr(
-        "keypulse.capabilities.builtin._watcher_health.get_state",
+        "penpal.capabilities.builtin._watcher_health.get_state",
         lambda _key: json.dumps(runtime),
     )
     spec = WatcherHealthSpec(watcher_name="browser", capability_name="watcher_browser")
@@ -53,7 +53,7 @@ def test_watcher_health_capability_flags_heartbeat_dead(monkeypatch):
     """heartbeat_gave_up triggers a separate error code."""
     runtime = {"watchers": {"clipboard": {"gave_up": False, "heartbeat_gave_up": True}}}
     monkeypatch.setattr(
-        "keypulse.capabilities.builtin._watcher_health.get_state",
+        "penpal.capabilities.builtin._watcher_health.get_state",
         lambda _key: json.dumps(runtime),
     )
     spec = WatcherHealthSpec(watcher_name="clipboard", capability_name="clipboard_watcher")
@@ -79,7 +79,7 @@ def test_watcher_health_capability_flags_silent_timeout(monkeypatch):
         }
     }
     monkeypatch.setattr(
-        "keypulse.capabilities.builtin._watcher_health.get_state",
+        "penpal.capabilities.builtin._watcher_health.get_state",
         lambda _key: json.dumps(runtime),
     )
     spec = WatcherHealthSpec(

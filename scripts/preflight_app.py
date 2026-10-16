@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from keypulse.capabilities.registry import build_default_registry
+from penpal.capabilities.registry import build_default_registry
 
 
 def fail(msg: str) -> None:
@@ -20,14 +20,14 @@ def smoke_test_inner_binary(app_path: Path) -> str | None:
     bootstrap error (missing module, broken __boot__) triggers py2app's
     `report_error()` → `ensureGUI()` → `NSApplication.sharedApplication()`
     which aborts inside `_RegisterApplication` on macOS 26 (see
-    DiagnosticReports KeyPulse-2026-05-15-111349.ips). The crash dialog is
+    DiagnosticReports Penpal-2026-05-15-111349.ips). The crash dialog is
     never shown; the .app silently aborts. We catch this at install time
     by actually launching the inner binary with a known-good argv that
     exits 0 (so py2app stub never enters the error path).
     """
     macos_dir = app_path / "Contents" / "MacOS"
     candidates = [
-        macos_dir / "KeyPulse",
+        macos_dir / "Penpal",
         *(p for p in macos_dir.glob("*") if p.is_file() and p.name != "python"),
     ]
     inner = next((p for p in candidates if p.exists()), None)
@@ -57,7 +57,7 @@ def smoke_test_inner_binary(app_path: Path) -> str | None:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("usage: preflight_app.py <path/to/KeyPulse.app>", file=sys.stderr)
+        print("usage: preflight_app.py <path/to/Penpal.app>", file=sys.stderr)
         return 2
 
     app_path = Path(sys.argv[1]).resolve()

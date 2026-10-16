@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# KeyPulse — One-click installer for macOS
+# Penpal — One-click installer for macOS
 # Usage:
 #   bash install.sh                 # public Homebrew install
 #   bash install.sh --dev           # local editable install fallback
@@ -28,11 +28,11 @@ for arg in "$@"; do
     --no-brew)    DEV_MODE=true; NO_BREW=true ;;
     -h|--help)
       cat <<'HELP'
-KeyPulse installer
+Penpal installer
 
 Usage:
-  bash install.sh                 Install via Homebrew, then run keypulse install init
-  bash install.sh --dev           Developer fallback: editable install into ~/.keypulse/venv
+  bash install.sh                 Install via Homebrew, then run penpal install init
+  bash install.sh --dev           Developer fallback: editable install into ~/.penpal/venv
   bash install.sh --no-brew       Alias for --dev
   bash install.sh --dev --no-launchd
 HELP
@@ -43,15 +43,14 @@ HELP
 done
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-KEYPULSE_DIR="$HOME/.keypulse"
-VENV_DIR="$KEYPULSE_DIR/venv"
+PENPAL_DIR="$HOME/.penpal"
+VENV_DIR="$PENPAL_DIR/venv"
 BIN_DIR="$HOME/.local/bin"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.keypulse.daemon.plist"
-OBSIDIAN_PLIST="$HOME/Library/LaunchAgents/com.keypulse.obsidian-sync.plist"
-OBSIDIAN_HOURLY_PLIST="$HOME/Library/LaunchAgents/com.keypulse.obsidian-sync-hourly.plist"
-HEALTHCHECK_PLIST="$HOME/Library/LaunchAgents/com.keypulse.healthcheck.plist"
-CONFIG_FILE="$KEYPULSE_DIR/config.toml"
+source "$REPO_DIR/scripts/compat-wrapper.sh"
+LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.penpal.daemon.plist"
+HEALTHCHECK_PLIST="$HOME/Library/LaunchAgents/com.penpal.healthcheck.plist"
+CONFIG_FILE="$PENPAL_DIR/config.toml"
 
 # ── Detect shell profile ───────────────────────────────────────────────────────
 detect_profile() {
@@ -97,31 +96,44 @@ reload_launchd_plist() {
   fi
 }
 
-# Obsidian sync jobs were removed in V1 (legacy report chain lives in tag legacy-v0).
-# On install/upgrade, unload and delete their plists if present. Idempotent; errors ignored.
+# Old KeyPulse daemon/healthcheck labels and removed Obsidian jobs must be gone before install.
 remove_legacy_obsidian_plists() {
-  local path
-  for path in "$OBSIDIAN_PLIST" "$OBSIDIAN_HOURLY_PLIST"; do
-    [[ -e "$path" ]] || continue
-    launchctl bootout "gui/$(id -u)" "$path" 2>/dev/null || true
-    launchctl unload "$path" 2>/dev/null || true
-    rm -f "$path" 2>/dev/null || true
-    info "Removed legacy launchd job: $(basename "$path")"
+  local label path
+  for label in \
+    com.keypulse.daemon \
+    com.keypulse.healthcheck \
+    com.keypulse.hud \
+    com.keypulse.obsidian-sync \
+    com.keypulse.obsidian-sync-hourly; do
+    path="$HOME/Library/LaunchAgents/$label.plist"
+    if [[ -e "$path" ]]; then
+      launchctl bootout "gui/$(id -u)" "$path" 2>/dev/null || true
+      launchctl unload "$path" 2>/dev/null || true
+      rm -f "$path" 2>/dev/null || true
+      info "Removed legacy launchd job: $(basename "$path")"
+    else
+      launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+      launchctl remove "$label" 2>/dev/null || true
+    fi
+    if launchctl list 2>/dev/null | grep -qF "$label"; then
+      error "Legacy launchd service $label is still loaded; unload it before continuing."
+      return 1
+    fi
   done
   return 0
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-header "KeyPulse Installer"
+header "Penpal Installer"
 echo "  Repo:    $REPO_DIR"
 if [[ "$DEV_MODE" == true ]]; then
   echo "  Mode:    developer editable install"
   echo "  Venv:    $VENV_DIR"
-  echo "  Bin:     $BIN_DIR/keypulse"
+  echo "  Bin:     $BIN_DIR/penpal"
 else
   echo "  Mode:    Homebrew public install"
   echo "  Tap:     Longfellow1/keypulse"
-  echo "  Formula: keypulse"
+  echo "  Formula: penpal"
 fi
 echo "  Config:  $CONFIG_FILE"
 [[ "$DEV_MODE" == true ]] && warn "Dev mode enabled (editable install)"
@@ -136,44 +148,8 @@ if [[ "$(uname)" != "Darwin" ]]; then
 fi
 success "macOS $(sw_vers -productVersion)"
 
-remove_legacy_obsidian_plists
-
-if [[ "$DEV_MODE" != true ]]; then
-  header "2/4  Checking Homebrew"
-  if ! command -v brew &>/dev/null; then
-    error "Homebrew is required for the public installer."
-    echo "  Install Homebrew first:"
-    echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
-    exit 1
-  fi
-  success "Homebrew $(brew --version | head -n 1 | awk '{print $2}')"
-
-  header "3/4  Installing KeyPulse"
-  info "Tapping Longfellow1/keypulse…"
-  brew tap Longfellow1/keypulse
-  if brew list --formula keypulse &>/dev/null; then
-    info "KeyPulse already installed; upgrading…"
-    brew upgrade keypulse || brew reinstall keypulse
-  else
-    brew install keypulse
-  fi
-  success "keypulse executable installed"
-
-  header "4/4  Initializing runtime"
-  keypulse install init
-
-  echo ""
-  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-  echo -e "${GREEN}${BOLD}  KeyPulse installed successfully!${RESET}"
-  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-  echo ""
-  echo "  Next steps:"
-  echo -e "     ${CYAN}keypulse doctor${RESET}"
-  echo ""
-  exit 0
-fi
-
-# ── 2. Python 3.11+ ───────────────────────────────────────────────────────────
+# Select Python before unloading old jobs; migration itself must happen only after
+# the old KeyPulse launchd services have been booted out.
 PYTHON=""
 for candidate in python3.13 python3.12 python3.11 python3; do
   if command -v "$candidate" &>/dev/null; then
@@ -194,19 +170,89 @@ if [[ -z "$PYTHON" ]]; then
 fi
 success "Python $($PYTHON --version 2>&1 | awk '{print $2}')  ($PYTHON)"
 
+# Stop old services before get_data_dir() can rename their working directory.
+remove_legacy_obsidian_plists
+
+# The helper uses only the standard library and checkout code; it never copies on EXDEV.
+if ! PYTHONPATH="$REPO_DIR${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON" -c '
+import sys
+from penpal.utils.paths import DataDirMigrationError, get_data_dir
+try:
+    get_data_dir()
+except DataDirMigrationError as exc:
+    print(exc, file=sys.stderr)
+    sys.exit(1)
+'; then
+  error "Data directory migration failed; the installer stopped without merging or copying data."
+  exit 1
+fi
+
+if [[ "$DEV_MODE" != true ]]; then
+  header "2/4  Checking Homebrew"
+  if ! command -v brew &>/dev/null; then
+    error "Homebrew is required for the public installer."
+    echo "  Install Homebrew first:"
+    echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    exit 1
+  fi
+  success "Homebrew $(brew --version | head -n 1 | awk '{print $2}')"
+
+  header "3/4  Installing Penpal"
+  info "Tapping Longfellow1/keypulse…"
+  brew tap Longfellow1/keypulse
+  if brew list --formula penpal &>/dev/null; then
+    info "Penpal already installed; upgrading…"
+    brew upgrade penpal || brew reinstall penpal
+  else
+    brew install penpal
+  fi
+  success "penpal executable installed"
+
+  header "4/4  Initializing runtime"
+  penpal install init
+  mkdir -p "$BIN_DIR"
+  penpal_install_compat_wrapper "$BIN_DIR/keypulse"
+
+  echo ""
+  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo -e "${GREEN}${BOLD}  Penpal installed successfully!${RESET}"
+  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo ""
+  echo "  Next steps:"
+  echo -e "     ${CYAN}penpal doctor${RESET}"
+  echo ""
+  exit 0
+fi
+
 # ── 3. Create venv ────────────────────────────────────────────────────────────
 header "2/7  Setting up virtual environment"
 
-mkdir -p "$KEYPULSE_DIR"
+mkdir -p "$PENPAL_DIR"
 
 if [[ -d "$VENV_DIR" ]]; then
-  warn "Venv already exists at $VENV_DIR — reusing"
-  # Ensure it's usable
-  if [[ ! -x "$VENV_DIR/bin/python" ]]; then
-    warn "Venv looks broken, recreating…"
+  stale_shebang=false
+  for entrypoint in "$VENV_DIR/bin/penpal" "$VENV_DIR/bin/keypulse"; do
+    [[ -f "$entrypoint" ]] || continue
+    IFS= read -r shebang < "$entrypoint" || true
+    if [[ "$shebang" == *"$HOME/.keypulse/venv/"* ]]; then
+      stale_shebang=true
+      break
+    fi
+  done
+  if [[ "$stale_shebang" == true ]]; then
+    warn "Moved venv entry point still targets ~/.keypulse/venv; rebuilding it under ~/.penpal/venv."
     rm -rf "$VENV_DIR"
     "$PYTHON" -m venv "$VENV_DIR"
-    success "Venv recreated"
+    success "Venv rebuilt after data-directory migration"
+  else
+    warn "Venv already exists at $VENV_DIR — reusing"
+  # Ensure it's usable
+    if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+      warn "Venv looks broken, recreating…"
+      rm -rf "$VENV_DIR"
+      "$PYTHON" -m venv "$VENV_DIR"
+      success "Venv recreated"
+    fi
   fi
 else
   info "Creating venv…"
@@ -223,12 +269,12 @@ export PIP_USER=false
 # Upgrade pip silently (suppress version notice)
 "$VENV_PIP" install --upgrade pip --quiet 2>/dev/null || true
 
-# ── 4. Install KeyPulse ───────────────────────────────────────────────────────
-header "3/7  Installing KeyPulse"
+# ── 4. Install Penpal ───────────────────────────────────────────────────────
+header "3/7  Installing Penpal"
 
 info "Editable install from $REPO_DIR"
 "$VENV_PIP" install --no-user -e "$REPO_DIR" --quiet
-success "KeyPulse installed"
+success "Penpal installed"
 
 # Install macOS-specific pyobjc — try prebuilt wheel first, then source
 info "Installing macOS dependencies (pyobjc)…"
@@ -252,22 +298,23 @@ else
 fi
 
 # Quick sanity check
-"$VENV_DIR/bin/keypulse" --help &>/dev/null && \
+"$VENV_DIR/bin/penpal" --help &>/dev/null && \
   success "Binary works" || \
-  { error "keypulse binary not working after install"; exit 1; }
+  { error "penpal binary not working after install"; exit 1; }
 
 # ── 5. Wrapper + PATH ─────────────────────────────────────────────────────────
-header "4/7  Installing keypulse command"
+header "4/7  Installing penpal command"
 
 mkdir -p "$BIN_DIR"
 
 # Write wrapper that directly calls into venv (no activation needed)
-cat > "$BIN_DIR/keypulse" << WRAPPER
+cat > "$BIN_DIR/penpal" << WRAPPER
 #!/usr/bin/env bash
-exec "$VENV_DIR/bin/keypulse" "\$@"
+exec "$VENV_DIR/bin/penpal" "\$@"
 WRAPPER
-chmod +x "$BIN_DIR/keypulse"
-success "Wrapper written: $BIN_DIR/keypulse"
+chmod +x "$BIN_DIR/penpal"
+success "Wrapper written: $BIN_DIR/penpal"
+penpal_install_compat_wrapper "$BIN_DIR/keypulse"
 
 # Auto-add ~/.local/bin to shell profile if not already there
 PROFILE="$(detect_profile)"
@@ -280,7 +327,7 @@ else
     warn "~/.local/bin line already in $PROFILE (but not active yet)"
   else
     echo "" >> "$PROFILE"
-    echo "# Added by KeyPulse installer" >> "$PROFILE"
+    echo "# Added by Penpal installer" >> "$PROFILE"
     echo "$PATH_LINE" >> "$PROFILE"
     success "Added ~/.local/bin to $PROFILE"
   fi
@@ -312,11 +359,11 @@ else
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.keypulse.daemon</string>
+    <string>com.penpal.daemon</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>$BIN_DIR/keypulse</string>
+        <string>$BIN_DIR/penpal</string>
         <string>serve</string>
     </array>
 
@@ -330,10 +377,10 @@ else
     <integer>10</integer>
 
     <key>StandardOutPath</key>
-    <string>$KEYPULSE_DIR/launchd.log</string>
+    <string>$PENPAL_DIR/launchd.log</string>
 
     <key>StandardErrorPath</key>
-    <string>$KEYPULSE_DIR/launchd.err</string>
+    <string>$PENPAL_DIR/launchd.err</string>
 
     <key>EnvironmentVariables</key>
     <dict>
@@ -348,10 +395,10 @@ PLIST
   if [[ -f "$LAUNCHD_PLIST" ]]; then
     warn "launchd plist already exists — refreshing managed contents"
   fi
-  write_plist_if_needed "$LAUNCHD_PLIST" "$DAEMON_PLIST_CONTENT" "com.keypulse.daemon"
+  write_plist_if_needed "$LAUNCHD_PLIST" "$DAEMON_PLIST_CONTENT" "com.penpal.daemon"
 
   if launchctl load "$LAUNCHD_PLIST" 2>/dev/null; then
-    success "launchd plist installed — KeyPulse will start on login"
+    success "launchd plist installed — Penpal will start on login"
   else
     warn "launchd load failed (may need macOS 13+ syntax)"
     info "Trying bootstrap…"
@@ -374,11 +421,11 @@ else
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.keypulse.healthcheck</string>
+    <string>com.penpal.healthcheck</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>$BIN_DIR/keypulse</string>
+        <string>$BIN_DIR/penpal</string>
         <string>healthcheck</string>
     </array>
 
@@ -389,10 +436,10 @@ else
     <true/>
 
     <key>StandardOutPath</key>
-    <string>$KEYPULSE_DIR/healthcheck.log</string>
+    <string>$PENPAL_DIR/healthcheck.log</string>
 
     <key>StandardErrorPath</key>
-    <string>$KEYPULSE_DIR/healthcheck.err</string>
+    <string>$PENPAL_DIR/healthcheck.err</string>
 </dict>
 </plist>
 PLIST
@@ -400,7 +447,7 @@ PLIST
   if [[ -f "$HEALTHCHECK_PLIST" ]]; then
     warn "healthcheck plist already exists — refreshing managed contents"
   fi
-  write_plist_if_needed "$HEALTHCHECK_PLIST" "$HEALTHCHECK_PLIST_CONTENT" "com.keypulse.healthcheck"
+  write_plist_if_needed "$HEALTHCHECK_PLIST" "$HEALTHCHECK_PLIST_CONTENT" "com.penpal.healthcheck"
 
   if launchctl load "$HEALTHCHECK_PLIST" 2>/dev/null; then
     success "healthcheck plist installed — will run every 10 minutes"
@@ -416,7 +463,7 @@ fi
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo -e "${GREEN}${BOLD}  KeyPulse installed successfully!${RESET}"
+echo -e "${GREEN}${BOLD}  Penpal installed successfully!${RESET}"
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 echo "  Next steps:"
@@ -425,20 +472,20 @@ echo -e "  ${BOLD}1. Reload your shell (PATH update):${RESET}"
 echo -e "     ${CYAN}source $PROFILE${RESET}"
 echo ""
 echo -e "  ${BOLD}2. Check dependencies & permissions:${RESET}"
-echo -e "     ${CYAN}keypulse doctor${RESET}"
+echo -e "     ${CYAN}penpal doctor${RESET}"
 echo ""
 echo -e "  ${BOLD}3. Start monitoring:${RESET}"
-echo -e "     ${CYAN}keypulse start${RESET}"
+echo -e "     ${CYAN}penpal start${RESET}"
 echo ""
 echo -e "  ${BOLD}4. View today's activity:${RESET}"
-echo -e "     ${CYAN}keypulse timeline --today${RESET}"
+echo -e "     ${CYAN}penpal timeline --today${RESET}"
 echo ""
 echo "  Config:  $CONFIG_FILE"
-echo "  Data:    $KEYPULSE_DIR/keypulse.db"
-echo "  Logs:    $KEYPULSE_DIR/keypulse.log"
+echo "  Data:    $PENPAL_DIR/penpal.db"
+echo "  Logs:    $PENPAL_DIR/penpal.log"
 echo ""
 
 # Run doctor using full path (PATH may not be reloaded yet in this shell)
-echo -e "${BOLD}Running keypulse doctor…${RESET}"
+echo -e "${BOLD}Running penpal doctor…${RESET}"
 echo ""
-"$BIN_DIR/keypulse" doctor || true
+"$BIN_DIR/penpal" doctor || true

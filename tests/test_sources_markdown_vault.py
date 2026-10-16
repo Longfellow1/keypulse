@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from keypulse.sources.approval import ApprovalStore
-from keypulse.sources.discoverers import CandidateSource
-from keypulse.sources.plugins.markdown_vault import MarkdownVaultSource
-from keypulse.sources.types import DataSourceInstance
+from penpal.sources.approval import ApprovalStore
+from penpal.sources.discoverers import CandidateSource
+from penpal.sources.plugins.markdown_vault import MarkdownVaultSource
+from penpal.sources.types import DataSourceInstance
 
 
 def _approve_markdown(store: ApprovalStore, path: Path) -> str:
@@ -28,7 +28,7 @@ def test_markdown_vault_discover_and_read(tmp_path: Path) -> None:
     note = vault / "Projects" / "sprint-1.5.md"
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text(
-        "---\ntags: [daily, keypulse]\n---\n# Sprint 1.5 progress\nBody should not be read\n",
+        "---\ntags: [daily, penpal]\n---\n# Sprint 1.5 progress\nBody should not be read\n",
         encoding="utf-8",
     )
 

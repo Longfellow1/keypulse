@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from keypulse.sources.discoverers.sqlite import discover_sqlite_candidates
+from penpal.sources.discoverers.sqlite import discover_sqlite_candidates
 
 
 def _make_db(path: Path, table_names: list[str]) -> None:

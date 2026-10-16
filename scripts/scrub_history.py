@@ -19,16 +19,16 @@ from typing import Any
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from keypulse.capture.manager import (  # noqa: E402
+from penpal.capture.manager import (  # noqa: E402
     _TERMINAL_APPS,
     _browser_host_from_metadata,
     _host_matches_denylist,
     _is_terminal_app,
     _should_drop_browser_event,
 )
-from keypulse.config import Config  # noqa: E402
-from keypulse.privacy.desensitizer import desensitize, desensitize_json_value  # noqa: E402
-from keypulse.store.models import RawEvent  # noqa: E402
+from penpal.config import Config  # noqa: E402
+from penpal.privacy.desensitizer import desensitize, desensitize_json_value  # noqa: E402
+from penpal.store.models import RawEvent  # noqa: E402
 
 
 RULE1_BACKFILL_TAG = "terminal_app_backfill"
@@ -56,8 +56,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--db",
-        default="~/.keypulse/keypulse.db",
-        help="Path to the KeyPulse SQLite database (default: ~/.keypulse/keypulse.db)",
+        default="~/.penpal/penpal.db",
+        help="Path to the Penpal SQLite database (default: ~/.penpal/penpal.db)",
     )
     parser.add_argument(
         "--apply",

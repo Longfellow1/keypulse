@@ -1,4 +1,4 @@
-"""M2-3 (#63): rate_result + `keypulse feedback list/export`. Synthetic data only."""
+"""M2-3 (#63): rate_result + `penpal feedback list/export`. Synthetic data only."""
 from __future__ import annotations
 
 import asyncio
@@ -12,15 +12,15 @@ from mcp.shared.memory import create_connected_server_and_client_session
 
 from evals.realdata.questions import load_questions
 from mcp_helpers import search, server_for
-from keypulse.config import Config
-from keypulse.feedback_cli import draft_question, feedback_group
-from keypulse.mcp import auth, tools
-from keypulse.store import buckets, feedback
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migrations import run_migrations
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.store.sync_repo import add_evidence
+from penpal.config import Config
+from penpal.feedback_cli import draft_question, feedback_group
+from penpal.mcp import auth, tools
+from penpal.store import buckets, feedback
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migrations import run_migrations
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.store.sync_repo import add_evidence
 
 CANARY = "KPCANARYfeedbackprivate"
 OK = {"status": "ok", "recorded": True}

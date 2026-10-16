@@ -5,7 +5,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_DATA_DIR = Path("~/.keypulse/evals")
+DEFAULT_DATA_DIR = Path("~/.penpal/evals")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 

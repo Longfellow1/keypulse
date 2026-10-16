@@ -1,7 +1,7 @@
 [importlinter]
 include_external_packages = True
 root_packages =
-    keypulse
+    penpal
     AppKit
     Foundation
     Quartz
@@ -15,17 +15,17 @@ root_packages =
 name = macOS-only libs (pyobjc) only in capture / hud / startup layers
 type = forbidden
 source_modules =
-    keypulse.store
-    keypulse.search
-    keypulse.sources
-    keypulse.mcp
-    keypulse.privacy
-    keypulse.services
-    keypulse.observability
-    keypulse.utils
-    keypulse.health
-    keypulse.config
-    keypulse.capabilities
+    penpal.store
+    penpal.search
+    penpal.sources
+    penpal.mcp
+    penpal.privacy
+    penpal.services
+    penpal.observability
+    penpal.utils
+    penpal.health
+    penpal.config
+    penpal.capabilities
 forbidden_modules =
     AppKit
     Foundation
@@ -37,14 +37,14 @@ forbidden_modules =
     WebKit
 allow_indirect_imports = True
 ignore_imports =
-    keypulse.capabilities.builtin.accessibility_permission -> ApplicationServices
-    keypulse.capabilities.builtin.appkit_runtime -> AppKit
-    keypulse.capabilities.builtin.screen_recording_permission -> Quartz
+    penpal.capabilities.builtin.accessibility_permission -> ApplicationServices
+    penpal.capabilities.builtin.appkit_runtime -> AppKit
+    penpal.capabilities.builtin.screen_recording_permission -> Quartz
 
 [importlinter:contract:capture-below-capabilities]
 name = capture must not import capabilities (capabilities -> capture is one-way; no cycle)
 type = forbidden
 source_modules =
-    keypulse.capture
+    penpal.capture
 forbidden_modules =
-    keypulse.capabilities
+    penpal.capabilities

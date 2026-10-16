@@ -7,9 +7,9 @@ pytest.skip("OCR watcher disabled 2026-05-14", allow_module_level=True)
 
 import json
 
-from keypulse.capture.provider import OCRRequest
-from keypulse.capture.providers.vision_native import VisionNativeOCRProvider
-from keypulse.capture.watchers.ocr import OCRContext, OCRTriggerGate, OCRWatcher
+from penpal.capture.provider import OCRRequest
+from penpal.capture.providers.vision_native import VisionNativeOCRProvider
+from penpal.capture.watchers.ocr import OCRContext, OCRTriggerGate, OCRWatcher
 
 
 class StubUnavailableProvider:
@@ -69,7 +69,7 @@ class StubWorkingProvider:
 
     def recognize(self, request: OCRRequest):
         self.calls.append(request)
-        from keypulse.capture.provider import OCRResult
+        from penpal.capture.provider import OCRResult
 
         return OCRResult(
             provider=self.name,

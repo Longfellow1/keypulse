@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.sources.plugins.git_log import GitLogSource
-from keypulse.sources.types import DataSourceInstance
+from penpal.sources.plugins.git_log import GitLogSource
+from penpal.sources.types import DataSourceInstance
 
 
 def _run_git(args: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
@@ -22,7 +22,7 @@ def git_repo(tmp_path: Path) -> Path:
     repo.mkdir()
 
     _run_git(["init"], cwd=repo)
-    _run_git(["config", "user.name", "KeyPulse Tester"], cwd=repo)
+    _run_git(["config", "user.name", "Penpal Tester"], cwd=repo)
     _run_git(["config", "user.email", "tester@example.com"], cwd=repo)
 
     first = repo / "one.txt"
@@ -84,7 +84,7 @@ def test_read_parses_git_log_events(git_repo: Path) -> None:
     assert len(events) == 1
     event = events[0]
     assert event.source == "git_log"
-    assert event.actor == "KeyPulse Tester"
+    assert event.actor == "Penpal Tester"
     assert event.intent == "second commit"
     assert event.artifact.startswith("commit:")
     assert event.raw_ref.startswith("git:sample-repo:")
@@ -97,7 +97,7 @@ def test_read_includes_commit_body(tmp_path: Path) -> None:
     repo = tmp_path / "body-repo"
     repo.mkdir()
     _run_git(["init"], cwd=repo)
-    _run_git(["config", "user.name", "KeyPulse Tester"], cwd=repo)
+    _run_git(["config", "user.name", "Penpal Tester"], cwd=repo)
     _run_git(["config", "user.email", "tester@example.com"], cwd=repo)
 
     (repo / "a.txt").write_text("a", encoding="utf-8")
@@ -132,7 +132,7 @@ def test_read_returns_empty_when_git_call_fails(monkeypatch) -> None:
     def raise_error(*args, **kwargs):
         raise OSError("boom")
 
-    monkeypatch.setattr("keypulse.sources.plugins.git_log.subprocess.run", raise_error)
+    monkeypatch.setattr("penpal.sources.plugins.git_log.subprocess.run", raise_error)
 
     events = list(
         source.read(

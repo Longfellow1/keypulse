@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.store import migration_v20
-from keypulse.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
+from penpal.store import migration_v20
+from penpal.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
 
 
 def _build_v19_db(path: Path) -> None:
@@ -41,7 +41,7 @@ def test_schema_version_is_21() -> None:
 
 
 def test_v20_upgrades_v19_in_place_and_keeps_data(tmp_path: Path) -> None:
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _build_v19_db(db)
 
     conn = sqlite3.connect(db)
@@ -74,7 +74,7 @@ def test_v20_upgrades_v19_in_place_and_keeps_data(tmp_path: Path) -> None:
 
 
 def test_v20_unique_external_id_per_source(tmp_path: Path) -> None:
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     conn = sqlite3.connect(db)
     run_migrations(conn)
     ins = (
@@ -91,18 +91,18 @@ def test_v20_unique_external_id_per_source(tmp_path: Path) -> None:
 
 
 def test_v20_rerun_is_noop_and_makes_no_second_backup(tmp_path: Path) -> None:
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _build_v19_db(db)
     conn = sqlite3.connect(db)
     run_migrations(conn)
-    backups = sorted(tmp_path.glob("keypulse.db.*.bak"))
+    backups = sorted(tmp_path.glob("penpal.db.*.bak"))
     versions = conn.execute("SELECT count(*) FROM _schema_version").fetchone()[0]
     count = conn.execute("SELECT count(*) FROM raw_events").fetchone()[0]
 
     run_migrations(conn)
     run_migrations(sqlite3.connect(db))
 
-    assert sorted(tmp_path.glob("keypulse.db.*.bak")) == backups
+    assert sorted(tmp_path.glob("penpal.db.*.bak")) == backups
     assert conn.execute("SELECT count(*) FROM _schema_version").fetchone()[0] == versions
     assert conn.execute("SELECT count(*) FROM raw_events").fetchone()[0] == count
     conn.close()
@@ -110,7 +110,7 @@ def test_v20_rerun_is_noop_and_makes_no_second_backup(tmp_path: Path) -> None:
 
 def test_v20_is_idempotent_on_partially_applied_schema(tmp_path: Path) -> None:
     """A DB that already has some v20 objects (e.g. restored mid-way) still migrates."""
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _build_v19_db(db)
     conn = sqlite3.connect(db)
     conn.execute("ALTER TABLE raw_events ADD COLUMN bucket TEXT")
@@ -124,13 +124,13 @@ def test_v20_is_idempotent_on_partially_applied_schema(tmp_path: Path) -> None:
 
 
 def test_v20_backup_created_before_migrating_existing_db(tmp_path: Path) -> None:
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _build_v19_db(db)
     conn = sqlite3.connect(db)
     run_migrations(conn)
     conn.close()
 
-    backups = list(tmp_path.glob("keypulse.db.v19-*.bak"))
+    backups = list(tmp_path.glob("penpal.db.v19-*.bak"))
     assert len(backups) == 1
     b = sqlite3.connect(backups[0])
     assert _version(b) == 19  # pristine pre-migration copy
@@ -140,7 +140,7 @@ def test_v20_backup_created_before_migrating_existing_db(tmp_path: Path) -> None
 
 
 def test_fresh_db_gets_no_backup(tmp_path: Path) -> None:
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     conn = sqlite3.connect(db)
     run_migrations(conn)
     conn.close()
@@ -148,7 +148,7 @@ def test_fresh_db_gets_no_backup(tmp_path: Path) -> None:
 
 
 def test_v20_failure_rolls_back_to_v19_with_data_intact(tmp_path: Path, monkeypatch) -> None:
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _build_v19_db(db)
 
     def boom(_conn):

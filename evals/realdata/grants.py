@@ -10,15 +10,15 @@ def client_id(prefix: str, buckets: tuple[str, ...]) -> str:
 
 
 def write_fake_home(home: Path, db: Path) -> None:
-    """Fake HOME whose ~/.keypulse/config.toml points `keypulse mcp serve` at the DB copy."""
-    (home / ".keypulse").mkdir(parents=True, exist_ok=True)
-    (home / ".keypulse" / "config.toml").write_text(f'[app]\ndb_path = "{db}"\n', encoding="utf-8")
+    """Fake HOME whose ~/.penpal/config.toml points `penpal mcp serve` at the DB copy."""
+    (home / ".penpal").mkdir(parents=True, exist_ok=True)
+    (home / ".penpal" / "config.toml").write_text(f'[app]\ndb_path = "{db}"\n', encoding="utf-8")
 
 
 def make_grants(home: Path, db: Path, bucket_sets: set[tuple[str, ...]], prefix: str) -> dict[tuple[str, ...], tuple[str, str]]:
     """Return {buckets: (client_id, token)}; old grants of the same client ids are revoked first."""
-    from keypulse.mcp.auth import create_grant, revoke_grants
-    from keypulse.store.db import init_db
+    from penpal.mcp.auth import create_grant, revoke_grants
+    from penpal.store.db import init_db
 
     write_fake_home(home, db)
     real_home = os.environ.get("HOME")

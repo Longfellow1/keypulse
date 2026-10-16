@@ -1,7 +1,7 @@
-"""P0-11a (D26): KeyPulse's own capture streams are queryable by granted hosts.
+"""P0-11a (D26): Penpal's own capture streams are queryable by granted hosts.
 
 Covers the app category preset, bucket resolution order, write-time secret redaction, searchable
-set + snippets, keypulse evidence, the v23 backfill (idempotent, fast), and bucket scoping of
+set + snippets, penpal evidence, the v23 backfill (idempotent, fast), and bucket scoping of
 capture rows end to end. Synthetic data only.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.capture.normalizer import (
+from penpal.capture.normalizer import (
     normalize_ax_text_event,
     normalize_browser_url_event,
     normalize_clipboard_event,
@@ -21,18 +21,26 @@ from keypulse.capture.normalizer import (
     normalize_keyboard_chunk_event,
     normalize_window_event,
 )
-from keypulse.config import Config
-from keypulse.mcp import auth, tools
-from keypulse.store import buckets
-from keypulse.store.app_categories import classify_app
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v23 import migrate_v23
-from keypulse.store.migrations import MIGRATIONS, run_migrations
-from keypulse.store.models import Policy
-from keypulse.store.repository import insert_policy, insert_raw_event
+from penpal.config import Config
+from penpal.mcp import auth, tools
+from penpal.store import buckets
+from penpal.store.app_categories import classify_app
+from penpal.store.capture_events import is_keypulse_locator, keypulse_locator
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v23 import migrate_v23
+from penpal.store.migrations import MIGRATIONS, run_migrations
+from penpal.store.models import Policy
+from penpal.store.repository import insert_policy, insert_raw_event
 from mcp_helpers import search
 
 FAKE_KEY = "sk-test-FAKE0000000000000000000000"
+
+
+def test_new_capture_locator_uses_penpal_prefix_and_reads_legacy_prefix():
+    assert keypulse_locator(42) == "penpal://event/42"
+    assert is_keypulse_locator("penpal://event/42")
+    assert is_keypulse_locator("keypulse://event/42")
+    assert not is_keypulse_locator("other://event/42")
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +111,7 @@ def test_resolution_order(db, monkeypatch):
 
 
 def test_plugin_sources_and_unmapped_sources_are_unchanged(db):
-    mk = lambda src, n: insert_raw_event(__import__("keypulse.store.models", fromlist=["RawEvent"]).RawEvent(
+    mk = lambda src, n: insert_raw_event(__import__("penpal.store.models", fromlist=["RawEvent"]).RawEvent(
         source=src, event_type="semantic_event", ts_start=f"2026-03-01T09:0{n}:00+00:00", content_text="x", content_hash=f"p{n}", app_name="Cursor"))
     assert _bucket(mk("chrome_history", 1)) == "Personal"     # source default beats app preset
     assert _bucket(mk("mystery", 2)) is None                  # still never auto-placed
@@ -164,7 +172,7 @@ def test_capture_evidence_points_at_keypulse_and_is_always_available(db):
     hit = search(token, ["quarterly"])["results"][0]
     ev = tools.get_evidence(token, hit["evidence_id"], client="h")
     assert ev["status"] == "ok"
-    assert ev["evidence"]["locator"] == {"type": "keypulse", "event_id": f"evt_{ids['kb']}"}
+    assert ev["evidence"]["locator"] == {"type": "penpal", "event_id": f"evt_{ids['kb']}"}
     assert ev["evidence"]["available"] is True and "zebracorn roadmap" in ev["evidence"]["excerpt"]
     win = tools.get_evidence(token, search(token, ["Figma"])["results"][0]["evidence_id"], client="h")
     assert "Zebracorn mockups" in win["evidence"]["excerpt"] and "1h07m" in win["evidence"]["excerpt"]
@@ -239,7 +247,7 @@ def test_v23_backfill_classifies_redacts_adds_evidence_and_is_idempotent(tmp_pat
     assert [r[0] for r in fts('"zebracorn"')] == [rows["h1"]["id"], rows["h2"]["id"]]   # index follows the update
     assert fts('"FAKE0000"') == []
     ev = {r["event_id"]: r["locator"] for r in conn.execute("SELECT event_id, locator FROM evidence")}
-    assert ev[rows["h1"]["id"]] == f"keypulse://event/{rows['h1']['id']}"
+    assert ev[rows["h1"]["id"]] == f"penpal://event/{rows['h1']['id']}"
     assert rows["h5"]["id"] not in ev and rows["h6"]["id"] not in ev    # idle / plugin rows get none
 
     before = [tuple(r) for r in conn.execute("SELECT * FROM raw_events ORDER BY id")]

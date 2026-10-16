@@ -6,9 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from keypulse.store.db import close, init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.store.db import close, init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 
 
 def _script_path() -> Path:
@@ -40,7 +40,7 @@ def _read_metadata(db_path: Path) -> dict:
 
 
 def test_migrate_v0_entities_dry_run_does_not_write_and_reports_success_rate(tmp_path) -> None:
-    db_path = tmp_path / "keypulse.db"
+    db_path = tmp_path / "penpal.db"
     _insert_row_with_metadata(
         db_path,
         {

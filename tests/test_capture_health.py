@@ -1,4 +1,4 @@
-"""Headless failure visibility (D33): MCP `capture_health` field and `keypulse doctor` permissions.
+"""Headless failure visibility (D33): MCP `capture_health` field and `penpal doctor` permissions.
 
 Fakes only: temp DB and HOME, permission checks replaced by stubs (nothing here can prompt).
 """
@@ -6,19 +6,20 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-from keypulse import permissions
-from keypulse.capabilities.base import HealthState
-from keypulse.capabilities.store import save_states
-from keypulse.config import Config
-from keypulse.health import capture_health as ch
-from keypulse.mcp import server
-from keypulse.permissions import PermissionSpec, PermissionStatus
-from keypulse.store.db import init_db
-from keypulse.store.repository import set_state
+from penpal import permissions
+from penpal.capabilities.base import HealthState
+from penpal.capabilities.store import save_states
+from penpal.config import Config
+from penpal.health import capture_health as ch
+from penpal.mcp import server
+from penpal.permissions import PermissionSpec, PermissionStatus
+from penpal.store.db import init_db
+from penpal.store.repository import set_state
 
 
 @pytest.fixture(autouse=True)
@@ -75,7 +76,7 @@ def test_daemon_stopped_gives_code_and_sentence(monkeypatch):
     _heartbeat(35 * 60, running=False)
     health = server._result({"status": "ok"}).structuredContent["capture_health"]
     assert health["code"] == "daemon_not_running"
-    assert "35 min" in health["message"] and "keypulse start" in health["message"]
+    assert "35 min" in health["message"] and "penpal start" in health["message"]
 
 
 def test_no_heartbeat_ever_means_daemon_not_running():
@@ -96,7 +97,7 @@ def test_paused_gives_field():
     _heartbeat()
     set_state("status", "paused")
     health = ch.compute_capture_health(_cfg())
-    assert health["code"] == "capture_paused" and "keypulse resume" in health["message"]
+    assert health["code"] == "capture_paused" and "penpal resume" in health["message"]
 
 
 def test_disk_full_gives_field():
@@ -194,8 +195,10 @@ def test_report_daemon_denial_overrides_local_grant(monkeypatch):
 
 
 def _run_doctor(monkeypatch, tmp_path):
-    from keypulse import cli
+    from penpal import cli
 
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     cfg = _cfg(keyboard_chunk=True)
     monkeypatch.setattr(cli, "get_config", lambda: cfg)
     monkeypatch.setattr(cli, "get_config_path", lambda: tmp_path / "config.toml")
@@ -219,3 +222,15 @@ def test_doctor_permission_items_pass_when_granted(monkeypatch, tmp_path):
     result = _run_doctor(monkeypatch, tmp_path)
     perm_lines = [line for line in result.output.splitlines() if "权限" in line and ": " in line]
     assert perm_lines and all(line.endswith(": OK") for line in perm_lines)
+
+
+def test_doctor_reports_moved_venv_with_old_absolute_shebang(monkeypatch, tmp_path):
+    _fake_specs(monkeypatch, {"accessibility": G, "input_monitoring": G, "screen_recording": G})
+    entry = tmp_path / ".penpal" / "venv" / "bin" / "penpal"
+    entry.parent.mkdir(parents=True)
+    entry.write_text(f"#!{tmp_path}/.keypulse/venv/bin/python\n", encoding="utf-8")
+
+    result = _run_doctor(monkeypatch, tmp_path)
+
+    assert "开发 venv 入口仍指向旧目录: FAIL" in result.output
+    assert "run `bash install.sh --dev` to rebuild" in result.output

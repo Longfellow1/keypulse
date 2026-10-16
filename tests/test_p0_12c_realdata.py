@@ -10,27 +10,27 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.capture.hygiene import DROP, capture_gate, is_placeholder_text, is_system_overlay
-from keypulse.capture.manager import CaptureManager
-from keypulse.capture.normalizer import (
+from penpal.capture.hygiene import DROP, capture_gate, is_placeholder_text, is_system_overlay
+from penpal.capture.manager import CaptureManager
+from penpal.capture.normalizer import (
     normalize_ax_text_event,
     normalize_browser_url_event,
     normalize_clipboard_event,
     normalize_keyboard_chunk_event,
     normalize_window_event,
 )
-from keypulse.config import Config
-from keypulse.sources.plugins.zsh_history import ZshHistorySource, unmetafy
-from keypulse.sources.registry import read_all
-from keypulse.sources.types import DataSourceInstance
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v26 import migrate_v26
-from keypulse.store.migrations import MIGRATIONS, run_migrations
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.store.site_categories import browser_family, classify_host, classify_url, host_of, normalize_site_key
-from keypulse.utils.text_filters import strip_invisible
+from penpal.config import Config
+from penpal.sources.plugins.zsh_history import ZshHistorySource, unmetafy
+from penpal.sources.registry import read_all
+from penpal.sources.types import DataSourceInstance
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v26 import migrate_v26
+from penpal.store.migrations import MIGRATIONS, run_migrations
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.store.site_categories import browser_family, classify_host, classify_url, host_of, normalize_site_key
+from penpal.utils.text_filters import strip_invisible
 
 ZW = "​‌‍‎‏‪‮⁠⁤﻿­"
 
@@ -111,7 +111,7 @@ def test_zsh_first_sync_reads_whole_file_then_only_the_window(tmp_path):
 def test_zsh_resync_is_idempotent_through_the_registry(tmp_path):
     path = _zsh_history(tmp_path, [b": 1774855916:0;" + metafy("echo 你好".encode()) + b"\n"])
     init_db(tmp_path / "kp.db")
-    from keypulse.sources import registry
+    from penpal.sources import registry
 
     plugin = ZshHistorySource(history_path=path, use_cursor=True)
     registry._PLUGINS["zsh_history"] = plugin
@@ -323,8 +323,8 @@ def test_window_title_must_match_the_page_title_else_personal(tmp_path):
 
 
 def test_resolution_order_user_rule_over_config_over_preset(tmp_path, monkeypatch):
-    from keypulse.store.models import Policy
-    from keypulse.store.repository import insert_policy
+    from penpal.store.models import Policy
+    from penpal.store.repository import insert_policy
 
     cfg = tmp_path / "config.toml"
     cfg.write_text('[buckets.site_defaults]\n"github.com" = "Personal"\n"corp.example" = "Work"\n')
@@ -402,7 +402,7 @@ def _seed_v25(path: Path) -> tuple[sqlite3.Connection, dict]:
     for rid in ids.values():
         if conn.execute("SELECT source FROM raw_events WHERE id=?", (rid,)).fetchone()[0] != "claude_code":
             conn.execute("INSERT INTO evidence(event_id,locator,available,created_at) VALUES (?,?,1,'x')",
-                         (rid, f"keypulse://event/{rid}"))
+                         (rid, f"penpal://event/{rid}"))
     conn.execute("INSERT INTO sessions(id,started_at,ended_at,app_name,created_at,updated_at) VALUES "
                  "('s1','2026-03-02','2026-03-02','Setup Assistant','x','x'),('s2','2026-03-02','2026-03-02','Notes','x','x')")
     src = conn.execute("INSERT INTO sources(type,locator,created_at) VALUES ('zsh_history','/p/.zsh_history','x')").lastrowid
@@ -459,12 +459,12 @@ def test_v26_migration_end_to_end_and_idempotent(tmp_path):
 
 def test_v26_is_atomic_on_failure(tmp_path, monkeypatch):
     conn, ids = _seed_v25(tmp_path / "old.db")
-    import keypulse.store.migration_v26 as m
+    import penpal.store.migration_v26 as m
 
     monkeypatch.setattr(m, "_rebucket_by_site", lambda c: (_ for _ in ()).throw(RuntimeError("boom")))
     steps = list(MIGRATIONS)
     steps[-1] = m.migrate_v26  # the registered function calls the patched module global
-    monkeypatch.setattr("keypulse.store.migrations.MIGRATIONS", steps)
+    monkeypatch.setattr("penpal.store.migrations.MIGRATIONS", steps)
     with pytest.raises(RuntimeError):
         run_migrations(conn)
     assert conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()[0] == 25

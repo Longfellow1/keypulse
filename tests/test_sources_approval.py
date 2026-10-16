@@ -6,10 +6,10 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from keypulse.sources import discover as discover_module
-from keypulse.sources.approval import ApprovalStore
-from keypulse.sources.discover import sources_group
-from keypulse.sources.discoverers import CandidateSource
+from penpal.sources import discover as discover_module
+from penpal.sources.approval import ApprovalStore
+from penpal.sources.discover import sources_group
+from penpal.sources.discoverers import CandidateSource
 
 
 def _candidate(path: str, *, app_hint: str = "App", confidence: str = "high") -> CandidateSource:
