@@ -26,7 +26,7 @@
 ### 节点 = anchor 主题档案
 - 物理形态：`<obsidian-vault>/anchors/<slug>.md`
 - 每个主题一个文件，跨周延续的同主题对应同一文件
-- 文件内容由 KeyPulse 自动渲染，是 read-only sink（用户编辑会被覆盖）
+- 文件内容由 Penpal 自动渲染，是 read-only sink（用户编辑会被覆盖）
 
 ### 边 = 两种关系
 - **派生**（继承/分支）：B 主题从 A 主题分出来 → 写在 B 档案的 frontmatter 顶部独立字段，显眼
@@ -35,7 +35,7 @@
 **为什么这么分**：派生少（一主题最多 1-2 个父级）→ Obsidian 关系图主干清晰；引用多但属于细节 → 不污染主图。
 
 ### Single Source of Truth
-- **Model**（KeyPulse 内部数据，不依赖 Obsidian）：`~/.keypulse/anchors.json`（从现有 `weekly-anchor.json` 升级扩展）
+- **Model**（Penpal 内部数据，不依赖 Obsidian）：`~/.penpal/anchors.json`（从现有 `weekly-anchor.json` 升级扩展）
 - **View**（可重建）：`anchors/*.md` 由 model 渲染。误删可重生成。未来换 sink 不动 model。
 
 ---
@@ -73,7 +73,7 @@ derived_from: [[v2-stable]]
    - 在 Timeline 段落末尾追加：`- {date} {summary} → [[{date}]]`
    - 已存在同 date 行 → 覆盖（处理重跑）
    - 更新 frontmatter `last_active = date`
-2. 更新 `~/.keypulse/anchors.json` 对应的 `timeline_entries[]`
+2. 更新 `~/.penpal/anchors.json` 对应的 `timeline_entries[]`
 
 ### weekly orchestrator 跑完后
 1. **派生边检测**：LLM 看本周新出现（first_seen 在本周）的 anchor，判断是否从某老 anchor 分支出来
@@ -90,13 +90,13 @@ derived_from: [[v2-stable]]
 
 | 砍什么 | 在哪 | 谁写的 |
 |---|---|---|
-| `events/` 文件夹（一天几百个事件卡 .md）| `~/.keypulse/events/{date}/*.md` | `exporter.py:_build_event_card()` + `write_obsidian_bundle()` |
-| `topics/` 文件夹（旧版主题聚合）| `~/.keypulse/topics/*.md` | `daily_orchestrator.py:_upsert_topic()` |
+| `events/` 文件夹（一天几百个事件卡 .md）| `~/.penpal/events/{date}/*.md` | `exporter.py:_build_event_card()` + `write_obsidian_bundle()` |
+| `topics/` 文件夹（旧版主题聚合）| `~/.penpal/topics/*.md` | `daily_orchestrator.py:_upsert_topic()` |
 | 日报里"今天的事件卡"区块 | daily markdown 渲染模板 | exporter / daily_summary 渲染逻辑 |
 | events / topics 之间的写出 + 互引代码路径 | exporter.py / daily_orchestrator.py | — |
 
 **M4 一次性清理脚本**：
-- `rm -rf ~/.keypulse/events/ ~/.keypulse/topics/`
+- `rm -rf ~/.penpal/events/ ~/.penpal/topics/`
 - 改日报模板移除事件卡区块
 - 跑近两周历史数据回填新的 anchors/，肉眼验收
 

@@ -4,11 +4,11 @@ import pytest
 
 import sqlite3
 
-from keypulse.capture.manager import CaptureManager, _derive_speaker
-from keypulse.config import Config
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migrations import run_migrations
-from keypulse.store.models import RawEvent
+from penpal.capture.manager import CaptureManager, _derive_speaker
+from penpal.config import Config
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migrations import run_migrations
+from penpal.store.models import RawEvent
 
 
 @pytest.mark.parametrize(
@@ -33,14 +33,14 @@ def test_derive_speaker_by_source(source: str, expected: str) -> None:
 
 def test_process_event_persists_derived_speaker(tmp_path, monkeypatch) -> None:
     close()
-    db_path = tmp_path / "keypulse.db"
+    db_path = tmp_path / "penpal.db"
     init_db(db_path)
 
     config = Config.model_validate({"app": {"db_path": str(db_path)}})
     manager = CaptureManager(config)
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         RawEvent(
@@ -64,7 +64,7 @@ def test_process_event_persists_derived_speaker(tmp_path, monkeypatch) -> None:
 
 
 def test_run_migrations_is_idempotent_and_adds_speaker_index(tmp_path) -> None:
-    db_path = tmp_path / "keypulse.db"
+    db_path = tmp_path / "penpal.db"
     init_db(db_path)
 
     conn = sqlite3.connect(db_path)
@@ -81,7 +81,7 @@ def test_run_migrations_is_idempotent_and_adds_speaker_index(tmp_path) -> None:
 
 
 def test_legacy_raw_event_rows_default_speaker_to_system_after_migration(tmp_path) -> None:
-    db_path = tmp_path / "legacy-keypulse.db"
+    db_path = tmp_path / "legacy-penpal.db"
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(

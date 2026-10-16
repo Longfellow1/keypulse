@@ -4,7 +4,7 @@ import sys
 import pytest
 from unittest.mock import patch, MagicMock
 
-from keypulse.capture.user_presence import idle_seconds, is_user_present
+from penpal.capture.user_presence import idle_seconds, is_user_present
 
 
 class TestIdleSeconds:
@@ -87,49 +87,49 @@ class TestIsUserPresent:
 
     def test_user_present_below_threshold(self):
         """Return True when idle < threshold."""
-        with patch("keypulse.capture.user_presence.idle_seconds") as mock_idle:
+        with patch("penpal.capture.user_presence.idle_seconds") as mock_idle:
             mock_idle.return_value = 100.0
             result = is_user_present(threshold_seconds=200.0)
             assert result is True
 
     def test_user_not_present_above_threshold(self):
         """Return False when idle >= threshold."""
-        with patch("keypulse.capture.user_presence.idle_seconds") as mock_idle:
+        with patch("penpal.capture.user_presence.idle_seconds") as mock_idle:
             mock_idle.return_value = 400.0
             result = is_user_present(threshold_seconds=300.0)
             assert result is False
 
     def test_user_present_default_threshold(self):
         """Test with default 300-second threshold."""
-        with patch("keypulse.capture.user_presence.idle_seconds") as mock_idle:
+        with patch("penpal.capture.user_presence.idle_seconds") as mock_idle:
             mock_idle.return_value = 100.0
             result = is_user_present()
             assert result is True
 
     def test_user_not_present_default_threshold(self):
         """Test False with default 300-second threshold."""
-        with patch("keypulse.capture.user_presence.idle_seconds") as mock_idle:
+        with patch("penpal.capture.user_presence.idle_seconds") as mock_idle:
             mock_idle.return_value = 400.0
             result = is_user_present()
             assert result is False
 
     def test_user_present_idle_none(self):
         """Return True when idle_seconds returns None (fail-open)."""
-        with patch("keypulse.capture.user_presence.idle_seconds") as mock_idle:
+        with patch("penpal.capture.user_presence.idle_seconds") as mock_idle:
             mock_idle.return_value = None
             result = is_user_present(threshold_seconds=0.0)
             assert result is True
 
     def test_user_present_zero_threshold(self):
         """Test with zero threshold (any idle = absent)."""
-        with patch("keypulse.capture.user_presence.idle_seconds") as mock_idle:
+        with patch("penpal.capture.user_presence.idle_seconds") as mock_idle:
             mock_idle.return_value = 0.1
             result = is_user_present(threshold_seconds=0.0)
             assert result is False
 
     def test_user_present_boundary(self):
         """Test exact threshold boundary."""
-        with patch("keypulse.capture.user_presence.idle_seconds") as mock_idle:
+        with patch("penpal.capture.user_presence.idle_seconds") as mock_idle:
             mock_idle.return_value = 300.0
             result = is_user_present(threshold_seconds=300.0)
             assert result is False  # >= threshold means absent

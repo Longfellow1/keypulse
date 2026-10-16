@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 
-from keypulse.sources.scheduler import SourcesScheduler
-from keypulse.sources.types import DataSource, DataSourceInstance
+from penpal.sources.scheduler import SourcesScheduler
+from penpal.sources.types import DataSource, DataSourceInstance
 
 
 class _FakeSource(DataSource):
@@ -183,7 +183,7 @@ def test_scheduler_isolates_plugin_exceptions(monkeypatch) -> None:
         event_source_factory=lambda: fake_event_source,
     )
     monkeypatch.setattr(
-        "keypulse.sources.scheduler.LOGGER.exception",
+        "penpal.sources.scheduler.LOGGER.exception",
         lambda msg, *args, **kwargs: logged_errors.append(msg % args if args else str(msg)),
     )
 

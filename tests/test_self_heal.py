@@ -3,10 +3,10 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
-from keypulse.health import self_heal
-from keypulse.store.db import init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.health import self_heal
+from penpal.store.db import init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 
 
 def _ok_step(name: str):
@@ -15,7 +15,7 @@ def _ok_step(name: str):
 
 def test_self_heal_happy_path(monkeypatch, tmp_path):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    init_db(tmp_path / ".penpal" / "penpal.db")
     monkeypatch.setattr(self_heal, "step_reconcile_locks", lambda **kwargs: _ok_step("step1_locks"))
     monkeypatch.setattr(self_heal, "step_refresh_capabilities", lambda **kwargs: _ok_step("step2_capabilities"))
     monkeypatch.setattr(self_heal, "step_restart_daemon", lambda **kwargs: _ok_step("step3_restart"))
@@ -36,7 +36,7 @@ def test_self_heal_happy_path(monkeypatch, tmp_path):
 
 def test_self_heal_aborts_on_step4_timeout(monkeypatch, tmp_path):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    init_db(tmp_path / ".penpal" / "penpal.db")
     monkeypatch.setattr(self_heal, "step_reconcile_locks", lambda **kwargs: _ok_step("step1_locks"))
     monkeypatch.setattr(self_heal, "step_refresh_capabilities", lambda **kwargs: _ok_step("step2_capabilities"))
     monkeypatch.setattr(self_heal, "step_restart_daemon", lambda **kwargs: _ok_step("step3_restart"))
@@ -59,7 +59,7 @@ def test_self_heal_aborts_on_step4_timeout(monkeypatch, tmp_path):
 
 def test_self_heal_step5_core_not_recovered(monkeypatch, tmp_path):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    init_db(tmp_path / ".penpal" / "penpal.db")
     monkeypatch.setattr(self_heal, "step_reconcile_locks", lambda **kwargs: _ok_step("step1_locks"))
     monkeypatch.setattr(self_heal, "step_refresh_capabilities", lambda **kwargs: _ok_step("step2_capabilities"))
     monkeypatch.setattr(self_heal, "step_restart_daemon", lambda **kwargs: _ok_step("step3_restart"))
@@ -86,7 +86,7 @@ def test_kickstart_ts_uses_utc_so_core_emit_count_finds_new_rows(monkeypatch, tm
     导致 step_wait_core_emit 永远 0 → self_heal 反复 SIGTERM daemon。
     见 docs/incident-2026-05-17-selfheal-loop.md 复发。"""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    init_db(tmp_path / ".keypulse" / "keypulse.db")
+    init_db(tmp_path / ".penpal" / "penpal.db")
 
     kickstart_ts = datetime.now(timezone.utc).isoformat()
     time.sleep(0.01)

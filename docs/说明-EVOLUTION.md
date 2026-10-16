@@ -1,4 +1,4 @@
-# KeyPulse 演进时间线
+# Penpal 演进时间线
 
 > 持久战演进记录。每个 milestone 完成后在「已完成」最上面追加一行。
 >
@@ -31,7 +31,7 @@ macOS 上的「产出叙事」工具：把一天/一周的真实工作产出，�
 ## 已完成（倒序，最新在上）
 
 ### 2026-05-15 — N5 py2app + macOS 26 GUI abort 防线
-- **根因**：py2app 0.28.10 stub 的 `report_error()` 走 `ensureGUI()` → `NSApplication.sharedApplication()` → macOS 26 (Tahoe) 的 `_RegisterApplication` 在 dispatch_once callout 里 abort。任何 bootstrap 错误（缺包、坏 boot）都会被这条 GUI 弹框路径放大成静默 abort，crash log 在 `KeyPulse-2026-05-15-111349.ips`。
+- **根因**：py2app 0.28.10 stub 的 `report_error()` 走 `ensureGUI()` → `NSApplication.sharedApplication()` → macOS 26 (Tahoe) 的 `_RegisterApplication` 在 dispatch_once callout 里 abort。任何 bootstrap 错误（缺包、坏 boot）都会被这条 GUI 弹框路径放大成静默 abort，crash log 在 `Penpal-2026-05-15-111349.ips`。
 - **fix**：preflight 加 `smoke_test_inner_binary()` —— `make install` 阶段实跑 `inner --help`，exit≠0 或 stdout 缺 `Usage:` 都拦下并打印 stderr 尾 8 行
 - 真链路：healthy bundle preflight OK；负向 fake bundle 抛 `ImportError` 被 smoke 抓到
 - 留作护栏：M0 locale fix 只覆盖一种 bootstrap 失败模式；smoke test 是通用兜底
@@ -46,7 +46,7 @@ macOS 上的「产出叙事」工具：把一天/一周的真实工作产出，�
 
 ### 2026-05-15 — M0-M3 产品健康度收口
 触发：5/14 silent fail 事故（`UnicodeDecodeError` 让日报缺席 24h，HUD 不报错）。
-- **M0** py2app locale 修复（`_force_utf8_locale()` 在所有 keypulse import 之前）
+- **M0** py2app locale 修复（`_force_utf8_locale()` 在所有 penpal import 之前）
 - **M1** RunRecorder 交付账本 + watcher 三级分级（core/standard/optional）+ emit/beat 分离
 - **M2** 三边界收口（file IO encoding sweep / LLMErrorKind 分类 / artifact write sha256 verify）+ `env -i` smoke 复跑 5/14
 - **M3** 产品级巡检 `health/{alerts,product_delivery,self_heal}.py` + HUD 业务状态优先 + `self-heal --dry-run` 6 步序列
@@ -72,14 +72,14 @@ macOS 上的「产出叙事」工具：把一天/一周的真实工作产出，�
 - 状态机收口到 state repo 单一权威 + HUD 异常入口闭环
 
 ### 2026-05-02~04 — 配置链路 + HUD WebKit
-- 顶层 `keypulse setup` 入口 + daemon 检测未配置后端
+- 顶层 `penpal setup` 入口 + daemon 检测未配置后端
 - HUD 改 WKWebView 渲染 + 视觉对齐 v1 设计稿
 - 设置上手文档 `docs/setup-onboarding.md`
 
 ### 2026-04-27~30 — Plan A 主体（S0-S5a）
 - **S0+S1** 数据源接入器框架（DataSource 接口 + registry + git_log / claude_code / codex_cli / chrome_history / safari_history / zsh_history 等首批 plugin）
 - **S1.5** 金矿矩阵 + LevelDB/JSON/markdown_vault discoverers + 字段启发式
-- **S2** 跨源关联 v1（entity_extractor + thing_clusterer + thing_renderer + `keypulse pipeline things` CLI）
+- **S2** 跨源关联 v1（entity_extractor + thing_clusterer + thing_renderer + `penpal pipeline things` CLI）
 - **S2.5** 噪声清洗 L0-L4（path_filter / file_whitelist / content_quality / dedup）
 - **S2.9** 升维到 LLM Outline 聚类，解决 S2 揭示的 94% 单事件 thing 问题
 - **S3a** KnowledgeC.db plugin（macOS 系统级活动）
@@ -95,8 +95,8 @@ macOS 上的「产出叙事」工具：把一天/一周的真实工作产出，�
 | 2026-04-28 | 跨源关联是 v1 算法核心（v0 动机分类天花板） | `docs/data-source-architecture.md` §1.2 |
 | 2026-04-28 | 接入器框架抽象（DataSource 接口），禁硬编码用户名/路径 | `docs/data-source-architecture.md` §1.3 |
 | 2026-04-28 | discover 扫 schema 不读 row，read 由 adapter 主动 query | `docs/data-source-architecture.md` §1.4 L2 |
-| 2026-05-14 | OCR watcher 下线（注释保留可回退） | `keypulse/capture/manager.py` 注释 |
-| 2026-05-14 | beat（线程心跳）与 emit（真事件）必须字段分离 | `keypulse/capture/base.py` `_last_emit_at_mono` vs `_last_beat_at_mono` 注释 |
+| 2026-05-14 | OCR watcher 下线（注释保留可回退） | `penpal/capture/manager.py` 注释 |
+| 2026-05-14 | beat（线程心跳）与 emit（真事件）必须字段分离 | `penpal/capture/base.py` `_last_emit_at_mono` vs `_last_beat_at_mono` 注释 |
 | 2026-05-15 | HUD 顶状态走业务交付状态，capability 降级到二级 hint | M3 `hud/summary.py` |
 | 2026-05-15 | 通用方案禁止按 app 排序，先想"装新 app 零代码"再设计 | 用户产品原则 |
 | 2026-05-15 | py2app + macOS 26 任何 bootstrap 错误都会经 GUI 弹框路径变成静默 abort，preflight 必须实跑 inner --help 兜底 | `scripts/preflight_app.py` `smoke_test_inner_binary` |

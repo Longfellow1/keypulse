@@ -9,21 +9,21 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from keypulse.capture.policy import ALLOW, DENY, PolicyEngine
-from keypulse.config import Config
+from penpal.capture.policy import ALLOW, DENY, PolicyEngine
+from penpal.config import Config
 from mcp_helpers import search, server_for
-from keypulse.mcp import auth, tools
-from keypulse.mcp.cli import mcp_group
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migrations import MIGRATIONS, run_migrations
-from keypulse.store.models import Policy, RawEvent
-from keypulse.store.repository import insert_policy, insert_raw_event, seed_policies_from_config
+from penpal.mcp import auth, tools
+from penpal.mcp.cli import mcp_group
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migrations import MIGRATIONS, run_migrations
+from penpal.store.models import Policy, RawEvent
+from penpal.store.repository import insert_policy, insert_raw_event, seed_policies_from_config
 
 
 @pytest.fixture(autouse=True)
 def _isolated_home(tmp_path, monkeypatch):
-    """Config.load() must never see a real ~/.keypulse/config.toml or a cwd config."""
+    """Config.load() must never see a real ~/.penpal/config.toml or a cwd config."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -115,7 +115,7 @@ def test_reapply_buckets_after_rule_change(db) -> None:
 
 
 def test_rules_cli_adds_bucket_rule(db, monkeypatch) -> None:
-    from keypulse import cli
+    from penpal import cli
 
     monkeypatch.setattr(cli, "get_config", lambda: Config())
     monkeypatch.setattr(cli, "require_db", lambda cfg: None)
@@ -153,7 +153,7 @@ def test_v21_adds_grant_scope_backfills_buckets_and_is_idempotent(tmp_path: Path
     got = {r["source"]: r["bucket"] for r in conn.execute("SELECT source, bucket FROM raw_events")}
     assert got == {"chrome_history": "Personal", "claude_code": "Work", "mystery": None, "wechat": "Private"}
 
-    from keypulse.store.migration_v21 import migrate_v21
+    from penpal.store.migration_v21 import migrate_v21
 
     migrate_v21(conn)  # rerun is harmless
     assert conn.execute("SELECT count(*) FROM raw_events").fetchone()[0] == 4

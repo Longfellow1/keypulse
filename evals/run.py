@@ -5,7 +5,7 @@
     python -m evals.run --write-baseline evals/baseline.json          # owner-approved baseline update
 
 Flow: synthetic fixtures -> temp dir (fake HOME) -> real source plugins -> registry.read_all
-(the same ingest path as ``keypulse sources sync``) -> temp DB v20 -> ``search_context`` called
+(the same ingest path as ``penpal sources sync``) -> temp DB v20 -> ``search_context`` called
 through the MCP server layer with a real grant. Nothing outside the temp dir is read or written.
 
 Metrics
@@ -69,9 +69,9 @@ class _IsolatedEnv:
         self.root = root
 
     def __enter__(self) -> "_IsolatedEnv":
-        from keypulse.sources import registry
-        from keypulse.sources.cleaning.config import CleaningConfig
-        from keypulse.store.db import init_db
+        from penpal.sources import registry
+        from penpal.sources.cleaning.config import CleaningConfig
+        from penpal.store.db import init_db
 
         from evals.fixtures import build_plugins
 
@@ -90,7 +90,7 @@ class _IsolatedEnv:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        from keypulse.store.db import close
+        from penpal.store.db import close
 
         close()
         self._registry._PLUGINS.clear()
@@ -103,8 +103,8 @@ class _IsolatedEnv:
 
 
 def _ingest() -> int:
-    from keypulse.sources import registry
-    from keypulse.sources.sink import flush_named_entity_backfill
+    from penpal.sources import registry
+    from penpal.sources.sink import flush_named_entity_backfill
 
     now = datetime.now(timezone.utc)
     n = sum(1 for _ in registry.read_all(datetime(2000, 1, 1, tzinfo=timezone.utc), now))
@@ -114,8 +114,8 @@ def _ingest() -> int:
 
 def _ingest_capture() -> int:
     """Insert the capture fixtures through the capture repository path (normalizer -> insert_raw_event)."""
-    from keypulse.capture import normalizer as n
-    from keypulse.store.repository import insert_raw_event
+    from penpal.capture import normalizer as n
+    from penpal.store.repository import insert_raw_event
 
     count = 0
     for ev in CAPTURE_EVENTS:
@@ -139,7 +139,7 @@ def _ingest_capture() -> int:
 
 def _resolve_fixture_rows() -> tuple[dict[int, str], dict[str, int], dict[str, dict[str, Any]]]:
     """Map DB rows to fixture ids by (source, occurred_at). Returns (row->fx, fx->row, observed)."""
-    from keypulse.store.db import get_conn
+    from penpal.store.db import get_conn
 
     by_key = {(e.source, datetime.fromisoformat(e.ts).replace(tzinfo=timezone.utc).isoformat()): e for e in (*EVENTS, *CAPTURE_EVENTS)}
     row_to_fx: dict[int, str] = {}
@@ -158,7 +158,7 @@ def _call_all(tokens: dict[str, str], questions: list[dict[str, Any]]) -> dict[s
     """`tokens` maps question id -> the token to call with (one Host per distinct token)."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    from keypulse.mcp.server import build_server
+    from penpal.mcp.server import build_server
 
     import logging
 
@@ -167,8 +167,8 @@ def _call_all(tokens: dict[str, str], questions: list[dict[str, Any]]) -> dict[s
 
     def client_of() -> str | None:
         # The eval Host presents its own grant's client id, like a real Host config would.
-        from keypulse.mcp.auth import hash_token
-        from keypulse.store.db import get_conn
+        from penpal.mcp.auth import hash_token
+        from penpal.store.db import get_conn
 
         row = get_conn().execute(
             "SELECT client_id FROM access_grants WHERE token_hash = ?", (hash_token(current["token"]),)
@@ -206,8 +206,8 @@ def _group(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
 def run_eval() -> dict[str, Any]:
     started = time.monotonic()
     questions = load_questions()
-    with tempfile.TemporaryDirectory(prefix="keypulse-eval-") as tmp, _IsolatedEnv(Path(tmp)):
-        from keypulse.mcp import auth
+    with tempfile.TemporaryDirectory(prefix="penpal-eval-") as tmp, _IsolatedEnv(Path(tmp)):
+        from penpal.mcp import auth
 
         ingested = _ingest() + _ingest_capture()
         row_to_fx, fx_to_row, observed = _resolve_fixture_rows()

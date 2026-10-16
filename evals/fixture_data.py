@@ -163,11 +163,11 @@ EVENTS: tuple[FxEvent, ...] = (
     FxEvent("md-06", MD, "2026-04-26T12:00:00", P, "Tennis string tension log", group="Life"),
 )
 
-# KeyPulse's own capture streams (D26): inserted straight through the capture repository path
+# Penpal's own capture streams (D26): inserted straight through the capture repository path
 # (normalizer -> insert_raw_event), not through a source plugin. ``source`` is the raw_events source
 # (keyboard_chunk / clipboard / window / ax_text / browser_url); ``bucket`` is the intended bucket,
 # which the app preset table must reproduce. These records exist nowhere else: no transcript, commit
-# or history file contains them, so questions about them are answerable only from KeyPulse capture.
+# or history file contains them, so questions about them are answerable only from Penpal capture.
 KB, CB, WN, AX, BU = "keyboard_chunk", "clipboard", "window", "ax_text", "browser_url"
 
 CAPTURE_EVENTS: tuple[FxEvent, ...] = (

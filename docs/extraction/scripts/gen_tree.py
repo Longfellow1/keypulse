@@ -1,6 +1,6 @@
 import os, ast, json, collections
-REPO = "/Users/Harland/Go/keypulse"
-SP = "/private/tmp/claude-502/-Users-Harland-Go-keypulse/c7664793-02ba-4616-81c2-5db7c60940bf/scratchpad"
+REPO = "/Users/Harland/Go/penpal"
+SP = "/private/tmp/claude-502/-Users-Harland-Go-penpal/c7664793-02ba-4616-81c2-5db7c60940bf/scratchpad"
 A = json.load(open(os.path.join(SP, "analysis.json")))
 INFO = A["info"]
 
@@ -30,15 +30,15 @@ def purpose_other(path):
     if ext == "yaml": return "YAML data (holiday calendar)"
     return ext
 
-# ---------- keypulse/ tree ----------
+# ---------- penpal/ tree ----------
 tree = {"dirs": {}, "files": []}
 rows_by_sub = collections.defaultdict(lambda: {"py": 0, "loc": 0, "all": 0})
-for dp, dn, fn in os.walk(os.path.join(REPO, "keypulse")):
+for dp, dn, fn in os.walk(os.path.join(REPO, "penpal")):
     dn[:] = sorted(d for d in dn if d != "__pycache__")
     for f in sorted(fn):
         if f == ".DS_Store": continue
         full = os.path.join(dp, f)
-        rel = os.path.relpath(full, os.path.join(REPO, "keypulse"))
+        rel = os.path.relpath(full, os.path.join(REPO, "penpal"))
         parts = rel.split(os.sep)
         node = tree
         for d in parts[:-1]:
@@ -70,11 +70,11 @@ def render(node, depth, out):
         render(sub, depth + 1, out)
 
 tree_lines = []
-tree_lines.append(f"keypulse/  [{subtotal(tree)[0]} .py, {subtotal(tree)[1]:,} LOC]")
+tree_lines.append(f"penpal/  [{subtotal(tree)[0]} .py, {subtotal(tree)[1]:,} LOC]")
 render(tree, 1, tree_lines)
 
 # ---------- tests grouping ----------
-UNITS_PKG = {d for d in os.listdir(os.path.join(REPO, "keypulse")) if os.path.isdir(os.path.join(REPO, "keypulse", d)) and d != "__pycache__"}
+UNITS_PKG = {d for d in os.listdir(os.path.join(REPO, "penpal")) if os.path.isdir(os.path.join(REPO, "penpal", d)) and d != "__pycache__"}
 def unit_of(parts):
     if len(parts) < 2: return None
     p = parts[1]
@@ -96,13 +96,13 @@ for f in test_files:
         for n in ast.walk(t):
             if isinstance(n, ast.Import):
                 for a in n.names:
-                    if a.name.startswith("keypulse."):
+                    if a.name.startswith("penpal."):
                         u = unit_of(a.name.split("."))
                         if u: cnt[u] += 1
-            elif isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("keypulse") and not n.level:
+            elif isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("penpal") and not n.level:
                 u = unit_of(n.module.split("."))
                 if u: cnt[u] += 1
-    g = cnt.most_common(1)[0][0] if cnt else "(no keypulse import)"
+    g = cnt.most_common(1)[0][0] if cnt else "(no penpal import)"
     groups[g][0] += 1; groups[g][1] += loc; groups[g][2].append(f)
 test_py_total = sum(v[0] for v in groups.values()); test_loc_total = sum(v[1] for v in groups.values())
 

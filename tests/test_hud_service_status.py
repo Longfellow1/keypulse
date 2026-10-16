@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from keypulse.capabilities.base import HealthState
-from keypulse.hud import summary
+from penpal.capabilities.base import HealthState
+from penpal.hud import summary
 
 
 def _ok_caps() -> dict[str, HealthState]:

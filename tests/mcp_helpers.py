@@ -1,13 +1,13 @@
 """Test helpers: call the MCP tool layer / server as the Host that owns a token.
 
-Serving now needs the matching client id (KEYPULSE_CLIENT) as well as the token; most tests just
+Serving now needs the matching client id (PENPAL_CLIENT) as well as the token; most tests just
 want "this token's own Host", so these helpers look the client up from the grant row.
 """
 from __future__ import annotations
 
-from keypulse.mcp import auth, tools
-from keypulse.mcp.server import build_server
-from keypulse.store.db import get_conn
+from penpal.mcp import auth, tools
+from penpal.mcp.server import build_server
+from penpal.store.db import get_conn
 
 
 def client_of(token):

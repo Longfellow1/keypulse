@@ -4,7 +4,7 @@ import signal
 
 from click.testing import CliRunner
 
-from keypulse.cli import main
+from penpal.cli import main
 
 
 def test_hud_invokes_hud_runner_by_default(monkeypatch, tmp_path):
@@ -20,11 +20,11 @@ def test_hud_invokes_hud_runner_by_default(monkeypatch, tmp_path):
     def fake_run_hud(cfg):
         captured["hud_cfg"] = cfg
 
-    monkeypatch.setattr("keypulse.cli.get_config", fake_load)
-    monkeypatch.setattr("keypulse.cli.require_db", fake_require_db)
-    monkeypatch.setattr("keypulse.cli.run_hud", fake_run_hud)
-    monkeypatch.setattr("keypulse.cli._find_legacy_hud_pid", lambda: None)
-    monkeypatch.setattr("keypulse.cli.get_hud_pid_path", lambda: pid_path)
+    monkeypatch.setattr("penpal.cli.get_config", fake_load)
+    monkeypatch.setattr("penpal.cli.require_db", fake_require_db)
+    monkeypatch.setattr("penpal.cli.run_hud", fake_run_hud)
+    monkeypatch.setattr("penpal.cli._find_legacy_hud_pid", lambda: None)
+    monkeypatch.setattr("penpal.cli.get_hud_pid_path", lambda: pid_path)
 
     result = CliRunner().invoke(main, ["hud"])
 
@@ -46,11 +46,11 @@ def test_hud_start_invokes_hud_runner(monkeypatch, tmp_path):
     def fake_run_hud(cfg):
         captured["hud_cfg"] = cfg
 
-    monkeypatch.setattr("keypulse.cli.get_config", fake_load)
-    monkeypatch.setattr("keypulse.cli.require_db", fake_require_db)
-    monkeypatch.setattr("keypulse.cli.run_hud", fake_run_hud)
-    monkeypatch.setattr("keypulse.cli._find_legacy_hud_pid", lambda: None)
-    monkeypatch.setattr("keypulse.cli.get_hud_pid_path", lambda: pid_path)
+    monkeypatch.setattr("penpal.cli.get_config", fake_load)
+    monkeypatch.setattr("penpal.cli.require_db", fake_require_db)
+    monkeypatch.setattr("penpal.cli.run_hud", fake_run_hud)
+    monkeypatch.setattr("penpal.cli._find_legacy_hud_pid", lambda: None)
+    monkeypatch.setattr("penpal.cli.get_hud_pid_path", lambda: pid_path)
 
     result = CliRunner().invoke(main, ["hud", "start"])
 
@@ -72,8 +72,8 @@ def test_hud_stop_terminates_running_instance(monkeypatch, tmp_path):
         if sig == signal.SIGTERM:
             pid_path.unlink(missing_ok=True)
 
-    monkeypatch.setattr("keypulse.cli.get_hud_pid_path", fake_get_hud_pid_path)
-    monkeypatch.setattr("keypulse.cli.os.kill", fake_kill)
+    monkeypatch.setattr("penpal.cli.get_hud_pid_path", fake_get_hud_pid_path)
+    monkeypatch.setattr("penpal.cli.os.kill", fake_kill)
 
     result = CliRunner().invoke(main, ["hud", "stop"])
 
@@ -86,8 +86,8 @@ def test_hud_status_reports_running_instance(monkeypatch, tmp_path):
     pid_path = tmp_path / "hud.pid"
     pid_path.write_text("4242")
 
-    monkeypatch.setattr("keypulse.cli.get_hud_pid_path", lambda: pid_path)
-    monkeypatch.setattr("keypulse.cli.os.kill", lambda pid, sig: None)
+    monkeypatch.setattr("penpal.cli.get_hud_pid_path", lambda: pid_path)
+    monkeypatch.setattr("penpal.cli.os.kill", lambda pid, sig: None)
 
     result = CliRunner().invoke(main, ["hud", "status", "--plain"])
 
@@ -100,13 +100,13 @@ def test_hud_stop_falls_back_to_legacy_process_lookup(monkeypatch, tmp_path):
     pid_path = tmp_path / "hud.pid"
     calls = []
 
-    monkeypatch.setattr("keypulse.cli.get_hud_pid_path", lambda: pid_path)
-    monkeypatch.setattr("keypulse.cli._find_legacy_hud_pid", lambda: 5151)
+    monkeypatch.setattr("penpal.cli.get_hud_pid_path", lambda: pid_path)
+    monkeypatch.setattr("penpal.cli._find_legacy_hud_pid", lambda: 5151)
 
     def fake_kill(pid, sig):
         calls.append((pid, sig))
 
-    monkeypatch.setattr("keypulse.cli.os.kill", fake_kill)
+    monkeypatch.setattr("penpal.cli.os.kill", fake_kill)
 
     result = CliRunner().invoke(main, ["hud", "stop"])
 
@@ -117,8 +117,8 @@ def test_hud_stop_falls_back_to_legacy_process_lookup(monkeypatch, tmp_path):
 def test_hud_status_reports_legacy_process_when_pid_file_missing(monkeypatch, tmp_path):
     pid_path = tmp_path / "hud.pid"
 
-    monkeypatch.setattr("keypulse.cli.get_hud_pid_path", lambda: pid_path)
-    monkeypatch.setattr("keypulse.cli._find_legacy_hud_pid", lambda: 5151)
+    monkeypatch.setattr("penpal.cli.get_hud_pid_path", lambda: pid_path)
+    monkeypatch.setattr("penpal.cli._find_legacy_hud_pid", lambda: 5151)
 
     result = CliRunner().invoke(main, ["hud", "status", "--plain"])
 

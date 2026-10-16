@@ -1,4 +1,4 @@
-"""Tests for keypulse.utils.atomic_io.atomic_write_text."""
+"""Tests for penpal.utils.atomic_io.atomic_write_text."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from keypulse.utils.atomic_io import atomic_write_text
+from penpal.utils.atomic_io import atomic_write_text
 
 
 class TestAtomicWriteText:

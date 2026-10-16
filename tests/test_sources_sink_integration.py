@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from keypulse.sources import registry
-from keypulse.sources.cleaning.config import CleaningConfig
-from keypulse.sources.sink import persist_semantic_event
-from keypulse.sources.types import DataSource, DataSourceInstance, SemanticEvent
-from keypulse.store.db import close, get_conn, init_db
+from penpal.sources import registry
+from penpal.sources.cleaning.config import CleaningConfig
+from penpal.sources.sink import persist_semantic_event
+from penpal.sources.types import DataSource, DataSourceInstance, SemanticEvent
+from penpal.store.db import close, get_conn, init_db
 
 
 class _SixSourceFixture(DataSource):
@@ -27,9 +27,9 @@ class _SixSourceFixture(DataSource):
                 actor="alice",
                 intent="commit",
                 artifact="commit:abc1234",
-                raw_ref="git:keypulse:abc1234",
+                raw_ref="git:penpal:abc1234",
                 privacy_tier="green",
-                metadata={"full_hash": "abc1234def", "repo_path": "/tmp/repo/keypulse"},
+                metadata={"full_hash": "abc1234def", "repo_path": "/tmp/repo/penpal"},
             ),
             SemanticEvent(
                 time=base + timedelta(minutes=1),
@@ -39,7 +39,7 @@ class _SixSourceFixture(DataSource):
                 artifact="claude:session:s1",
                 raw_ref="claude:r1",
                 privacy_tier="green",
-                metadata={"session_id": "claude-s1", "project_dir": "/tmp/repo/keypulse"},
+                metadata={"session_id": "claude-s1", "project_dir": "/tmp/repo/penpal"},
             ),
             SemanticEvent(
                 time=base + timedelta(minutes=2),
@@ -89,14 +89,14 @@ class _SixSourceFixture(DataSource):
 
 def test_read_all_persists_source_events_to_raw_events(tmp_path, monkeypatch) -> None:
     close()
-    init_db(tmp_path / "keypulse.db")
+    init_db(tmp_path / "penpal.db")
     monkeypatch.setattr(registry, "_PLUGINS", {"fixture": _SixSourceFixture()})
     monkeypatch.setattr(
         registry,
         "load_cleaning_config",
         lambda: CleaningConfig(privacy_max_tier="red", dedup_time_window_minutes=0),
     )
-    monkeypatch.setattr("keypulse.sources.sink.extract_named_entities", lambda event: [])
+    monkeypatch.setattr("penpal.sources.sink.extract_named_entities", lambda event: [])
     since = datetime(2026, 5, 6, 0, 0, tzinfo=timezone.utc)
     until = datetime(2026, 5, 6, 23, 59, tzinfo=timezone.utc)
 
@@ -122,8 +122,8 @@ def test_read_all_persists_source_events_to_raw_events(tmp_path, monkeypatch) ->
 
 def test_named_entities_are_backfilled_to_metadata(tmp_path, monkeypatch) -> None:
     close()
-    init_db(tmp_path / "keypulse.db")
-    monkeypatch.setattr("keypulse.sources.sink.extract_named_entities", lambda event: ["timeline", "timeline", "cache"])
+    init_db(tmp_path / "penpal.db")
+    monkeypatch.setattr("penpal.sources.sink.extract_named_entities", lambda event: ["timeline", "timeline", "cache"])
     event = SemanticEvent(
         time=datetime(2026, 5, 6, 11, 0, tzinfo=timezone.utc),
         source="claude_code",
@@ -132,7 +132,7 @@ def test_named_entities_are_backfilled_to_metadata(tmp_path, monkeypatch) -> Non
         artifact="claude:session:entity-s1",
         raw_ref="claude:entity:1",
         privacy_tier="green",
-        metadata={"session_id": "entity-s1", "project_dir": "/tmp/repo/keypulse"},
+        metadata={"session_id": "entity-s1", "project_dir": "/tmp/repo/penpal"},
     )
     row_id = persist_semantic_event(event, async_named_entities=False)
     assert row_id > 0

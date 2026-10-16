@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from keypulse.health.alerts import render_alert
-from keypulse.health.product_delivery import DeliveryHealth
-from keypulse.hud import summary
+from penpal.health.alerts import render_alert
+from penpal.health.product_delivery import DeliveryHealth
+from penpal.hud import summary
 
 
 def _delivery(alerts):

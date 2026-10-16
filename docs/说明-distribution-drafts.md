@@ -1,4 +1,4 @@
-# KeyPulse Distribution Drafts
+# Penpal Distribution Drafts
 
 Do not publish these broadly until the README, screenshots, install path, and privacy explanation have been reviewed.
 
@@ -9,7 +9,7 @@ I don't want another productivity dashboard.
 
 I want a quiet local-first companion that observes my work surface, forgets secrets before persistence, and writes a daily reflection back into Obsidian.
 
-So I built KeyPulse.
+So I built Penpal.
 
 Local-first. macOS. Obsidian-native. Privacy by architecture.
 
@@ -21,7 +21,7 @@ https://github.com/Longfellow1/keypulse
 ```text
 标题：做了一个 Mac 里的本地 AI 笔友：把每天工作痕迹整理成 Obsidian 复盘
 
-我最近在做一个小工具 KeyPulse。
+我最近在做一个小工具 Penpal。
 
 它不是 RescueTime 那类时间统计，也不是生产力打分。我更想要的是一个本地优先的“私人思考镜子”：看见我每天反复切换的 App、窗口、手动记录和剪贴板边界，然后把这些东西整理成一页 Obsidian 日报。
 
@@ -42,7 +42,7 @@ https://github.com/Longfellow1/keypulse
 ```text
 Title: My local-first daily review workflow: Mac work traces -> Obsidian Daily Notes
 
-I have been building KeyPulse, a local-first Mac companion that writes daily reflection notes into an Obsidian vault.
+I have been building Penpal, a local-first Mac companion that writes daily reflection notes into an Obsidian vault.
 
 The goal is not screen-time tracking or productivity scoring. The workflow is:
 
@@ -63,11 +63,11 @@ https://github.com/Longfellow1/keypulse
 ## Hacker News / Reddit
 
 ```text
-Show HN: KeyPulse - local-first daily reflection notes for Mac and Obsidian
+Show HN: Penpal - local-first daily reflection notes for Mac and Obsidian
 
-I built KeyPulse because I wanted something different from productivity dashboards and screen-time trackers.
+I built Penpal because I wanted something different from productivity dashboards and screen-time trackers.
 
-KeyPulse is a local-first Mac companion that observes lightweight work-surface signals, filters sensitive content before persistence, and writes daily reflection notes into your own Obsidian vault.
+Penpal is a local-first Mac companion that observes lightweight work-surface signals, filters sensitive content before persistence, and writes daily reflection notes into your own Obsidian vault.
 
 The goal is not to optimize a productivity score. The goal is to help knowledge workers notice recurring patterns in their own work.
 

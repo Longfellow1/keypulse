@@ -10,7 +10,7 @@
 - 接入位置：`sqlite` discoverer + `chrome_history/safari_history` read 前
 
 ## L2 字段 redact
-- 复用 `keypulse/privacy/desensitizer.py`
+- 复用 `penpal/privacy/desensitizer.py`
 - `chrome/safari` 读取时先 URL 标准化（去 query/fragment）写入 `artifact`
 - `metadata.full_url` 保留完整 URL，但经过 `desensitize`
 
@@ -18,7 +18,7 @@
 - 过滤 zsh 短命令黑名单（`ls/cd/clear/...`）
 - 过滤 `claude_code` 系统消息（`tool_use_id`/`tool_result`）
 - 过滤浏览器空标题 + blank/OAuth 回调页
-- 过滤 KeyPulse 自指碎片：`Events/2026-*/片段-*.md`
+- 过滤 Penpal 自指碎片：`Events/2026-*/片段-*.md`
 - 过滤长度 `<4` 且无字母数字文本
 - 接入位置：`zsh_history` read 内 + `registry.read_all` 全局流
 

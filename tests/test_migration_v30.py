@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.sources.plugins.markdown_vault import MarkdownVaultSource
-from keypulse.sources.types import DataSourceInstance
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v30 import migrate_v30
-from keypulse.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.sources.plugins.markdown_vault import MarkdownVaultSource
+from penpal.sources.types import DataSourceInstance
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v30 import migrate_v30
+from penpal.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 
 
 @pytest.fixture

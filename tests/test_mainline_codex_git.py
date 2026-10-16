@@ -11,14 +11,14 @@ from pathlib import Path
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from keypulse.mcp import auth
-from keypulse.sources import registry
-from keypulse.sources.cleaning.config import CleaningConfig
-from keypulse.sources.plugins.claude_code import ClaudeCodeSource
-from keypulse.sources.plugins.codex_cli import CodexCliSource
-from keypulse.sources.plugins.git_log import GitLogSource
-from keypulse.sources.sink import flush_named_entity_backfill
-from keypulse.store.db import close, get_conn, init_db
+from penpal.mcp import auth
+from penpal.sources import registry
+from penpal.sources.cleaning.config import CleaningConfig
+from penpal.sources.plugins.claude_code import ClaudeCodeSource
+from penpal.sources.plugins.codex_cli import CodexCliSource
+from penpal.sources.plugins.git_log import GitLogSource
+from penpal.sources.sink import flush_named_entity_backfill
+from penpal.store.db import close, get_conn, init_db
 from mcp_helpers import server_for
 
 SID = "0199aaaa-1111-2222-3333-444455556666"
@@ -120,7 +120,7 @@ def env(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(registry, "_PLUGINS", make())
     monkeypatch.setattr(registry, "load_cleaning_config", lambda: CleaningConfig())
-    db_path = tmp_path / "keypulse.db"
+    db_path = tmp_path / "penpal.db"
     init_db(db_path)
     yield type("Env", (), {"tmp": tmp_path, "sessions": sessions, "rollout": rollout, "repo": repo, "db": db_path,
                            "claude": claude, "make": staticmethod(make)})
@@ -283,7 +283,7 @@ def test_git_cursor_overlap_does_not_duplicate_and_bucket_default_is_work(env) -
 
 
 def test_codex_automation_heartbeat_is_dropped_for_both_roles() -> None:
-    from keypulse.sources.plugins.codex_cli import _message_text
+    from penpal.sources.plugins.codex_cli import _message_text
 
     beat = [{"type": "output_text", "text": "<heartbeat>\n  <automation_id>codex-5</automation_id>\n</heartbeat>"}]
     assert _message_text(beat, "assistant") == ""

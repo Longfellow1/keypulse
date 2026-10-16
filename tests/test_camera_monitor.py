@@ -5,9 +5,9 @@ import pytest
 from unittest.mock import MagicMock
 from unittest.mock import call
 
-from keypulse.capture.camera_monitor import CameraMonitor
-from keypulse.capture.manager import CaptureManager
-from keypulse.config import Config
+from penpal.capture.camera_monitor import CameraMonitor
+from penpal.capture.manager import CaptureManager
+from penpal.config import Config
 
 
 class _FakeProcess:
@@ -30,7 +30,7 @@ def test_camera_monitor_parses_running_state_and_calls_true(monkeypatch):
             'timestamp subsystem kCMIODevicePropertyDeviceIsRunningSomewhere = 1\n',
         ]
     )
-    monkeypatch.setattr("keypulse.capture.camera_monitor.subprocess.Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr("penpal.capture.camera_monitor.subprocess.Popen", lambda *args, **kwargs: process)
 
     monitor = CameraMonitor(callback)
     monitor.start()
@@ -48,7 +48,7 @@ def test_camera_monitor_parses_release_and_calls_false(monkeypatch):
             'timestamp subsystem kCMIODevicePropertyDeviceIsRunningSomewhere = 0\n',
         ]
     )
-    monkeypatch.setattr("keypulse.capture.camera_monitor.subprocess.Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr("penpal.capture.camera_monitor.subprocess.Popen", lambda *args, **kwargs: process)
 
     monitor = CameraMonitor(callback)
     monitor.start()
@@ -68,7 +68,7 @@ def test_camera_monitor_uses_reference_count_for_multiple_devices(monkeypatch):
             "d kCMIODevicePropertyDeviceIsRunningSomewhere = 0\n",
         ]
     )
-    monkeypatch.setattr("keypulse.capture.camera_monitor.subprocess.Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr("penpal.capture.camera_monitor.subprocess.Popen", lambda *args, **kwargs: process)
 
     monitor = CameraMonitor(callback)
     monitor.start()
@@ -80,7 +80,7 @@ def test_camera_monitor_uses_reference_count_for_multiple_devices(monkeypatch):
 
 def test_camera_monitor_swallows_subprocess_start_failure(monkeypatch):
     monkeypatch.setattr(
-        "keypulse.capture.camera_monitor.subprocess.Popen",
+        "penpal.capture.camera_monitor.subprocess.Popen",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("boom")),
     )
 
@@ -138,7 +138,7 @@ def test_manager_camera_monitor_wiring_pauses_and_resumes_watchers(monkeypatch):
     ax_text = MagicMock()
     ocr = MagicMock()
     manager._watchers = {"ax_text": ax_text, "ocr": ocr}
-    monkeypatch.setattr("keypulse.capture.manager.CameraMonitor", _FakeCameraMonitor)
+    monkeypatch.setattr("penpal.capture.manager.CameraMonitor", _FakeCameraMonitor)
 
     manager._start_camera_monitor()
 

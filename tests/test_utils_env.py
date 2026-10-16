@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from keypulse.utils.env import load_dotenv_quiet
+from penpal.utils.env import get_env_compat, load_dotenv_quiet
 
 
 def test_load_dotenv_basic(tmp_path, monkeypatch):
@@ -57,3 +57,21 @@ def test_load_dotenv_invalid_key_skipped(tmp_path, monkeypatch):
     assert n == 1
     assert os.environ["_GOOD"] == "y"
     assert "123BAD" not in os.environ
+
+
+def test_new_environment_name_takes_priority_over_legacy_name(monkeypatch, capsys):
+    monkeypatch.setenv("PENPAL_TEST_PRIORITY", "new")
+    monkeypatch.setenv("KEYPULSE_TEST_PRIORITY", "old")
+
+    assert get_env_compat("PENPAL_TEST_PRIORITY") == "new"
+    assert capsys.readouterr().err == ""
+
+
+def test_legacy_environment_name_is_read_with_deprecation_notice(monkeypatch, capsys):
+    monkeypatch.delenv("PENPAL_TEST_LEGACY", raising=False)
+    monkeypatch.setenv("KEYPULSE_TEST_LEGACY", "legacy")
+
+    assert get_env_compat("PENPAL_TEST_LEGACY") == "legacy"
+    assert capsys.readouterr().err == (
+        "Deprecated environment variable KEYPULSE_TEST_LEGACY; use PENPAL_TEST_LEGACY instead.\n"
+    )

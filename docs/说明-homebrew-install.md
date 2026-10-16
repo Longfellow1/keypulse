@@ -1,8 +1,8 @@
 # Homebrew Install
 
-KeyPulse uses Homebrew as the public distribution path.
+Penpal uses Homebrew as the public distribution path.
 
-Homebrew installs the `keypulse` executable. The KeyPulse CLI owns runtime initialization, launchd jobs, diagnostics, and uninstall.
+Homebrew installs the `penpal` executable. The Penpal CLI owns runtime initialization, launchd jobs, diagnostics, and uninstall.
 
 ## Public install
 
@@ -10,37 +10,37 @@ Homebrew installs the `keypulse` executable. The KeyPulse CLI owns runtime initi
 curl -fsSL https://raw.githubusercontent.com/Longfellow1/keypulse/main/install.sh | bash
 ```
 
-The script checks macOS and Homebrew, taps the KeyPulse formula, installs or upgrades `keypulse`, then runs:
+The script checks macOS and Homebrew, taps the Penpal formula, installs or upgrades `penpal`, then runs:
 
 ```bash
-keypulse install init
+penpal install init
 ```
 
 ## Manual install
 
 ```bash
 brew tap Longfellow1/keypulse
-brew install keypulse
-keypulse install init
+brew install penpal
+penpal install init
 ```
 
 ## Lifecycle commands
 
 ```bash
-keypulse install init       # Create ~/.keypulse, default config, DB, launchd jobs
-keypulse install launchd    # Recreate launchd jobs using the installed keypulse executable
-keypulse install doctor     # Check executable, config, database, and launchd status
-keypulse install uninstall  # Remove launchd jobs; preserve user data by default
+penpal install init       # Create ~/.penpal, default config, DB, launchd jobs
+penpal install launchd    # Recreate launchd jobs using the installed penpal executable
+penpal install doctor     # Check executable, config, database, and launchd status
+penpal install uninstall  # Remove launchd jobs; preserve user data by default
 ```
 
 Destructive cleanup is explicit:
 
 ```bash
-keypulse install uninstall --remove-runtime
-keypulse install uninstall --remove-data --force
+penpal install uninstall --remove-runtime
+penpal install uninstall --remove-data --force
 ```
 
-`--remove-data --force` removes KeyPulse config, database, and runtime state under `~/.keypulse`.
+`--remove-data --force` removes Penpal config, database, and runtime state under `~/.penpal`.
 
 ## Developer install
 

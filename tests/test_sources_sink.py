@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from keypulse.sources.entity_extractor import extract_named_entities
-from keypulse.sources.sink import semantic_event_to_raw_event
-from keypulse.sources.types import SemanticEvent
+from penpal.sources.entity_extractor import extract_named_entities
+from penpal.sources.sink import semantic_event_to_raw_event
+from penpal.sources.types import SemanticEvent
 
 
 def _event(
@@ -33,26 +33,26 @@ def _entities(raw_event_metadata_json: str | None) -> dict:
 
 
 def test_git_log_event_maps_commit_hash_and_repo_path(monkeypatch) -> None:
-    monkeypatch.setattr("keypulse.sources.sink.extract_named_entities", lambda event: ["KeyPulse", "KeyPulse", "hud"])
+    monkeypatch.setattr("penpal.sources.sink.extract_named_entities", lambda event: ["Penpal", "Penpal", "hud"])
     event = _event(
         "git_log",
         artifact="commit:abc1234",
-        metadata={"full_hash": "abc1234def5678", "repo_path": "/tmp/work/keypulse"},
+        metadata={"full_hash": "abc1234def5678", "repo_path": "/tmp/work/penpal"},
     )
 
     raw_event = semantic_event_to_raw_event(event)
     entities = _entities(raw_event.metadata_json)
 
     assert entities["commit_hash"] == "abc1234def5678"
-    assert entities["file_paths"] == ["/tmp/work/keypulse"]
-    assert entities["named_entities"] == ["KeyPulse", "hud"]
+    assert entities["file_paths"] == ["/tmp/work/penpal"]
+    assert entities["named_entities"] == ["Penpal", "hud"]
 
 
 def test_claude_and_codex_map_session_id(monkeypatch) -> None:
-    monkeypatch.setattr("keypulse.sources.sink.extract_named_entities", lambda event: [])
+    monkeypatch.setattr("penpal.sources.sink.extract_named_entities", lambda event: [])
     claude_event = _event(
         "claude_code",
-        metadata={"session_id": "claude-s1", "project_dir": "/Users/a/Go/keypulse"},
+        metadata={"session_id": "claude-s1", "project_dir": "/Users/a/Go/penpal"},
     )
     codex_event = _event(
         "codex_cli",
@@ -63,12 +63,12 @@ def test_claude_and_codex_map_session_id(monkeypatch) -> None:
     codex_entities = _entities(semantic_event_to_raw_event(codex_event).metadata_json)
 
     assert claude_entities["session_id"] == "claude-s1"
-    assert claude_entities["file_paths"] == ["/Users/a/Go/keypulse"]
+    assert claude_entities["file_paths"] == ["/Users/a/Go/penpal"]
     assert codex_entities["session_id"] == "codex-s2"
 
 
 def test_markdown_vault_maps_file_path(monkeypatch) -> None:
-    monkeypatch.setattr("keypulse.sources.sink.extract_named_entities", lambda event: [])
+    monkeypatch.setattr("penpal.sources.sink.extract_named_entities", lambda event: [])
     event = _event("markdown_vault", artifact="Daily/2026-05-06.md")
     raw_event = semantic_event_to_raw_event(event)
     entities = _entities(raw_event.metadata_json)
@@ -77,7 +77,7 @@ def test_markdown_vault_maps_file_path(monkeypatch) -> None:
 
 
 def test_browser_source_entities_url_strips_query_but_keeps_original_url(monkeypatch) -> None:
-    monkeypatch.setattr("keypulse.sources.sink.extract_named_entities", lambda event: [])
+    monkeypatch.setattr("penpal.sources.sink.extract_named_entities", lambda event: [])
     event = _event(
         "chrome_history",
         artifact="https://example.com/a/b?token=1#frag",
@@ -93,7 +93,7 @@ def test_browser_source_entities_url_strips_query_but_keeps_original_url(monkeyp
 
 
 def test_safari_history_url_query_is_removed_in_entities(monkeypatch) -> None:
-    monkeypatch.setattr("keypulse.sources.sink.extract_named_entities", lambda event: [])
+    monkeypatch.setattr("penpal.sources.sink.extract_named_entities", lambda event: [])
     event = _event(
         "safari_history",
         artifact="https://apple.com/cn?x=1",

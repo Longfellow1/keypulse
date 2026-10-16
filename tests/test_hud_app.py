@@ -87,18 +87,18 @@ def hud_app(monkeypatch):
     monkeypatch.setitem(sys.modules, "objc", objc)
     monkeypatch.setitem(sys.modules, "Foundation", foundation)
     monkeypatch.setitem(sys.modules, "WebKit", webkit)
-    sys.modules.pop("keypulse.hud.app", None)
+    sys.modules.pop("penpal.hud.app", None)
 
     _FakeAlert.messages = []
     _FakeNSApp.terminated = []
-    module = importlib.import_module("keypulse.hud.app")
+    module = importlib.import_module("penpal.hud.app")
     yield module
-    sys.modules.pop("keypulse.hud.app", None)
+    sys.modules.pop("penpal.hud.app", None)
 
 
 def test_toggle_pause_keeps_popover_open(hud_app, monkeypatch):
     writes = []
-    app = hud_app.KeyPulseHUDApp()
+    app = hud_app.PenpalHUDApp()
     app.capture_status = "running"
     app.popover = _FakePopover()
     app.refresh = lambda: writes.append(("refresh", None))
@@ -114,7 +114,7 @@ def test_toggle_pause_keeps_popover_open(hud_app, monkeypatch):
 
 def test_restart_daemon_starts_self_heal_thread(hud_app, monkeypatch, tmp_path):
     runs = []
-    app = hud_app.KeyPulseHUDApp()
+    app = hud_app.PenpalHUDApp()
     app.popover = _FakePopover()
 
     class _FakeThread:
@@ -126,7 +126,7 @@ def test_restart_daemon_starts_self_heal_thread(hud_app, monkeypatch, tmp_path):
                 self._target()
 
     monkeypatch.setattr(hud_app.threading, "Thread", _FakeThread)
-    monkeypatch.setitem(sys.modules, "keypulse.health.self_heal", types.SimpleNamespace(run_self_heal=lambda **kwargs: runs.append(kwargs)))
+    monkeypatch.setitem(sys.modules, "penpal.health.self_heal", types.SimpleNamespace(run_self_heal=lambda **kwargs: runs.append(kwargs)))
 
     app.restartDaemon_(None)
 

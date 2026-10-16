@@ -15,13 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.capture.manager import CaptureManager
-from keypulse.capture.normalizer import normalize_clipboard_event, normalize_keyboard_chunk_event
-from keypulse.config import Config
-from keypulse.sources.sink import persist_semantic_event
-from keypulse.sources.types import SemanticEvent
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
+from penpal.capture.manager import CaptureManager
+from penpal.capture.normalizer import normalize_clipboard_event, normalize_keyboard_chunk_event
+from penpal.config import Config
+from penpal.sources.sink import persist_semantic_event
+from penpal.sources.types import SemanticEvent
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
 
 ROOT = Path(__file__).resolve().parents[1]
 TESTS_DIR = Path(__file__).resolve().parent
@@ -31,19 +31,19 @@ import os, signal, sys
 from pathlib import Path
 sys.path.insert(0, {root!r})
 sys.path.insert(0, {tests!r})
-from keypulse.store.db import init_db
+from penpal.store.db import init_db
 db, mode, kill_after = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
 init_db(db)
 if mode == "source":
-    from keypulse.sources.sink import persist_semantic_event
+    from penpal.sources.sink import persist_semantic_event
     from test_crash_recovery_dedupe import source_events
     for i, ev in enumerate(source_events(12)):
         persist_semantic_event(ev, async_named_entities=False)
         if i + 1 == kill_after:
             os.kill(os.getpid(), signal.SIGKILL)
 else:
-    from keypulse.capture.manager import CaptureManager
-    from keypulse.config import Config
+    from penpal.capture.manager import CaptureManager
+    from penpal.config import Config
     from test_crash_recovery_dedupe import live_events
     manager = CaptureManager(Config())
     for i, ev in enumerate(live_events()):

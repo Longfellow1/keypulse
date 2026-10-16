@@ -8,10 +8,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from keypulse.capture.normalizer import normalize_browser_tab_event
-from keypulse.capture.policy import redact_url
-from keypulse.capture.watchers.browser import BrowserWatcher
-from keypulse.config import Config
+from penpal.capture.normalizer import normalize_browser_tab_event
+from penpal.capture.policy import redact_url
+from penpal.capture.watchers.browser import BrowserWatcher
+from penpal.config import Config
 
 
 SUPPORTED_BROWSERS = ["Safari", "Google Chrome", "Arc", "Brave Browser", "Microsoft Edge"]
@@ -29,8 +29,8 @@ def test_browser_watcher_emits_event_when_browser_tab_changes():
     watcher = _make_watcher()
 
     with (
-        patch("keypulse.capture.watchers.browser._get_frontmost_app_name", return_value="Google Chrome"),
-        patch("keypulse.capture.watchers.browser.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser._get_frontmost_app_name", return_value="Google Chrome"),
+        patch("penpal.capture.watchers.browser.subprocess.run") as run,
     ):
         run.side_effect = [
             _completed("https://example.com/a\nPage A\n"),
@@ -55,8 +55,8 @@ def test_browser_watcher_does_not_reemit_same_url():
     watcher = _make_watcher()
 
     with (
-        patch("keypulse.capture.watchers.browser._get_frontmost_app_name", return_value="Safari"),
-        patch("keypulse.capture.watchers.browser.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser._get_frontmost_app_name", return_value="Safari"),
+        patch("penpal.capture.watchers.browser.subprocess.run") as run,
     ):
         run.side_effect = [
             _completed("https://example.com/a\nPage A\n"),
@@ -75,8 +75,8 @@ def test_browser_watcher_permission_error_warns_and_disables_browser(caplog):
     watcher = _make_watcher()
 
     with (
-        patch("keypulse.capture.watchers.browser._get_frontmost_app_name", return_value="Google Chrome"),
-        patch("keypulse.capture.watchers.browser.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser._get_frontmost_app_name", return_value="Google Chrome"),
+        patch("penpal.capture.watchers.browser.subprocess.run") as run,
         caplog.at_level(logging.WARNING),
     ):
         run.return_value = _completed(
@@ -97,8 +97,8 @@ def test_browser_watcher_skips_unsupported_frontmost_app():
     watcher = _make_watcher()
 
     with (
-        patch("keypulse.capture.watchers.browser._get_frontmost_app_name", return_value="Terminal"),
-        patch("keypulse.capture.watchers.browser.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser._get_frontmost_app_name", return_value="Terminal"),
+        patch("penpal.capture.watchers.browser.subprocess.run") as run,
     ):
         event = watcher.capture_once()
 

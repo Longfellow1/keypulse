@@ -8,10 +8,10 @@ import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcp_helpers import search, server_for
-from keypulse.mcp import auth, tools
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.mcp import auth, tools
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 
 
 @pytest.fixture

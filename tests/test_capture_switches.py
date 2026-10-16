@@ -1,6 +1,6 @@
 """Issue #28: persistent global pause and per-source switches.
 
-All tests use a temp DB via init_db(tmp_path); nothing touches ~/.keypulse.
+All tests use a temp DB via init_db(tmp_path); nothing touches ~/.penpal.
 """
 
 from __future__ import annotations
@@ -11,26 +11,26 @@ from datetime import datetime, timezone
 import pytest
 from click.testing import CliRunner
 
-from keypulse.capture.capture_control import (
+from penpal.capture.capture_control import (
     disabled_sources,
     set_source_enabled,
     source_writes_allowed,
 )
-from keypulse.capture.manager import CaptureManager
-from keypulse.capture.normalizer import (
+from penpal.capture.manager import CaptureManager
+from penpal.capture.normalizer import (
     normalize_clipboard_event,
     normalize_keyboard_chunk_event,
     normalize_window_event,
 )
-from keypulse.capture.watchers.keyboard_chunk import KeyboardChunkWatcher
-from keypulse.config import Config
-from keypulse.sources import discover, registry
-from keypulse.sources.cleaning.config import CleaningConfig
-from keypulse.sources.scheduler import SourcesScheduler
-from keypulse.sources.sink import persist_semantic_event
-from keypulse.sources.types import SemanticEvent
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.repository import get_state, set_state
+from penpal.capture.watchers.keyboard_chunk import KeyboardChunkWatcher
+from penpal.config import Config
+from penpal.sources import discover, registry
+from penpal.sources.cleaning.config import CleaningConfig
+from penpal.sources.scheduler import SourcesScheduler
+from penpal.sources.sink import persist_semantic_event
+from penpal.sources.types import SemanticEvent
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.repository import get_state, set_state
 
 
 @pytest.fixture
@@ -287,14 +287,14 @@ def test_sources_disable_enable_list_and_unknown_name(cfg, monkeypatch):
 
 
 def test_source_alias_is_registered_on_main_cli():
-    from keypulse.cli import main
+    from penpal.cli import main
 
     assert "source" in main.commands
     assert "sources" in main.commands
 
 
 def test_status_plain_exposes_pause_and_disabled_sources(cfg, monkeypatch):
-    import keypulse.cli as cli
+    import penpal.cli as cli
 
     class _NoDaemonLock:
         def __init__(self, *a, **k) -> None:

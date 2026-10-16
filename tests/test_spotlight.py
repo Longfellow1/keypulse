@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.sources.plugins.spotlight import SpotlightSource, _event_time, _run_mdfind
-from keypulse.sources.registry import get_source
-from keypulse.sources.types import DataSourceInstance
+from penpal.sources.plugins.spotlight import SpotlightSource, _event_time, _run_mdfind
+from penpal.sources.registry import get_source
+from penpal.sources.types import DataSourceInstance
 
 
 def test_spotlight_source_is_registered() -> None:
@@ -86,7 +86,7 @@ def test_spotlight_read_maps_mdls_metadata(monkeypatch, tmp_path: Path) -> None:
             )
         raise AssertionError(f"unexpected command: {command!r}")
 
-    monkeypatch.setattr("keypulse.sources.plugins.spotlight.subprocess.run", fake_run)
+    monkeypatch.setattr("penpal.sources.plugins.spotlight.subprocess.run", fake_run)
 
     source = SpotlightSource()
     instance = DataSourceInstance(plugin="spotlight", locator=str(root), label="Documents", metadata={})
@@ -122,7 +122,7 @@ def test_run_mdfind_query_uses_time_iso(monkeypatch, tmp_path: Path) -> None:
         calls.append(command)
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("keypulse.sources.plugins.spotlight.subprocess.run", fake_run)
+    monkeypatch.setattr("penpal.sources.plugins.spotlight.subprocess.run", fake_run)
 
     _run_mdfind(root=root, since=datetime(2026, 5, 8, 0, 0, tzinfo=timezone.utc))
 
@@ -164,7 +164,7 @@ def test_event_metadata_is_json_serializable(monkeypatch, tmp_path: Path) -> Non
             return subprocess.CompletedProcess(command, 0, stdout=plistlib.dumps(payload), stderr=b"")
         raise AssertionError(f"unexpected command: {command!r}")
 
-    monkeypatch.setattr("keypulse.sources.plugins.spotlight.subprocess.run", fake_run)
+    monkeypatch.setattr("penpal.sources.plugins.spotlight.subprocess.run", fake_run)
 
     source = SpotlightSource()
     instance = DataSourceInstance(plugin="spotlight", locator=str(root), label="Documents", metadata={})
@@ -208,7 +208,7 @@ def test_excludes_library_containers_paths(monkeypatch, tmp_path: Path) -> None:
             return subprocess.CompletedProcess(command, 0, stdout=plistlib.dumps(payload), stderr=b"")
         raise AssertionError(f"unexpected command: {command!r}")
 
-    monkeypatch.setattr("keypulse.sources.plugins.spotlight.subprocess.run", fake_run)
+    monkeypatch.setattr("penpal.sources.plugins.spotlight.subprocess.run", fake_run)
 
     source = SpotlightSource()
     instance = DataSourceInstance(plugin="spotlight", locator=str(root), label="Documents", metadata={})
@@ -238,7 +238,7 @@ def test_run_mdfind_smoke_real(tmp_path: Path) -> None:
 
     root = tmp_path / "spotlight-smoke"
     root.mkdir(parents=True)
-    target = root / "keypulse-spotlight-smoke.txt"
+    target = root / "penpal-spotlight-smoke.txt"
     target.write_text("spotlight smoke", encoding="utf-8")
 
     import_result = subprocess.run(

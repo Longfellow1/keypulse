@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from keypulse.sources.types import SemanticEvent
+from penpal.sources.types import SemanticEvent
 
 
 def make_fixture_events() -> list[SemanticEvent]:
@@ -11,7 +11,7 @@ def make_fixture_events() -> list[SemanticEvent]:
             time=datetime(2026, 4, 28, 0, 42, tzinfo=timezone.utc),
             source="terminal",
             actor="Harland",
-            intent="在 Codex CLI 调整 KeyPulse 管道并检查 commit 11a3a9b",
+            intent="在 Codex CLI 调整 Penpal 管道并检查 commit 11a3a9b",
             artifact="commit:11a3a9b",
             raw_ref="terminal://zsh/1",
             privacy_tier="green",
@@ -21,7 +21,7 @@ def make_fixture_events() -> list[SemanticEvent]:
             time=datetime(2026, 4, 28, 1, 5, tzinfo=timezone.utc),
             source="git_log",
             actor="Harland",
-            intent="提交 KeyPulse 管道修复，commit message: KeyPulse things cleanup，git 已落地",
+            intent="提交 Penpal 管道修复，commit message: Penpal things cleanup，git 已落地",
             artifact="11a3a9b",
             raw_ref="git://commit/11a3a9b",
             privacy_tier="green",
@@ -71,8 +71,8 @@ def make_fixture_events() -> list[SemanticEvent]:
             time=datetime(2026, 4, 28, 19, 11, tzinfo=timezone.utc),
             source="git_log",
             actor="Harland",
-            intent="整理 KeyPulse 提交说明并保留 commit 11a3a9b 与测试记录",
-            artifact="commit:11a3a9b message: KeyPulse",
+            intent="整理 Penpal 提交说明并保留 commit 11a3a9b 与测试记录",
+            artifact="commit:11a3a9b message: Penpal",
             raw_ref="git://commit/11a3a9b#2",
             privacy_tier="green",
             metadata={"commit": "11a3a9b"},
@@ -91,7 +91,7 @@ def make_fixture_events() -> list[SemanticEvent]:
             time=datetime(2026, 4, 28, 22, 48, tzinfo=timezone.utc),
             source="terminal",
             actor="Harland",
-            intent="在 Codex CLI 收尾 README 文档说明并记录 KeyPulse",
+            intent="在 Codex CLI 收尾 README 文档说明并记录 Penpal",
             artifact="README.md",
             raw_ref="terminal://zsh/3",
             privacy_tier="green",
@@ -101,19 +101,19 @@ def make_fixture_events() -> list[SemanticEvent]:
 
 
 _SESSION_RENDER_RESPONSE = (
-    "### KeyPulse 提交落地\n"
-    "凌晨快一点你在 Codex CLI 里推进 KeyPulse 的 things 管道修复，"
+    "### Penpal 提交落地\n"
+    "凌晨快一点你在 Codex CLI 里推进 Penpal 的 things 管道修复，"
     "commit 11a3a9b 把改动收口落地，git 那条记录留下了 message。\n\n"
     "### 邮件线索跟进\n"
     "上午在 Chrome 看了 wx.mail.qq.com 的邮件页面，又转到微信里同步邮件结论和后续待办。\n\n"
     "### 测试验收与文档\n"
     "下午在 Codex CLI 写 tests/test_things_pipeline_e2e.py 并跑 pytest 验收，"
-    "晚上在 Terminal 收尾 README 把 KeyPulse 的迭代记录补完整。"
+    "晚上在 Terminal 收尾 README 把 Penpal 的迭代记录补完整。"
 )
 
 
 _OVERVIEW_RESPONSE = (
-    "你今天围绕 KeyPulse 把 things 管道从评测到改造走通，"
+    "你今天围绕 Penpal 把 things 管道从评测到改造走通，"
     "先在 Codex CLI 里确认 commit 11a3a9b 的变更脉络，"
     "再处理 wx.mail.qq.com 的邮件线索与沟通同步，"
     "最后把验证结果收口成可复跑的测试闭环。"

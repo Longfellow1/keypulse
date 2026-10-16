@@ -19,7 +19,7 @@ from evals.realdata.sandbox import build_profile
 
 
 def _common(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--data-dir", help="eval data dir (default ~/.keypulse/evals); never inside the repo")
+    p.add_argument("--data-dir", help="eval data dir (default ~/.penpal/evals); never inside the repo")
     p.add_argument("--questions", help="questions JSONL (default <data-dir>/questions.jsonl)")
     p.add_argument("--run-dir", help="run dir (default: latest under <data-dir>/runs)")
     p.add_argument("--only", nargs="*", default=[], help="restrict to these question ids")
@@ -37,12 +37,12 @@ def _judge_opts(p: argparse.ArgumentParser) -> None:
 
 def _run_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--host", choices=runner.HOSTS, default="claude",
-                   help="CLI that runs the KeyPulse arm (codex: kp arm only)")
+                   help="CLI that runs the Penpal arm (codex: kp arm only)")
     p.add_argument("--model", help=f"default: {runner.DEFAULT_MODEL['claude']} (claude) or "
                                    f"{runner.DEFAULT_MODEL['codex']} (codex)")
     p.add_argument("--max-turns", type=int, default=25)
     p.add_argument("--timeout", type=int, default=900, help="seconds per question")
-    p.add_argument("--keypulse-bin", default="keypulse")
+    p.add_argument("--penpal-bin", dest="keypulse_bin", default="penpal")
     p.add_argument("--jobs", type=int, default=4,
                    help="questions run at once (each is its own isolated process; 1 = one by one)")
     p.add_argument("--claude-bin", default="claude")
@@ -82,7 +82,7 @@ def cmd_prepare(args) -> int:
     if not db.exists():
         raise SystemExit(f"DB not found: {db}")
     run_dir = new_run_dir(data_dir)
-    copy = run_dir / "keypulse.db"
+    copy = run_dir / "penpal.db"
     backup_copy(db, copy)
     deleted = strip_transcripts(copy, args.exclude_session, args.authored_after)
     counts = contamination_counts(copy, qs)
@@ -102,7 +102,7 @@ def cmd_prepare(args) -> int:
 
 def cmd_validate(args) -> int:
     data_dir, qs = _setup(args)
-    db = _run_dir(args, data_dir) / "keypulse.db"
+    db = _run_dir(args, data_dir) / "penpal.db"
     if not db.exists():
         raise SystemExit(f"run DB not found: {db} (run `prepare` first, or pass --run-dir)")
     results = validate_mod.validate_gold(qs, db)
@@ -112,13 +112,13 @@ def cmd_validate(args) -> int:
 
 
 def _configured_db() -> Path:
-    from keypulse.config import Config
+    from penpal.config import Config
 
     return Config.load().db_path_expanded
 
 
 def _bash_profile(args, data_dir: Path, run_dir: Path) -> Path:
-    deny = [Path("~/.keypulse").expanduser(), data_dir, *[Path(p) for p in args.deny_path]]
+    deny = [Path("~/.penpal").expanduser(), data_dir, *[Path(p) for p in args.deny_path]]
     prof = run_dir / "bash_arm.sb"
     prof.write_text(build_profile(deny, args.deny_regex), encoding="utf-8")
     return prof
@@ -135,7 +135,7 @@ def cmd_run(args, arm: str | None = None) -> int:
     prof = _bash_profile(args, data_dir, run_dir) if arm == "bash" else None
     keypulse_bin, codex = args.keypulse_bin, args.codex_bin
     if args.host == "codex":  # the wrapper script runs with a minimal env, so use absolute paths
-        keypulse_bin = _resolve_bin(args.keypulse_bin, "keypulse")
+        keypulse_bin = _resolve_bin(args.keypulse_bin, "penpal")
         codex = _resolve_bin(args.codex_bin, "codex binary")
     runner.run_arm(arm, qs, run_dir, keypulse_bin=keypulse_bin, model=args.model, max_turns=args.max_turns,
                    timeout=args.timeout, sandbox_profile=prof, sandbox_exec=args.sandbox_exec, claude=args.claude_bin,
@@ -189,7 +189,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("prepare", help="copy the DB, strip post-authoring transcripts, contamination check")
     _common(p)
-    p.add_argument("--db", help="source DB (default: the configured KeyPulse DB)")
+    p.add_argument("--db", help="source DB (default: the configured Penpal DB)")
     p.add_argument("--exclude-session", action="append", default=[], help="session id whose transcript rows are removed")
     p.add_argument("--authored-after", help="ISO timestamp; claude_code/codex_cli rows at/after it are removed")
     p.set_defaults(fn=cmd_prepare)
@@ -200,7 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--arm", choices=["kp", "bash"], required=True)
     p.set_defaults(fn=cmd_run)
 
-    p = sub.add_parser("replay", help="replay KeyPulse tool calls: latency, leaks, buckets, must_not_see")
+    p = sub.add_parser("replay", help="replay Penpal tool calls: latency, leaks, buckets, must_not_see")
     _common(p)
     p.set_defaults(fn=cmd_replay)
 

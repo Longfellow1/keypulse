@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from keypulse.hud.approval_window import (
+from penpal.hud.approval_window import (
     ApprovalDataController,
     PendingCandidateRow,
     list_pending_candidates,
     safe_pending_candidate_count,
 )
-from keypulse.sources.approval import ApprovalStore
-from keypulse.sources.discoverers import CandidateSource
+from penpal.sources.approval import ApprovalStore
+from penpal.sources.discoverers import CandidateSource
 
 
 def _candidate(path: str, *, app_hint: str = "App", discoverer: str = "sqlite") -> CandidateSource:

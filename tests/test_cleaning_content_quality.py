@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from keypulse.sources.cleaning.content_quality import is_low_signal_event
-from keypulse.sources.types import SemanticEvent
+from penpal.sources.cleaning.content_quality import is_low_signal_event
+from penpal.sources.types import SemanticEvent
 
 
 def _event(source: str, intent: str, artifact: str = '', raw_ref: str = '') -> SemanticEvent:

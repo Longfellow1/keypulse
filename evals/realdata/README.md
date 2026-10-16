@@ -1,24 +1,24 @@
-# Real-data control eval (KeyPulse arm vs bash arm)
+# Real-data control eval (Penpal arm vs bash arm)
 
 Re-runnable version of the M1 acceptance eval (decision D29). Same host (Claude Code headless), same
 questions, one attempt each:
 
-- **kp arm**: only `mcp__keypulse__*` tools, against a *copy* of your real DB, through a per-question MCP
-  config and a fake `HOME` whose `~/.keypulse/config.toml` points at the copy.
+- **kp arm**: only `mcp__penpal__*` tools, against a *copy* of your real DB, through a per-question MCP
+  config and a fake `HOME` whose `~/.penpal/config.toml` points at the copy.
 - **bash arm**: Bash/Read/Grep/Glob only, wrapped in `sandbox-exec` with a generated deny-read profile
-  (KeyPulse dir, the eval data dir, and any `--deny-path` / `--deny-regex`).
+  (Penpal dir, the eval data dir, and any `--deny-path` / `--deny-regex`).
 
 Neither arm persists a session (`--no-session-persistence`), so one question cannot leak into the next.
 
 ## Data never goes in this repo
 
 This directory holds **code only**. Questions, gold answers, DB copies, tool-call logs and reports all live
-on your machine, by default under `~/.keypulse/evals/`:
+on your machine, by default under `~/.penpal/evals/`:
 
 ```
-~/.keypulse/evals/
+~/.penpal/evals/
   questions.jsonl          # you write this
-  runs/<UTC timestamp>/    # keypulse.db (copy), home/, results-*.jsonl, judged-*.jsonl,
+  runs/<UTC timestamp>/    # penpal.db (copy), home/, results-*.jsonl, judged-*.jsonl,
                            # replay.json, bash_arm.sb, report.md
 ```
 
@@ -32,7 +32,7 @@ Tests use synthetic DBs and a fake `claude`; never point them at real data.
 |---|---|---|
 | `id` | yes | unique id |
 | `group` | yes | free label for slicing (e.g. `A`, `D`) |
-| `grant` | yes | list of buckets the KeyPulse arm may see, e.g. `["Work"]` |
+| `grant` | yes | list of buckets the Penpal arm may see, e.g. `["Work"]` |
 | `query` | yes | the question given to the agent |
 | `gold_answer` | yes | the reference answer (given to the judge only) |
 | `expect` | no | `answer` (default), `not_found`, or `must_not_see` |
@@ -69,7 +69,7 @@ The judge grades only what the question asks. Judged rows record `rubric_version
 
 ## Run
 
-Requires `claude` (Claude Code CLI) and `keypulse` on PATH; the bash arm needs macOS `sandbox-exec`.
+Requires `claude` (Claude Code CLI) and `penpal` on PATH; the bash arm needs macOS `sandbox-exec`.
 
 ```bash
 # 1. Prepare: consistent DB copy (sqlite3 backup API), remove transcripts written after you authored
@@ -92,7 +92,7 @@ Common flags: `--data-dir`, `--questions`, `--run-dir` (default: latest run), `-
 
 ## Running on Codex (cheap model)
 
-`--host codex` runs the KeyPulse arm through the Codex CLI, and `--judge-host codex` grades through it too.
+`--host codex` runs the Penpal arm through the Codex CLI, and `--judge-host codex` grades through it too.
 Defaults: `gpt-6-luna` for codex (`--model` / `--judge-model`), `sonnet` for claude. `--codex-bin` defaults to the
 ChatGPT app's bundled binary. The bash arm stays on Claude, so run it separately:
 
@@ -106,9 +106,9 @@ python -m evals.realdata report
 
 - `all` refuses `--host codex`, because it also runs the bash arm.
 - Codex runs use `codex exec` with the shell, file, app, browser, plugin and sub-agent tools switched off. Web
-  search is off. The only tools are `mcp__keypulse__*`. A run whose transcript shows any other tool call is listed
+  search is off. The only tools are `mcp__penpal__*`. A run whose transcript shows any other tool call is listed
   under "Isolation violations" in the report. Those rows still count, so treat a non-empty list as a failed run.
-- The KeyPulse grant reaches Codex through a 0700 wrapper script in the per-question temp dir. It is deleted
+- The Penpal grant reaches Codex through a 0700 wrapper script in the per-question temp dir. It is deleted
   after each question and the token never goes into argv or results.
 - Rows record `host`, `model` and, for codex, `usage`. Judged rows record `judge_host` and `judge_model`.
   Retries also cover codex rate-limit, 5xx and dropped-stream errors.
@@ -127,8 +127,8 @@ python -m evals.realdata report
   It must return strict JSON `{"verdict": "correct|partial|wrong", "reason": "..."}`. Malformed output becomes an
   `error` verdict, never `correct`. For `not_found`, correct means the answer says not found and presents nothing
   as the answer. A run with no answer is also an `error`.
-- **replay**: re-runs recorded KeyPulse tool calls directly against the DB copy, recording latency (p50/p95),
-  scanning output with KeyPulse's sensitive-content detectors plus an ID-number regex, and checking every
+- **replay**: re-runs recorded Penpal tool calls directly against the DB copy, recording latency (p50/p95),
+  scanning output with Penpal's sensitive-content detectors plus an ID-number regex, and checking every
   returned `bucket` against the question's grant.
 - **report**: per-arm accuracy (correct / graded; errors count against), partial/wrong/error counts, exclusive
   correct both ways, median/max seconds, median tool calls, cost, tool latency, leak hits, bucket violations and

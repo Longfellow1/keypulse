@@ -14,10 +14,10 @@ import types
 
 import pytest
 
-from keypulse.capabilities.builtin.accessibility_permission import (
+from penpal.capabilities.builtin.accessibility_permission import (
     AccessibilityPermissionCapability,
 )
-from keypulse.capabilities.builtin.screen_recording_permission import (
+from penpal.capabilities.builtin.screen_recording_permission import (
     ScreenRecordingPermissionCapability,
 )
 
@@ -45,7 +45,7 @@ def _mock_state(monkeypatch, *, capture_error_code: str = "", capture_runtime: d
         return ""
 
     monkeypatch.setattr(
-        "keypulse.store.repository.get_state",
+        "penpal.store.repository.get_state",
         fake_get_state,
     )
 
@@ -157,7 +157,7 @@ def test_accessibility_no_override_when_runtime_malformed(monkeypatch) -> None:
     def fake_get_state(key: str) -> str:
         return "not-json{" if key == "capture_runtime" else ""
 
-    monkeypatch.setattr("keypulse.store.repository.get_state", fake_get_state)
+    monkeypatch.setattr("penpal.store.repository.get_state", fake_get_state)
     state = AccessibilityPermissionCapability().monitor()
     assert not state.ok
     assert state.code == "ax_denied"

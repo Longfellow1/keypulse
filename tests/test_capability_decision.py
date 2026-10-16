@@ -5,11 +5,11 @@ import pytest
 import time
 from pathlib import Path
 
-from keypulse.capabilities.base import CheckResult, HealthState, Signal
-from keypulse.capabilities.registry import CapabilityRegistry
-from keypulse.hud import summary
-from keypulse.store.db import close, init_db
-from keypulse.store.repository import get_state
+from penpal.capabilities.base import CheckResult, HealthState, Signal
+from penpal.capabilities.registry import CapabilityRegistry
+from penpal.hud import summary
+from penpal.store.db import close, init_db
+from penpal.store.repository import get_state
 
 
 class _StaticCapability:
@@ -36,7 +36,7 @@ class _StaticCapability:
 
 
 def _init_test_db(tmp_path: Path) -> None:
-    init_db(tmp_path / "keypulse.db")
+    init_db(tmp_path / "penpal.db")
 
 
 def _state(ok: bool, code: str, detail: str | None = None) -> HealthState:
@@ -45,7 +45,7 @@ def _state(ok: bool, code: str, detail: str | None = None) -> HealthState:
 
 @pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_capture_fact_caps_contains_only_watcher_class() -> None:
-    from keypulse.app import _CAPTURE_FACT_CAPS
+    from penpal.app import _CAPTURE_FACT_CAPS
 
     probe_caps = {
         "accessibility_permission",
@@ -64,7 +64,7 @@ def test_capture_fact_caps_contains_only_watcher_class() -> None:
 
 
 def test_ax_denied_forces_capture_error_code_for_ax_dependent_watchers(tmp_path) -> None:
-    from keypulse.app import _run_capability_self_check
+    from penpal.app import _run_capability_self_check
 
     _init_test_db(tmp_path)
     try:
@@ -84,7 +84,7 @@ def test_ax_denied_forces_capture_error_code_for_ax_dependent_watchers(tmp_path)
 
 
 def test_watcher_failure_reflects_in_capture_error_code(tmp_path) -> None:
-    from keypulse.app import _run_capability_self_check
+    from penpal.app import _run_capability_self_check
 
     _init_test_db(tmp_path)
     try:

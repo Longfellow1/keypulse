@@ -19,7 +19,7 @@ from evals.realdata.prepare import contamination_counts, strip_transcripts
 from evals.realdata.questions import QuestionError, load_questions, parse_question
 from evals.realdata.replay import check_buckets, forbidden_hits, scan_leaks
 from evals.realdata.sandbox import build_profile
-from keypulse.store.db import close, init_db
+from penpal.store.db import close, init_db
 
 
 def _q(**kw):
@@ -68,9 +68,9 @@ def test_data_dir_never_inside_repo():
 # ---- sandbox profile ----
 
 def test_profile_denies_paths_and_regexes():
-    prof = build_profile([Path("/Users/x/.keypulse"), "/tmp/evals"], ["abc-123", r"/\.claude/projects/[^/]*foo"])
+    prof = build_profile([Path("/Users/x/.penpal"), "/tmp/evals"], ["abc-123", r"/\.claude/projects/[^/]*foo"])
     assert prof.startswith("(version 1)\n(allow default)\n(deny file-read* file-write*")
-    assert '(subpath "/Users/x/.keypulse")' in prof and '(subpath "/tmp/evals")' in prof
+    assert '(subpath "/Users/x/.penpal")' in prof and '(subpath "/tmp/evals")' in prof
     assert '(regex #"abc-123")' in prof and r'(regex #"/\.claude/projects/[^/]*foo")' in prof
     assert prof.rstrip().endswith(")")
 
@@ -202,7 +202,7 @@ def test_report_aggregation_exclusive_and_agreement():
     assert kp["judge_disagreements"] == ["b"] and kp["judge_agreement"] == 0.5
     assert agg["exclusive"] == {"compared": 3, "kp_only": ["a"], "bash_only": ["b"]}
     md = report.render(agg, "run1")
-    assert "p95 2.0" in md and "leak hits: 1 (a:api_key)" in md and "KeyPulse correct, bash not: 1" in md
+    assert "p95 2.0" in md and "leak hits: 1 (a:api_key)" in md and "Penpal correct, bash not: 1" in md
 
 
 # ---- end to end with a fake claude on PATH ----
@@ -219,8 +219,8 @@ if "--tools" in a:
     sys.exit(0)
 if "--mcp-config" in a:
     cfg = json.load(open(a[a.index("--mcp-config") + 1]))
-    assert cfg["mcpServers"]["keypulse"]["env"]["KEYPULSE_TOKEN"].startswith("kp_")
-    use = {{"type": "tool_use", "name": "mcp__keypulse__search_context", "input": {{"keywords": ["secretword"]}}}}
+    assert cfg["mcpServers"]["penpal"]["env"]["PENPAL_TOKEN"].startswith("kp_")
+    use = {{"type": "tool_use", "name": "mcp__penpal__search_context", "input": {{"keywords": ["secretword"]}}}}
 else:
     use = {{"type": "tool_use", "name": "Bash", "input": {{"command": "grep -r secretword ~"}}}}
 emit({{"type": "assistant", "message": {{"content": [use]}}}},
@@ -265,12 +265,12 @@ def test_end_to_end_prepare_run_replay_judge_report(tmp_path, fake_bin, capsys):
     assert "gold validation: 3 checked" in out  # A1, D1, D2 (not_found skipped); no row text
     run_dir = next((data / "runs").iterdir())
 
-    assert main(["run", *base, "--arm", "kp", "--keypulse-bin", "keypulse", "--jobs", "1"]) == 0
+    assert main(["run", *base, "--arm", "kp", "--penpal-bin", "penpal", "--jobs", "1"]) == 0
     assert main(["run", *base, "--arm", "bash", "--deny-regex", "build-sess", "--jobs", "1"]) == 0
     kp = [json.loads(l) for l in (run_dir / "results-kp.jsonl").read_text().splitlines()]
     bash = [json.loads(l) for l in (run_dir / "results-bash.jsonl").read_text().splitlines()]
     assert [r["id"] for r in kp] == ["A1", "A2", "D1", "D2"]
-    assert [r["id"] for r in bash] == ["A1", "A2"]  # must_not_see is KeyPulse-only
+    assert [r["id"] for r in bash] == ["A1", "A2"]  # must_not_see is Penpal-only
     assert all(r["exit"] == 0 and r["tool_calls"] == 1 and r["cost_usd"] == 0.05 for r in kp + bash)
     assert kp[0]["tools"][0]["args"] == {"keywords": ["secretword"]} and "args" not in bash[0]["tools"][0]
     assert 'regex #"build-sess"' in (run_dir / "bash_arm.sb").read_text()
@@ -295,7 +295,7 @@ def test_end_to_end_prepare_run_replay_judge_report(tmp_path, fake_bin, capsys):
 
     assert main(["report", *base]) == 0
     md = (run_dir / "report.md").read_text()
-    assert "KeyPulse correct, bash not" in md and "p95" in md
+    assert "Penpal correct, bash not" in md and "p95" in md
     assert "g1" not in md and "q1" not in md  # no question or answer text in the report
 
 
@@ -367,7 +367,7 @@ def _msg(text):
     return {"type": "item.completed", "item": {"type": "agent_message", "text": text}}
 
 
-def _mcp(tool, args, server="keypulse"):
+def _mcp(tool, args, server="penpal"):
     return {"type": "item.completed", "item": {"type": "mcp_tool_call", "server": server, "tool": tool,
                                                "arguments": args, "status": "completed"}}
 
@@ -382,8 +382,8 @@ def test_codex_command_is_isolated_and_never_carries_the_token():
     disabled = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--disable"]
     assert disabled == CODEX_DISABLE and "code_mode_host" not in disabled  # MCP tools need code_mode_host
     assert 'web_search="disabled"' in cmd
-    assert f'mcp_servers.keypulse.command="{wrapper}"' in cmd
-    assert 'mcp_servers.keypulse.default_tools_approval_mode="approve"' in cmd
+    assert f'mcp_servers.penpal.command="{wrapper}"' in cmd
+    assert 'mcp_servers.penpal.default_tools_approval_mode="approve"' in cmd
     assert "--ignore-user-config" in cmd and "--ephemeral" in cmd and "--json" in cmd
     assert "kp_" not in " ".join(cmd)
     plain = build_codex_command("PROMPT", model="m", codex="codex")
@@ -397,9 +397,9 @@ def test_codex_wrapper_is_0700_quoted_and_exports_the_grant(tmp_path):
 
     tools = tmp_path / "My Tools"
     tools.mkdir()
-    fake_kp = tools / "keypulse"
+    fake_kp = tools / "penpal"
     env_out = tmp_path / "env.txt"
-    fake_kp.write_text('#!/bin/sh\necho "$KEYPULSE_TOKEN|$KEYPULSE_CLIENT|$HOME|$*" > "$FAKE_ENV_OUT"\n')
+    fake_kp.write_text('#!/bin/sh\necho "$PENPAL_TOKEN|$PENPAL_CLIENT|$HOME|$*" > "$FAKE_ENV_OUT"\n')
     fake_kp.chmod(0o700)
     token = "kp_a'b $(touch x)"  # quotes and shell syntax must survive as literal text
     wrapper = tmp_path / "kp-A1.sh"
@@ -408,7 +408,7 @@ def test_codex_wrapper_is_0700_quoted_and_exports_the_grant(tmp_path):
     assert stat.S_IMODE(wrapper.stat().st_mode) == 0o700
     body = wrapper.read_text()
     assert body.startswith("#!/bin/sh\n") and "exec " in body and "mcp serve" in body
-    assert "export KEYPULSE_TOKEN=" in body and "export HOME=" in body
+    assert "export PENPAL_TOKEN=" in body and "export HOME=" in body
     res = subprocess.run([str(wrapper)], capture_output=True, text=True, timeout=20,
                          env={"PATH": os.environ["PATH"], "FAKE_ENV_OUT": str(env_out)})
     assert res.returncode == 0, res.stderr
@@ -431,7 +431,7 @@ def test_parse_codex_stream_keeps_last_answer_tools_and_flags_other_tools():
         {"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 4}},
     ))
     assert out["answer"] == "final answer (Work)" and out["is_error"] is False and out["cost_usd"] is None
-    assert [t["name"] for t in out["tools"]] == ["mcp__keypulse__search_context", "mcp__keypulse__get_timeline"]
+    assert [t["name"] for t in out["tools"]] == ["mcp__penpal__search_context", "mcp__penpal__get_timeline"]
     assert out["tools"][0]["args"] == {"keywords": ["secretword"]} and out["tools"][1]["args"] == {"start": "2026-01-01"}
     assert out["non_kp_tools"] == ["command_execution"] and out["usage"] == {"input_tokens": 10, "output_tokens": 4}
 
@@ -498,8 +498,8 @@ def fake_codex(tmp_path, monkeypatch):
     codex = b / "codex"
     codex.write_text(FAKE_CODEX.replace("__PY__", sys.executable))
     codex.chmod(0o700)
-    kp = b / "keypulse"
-    kp.write_text('#!/bin/sh\necho "$KEYPULSE_TOKEN|$KEYPULSE_CLIENT|$HOME|$*" > "$FAKE_ENV_OUT"\n')
+    kp = b / "penpal"
+    kp.write_text('#!/bin/sh\necho "$PENPAL_TOKEN|$PENPAL_CLIENT|$HOME|$*" > "$FAKE_ENV_OUT"\n')
     kp.chmod(0o700)
     log, env_out = tmp_path / "codex.log", tmp_path / "kp-env.txt"
     monkeypatch.setenv("FAKE_LOG", str(log))
@@ -508,7 +508,7 @@ def fake_codex(tmp_path, monkeypatch):
     close()
 
 
-# Fake `codex exec`: records argv, runs the KeyPulse MCP command like codex would, emits JSONL events.
+# Fake `codex exec`: records argv, runs the Penpal MCP command like codex would, emits JSONL events.
 FAKE_CODEX = """#!__PY__
 import json, os, subprocess, sys
 a = sys.argv
@@ -517,10 +517,10 @@ with open(os.environ["FAKE_LOG"], "a") as f:
 def emit(e):
     print(json.dumps(e))
 for x in a:
-    if x.startswith("mcp_servers.keypulse.command="):
+    if x.startswith("mcp_servers.penpal.command="):
         wrapper = json.loads(x.split("=", 1)[1])
         subprocess.run([wrapper], check=True, env=dict(os.environ), timeout=20)
-emit({"type": "item.completed", "item": {"type": "mcp_tool_call", "server": "keypulse", "tool": "search_context",
+emit({"type": "item.completed", "item": {"type": "mcp_tool_call", "server": "penpal", "tool": "search_context",
                                           "arguments": json.dumps({"keywords": ["secretword"]}), "status": "completed"}})
 emit({"type": "item.completed", "item": {"type": "agent_message", "text": "found it (Work)"}})
 emit({"type": "turn.completed", "usage": {"input_tokens": 7}})
@@ -530,11 +530,11 @@ emit({"type": "turn.completed", "usage": {"input_tokens": 7}})
 def test_codex_kp_run_end_to_end_with_fake_codex(tmp_path, fake_codex):
     run = tmp_path / "evals" / "runs" / "r1"
     run.mkdir(parents=True)
-    _make_db(run / "keypulse.db")
+    _make_db(run / "penpal.db")
     (tmp_path / "evals" / "questions.jsonl").write_text(json.dumps(
         {"id": "A1", "group": "A", "grant": ["Work"], "query": "what?", "gold_answer": "g"}) + "\n")
     assert main(["run", "--data-dir", str(tmp_path / "evals"), "--run-dir", str(run), "--arm", "kp", "--host", "codex",
-                 "--codex-bin", str(fake_codex["codex"]), "--keypulse-bin", str(fake_codex["kp"])]) == 0
+                 "--codex-bin", str(fake_codex["codex"]), "--penpal-bin", str(fake_codex["kp"])]) == 0
     row = json.loads((run / "results-kp.jsonl").read_text().splitlines()[0])
     assert row["host"] == "codex" and row["model"] == "gpt-6-luna" and row["exit"] == 0
     assert row["answer"] == "found it (Work)" and row["tool_calls"] == 1 and row["non_kp_tools"] == []
@@ -544,7 +544,7 @@ def test_codex_kp_run_end_to_end_with_fake_codex(tmp_path, fake_codex):
     argv = json.loads(fake_codex["log"].read_text().splitlines()[0])
     assert token not in " ".join(argv) and token not in (run / "results-kp.jsonl").read_text()  # no token in argv or rows
     assert "gpt-6-luna" in argv and "--disable" in argv
-    (override,) = [a for a in argv if a.startswith("mcp_servers.keypulse.command=")]
+    (override,) = [a for a in argv if a.startswith("mcp_servers.penpal.command=")]
     wrapper_path = Path(json.loads(override.split("=", 1)[1]))
     assert not wrapper_path.exists()  # deleted after the question
 
@@ -563,7 +563,7 @@ def test_report_lists_isolation_violations_and_host_model():
     assert kp["isolation_violations"] == ["a"] and kp["isolation_count"] == 1
     assert (kp["host"], kp["model"], kp["judge_host"], kp["judge_model"]) == ("codex", "gpt-6-luna", "codex", "gpt-6-luna")
     md = report.render(report.aggregate(qs, results, judged, None), "run")
-    assert "Isolation violations (kp, tools outside KeyPulse MCP ran): a" in md
+    assert "Isolation violations (kp, tools outside Penpal MCP ran): a" in md
     legacy = report.aggregate(qs, {"kp": [{"id": "a", "seconds": 1, "tool_calls": 0, "cost_usd": 0.1}]}, {}, None)
     assert legacy["arms"]["kp"]["host"] == "claude" and legacy["arms"]["kp"]["model"] == "-"
 
@@ -604,7 +604,7 @@ def _gold_qs() -> list:
 
 
 def test_validate_pass_fail_warn_on_synthetic_db(tmp_path):
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _gold_db(db)  # ids are 1 (alpha) and 2 (title) in a fresh DB
     res = {r.qid: r for r in validate_mod.validate_gold(_gold_qs(), db)}
     assert "G6" not in res  # not_found is not checked
@@ -619,7 +619,7 @@ def test_validate_pass_fail_warn_on_synthetic_db(tmp_path):
 
 
 def test_validate_window_title_counts_and_answer_without_ids_warns(tmp_path):
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _gold_db(db)
     qs = [parse_question({"id": "W1", "group": "W", "grant": ["Work"], "query": "q", "gold_answer": "a",
                           "gold_match": ["secret title"]}),
@@ -634,7 +634,7 @@ def test_validate_window_title_counts_and_answer_without_ids_warns(tmp_path):
 
 
 def test_validate_cli_exit_code_follows_fails(tmp_path, capsys):
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _gold_db(db)
     data = tmp_path / "evals"
     data.mkdir()
@@ -651,12 +651,12 @@ def test_validate_cli_exit_code_follows_fails(tmp_path, capsys):
 
 
 def test_all_stops_on_gold_fail_unless_flag_given(tmp_path, monkeypatch, capsys):
-    db = tmp_path / "keypulse.db"
+    db = tmp_path / "penpal.db"
     _gold_db(db)
     data = tmp_path / "evals"
     run = data / "runs" / "r1"
     run.mkdir(parents=True)
-    (run / "keypulse.db").write_bytes(db.read_bytes())
+    (run / "penpal.db").write_bytes(db.read_bytes())
     qpath = data / "questions.jsonl"
     qpath.write_text(json.dumps({"id": "F1", "group": "F", "grant": ["Work"], "query": "q", "gold_answer": "a",
                                  "gold_event_ids": [777777], "gold_match": ["alpha-gold"]}) + "\n")

@@ -1,4 +1,4 @@
-"""Issue #30: `keypulse purge` deletes raw_events AND everything derived from them.
+"""Issue #30: `penpal purge` deletes raw_events AND everything derived from them.
 
 Covers the store-layer cascade (raw text, FTS, evidence, MCP ledgers, search docs, sessions), the
 exact --app / --source selectors, dry run, atomicity, the CLI prompt and per-table output, and the
@@ -12,18 +12,18 @@ from datetime import datetime, timezone
 import pytest
 from click.testing import CliRunner
 
-import keypulse.cli as cli_module
-from keypulse.capture.normalizer import (
+import penpal.cli as cli_module
+from penpal.capture.normalizer import (
     normalize_clipboard_event,
     normalize_keyboard_chunk_event,
     normalize_manual_event,
 )
-from keypulse.config import Config
-from keypulse.mcp import auth, tools
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.models import RawEvent, SearchDoc, Session
-from keypulse.store.repository import insert_raw_event, insert_search_doc, purge_raw_events, upsert_session
+from penpal.config import Config
+from penpal.mcp import auth, tools
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.models import RawEvent, SearchDoc, Session
+from penpal.store.repository import insert_raw_event, insert_search_doc, purge_raw_events, upsert_session
 from mcp_helpers import search
 
 T1 = "2026-03-02T10:01:00+00:00"

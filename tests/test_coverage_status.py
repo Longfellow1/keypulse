@@ -6,10 +6,10 @@ import json
 import pytest
 
 from mcp_helpers import search
-from keypulse.mcp import auth, tools
-from keypulse.store.db import close, init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.mcp import auth, tools
+from penpal.store.db import close, init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 
 OUT_SRC = "KPCANARYsecretsource"  # a source name that exists only outside the grant
 
@@ -101,6 +101,6 @@ def test_timeline_coverage_respects_range(db) -> None:
 
 
 def test_tool_descriptions_tell_hosts_to_use_coverage() -> None:
-    from keypulse.mcp.server import SEARCH_DESCRIPTION, TIMELINE_DESCRIPTION
+    from penpal.mcp.server import SEARCH_DESCRIPTION, TIMELINE_DESCRIPTION
     for text in (SEARCH_DESCRIPTION, TIMELINE_DESCRIPTION):
         assert "coverage.by_source" in text and "has_events_in_range" in text

@@ -6,13 +6,13 @@ import json
 
 import pytest
 
-from keypulse.mcp import auth, tools
-from keypulse.privacy.desensitizer import desensitize, desensitize_json_value, mask_emails
-from keypulse.store import feedback
-from keypulse.store.db import close, init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.store.sync_repo import add_evidence
+from penpal.mcp import auth, tools
+from penpal.privacy.desensitizer import desensitize, desensitize_json_value, mask_emails
+from penpal.store import feedback
+from penpal.store.db import close, init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.store.sync_repo import add_evidence
 from mcp_helpers import client_of
 
 

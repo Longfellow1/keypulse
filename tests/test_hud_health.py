@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from keypulse.hud import health as hud_health
+from penpal.hud import health as hud_health
 
 
 def test_read_health_returns_none_when_file_missing(tmp_path, monkeypatch):

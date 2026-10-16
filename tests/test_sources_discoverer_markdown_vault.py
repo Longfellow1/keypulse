@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from keypulse.sources.discoverers.markdown_vault import discover_markdown_vault_candidates
+from penpal.sources.discoverers.markdown_vault import discover_markdown_vault_candidates
 
 
 def test_discover_markdown_vault_candidates_from_obsidian_config(monkeypatch, tmp_path: Path) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.plugins.zsh_history import ZshHistorySource
+from penpal.sources.plugins.zsh_history import ZshHistorySource
 
 
 def test_zsh_discover_and_read_extended_lines(monkeypatch, tmp_path: Path) -> None:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from keypulse.sources.cleaning.dedup import dedup_events
-from keypulse.sources.types import SemanticEvent
+from penpal.sources.cleaning.dedup import dedup_events
+from penpal.sources.types import SemanticEvent
 
 
 def _event(minutes: int, *, source: str = 'chrome_history', intent: str = 'QQMail', artifact: str = 'https://wx.mail.qq.com/home/index', metadata: dict | None = None) -> SemanticEvent:

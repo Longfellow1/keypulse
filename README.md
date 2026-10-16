@@ -1,6 +1,6 @@
-# KeyPulse
+# Penpal
 
-> **给你所有 AI 共用的本地记忆。** KeyPulse 在你的 Mac 上记下你看过、写过、问过的东西，通过 MCP 交给 Claude Code、Codex、Cursor 查询，每条结果都能打开出处，每个 AI 能看到什么由你授权。
+> **给你所有 AI 共用的本地记忆。** Penpal 在你的 Mac 上记下你看过、写过、问过的东西，通过 MCP 交给 Claude Code、Codex、Cursor 查询，每条结果都能打开出处，每个 AI 能看到什么由你授权。
 
 [English](README.en.md) · [快速开始](#快速开始) · [记什么不记什么](#记什么不记什么) · [现在做到哪](#现在做到哪)
 
@@ -15,15 +15,15 @@
 
 你在 Claude Code 里问："上周我看过一个讲 MCP 鉴权的网页，在哪？" 它答不上来。它没见过你的浏览器；就算让它跑 bash 去翻，浏览器历史 90 天后会过期，剪贴板、切过的窗口、在网页输入框里打过的字，本来就没落盘，事后谁也找不回。
 
-装了 KeyPulse 之后，同一个问题，AI 调用 `search_context`，返回那条网页记录、你当时在哪个 App 里、前后在做什么，再用 `get_evidence` 打开原始出处，你自己核对是不是它。
+装了 Penpal 之后，同一个问题，AI 调用 `search_context`，返回那条网页记录、你当时在哪个 App 里、前后在做什么，再用 `get_evidence` 打开原始出处，你自己核对是不是它。
 
-KeyPulse 不做聊天入口，也不内置大模型。你继续在自己常用的 AI 里提问，KeyPulse 只负责"记得"和"给得准"。
+Penpal 不做聊天入口，也不内置大模型。你继续在自己常用的 AI 里提问，Penpal 只负责"记得"和"给得准"。
 
 ## 为什么不直接让 AI 用 bash
 
-AI 自己能读本机文件，只给已有文件建个索引，没必要单独装一个工具。KeyPulse 存在的理由只有下面三条，每个功能都要落在其中一条上，并且在对照评测里比"AI + bash"答得好：
+AI 自己能读本机文件，只给已有文件建个索引，没必要单独装一个工具。Penpal 存在的理由只有下面三条，每个功能都要落在其中一条上，并且在对照评测里比"AI + bash"答得好：
 
-| | AI + bash | KeyPulse |
+| | AI + bash | Penpal |
 |---|---|---|
 | **本来不落盘的信息**：窗口切换、剪贴板、网页里打过的字 | 找不回 | 采集时就记下 |
 | **超过来源保留期的记录**：Claude Code 会话约 30 天、Chrome 历史约 90 天 | 过期就没了 | 入库后一直保留，直到你删 |
@@ -44,13 +44,13 @@ App 能做的事，CLI 都能做。只装 CLI 也不会"坏了没人知道"：�
 ```bash
 # 1. 安装 CLI，初始化运行环境，注册开机自启的后台服务
 curl -fsSL https://raw.githubusercontent.com/Longfellow1/keypulse/main/install.sh | bash
-# 或手动：brew tap Longfellow1/keypulse && brew install keypulse && keypulse install init
+# 或手动：brew tap Longfellow1/keypulse && brew install penpal && penpal install init
 
 # 2. 检查系统权限：缺哪个、该给哪个程序授权、去哪个设置面板，doctor 都会列出来
-keypulse doctor
+penpal doctor
 
 # 3. 授权一个 AI，并按提示把配置加进去（命令会直接打印 Claude Code / Codex / Cursor 的配置）
-keypulse mcp grant claude --buckets Work,Personal
+penpal mcp grant claude --buckets Work,Personal
 ```
 
 然后在 Claude Code 里正常提问，比如"我昨天下午在研究什么"。
@@ -64,7 +64,7 @@ keypulse mcp grant claude --buckets Work,Personal
 | `get_evidence` | 打开某条结果的原始出处 |
 | `rate_result` | 对结果打分，用来改进排序 |
 
-只读。查到的内容会进入该 AI 的对话，可能发送到它的云端服务。授权时按分类（Work / Personal / Private / Financial）限定，`keypulse mcp audit` 能看到谁在什么时候查过、结果有几条，不记录查询内容。
+只读。查到的内容会进入该 AI 的对话，可能发送到它的云端服务。授权时按分类（Work / Personal / Private / Financial）限定，`penpal mcp audit` 能看到谁在什么时候查过、结果有几条，不记录查询内容。
 
 ## 记什么不记什么
 
@@ -81,20 +81,20 @@ keypulse mcp grant claude --buckets Work,Personal
 - 键盘：不存逐个按键，只存过滤后的文字片段；默认不进 AI 搜索，AI 明确指定来源时才查
 - 邮箱 @ 前面打码、域名保留，令牌、密钥、卡号入库前遮盖
 
-数据只在你本机 `~/.keypulse/`，没有云端、没有埋点。不会自动删除，删除由你决定，删的时候原文、索引、出处、相关查询记录一起清掉。
+数据只在你本机 `~/.penpal/`，没有云端、没有埋点。不会自动删除，删除由你决定，删的时候原文、索引、出处、相关查询记录一起清掉。
 
 ## 日常控制
 
 | 要做的事 | 命令 |
 |---|---|
-| 看状态、查健康 | `keypulse status`、`keypulse health`、`keypulse doctor` |
-| 暂停、继续（重启后仍保持暂停） | `keypulse pause`、`keypulse resume` |
-| 开关某个来源 | `keypulse source list`、`keypulse source disable keyboard_chunk` |
-| 放行某个聊天 App | `keypulse privacy chat-apps allow Slack` |
-| 管 AI 授权 | `keypulse mcp list`、`keypulse mcp revoke <client>`、`keypulse mcp rotate <client>` |
-| 删除数据（先预览数量） | `keypulse purge --source chrome_history --dry-run` |
+| 看状态、查健康 | `penpal status`、`penpal health`、`penpal doctor` |
+| 暂停、继续（重启后仍保持暂停） | `penpal pause`、`penpal resume` |
+| 开关某个来源 | `penpal source list`、`penpal source disable keyboard_chunk` |
+| 放行某个聊天 App | `penpal privacy chat-apps allow Slack` |
+| 管 AI 授权 | `penpal mcp list`、`penpal mcp revoke <client>`、`penpal mcp rotate <client>` |
+| 删除数据（先预览数量） | `penpal purge --source chrome_history --dry-run` |
 
-完整参考：`keypulse --help`。
+完整参考：`penpal --help`。
 
 ## 现在做到哪
 

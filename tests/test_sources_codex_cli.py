@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.plugins.codex_cli import CodexCliSource
+from penpal.sources.plugins.codex_cli import CodexCliSource
 
 
 def test_codex_cli_discover_and_read(monkeypatch, tmp_path: Path) -> None:

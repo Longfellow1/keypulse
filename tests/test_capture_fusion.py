@@ -4,8 +4,8 @@ import pytest
 
 import json
 
-from keypulse.capture.fusion import CaptureFusionEngine
-from keypulse.capture.normalizer import (
+from penpal.capture.fusion import CaptureFusionEngine
+from penpal.capture.normalizer import (
     normalize_ax_text_event,
     normalize_ocr_text_event,
 )

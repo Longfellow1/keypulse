@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import queue
 
-from keypulse.capture.watchers.keyboard_chunk import (
+from penpal.capture.watchers.keyboard_chunk import (
     KeyboardChunkBuffer,
     KeyboardChunkWatcher,
     _normalize_buffered_text,

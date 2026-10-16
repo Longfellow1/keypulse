@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from keypulse.sources.discoverers.json_files import discover_json_files_candidates
+from penpal.sources.discoverers.json_files import discover_json_files_candidates
 
 
 def _write_json(path: Path, payload: object) -> None:

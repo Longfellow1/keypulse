@@ -1,4 +1,4 @@
-# KeyPulse Positioning
+# Penpal Positioning
 
 ## One-liner
 
@@ -26,7 +26,7 @@ Local-first personal AI / private reflection companion / Obsidian-native daily r
 
 ## Core differentiation
 
-KeyPulse does not optimize productivity scores. It helps users notice recurring work patterns through private daily reflection.
+Penpal does not optimize productivity scores. It helps users notice recurring work patterns through private daily reflection.
 
 Its strongest wedge is Obsidian-native output:
 
@@ -39,7 +39,7 @@ Its strongest wedge is Obsidian-native output:
 ## What to say
 
 ```text
-KeyPulse turns your Mac work surface into Obsidian-native daily reflection notes.
+Penpal turns your Mac work surface into Obsidian-native daily reflection notes.
 
 It does not replace your PKM system.
 It writes back into it.

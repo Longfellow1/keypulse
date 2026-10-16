@@ -5,10 +5,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.approval import ApprovalStore
-from keypulse.sources.discoverers import CandidateSource
-from keypulse.sources.plugins.approved_sqlite import ApprovedSqliteSource, parse_time_value
-from keypulse.sources.registry import get_source
+from penpal.sources.approval import ApprovalStore
+from penpal.sources.discoverers import CandidateSource
+from penpal.sources.plugins.approved_sqlite import ApprovedSqliteSource, parse_time_value
+from penpal.sources.registry import get_source
 
 
 _WEBKIT_EPOCH_OFFSET_US = 11_644_473_600 * 1_000_000
@@ -236,7 +236,7 @@ def test_read_uses_tempfile_copy2(monkeypatch, tmp_path: Path) -> None:
         copied.append((str(src), str(dst)))
         return original_copy2(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr("keypulse.sources.plugins.approved_sqlite.shutil.copy2", tracking_copy2)
+    monkeypatch.setattr("penpal.sources.plugins.approved_sqlite.shutil.copy2", tracking_copy2)
 
     events = list(
         source.read(

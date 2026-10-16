@@ -1,4 +1,4 @@
-# KeyPulse 智能脱敏版本完成总结
+# Penpal 智能脱敏版本完成总结
 
 ## 🎉 重大升级：智能脱敏技术
 
@@ -85,7 +85,7 @@ CREATE TABLE activities (
 
 **输出示例：**
 ```markdown
-### keypulse 项目（4.5h）
+### penpal 项目（4.5h）
 - 09:00-12:00 核心功能开发（VSCode，高强度，1,850 键击，代码）
   内容：func, class, struct, database, API
   **关键词：** Swift, ActivityMonitor, KeystrokeCounter
@@ -111,7 +111,7 @@ CREATE TABLE activities (
 ## 📁 文件结构
 
 ```
-keypulse/
+penpal/
 ├── Sources/
 │   ├── TextDesensitizer.swift    # 智能脱敏引擎（新增）
 │   ├── KeystrokeCounter.swift    # 键盘输入捕获（重写）
@@ -148,7 +148,7 @@ keypulse/
 
 ### 数据存储
 
-- ✅ 本地存储（~/.keypulse/）
+- ✅ 本地存储（~/.penpal/）
 - ✅ 不上传云端
 - ✅ 可随时清空
 - ❌ 不存储原始输入（只在内存中处理）
@@ -159,13 +159,13 @@ keypulse/
 
 ### 之前（只有键击统计）
 ```markdown
-### keypulse 项目（4.5h）
+### penpal 项目（4.5h）
 - 09:00-12:00 VSCode（高强度，1,850 键击）
 ```
 
 ### 现在（智能脱敏）
 ```markdown
-### keypulse 项目（4.5h）
+### penpal 项目（4.5h）
 - 09:00-12:00 核心功能开发（VSCode，高强度，1,850 键击，代码）
   内容：func, class, struct, database, API
   **关键词：** Swift, ActivityMonitor, KeystrokeCounter, database
@@ -210,7 +210,7 @@ keypulse/
 
 ### 差异化优势
 
-| 对比项 | 其他工具 | KeyPulse |
+| 对比项 | 其他工具 | Penpal |
 |--------|---------|----------|
 | **隐私** | 完全不记录 or 记录所有 | 智能脱敏 |
 | **内容** | 只有时长 | 有工作内容摘要 |
@@ -235,7 +235,7 @@ keypulse/
 
 1. **推送到 GitHub**
    ```bash
-   cd /tmp/keypulse
+   cd /tmp/penpal
    git add .
    git commit -m "重大升级：智能脱敏技术
    
@@ -275,7 +275,7 @@ keypulse/
 
 ---
 
-**项目位置：** `/tmp/keypulse`  
+**项目位置：** `/tmp/penpal`\
 **编译状态：** ✅ 成功  
 **准备推送：** ✅ 是  
 **完成时间：** 2026-02-27 14:40

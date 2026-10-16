@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from keypulse.sources.types import (
+from penpal.sources.types import (
     ContentShape,
     DataSource,
     DataSourceInstance,
@@ -48,7 +48,7 @@ def test_semantic_event_normalizes_to_utc() -> None:
         actor="Harland",
         intent="Add source registry",
         artifact="commit:abcdef1",
-        raw_ref="git:keypulse:abcdef123456",
+        raw_ref="git:penpal:abcdef123456",
         privacy_tier="green",
         metadata={"repo_path": "/tmp/repo"},
     )
@@ -66,7 +66,7 @@ def test_semantic_event_rejects_naive_time() -> None:
             actor="Harland",
             intent="Add source registry",
             artifact="commit:abcdef1",
-            raw_ref="git:keypulse:abcdef123456",
+            raw_ref="git:penpal:abcdef123456",
             privacy_tier="green",
             metadata={},
         )

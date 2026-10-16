@@ -1,4 +1,4 @@
-# KeyPulse Growth Log
+# Penpal Growth Log
 
 Track growth as a feedback signal, not as the goal itself.
 

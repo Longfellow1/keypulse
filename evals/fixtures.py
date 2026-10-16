@@ -193,14 +193,14 @@ def _write_vault(root: Path, events: list[FxEvent]) -> Path:
 
 def build_plugins(root: Path) -> dict[str, object]:
     """Write all fixtures under ``root`` and return ready-to-register plugin instances."""
-    from keypulse.sources.approval import ApprovalStore
-    from keypulse.sources.plugins.chrome_history import ChromeHistorySource
-    from keypulse.sources.plugins.claude_code import ClaudeCodeSource
-    from keypulse.sources.plugins.codex_cli import CodexCliSource
-    from keypulse.sources.plugins.git_log import GitLogSource
-    from keypulse.sources.plugins.markdown_vault import MarkdownVaultSource
-    from keypulse.sources.plugins.safari_history import SafariHistorySource
-    from keypulse.sources.plugins.zsh_history import ZshHistorySource
+    from penpal.sources.approval import ApprovalStore
+    from penpal.sources.plugins.chrome_history import ChromeHistorySource
+    from penpal.sources.plugins.claude_code import ClaudeCodeSource
+    from penpal.sources.plugins.codex_cli import CodexCliSource
+    from penpal.sources.plugins.git_log import GitLogSource
+    from penpal.sources.plugins.markdown_vault import MarkdownVaultSource
+    from penpal.sources.plugins.safari_history import SafariHistorySource
+    from penpal.sources.plugins.zsh_history import ZshHistorySource
 
     grouped = _by_source()
     return {

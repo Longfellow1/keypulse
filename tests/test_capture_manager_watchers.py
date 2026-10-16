@@ -4,12 +4,12 @@ import pytest
 
 import json
 
-from keypulse.capture.manager import CaptureManager
-from keypulse.capture.normalizer import normalize_ax_text_event
-from keypulse.capture.normalizer import normalize_keyboard_chunk_event
-from keypulse.capture.normalizer import normalize_manual_event
-from keypulse.capture.normalizer import normalize_window_event
-from keypulse.config import Config
+from penpal.capture.manager import CaptureManager
+from penpal.capture.normalizer import normalize_ax_text_event
+from penpal.capture.normalizer import normalize_keyboard_chunk_event
+from penpal.capture.normalizer import normalize_manual_event
+from penpal.capture.normalizer import normalize_window_event
+from penpal.config import Config
 
 
 @pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
@@ -88,7 +88,7 @@ class _StubOCRWatcher:
 
     def capture_once(self, **kwargs):
         self.capture_calls.append(kwargs)
-        from keypulse.capture.normalizer import normalize_ocr_text_event
+        from penpal.capture.normalizer import normalize_ocr_text_event
 
         return normalize_ocr_text_event(
             text="ocr from manager",
@@ -176,7 +176,7 @@ def test_manager_persist_runtime_state_writes_json_snapshot(monkeypatch):
     manager._watchers = {}
     writes: list[tuple[str, str]] = []
 
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda key, value: writes.append((key, value)))
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda key, value: writes.append((key, value)))
 
     manager._persist_runtime_state(force=True)
 
@@ -202,9 +202,9 @@ def test_manager_attaches_current_window_session_id_to_non_window_events(monkeyp
 
     monkeypatch.setattr(manager._policy, "apply", lambda event: event)
     monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
-    monkeypatch.setattr("keypulse.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
-    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         normalize_manual_event(
@@ -225,9 +225,9 @@ def test_manager_redacts_keyboard_chunk_content_before_persisting(monkeypatch):
 
     monkeypatch.setattr(manager._policy, "apply", lambda event: event)
     monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
-    monkeypatch.setattr("keypulse.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
-    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         normalize_manual_event(
@@ -248,9 +248,9 @@ def test_manager_keeps_keyboard_chunk_weight_high_for_chat_style_apps(monkeypatc
 
     monkeypatch.setattr(manager._policy, "apply", lambda event: event)
     monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
-    monkeypatch.setattr("keypulse.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
-    monkeypatch.setattr("keypulse.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("keypulse.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         normalize_keyboard_chunk_event(

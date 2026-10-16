@@ -44,7 +44,7 @@ def aggregate(questions: dict[str, Question], results: dict[str, list[dict]], ju
                 dis.append(r["id"])
         compared = sum(1 for r in counted if questions[r["id"]].human_verdicts.get(arm))
         llm_judged = [j for j in judged.get(arm, []) if j.get("method") == "llm"]
-        violations = [r["id"] for r in rs if r.get("non_kp_tools")]  # codex runs: anything but KeyPulse MCP calls
+        violations = [r["id"] for r in rs if r.get("non_kp_tools")]  # codex runs: anything but Penpal MCP calls
         arms[arm] = {
             "n": n, **c, "accuracy": c["correct"] / n if n else None,
             "host": _labels(rs, "host", "claude"), "model": _labels(rs, "model", None),
@@ -89,18 +89,18 @@ def render(agg: dict, run_name: str = "") -> str:
             if arms[a]["judge_disagreements"]:
                 L.append(f"- Judge disagreements with human pre-labels ({a}): {', '.join(arms[a]['judge_disagreements'])}")
             if arms[a]["isolation_violations"]:
-                L.append(f"- Isolation violations ({a}, tools outside KeyPulse MCP ran): {', '.join(arms[a]['isolation_violations'])}")
+                L.append(f"- Isolation violations ({a}, tools outside Penpal MCP ran): {', '.join(arms[a]['isolation_violations'])}")
         L.append("")
     ex = agg["exclusive"]
     if ex:
         L += ["## Exclusive correct (questions both arms ran)", "",
               f"- compared: {ex['compared']}",
-              f"- KeyPulse correct, bash not: {len(ex['kp_only'])} ({', '.join(ex['kp_only']) or '-'})",
-              f"- bash correct, KeyPulse not: {len(ex['bash_only'])} ({', '.join(ex['bash_only']) or '-'})", ""]
+              f"- Penpal correct, bash not: {len(ex['kp_only'])} ({', '.join(ex['kp_only']) or '-'})",
+              f"- bash correct, Penpal not: {len(ex['bash_only'])} ({', '.join(ex['bash_only']) or '-'})", ""]
     rp = agg["replay"]
     if rp:
         lat = rp["latency_ms"]
-        L += ["## Replay of KeyPulse tool calls", "",
+        L += ["## Replay of Penpal tool calls", "",
               f"- replayed calls: {rp['calls']} (skipped: {rp['skipped']})",
               f"- tool latency ms: p50 {_fmt(lat['p50'])}, p95 {_fmt(lat['p95'])}, max {_fmt(lat['max'])}",
               f"- leak hits: {len(rp['leaks'])}" + (f" ({'; '.join(l['id'] + ':' + ','.join(l['patterns']) for l in rp['leaks'])})" if rp["leaks"] else ""),

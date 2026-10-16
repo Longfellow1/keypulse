@@ -24,9 +24,19 @@ def _no_object_object_artifacts() -> None:
 def _mcp_capture_health_off_by_default(monkeypatch):
     """MCP tests assert exact payloads; a fresh test DB has no daemon heartbeat, which would add a
     capture_health warning. tests/test_capture_health.py exercises the real thing explicitly."""
-    from keypulse.health import capture_health
+    from penpal.health import capture_health
 
     capture_health.reset_cache()
-    monkeypatch.setattr("keypulse.mcp.server.current_capture_health", lambda: None)
+    monkeypatch.setattr("penpal.mcp.server.current_capture_health", lambda: None)
     yield
     capture_health.reset_cache()
+
+
+@pytest.fixture(autouse=True)
+def _no_host_legacy_process_scan(monkeypatch):
+    """Data-dir migration refuses to run while old `keypulse mcp serve` processes are alive. That scan
+    looks at the whole machine, so on a developer box with KeyPulse running it would block every
+    migration test. tests/test_data_dir_migration.py exercises the real scan explicitly."""
+    from penpal.utils import paths
+
+    monkeypatch.setattr(paths, "_find_legacy_mcp_serve_processes", lambda: [])

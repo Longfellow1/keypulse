@@ -9,11 +9,11 @@ import textwrap
 # Third-party clients that would indicate a model gateway / network LLM call path.
 FORBIDDEN_PREFIXES = ("anthropic", "openai", "httpx", "requests")
 REMOVED_PACKAGES = (
-    "keypulse.pipeline",
-    "keypulse.obsidian",
-    "keypulse.quality",
-    "keypulse.integrations",
-    "keypulse.prompts",
+    "penpal.pipeline",
+    "penpal.obsidian",
+    "penpal.quality",
+    "penpal.integrations",
+    "penpal.prompts",
 )
 
 
@@ -37,23 +37,23 @@ def test_legacy_report_packages_are_removed() -> None:
 
 
 def test_daemon_entry_does_not_load_llm_or_http_clients() -> None:
-    assert _loaded_forbidden_modules("import keypulse.app") == []
+    assert _loaded_forbidden_modules("import penpal.app") == []
 
 
 def test_core_modules_do_not_load_llm_or_http_clients() -> None:
     stmt = "; ".join(
         f"import {m}"
         for m in (
-            "keypulse.app",
-            "keypulse.cli",
-            "keypulse.sources",
-            "keypulse.sources.registry",
-            "keypulse.sources.scheduler",
-            "keypulse.hud.summary",
-            "keypulse.health.self_heal",
-            "keypulse.health.check",
-            "keypulse.services.export",
-            "keypulse.search.engine",
+            "penpal.app",
+            "penpal.cli",
+            "penpal.sources",
+            "penpal.sources.registry",
+            "penpal.sources.scheduler",
+            "penpal.hud.summary",
+            "penpal.health.self_heal",
+            "penpal.health.check",
+            "penpal.services.export",
+            "penpal.search.engine",
         )
     )
     assert _loaded_forbidden_modules(stmt) == []
@@ -65,6 +65,6 @@ def test_no_source_file_imports_llm_or_http_clients() -> None:
     from pathlib import Path
 
     pattern = re.compile(rf"^\s*(?:import|from)\s+({'|'.join(FORBIDDEN_PREFIXES)})\b", re.M)
-    root = Path(__file__).resolve().parents[1] / "keypulse"
+    root = Path(__file__).resolve().parents[1] / "penpal"
     hits = [str(p.relative_to(root)) for p in root.rglob("*.py") if pattern.search(p.read_text(encoding="utf-8"))]
     assert hits == []

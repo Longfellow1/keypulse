@@ -1,10 +1,10 @@
 import ast, os, sys, json, collections, re
 
-REPO = "/Users/Harland/Go/keypulse"
-PKG = os.path.join(REPO, "keypulse")
-SP = "/private/tmp/claude-502/-Users-Harland-Go-keypulse/c7664793-02ba-4616-81c2-5db7c60940bf/scratchpad"
+REPO = "/Users/Harland/Go/penpal"
+PKG = os.path.join(REPO, "penpal")
+SP = "/private/tmp/claude-502/-Users-Harland-Go-penpal/c7664793-02ba-4616-81c2-5db7c60940bf/scratchpad"
 STDLIB = set(sys.stdlib_module_names)
-SUBPKGS = {d for d in os.listdir(os.path.join(REPO,"keypulse")) if os.path.isdir(os.path.join(REPO,"keypulse",d)) and d != "__pycache__"}
+SUBPKGS = {d for d in os.listdir(os.path.join(REPO,"penpal")) if os.path.isdir(os.path.join(REPO,"penpal",d)) and d != "__pycache__"}
 PYOBJC = {"AppKit","Foundation","Quartz","objc","Vision","CoreServices","ApplicationServices","Cocoa",
           "CoreFoundation","LaunchServices","Security","ScreenCaptureKit","CoreLocation","AVFoundation",
           "PyObjCTools","Speech","NaturalLanguage","CoreML","Contacts","EventKit","SystemConfiguration",
@@ -13,7 +13,7 @@ PYOBJC = {"AppKit","Foundation","Quartz","objc","Vision","CoreServices","Applica
 def rel(p): return os.path.relpath(p, REPO)
 
 def unit_of_parts(parts):
-    # parts like ['keypulse','capture','x']  -> unit name
+    # parts like ['penpal','capture','x']  -> unit name
     if len(parts) < 2: return "(root:__init__)"
     p = parts[1]
     if len(parts) == 2 and p.endswith(".py") is False:
@@ -47,7 +47,7 @@ for path in pyfiles:
             for line in d.splitlines():
                 if line.strip():
                     doc = line.strip(); break
-    modparts = r[:-3].split("/")  # keypulse/x/y or keypulse/x/__init__
+    modparts = r[:-3].split("/")  # penpal/x/y or penpal/x/__init__
     if modparts[-1] == "__init__":
         pkgparts = modparts[:-1]
     else:
@@ -57,7 +57,7 @@ for path in pyfiles:
 # unit of each file
 def file_unit(r):
     parts = r.split("/")
-    if len(parts) == 2:  # keypulse/x.py  (root)
+    if len(parts) == 2:  # penpal/x.py  (root)
         return "root:" + parts[1][:-3] if parts[1] != "__init__.py" else "root:__init__"
     return parts[1]
 
@@ -82,7 +82,7 @@ def resolve(pkgparts, level, module, names):
     return out
 
 def target_unit(parts):
-    if not parts or parts[0] != "keypulse":
+    if not parts or parts[0] != "penpal":
         return None
     if len(parts) == 1:
         return "root:__init__"
@@ -120,9 +120,9 @@ for r, v in info.items():
             for t in targets:
                 if lvl == 0 and isinstance(node, ast.ImportFrom) is False:
                     pass
-                if t and t[0] == "keypulse":
+                if t and t[0] == "penpal":
                     du = target_unit(t)
-                    # for from-keypulse-import-name where name is a module, handled via names above for relative only
+                    # for from-penpal-import-name where name is a module, handled via names above for relative only
                     if du and du != su:
                         edges[(su, du)] += 1
                         if is_top: top_edges[(su, du)] += 1
@@ -134,11 +134,11 @@ for r, v in info.items():
                     if top in PYOBJC:
                         pyobjc_files.append((r, node.lineno, top))
                     third_by_file.setdefault(r, set()).add(top)
-                if lvl and t and t[0] != "keypulse":
+                if lvl and t and t[0] != "penpal":
                     pass
 
-# ensure relative resolution: for relative imports, resolve() returns full path starting with 'keypulse' only if pkgparts start with keypulse
-# (pkgparts already start with 'keypulse' since modparts is repo-relative)
+# ensure relative resolution: for relative imports, resolve() returns full path starting with 'penpal' only if pkgparts start with penpal
+# (pkgparts already start with 'penpal' since modparts is repo-relative)
 
 # cycles (Tarjan) on unit graph
 def scc(graph):

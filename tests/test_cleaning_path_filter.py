@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from keypulse.sources.cleaning.path_filter import is_excluded_path
+from penpal.sources.cleaning.path_filter import is_excluded_path
 
 
 def test_path_filter_excludes_backup_and_cache() -> None:

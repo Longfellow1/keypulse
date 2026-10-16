@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.sources.plugins.codex_cli import CodexCliSource
-from keypulse.sources.sink import persist_semantic_event
-from keypulse.sources.types import DataSourceInstance
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v31 import migrate_v31
-from keypulse.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.sources.plugins.codex_cli import CodexCliSource
+from penpal.sources.sink import persist_semantic_event
+from penpal.sources.types import DataSourceInstance
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v31 import migrate_v31
+from penpal.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 
 _LINES = [
     {"session_id": "s1", "ts": 1767225600, "text": "first prompt"},

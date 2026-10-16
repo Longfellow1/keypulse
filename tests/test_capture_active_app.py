@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from keypulse.capture import active_app
+from penpal.capture import active_app
 
 
 class _FakeApp:

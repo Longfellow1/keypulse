@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from keypulse.capabilities.base import HealthState, Signal
-from keypulse.capabilities.registry import get_default_registry
+from penpal.capabilities.base import HealthState, Signal
+from penpal.capabilities.registry import get_default_registry
 
 
 def _state(*, ok: bool, code: str, last_checked: float) -> HealthState:

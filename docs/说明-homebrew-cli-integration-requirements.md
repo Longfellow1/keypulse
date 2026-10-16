@@ -1,34 +1,34 @@
-# Homebrew + KeyPulse CLI Integration Requirements
+# Homebrew + Penpal CLI Integration Requirements
 
-This document is a requirements handoff for the agent working on the KeyPulse CLI.
+This document is a requirements handoff for the agent working on the Penpal CLI.
 
 The local CLI is still being optimized and is not considered final. This document should define the product contract and expected installation shape, not prescribe the exact implementation.
 
 ## Current context
 
-KeyPulse currently has several overlapping installation paths:
+Penpal currently has several overlapping installation paths:
 
 - `make install` builds the `.app`, copies it into `/Applications`, installs launchd plists, and reloads agents.
-- `install.sh` creates `~/.keypulse/venv`, installs the local repo in editable mode, writes a `~/.local/bin/keypulse` wrapper, writes default config, runs sink discovery, and writes launchd plists.
-- The `keypulse` CLI already has operational commands such as `setup`, `start`, `serve`, `stop`, `status`, `doctor`, `healthcheck`, `obsidian sync`, `model setup`, and `sinks detect`.
+- `install.sh` creates `~/.penpal/venv`, installs the local repo in editable mode, writes a `~/.local/bin/penpal` wrapper, writes default config, runs sink discovery, and writes launchd plists.
+- The `penpal` CLI already has operational commands such as `setup`, `start`, `serve`, `stop`, `status`, `doctor`, `healthcheck`, `obsidian sync`, `model setup`, and `sinks detect`.
 - Homebrew has not yet been integrated as the public install path.
 
 This creates confusion for public users: `make install`, `install.sh`, `.app` bundling, launchd plists, and CLI commands each own part of the lifecycle.
 
 ## Desired product principle
 
-Homebrew should install the KeyPulse CLI.
+Homebrew should install the Penpal CLI.
 
-The KeyPulse CLI should initialize, configure, supervise, and uninstall the KeyPulse runtime.
+The Penpal CLI should initialize, configure, supervise, and uninstall the Penpal runtime.
 
 In short:
 
 ```text
-Homebrew owns "put the keypulse executable on this Mac".
-KeyPulse CLI owns "turn KeyPulse into a configured, running personal system".
+Homebrew owns "put the penpal executable on this Mac".
+Penpal CLI owns "turn Penpal into a configured, running personal system".
 ```
 
-This keeps Homebrew as the distribution layer and KeyPulse as the lifecycle owner.
+This keeps Homebrew as the distribution layer and Penpal as the lifecycle owner.
 
 ## Target user flows
 
@@ -45,9 +45,9 @@ Expected behavior:
 1. Verify macOS.
 2. Verify Homebrew exists, or provide a clear install instruction.
 3. Run `brew tap Longfellow1/keypulse`.
-4. Run `brew install keypulse`.
-5. Run `keypulse install init`.
-6. End with the exact next user action, usually permissions and `keypulse doctor`.
+4. Run `brew install penpal`.
+5. Run `penpal install init`.
+6. End with the exact next user action, usually permissions and `penpal doctor`.
 
 ### Advanced Homebrew install
 
@@ -55,8 +55,8 @@ Advanced users should be able to run:
 
 ```bash
 brew tap Longfellow1/keypulse
-brew install keypulse
-keypulse install init
+brew install penpal
+penpal install init
 ```
 
 ### Daily operation
@@ -64,15 +64,15 @@ keypulse install init
 After installation, users should mainly interact through:
 
 ```bash
-keypulse status
-keypulse doctor
-keypulse start
-keypulse stop
-keypulse healthcheck
-keypulse obsidian sync --incremental
-keypulse obsidian sync --yesterday
-keypulse model setup
-keypulse sinks detect --apply
+penpal status
+penpal doctor
+penpal start
+penpal stop
+penpal healthcheck
+penpal obsidian sync --incremental
+penpal obsidian sync --yesterday
+penpal model setup
+penpal sinks detect --apply
 ```
 
 ## CLI requirements
@@ -82,30 +82,30 @@ Add an install command group, or equivalent lifecycle surface, under the CLI.
 Recommended command shape:
 
 ```bash
-keypulse install init
-keypulse install launchd
-keypulse install uninstall
-keypulse install doctor
+penpal install init
+penpal install launchd
+penpal install uninstall
+penpal install doctor
 ```
 
 Exact names can change if the CLI design prefers another shape, but the lifecycle responsibilities should remain explicit.
 
-### `keypulse install init`
+### `penpal install init`
 
-Should perform first-run setup after `brew install keypulse`.
+Should perform first-run setup after `brew install penpal`.
 
 Expected responsibilities:
 
-- Create `~/.keypulse/` if missing.
-- Create `~/.keypulse/logs/` if missing.
-- Write default `~/.keypulse/config.toml` if missing.
+- Create `~/.penpal/` if missing.
+- Create `~/.penpal/logs/` if missing.
+- Write default `~/.penpal/config.toml` if missing.
 - Never overwrite an existing config unless the user passes a force flag.
-- Run or guide `keypulse setup`.
-- Run or guide `keypulse model setup`.
-- Run `keypulse sinks detect --apply`.
-- Install launchd jobs through `keypulse install launchd`.
-- Start KeyPulse or tell the user the exact command to start it.
-- Run `keypulse doctor` at the end, or print the exact command.
+- Run or guide `penpal setup`.
+- Run or guide `penpal model setup`.
+- Run `penpal sinks detect --apply`.
+- Install launchd jobs through `penpal install launchd`.
+- Start Penpal or tell the user the exact command to start it.
+- Run `penpal doctor` at the end, or print the exact command.
 
 Expected output style:
 
@@ -114,54 +114,54 @@ Expected output style:
 - Do not print raw stack traces for expected setup failures.
 - End with a short checklist.
 
-### `keypulse install launchd`
+### `penpal install launchd`
 
 Should own launchd plist creation and reload.
 
 Expected jobs:
 
-- `com.keypulse.daemon` -> `keypulse serve`
-- `com.keypulse.healthcheck` -> `keypulse healthcheck`
-- `com.keypulse.obsidian-sync` -> `keypulse obsidian sync`
-- `com.keypulse.obsidian-sync-hourly` -> `keypulse obsidian sync --incremental`
+- `com.penpal.daemon` -> `penpal serve`
+- `com.penpal.healthcheck` -> `penpal healthcheck`
+- `com.penpal.obsidian-sync` -> `penpal obsidian sync`
+- `com.penpal.obsidian-sync-hourly` -> `penpal obsidian sync --incremental`
 
 Requirements:
 
-- Use the actual `keypulse` binary path discovered at runtime, not a hardcoded repo path.
-- Use absolute log paths under `~/.keypulse/logs/`.
+- Use the actual `penpal` binary path discovered at runtime, not a hardcoded repo path.
+- Use absolute log paths under `~/.penpal/logs/`.
 - Write plists under `~/Library/LaunchAgents/`.
 - Be idempotent.
 - Preserve or warn before overwriting user-edited plists.
 - Support both `launchctl load/unload` fallback and modern `bootstrap/bootout`.
-- Make `keypulse start`, `keypulse stop`, and `keypulse status` consistent with installed launchd jobs.
+- Make `penpal start`, `penpal stop`, and `penpal status` consistent with installed launchd jobs.
 
-### `keypulse install uninstall`
+### `penpal install uninstall`
 
-Should remove KeyPulse runtime state that belongs to the installer, with safe defaults.
+Should remove Penpal runtime state that belongs to the installer, with safe defaults.
 
 Expected behavior:
 
 - Stop launchd jobs.
 - Remove managed launchd plists.
 - Leave user data by default.
-- Require an explicit flag to remove `~/.keypulse/keypulse.db`, config, logs, or Obsidian output.
+- Require an explicit flag to remove `~/.penpal/penpal.db`, config, logs, or Obsidian output.
 - Print what remains after uninstall.
 
 Example shape:
 
 ```bash
-keypulse install uninstall
-keypulse install uninstall --remove-runtime
-keypulse install uninstall --remove-data
+penpal install uninstall
+penpal install uninstall --remove-runtime
+penpal install uninstall --remove-data
 ```
 
 Exact flag names can change, but destructive data removal must be explicit.
 
-### `keypulse install doctor`
+### `penpal install doctor`
 
 Should verify install-level health:
 
-- `keypulse` executable path
+- `penpal` executable path
 - config path
 - database path
 - active sink
@@ -170,7 +170,7 @@ Should verify install-level health:
 - model backend readiness
 - macOS Accessibility / Screen Recording guidance if needed
 
-This can wrap or extend existing `keypulse doctor`.
+This can wrap or extend existing `penpal doctor`.
 
 ## Homebrew formula requirements
 
@@ -178,28 +178,28 @@ The Homebrew formula should install the Python CLI in a stable way.
 
 Expected formula responsibilities:
 
-- Install `keypulse` executable.
+- Install `penpal` executable.
 - Package Python dependencies using Homebrew-appropriate Python virtualenv conventions.
 - Depend on a supported Python version.
 - Include macOS-specific dependencies required for runtime, as feasible.
-- Avoid writing `~/.keypulse` during `brew install`.
+- Avoid writing `~/.penpal` during `brew install`.
 - Avoid installing or loading launchd plists during `brew install`.
-- Print a caveat telling users to run `keypulse install init`.
+- Print a caveat telling users to run `penpal install init`.
 
 Formula should not become the lifecycle owner. It should not duplicate the CLI's launchd management.
 
 Suggested caveat text:
 
 ```text
-To initialize KeyPulse:
-  keypulse install init
+To initialize Penpal:
+  penpal install init
 
 Then grant macOS permissions when prompted:
   System Settings -> Privacy & Security -> Accessibility
   System Settings -> Privacy & Security -> Screen Recording
 
 Check status:
-  keypulse doctor
+  penpal doctor
 ```
 
 ## `install.sh` requirements
@@ -210,9 +210,9 @@ Expected default behavior:
 
 1. Check macOS.
 2. Check Homebrew.
-3. Tap the KeyPulse formula.
-4. Install or upgrade KeyPulse.
-5. Run `keypulse install init`.
+3. Tap the Penpal formula.
+4. Install or upgrade Penpal.
+5. Run `penpal install init`.
 
 The current venv/editable install path should be retained only as a developer fallback, for example:
 
@@ -232,11 +232,11 @@ The public path should not require users to understand Python venvs, editable in
 
 Existing users may already have:
 
-- `~/.local/bin/keypulse`
-- `~/.keypulse/venv`
-- `~/.keypulse/config.toml`
-- launchd plists pointing to `~/.local/bin/keypulse`
-- launchd plists pointing to `/Applications/KeyPulse.app/...`
+- `~/.local/bin/penpal`
+- `~/.penpal/venv`
+- `~/.penpal/config.toml`
+- launchd plists pointing to `~/.local/bin/penpal`
+- launchd plists pointing to `/Applications/Penpal.app/...`
 - launchd plists pointing to a local repo checkout
 
 The new installer should detect these states and guide migration.
@@ -245,7 +245,7 @@ Minimum expected behavior:
 
 - Do not silently delete old venvs or wrappers.
 - If an old launchd plist points to a non-Homebrew path, warn and offer to rewrite managed plists.
-- If `~/.keypulse/config.toml` exists, preserve it.
+- If `~/.penpal/config.toml` exists, preserve it.
 - If a daemon is already running, stop/reload only through explicit install lifecycle commands.
 
 ## Non-goals for this iteration
@@ -262,21 +262,21 @@ The integration is acceptable when a fresh Mac user can run:
 
 ```bash
 brew tap Longfellow1/keypulse
-brew install keypulse
-keypulse install init
-keypulse doctor
+brew install penpal
+penpal install init
+penpal doctor
 ```
 
 and reach a state where:
 
-- `keypulse --help` works.
-- `keypulse status` works.
-- `keypulse doctor` gives actionable setup status.
-- `keypulse start` starts the daemon through the same lifecycle model as launchd.
-- `keypulse stop` stops the daemon cleanly.
-- `keypulse obsidian sync --yesterday` can run after sink setup.
-- launchd plists reference the installed `keypulse` executable, not a developer checkout.
-- rerunning `keypulse install init` is safe.
+- `penpal --help` works.
+- `penpal status` works.
+- `penpal doctor` gives actionable setup status.
+- `penpal start` starts the daemon through the same lifecycle model as launchd.
+- `penpal stop` stops the daemon cleanly.
+- `penpal obsidian sync --yesterday` can run after sink setup.
+- launchd plists reference the installed `penpal` executable, not a developer checkout.
+- rerunning `penpal install init` is safe.
 
 ## Documentation updates expected
 

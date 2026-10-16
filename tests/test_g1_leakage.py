@@ -22,18 +22,18 @@ import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcp_helpers import client_of, search, server_for
-from keypulse.mcp import auth, tools
-from keypulse.mcp.server import build_server
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.store.sync_repo import add_evidence
+from penpal.mcp import auth, tools
+from penpal.mcp.server import build_server
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.store.sync_repo import add_evidence
 
 
 @pytest.fixture(autouse=True)
 def _isolated_home(tmp_path, monkeypatch):
-    """Config.load() must never see a real ~/.keypulse/config.toml or a cwd config."""
+    """Config.load() must never see a real ~/.penpal/config.toml or a cwd config."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -70,7 +70,7 @@ G1_COVERED_RESPONSE_FIELDS = {
     "evidence", "evidence.id", "evidence.event_id", "evidence.source", "evidence.bucket", "evidence.occurred_at",
     "evidence.excerpt", "evidence.available", "evidence.locator", "evidence.locator.type", "evidence.locator.path",
     "evidence.locator.line", "evidence.locator.repo", "evidence.locator.commit",
-    # capture events (D26): locator {"type": "keypulse", "event_id": ...}
+    # capture events (D26): locator {"type": "penpal", "event_id": ...}
     "evidence.locator.event_id",
 }
 
@@ -81,7 +81,7 @@ IN_SCOPE = [  # (source, bucket, text, ts[, event_type])
     ("claude_code", "Work", f"{SHARED_WORD} migration plan for the billing service", "2026-03-01T09:00:00+00:00"),
     ("claude_code", "Work", f"follow-up on {SHARED_WORD} rollout checklist", "2026-03-02T09:00:00+00:00"),
     ("git_log", "Work", f"fix {SHARED_WORD} retry loop", "2026-03-03T09:00:00+00:00"),
-    # a capture-stream row (D26) inside the granted scope: reachable, with keypulse evidence
+    # a capture-stream row (D26) inside the granted scope: reachable, with penpal evidence
     ("claude_code", "Work", f"typed {SHARED_WORD} outline in the editor", "2026-03-03T11:00:00+00:00", "keyboard_chunk"),
 ]
 
@@ -122,7 +122,7 @@ def _insert(source, bucket, text, ts, event_type="semantic_event", n=[0]) -> int
     if bucket is None:  # force a genuinely NULL bucket (insert_raw_event would resolve one)
         get_conn().execute("UPDATE raw_events SET bucket = NULL WHERE id = ?", (row_id,))
         get_conn().commit()
-    if event_type not in CAPTURE_SEARCHABLE_EVENT_TYPES:  # capture rows get their keypulse evidence from the repository
+    if event_type not in CAPTURE_SEARCHABLE_EVENT_TYPES:  # capture rows get their penpal evidence from the repository
         add_evidence(row_id, f"/synthetic/{source}.jsonl", 1, None)
     return row_id
 
@@ -419,8 +419,8 @@ def test_g1_history_row_on_bank_site_is_invisible_to_work_grant(tmp_path) -> Non
     grant must not see it, even though the same grant reads Work rows that share its keyword."""
     from datetime import datetime, timezone
 
-    from keypulse.sources.sink import persist_semantic_event
-    from keypulse.sources.types import SemanticEvent
+    from penpal.sources.sink import persist_semantic_event
+    from penpal.sources.types import SemanticEvent
 
     canary = "KPCANARY15historybankvisit"
     _seed(tmp_path / "g1_history.db", with_out_of_scope=False, scope="work_claude_only")
@@ -582,7 +582,7 @@ def _observed_response_fields(monkeypatch=None) -> set[str]:
     tl = lambda *a, **k: tools.get_timeline(token, *a, client="guard", **k)
     responses = [
         ev(evd(file_event)), ev(evd(commit_event)),                   # ok: file locator / repo+commit locator
-        ev(evd(capture_event)),                                       # ok: keypulse locator (capture event)
+        ev(evd(capture_event)),                                       # ok: penpal locator (capture event)
         ev(f"evd_{unavailable}"),                                     # source_unavailable
         ev("evd_99999"), ev(5),                                       # not_found / invalid_argument
         tl("2026-03-01", "2026-03-10", limit=1),                      # ok with has_more + next_cursor
@@ -636,7 +636,7 @@ def test_g1_canary_financial_site_in_browser_is_unreachable_for_work_grant(tmp_p
     """A banking tab in Chrome: the page text, clipboard, window and typing that follow the browser_url
     row are Financial, so a Work-only grant must not find them, while the same browser on a Work site is
     found. Rows are inserted with no preset bucket, so the live resolution path itself is under test."""
-    from keypulse.capture.normalizer import (
+    from penpal.capture.normalizer import (
         normalize_ax_text_event, normalize_browser_url_event, normalize_clipboard_event,
         normalize_keyboard_chunk_event, normalize_window_event,
     )

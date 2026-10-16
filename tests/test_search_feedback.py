@@ -12,15 +12,15 @@ from types import SimpleNamespace
 import pytest
 
 from mcp_helpers import search
-from keypulse.mcp import auth, tools
-from keypulse.search.engine import keyword_in_scope, search_events
-from keypulse.sources.sink import semantic_event_to_raw_event
-from keypulse.sources.types import SemanticEvent
-from keypulse.store.context_label import context_label
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v32 import migrate_v32
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
+from penpal.mcp import auth, tools
+from penpal.search.engine import keyword_in_scope, search_events
+from penpal.sources.sink import semantic_event_to_raw_event
+from penpal.sources.types import SemanticEvent
+from penpal.store.context_label import context_label
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v32 import migrate_v32
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
 from datetime import datetime, timezone
 
 OUT_WORD = "kpfeedbackoutword"  # exists only in a bucket the grant does not cover
@@ -165,12 +165,12 @@ def test_keyword_check_on_5k_rows_is_fast(db) -> None:
 
 # ── searchable context label ────────────────────────────────────────────────────────────────
 def test_context_label_per_source() -> None:
-    assert context_label("git_log", {"repo_name": "keypulse"}) == "keypulse"
+    assert context_label("git_log", {"repo_name": "penpal"}) == "penpal"
     assert context_label("codex_cli", {"project": "demo-app"}) == "demo-app"
     assert context_label("codex_cli", {"cwd": "/work/demo-app"}) == "demo-app"
     assert context_label("codex_cli", {"session_id": "s1"}) is None
-    assert context_label("claude_code", {"project_dir": "/Users/x/.claude/projects/-Users-x-Go-keypulse"}) == \
-        "Go-keypulse"  # account path dropped
+    assert context_label("claude_code", {"project_dir": "/Users/x/.claude/projects/-Users-x-Go-penpal"}) == \
+        "Go-penpal"  # account path dropped
     assert context_label("claude_code", {"project_dir": "/p/-opt-tools"}) == "-opt-tools"
     assert context_label("chrome_history", {"artifact": "https://user:pw@docs.example.com:8443/a/b?q=1"}) == \
         "docs.example.com"
@@ -184,9 +184,9 @@ def test_context_label_per_source() -> None:
 def test_ingest_sets_label_for_imported_rows(db) -> None:
     event = SemanticEvent(
         time=datetime(2026, 3, 1, 9, tzinfo=timezone.utc), source="git_log", actor="me", intent="fix typo",
-        artifact="commit:abc1234", raw_ref="git:keypulse:abc1234", privacy_tier="work",
-        metadata={"repo_name": "keypulse", "full_hash": "abc1234"})
-    assert semantic_event_to_raw_event(event).window_title == "keypulse"
+        artifact="commit:abc1234", raw_ref="git:penpal:abc1234", privacy_tier="work",
+        metadata={"repo_name": "penpal", "full_hash": "abc1234"})
+    assert semantic_event_to_raw_event(event).window_title == "penpal"
 
 
 def test_repo_name_is_searchable_after_ingest(db) -> None:

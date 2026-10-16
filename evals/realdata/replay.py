@@ -1,4 +1,4 @@
-"""Replay the KeyPulse arm's recorded tool calls directly: latency, leak scan, bucket check, must_not_see."""
+"""Replay the Penpal arm's recorded tool calls directly: latency, leak scan, bucket check, must_not_see."""
 from __future__ import annotations
 
 import json
@@ -17,7 +17,7 @@ REPLAYABLE = ("search_context", "get_timeline", "get_evidence")
 
 def scan_leaks(blob: str) -> list[str]:
     """Pattern names of sensitive content (secrets / ID / cards / ...) still present in tool output."""
-    from keypulse.privacy.detectors import detect
+    from penpal.privacy.detectors import detect
 
     hits = {d.pattern_name for d in detect(blob)}
     if ID_NUMBER_RE.search(blob):
@@ -45,7 +45,7 @@ def forbidden_hits(q: Question, blob: str) -> list[str]:
 
 
 def _call(name: str, args: dict, token: str, client: str) -> dict:
-    from keypulse.mcp import tools
+    from penpal.mcp import tools
 
     if name == "search_context":
         return tools.search_context(token, args.get("keywords"), args.get("time_range"), args.get("sources"),
@@ -65,7 +65,7 @@ def percentile(sorted_vals: list[float], p: float) -> float | None:
 
 def replay_kp(questions: dict[str, Question], run_dir: Path, log=print) -> dict:
     results = run_dir / "results-kp.jsonl"
-    db, home = run_dir / "keypulse.db", run_dir / "home"
+    db, home = run_dir / "penpal.db", run_dir / "home"
     rows = [json.loads(l) for l in results.read_text(encoding="utf-8").splitlines() if l.strip()]
     rows = [r for r in rows if r["id"] in questions]
     grants = make_grants(home, db, {questions[r["id"]].grant for r in rows}, "rdreplay")

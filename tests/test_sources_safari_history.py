@@ -4,8 +4,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from keypulse.sources.plugins.safari_history import SafariHistorySource
-from keypulse.sources.types import DataSourceInstance
+from penpal.sources.plugins.safari_history import SafariHistorySource
+from penpal.sources.types import DataSourceInstance
 
 
 CF_EPOCH_OFFSET_S = 978_307_200
@@ -70,7 +70,7 @@ def test_safari_read_uses_temp_copy_and_maps_event(monkeypatch, tmp_path: Path) 
         copied.append((str(src), str(dst)))
         return original_copy2(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr("keypulse.sources.plugins.safari_history.shutil.copy2", tracking_copy2)
+    monkeypatch.setattr("penpal.sources.plugins.safari_history.shutil.copy2", tracking_copy2)
 
     events = list(
         source.read(

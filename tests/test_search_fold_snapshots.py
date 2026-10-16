@@ -7,12 +7,12 @@ from itertools import count
 
 import pytest
 
-from keypulse.search.engine import scoped_evidence, search_events, timeline_events
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v33 import migrate_v33
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.store.sync_repo import add_evidence
+from penpal.search.engine import scoped_evidence, search_events, timeline_events
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v33 import migrate_v33
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.store.sync_repo import add_evidence
 
 _n = count(1)
 ALL_TYPES = ("semantic_event", "ax_text_capture", "window_focus_session", "browser_url_capture",
@@ -172,7 +172,7 @@ def test_migration_v33_marks_chain_and_is_idempotent(db) -> None:
 
 
 def test_chinese_pinyin_tail_is_an_earlier_state() -> None:
-    from keypulse.store.snapshots import is_superseded_by
+    from penpal.store.snapshots import is_superseded_by
     assert is_superseded_by("我想测试yixia", "我想测试一下吧")
     assert not is_superseded_by("我想测试yixia", "你好")
     assert not is_superseded_by("abc", "xyz")
@@ -185,7 +185,7 @@ def test_chinese_pinyin_tail_is_an_earlier_state() -> None:
     ("这次为什么tomcat zhi xing", "这次为什么tomcat执行了"),                   # pinyin after an English word
 ])
 def test_spaced_pinyin_tail_is_superseded_by_rule_a(prev, nxt, monkeypatch) -> None:
-    from keypulse.store import snapshots
+    from penpal.store import snapshots
     assert snapshots.is_superseded_by(prev, nxt)
     # rule a alone (rule b disabled) already covers these: the stem is a CJK prefix of the next state
     monkeypatch.setattr(snapshots, "_EDIT_SIMILARITY", 2.0)
@@ -193,7 +193,7 @@ def test_spaced_pinyin_tail_is_superseded_by_rule_a(prev, nxt, monkeypatch) -> N
 
 
 def test_mid_sentence_insertion_is_superseded_by_rule_b(monkeypatch) -> None:
-    from keypulse.store import snapshots
+    from penpal.store import snapshots
     prev = "我们对比了三款同类产品的价格和体验，团队里大多数人都试过，但最后为什么选了第二个方案呢？"
     nxt = "我们对比了三款同类产品如xia ji ma的价格和体验，团队里大多数人都试过，但最后为什么选了第二个方案呢？"
     assert snapshots.is_superseded_by(prev, nxt)  # next does not start with prev
@@ -208,13 +208,13 @@ def test_mid_sentence_insertion_is_superseded_by_rule_b(monkeypatch) -> None:
     ("ok zai", "okay now"),                                                        # English stem, not CJK
 ])
 def test_unrelated_or_english_only_texts_are_not_superseded(prev, nxt) -> None:
-    from keypulse.store.snapshots import is_superseded_by
+    from penpal.store.snapshots import is_superseded_by
     assert not is_superseded_by(prev, nxt)
     assert not is_superseded_by(nxt, prev)
 
 
 def test_migration_v34_marks_spaced_pinyin_chain_idempotently(db) -> None:
-    from keypulse.store.migration_v34 import migrate_v34
+    from penpal.store.migration_v34 import migrate_v34
     texts = ["明天大家zhun bei hao le na xie", "明天大家准备好了那些", "明天大家准备好了那些事情，请确认"]
     ids = [_ins(text, f"2026-05-02T09:00:{i * 3:02d}+00:00", source="ax_text", bucket="Work", app="Notes",
                 event_type="ax_text_capture") for i, text in enumerate(texts)]
@@ -240,6 +240,6 @@ def test_migration_v34_marks_spaced_pinyin_chain_idempotently(db) -> None:
 
 
 def test_mid_sentence_pinyin_turning_into_characters_is_an_earlier_state() -> None:
-    from keypulse.store.snapshots import is_superseded_by
+    from penpal.store.snapshots import is_superseded_by
     assert is_superseded_by("比较几家同行如ma la tang，它们都做了这些，为何胜出？", "比较几家同行如麻辣烫店，它们都做了这些，为何胜出？")
     assert not is_superseded_by("今天天气不错", "明天开会讨论预算")

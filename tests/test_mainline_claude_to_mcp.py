@@ -14,17 +14,17 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from keypulse.config import Config
-from keypulse.mcp import auth
-from keypulse.mcp.cli import mcp_group
+from penpal.config import Config
+from penpal.mcp import auth
+from penpal.mcp.cli import mcp_group
 from mcp_helpers import server_for
-from keypulse.sources import registry
-from keypulse.sources.cleaning.config import CleaningConfig
-from keypulse.sources.discover import sources_group
-from keypulse.sources.plugins.claude_code import ClaudeCodeSource
-from keypulse.sources.scheduler import SourcesScheduler
-from keypulse.sources.sink import flush_named_entity_backfill
-from keypulse.store.db import close, get_conn, init_db
+from penpal.sources import registry
+from penpal.sources.cleaning.config import CleaningConfig
+from penpal.sources.discover import sources_group
+from penpal.sources.plugins.claude_code import ClaudeCodeSource
+from penpal.sources.scheduler import SourcesScheduler
+from penpal.sources.sink import flush_named_entity_backfill
+from penpal.store.db import close, get_conn, init_db
 
 FAKE_KEY = "sk-test-FAKE0000000000000000000000"
 PROJECT = "-tmp-demo-project"
@@ -67,7 +67,7 @@ def env(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(registry, "_PLUGINS", {"claude_code": make_source()})
     monkeypatch.setattr(registry, "load_cleaning_config", lambda: CleaningConfig())
-    db_path = tmp_path / "keypulse.db"
+    db_path = tmp_path / "penpal.db"
     init_db(db_path)
     yield type("Env", (), {"tmp": tmp_path, "session": session, "db": db_path, "make_source": staticmethod(make_source)})
     close()
@@ -249,8 +249,8 @@ def test_missing_or_wrong_token_is_denied_without_data(env, token, bad) -> None:
     assert data == {
         "status": "permission_denied",
         "reason_code": "TOKEN_INVALID",
-        "message": "KeyPulse access was not granted for this client.",
-        "next_action": "review_access_in_keypulse",
+        "message": "Penpal access was not granted for this client.",
+        "next_action": "review_access_in_penpal",
     }
     assert "zebrafish" not in json.dumps(result.model_dump())
 
@@ -271,7 +271,7 @@ def test_token_plaintext_never_stored(env, token) -> None:
     assert token not in tuple(row)
     assert row["token_hash"] == auth.hash_token(token) and len(row["token_hash"]) == 64
     get_conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    for f in env.tmp.glob("keypulse.db*"):
+    for f in env.tmp.glob("penpal.db*"):
         assert token.encode() not in f.read_bytes()
 
 
@@ -308,7 +308,7 @@ def test_cli_grant_prints_token_once_and_stores_hash(env, cli_config) -> None:
     out = CliRunner().invoke(mcp_group, ["grant", "claude"])
     assert out.exit_code == 0, out.output
     token = next(w for w in out.output.split() if w.startswith("kp_"))
-    assert f"claude mcp add keypulse -e KEYPULSE_TOKEN={token} -e KEYPULSE_CLIENT=claude -- " in out.output
+    assert f"claude mcp add penpal -e PENPAL_TOKEN={token} -e PENPAL_CLIENT=claude -- " in out.output
     assert '"mcpServers"' in out.output and "mcp" in out.output and "serve" in out.output
     assert auth.authenticate(token).client_id == "claude"
     assert token not in tuple(get_conn().execute("SELECT * FROM access_grants").fetchone())
@@ -322,10 +322,10 @@ def test_cli_grant_prints_token_once_and_stores_hash(env, cli_config) -> None:
 
 def test_stdio_subprocess_end_to_end(env, token) -> None:
     _sync()
-    child_env = {**os.environ, "KEYPULSE_TOKEN": token, "KEYPULSE_CLIENT": "claude", "KP_TEST_DB": str(env.db)}
+    child_env = {**os.environ, "PENPAL_TOKEN": token, "PENPAL_CLIENT": "claude", "KP_TEST_DB": str(env.db)}
     code = (
-        "import os; from pathlib import Path; from keypulse.store.db import init_db; "
-        "from keypulse.mcp.server import serve_stdio; init_db(Path(os.environ['KP_TEST_DB'])); serve_stdio()"
+        "import os; from pathlib import Path; from penpal.store.db import init_db; "
+        "from penpal.mcp.server import serve_stdio; init_db(Path(os.environ['KP_TEST_DB'])); serve_stdio()"
     )
     async def run(extra_env):
         p = StdioServerParameters(command=sys.executable, args=["-c", code], env={**child_env, **extra_env})
@@ -338,15 +338,15 @@ def test_stdio_subprocess_end_to_end(env, token) -> None:
 
     names, ok = asyncio.run(run({}))
     assert names == ["search_context", "get_evidence", "get_timeline", "rate_result"] and ok["status"] == "ok"
-    _, denied = asyncio.run(run({"KEYPULSE_TOKEN": "kp_nope"}))
+    _, denied = asyncio.run(run({"PENPAL_TOKEN": "kp_nope"}))
     assert denied["status"] == "permission_denied" and "results" not in denied
 
 
 # ── lead review fixes ─────────────────────────────────────────────────────────
 
 def test_dedup_hit_on_legacy_row_backfills_provenance(env) -> None:
-    from keypulse.sources.sink import semantic_event_to_raw_event
-    from keypulse.store.repository import insert_raw_event
+    from penpal.sources.sink import semantic_event_to_raw_event
+    from penpal.store.repository import insert_raw_event
 
     legacy = ClaudeCodeSource(projects_root=env.tmp / "claude" / "projects", self_exclude_dirs=set())
     inst = legacy.discover()[0]
@@ -397,7 +397,7 @@ def test_long_message_tail_is_searchable_but_snippet_stays_short(env, token) -> 
 
 
 def test_message_over_cap_is_truncated_to_32k(env) -> None:
-    from keypulse.sources.types import MAX_INTENT_CHARS
+    from penpal.sources.types import MAX_INTENT_CHARS
 
     with env.session.open("a", encoding="utf-8") as fh:
         fh.write(_line("user", "u-huge", "2026-04-28T06:00:00Z", "z" * (MAX_INTENT_CHARS + 5000)) + "\n")

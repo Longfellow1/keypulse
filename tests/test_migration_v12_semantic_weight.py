@@ -5,10 +5,10 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from keypulse.store.db import init_db
-from keypulse.store.models import RawEvent
-from keypulse.store.repository import insert_raw_event
-from keypulse.capture.normalizer import _semantic_weight_for
+from penpal.store.db import init_db
+from penpal.store.models import RawEvent
+from penpal.store.repository import insert_raw_event
+from penpal.capture.normalizer import _semantic_weight_for
 
 
 def test_semantic_weight_column_exists_after_migration():
@@ -19,7 +19,7 @@ def test_semantic_weight_column_exists_after_migration():
 
         conn = sqlite3.connect(str(db_path))
         # Reset module-level DB connection after init_db
-        from keypulse.store import db
+        from penpal.store import db
         db._db_conn = None
         conn.row_factory = sqlite3.Row
 
@@ -59,7 +59,7 @@ def test_backfill_weights_per_source():
         conn.commit()
 
         # Insert v1-v11 migrations manually to set schema version to 11
-        from keypulse.store.migrations import MIGRATIONS
+        from penpal.store.migrations import MIGRATIONS
         from datetime import datetime, timezone
         for i, sql in enumerate(MIGRATIONS[:11], start=1):
             conn.executescript(sql.strip())
@@ -93,8 +93,8 @@ def test_backfill_weights_per_source():
         conn.commit()
 
         # Now apply v12 migration
-        from keypulse.store.migrations import run_migrations
-        from keypulse.store.db import init_db as reinit_db
+        from penpal.store.migrations import run_migrations
+        from penpal.store.db import init_db as reinit_db
 
         # Manually apply v12
         v12_sql = MIGRATIONS[11]
@@ -148,7 +148,7 @@ def test_new_raw_event_writes_include_semantic_weight():
         init_db(db_path)
 
         # Reset module-level DB connection after init_db
-        from keypulse.store import db
+        from penpal.store import db
         db._db_conn = None
 
         # Insert a raw event via insert_raw_event

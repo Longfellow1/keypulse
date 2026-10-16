@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from keypulse.capture.normalizer import normalize_browser_url_event
-from keypulse.capture.watchers.browser_url import (
+from penpal.capture.normalizer import normalize_browser_url_event
+from penpal.capture.watchers.browser_url import (
     BrowserUrlWatcher,
     _parse_browser_output,
 )
@@ -34,8 +34,8 @@ def test_parse_browser_output_supports_pipe_delimiter():
 def test_browser_url_watcher_dedupes_same_url():
     watcher = _watcher()
     with (
-        patch("keypulse.capture.watchers.browser_url._get_frontmost_app_name", return_value="Google Chrome"),
-        patch("keypulse.capture.watchers.browser_url.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser_url._get_frontmost_app_name", return_value="Google Chrome"),
+        patch("penpal.capture.watchers.browser_url.subprocess.run") as run,
     ):
         run.side_effect = [
             _completed(stdout="https://example.com/a|||Page A"),
@@ -53,9 +53,9 @@ def test_browser_url_watcher_dedupes_same_url():
 def test_browser_url_watcher_marks_denied_and_disables_browser():
     watcher = _watcher()
     with (
-        patch("keypulse.capture.watchers.browser_url._get_frontmost_app_name", return_value="Google Chrome"),
-        patch("keypulse.capture.watchers.browser_url.subprocess.run") as run,
-        patch("keypulse.capture.watchers.browser_url.mark_browser_automation_denied") as mark_denied,
+        patch("penpal.capture.watchers.browser_url._get_frontmost_app_name", return_value="Google Chrome"),
+        patch("penpal.capture.watchers.browser_url.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser_url.mark_browser_automation_denied") as mark_denied,
     ):
         run.return_value = _completed(stderr="not allowed to send Apple events", returncode=1)
         first = watcher.capture_once()
@@ -70,7 +70,7 @@ def test_browser_url_watcher_marks_denied_and_disables_browser():
 def test_browser_url_watcher_auto_discovers_supported_browsers():
     with (
         patch(
-            "keypulse.capture.watchers.browser_url.discover_http_handler_apps",
+            "penpal.capture.watchers.browser_url.discover_http_handler_apps",
             return_value=("ChatGPT Atlas", "Safari"),
         ) as discover,
     ):
@@ -82,8 +82,8 @@ def test_browser_url_watcher_auto_discovers_supported_browsers():
         )
 
     with (
-        patch("keypulse.capture.watchers.browser_url._get_frontmost_app_name", return_value="ChatGPT Atlas"),
-        patch("keypulse.capture.watchers.browser_url.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser_url._get_frontmost_app_name", return_value="ChatGPT Atlas"),
+        patch("penpal.capture.watchers.browser_url.subprocess.run") as run,
     ):
         run.return_value = _completed(stdout="https://example.com/a|||Page A")
         event = watcher.capture_once()
@@ -114,9 +114,9 @@ def test_browser_url_watcher_disables_unsupported_dialect_without_marking_denied
         emit_on_url_change_only=True,
     )
     with (
-        patch("keypulse.capture.watchers.browser_url._get_frontmost_app_name", return_value="ChatGPT Atlas"),
-        patch("keypulse.capture.watchers.browser_url.subprocess.run") as run,
-        patch("keypulse.capture.watchers.browser_url.mark_browser_automation_denied") as mark_denied,
+        patch("penpal.capture.watchers.browser_url._get_frontmost_app_name", return_value="ChatGPT Atlas"),
+        patch("penpal.capture.watchers.browser_url.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser_url.mark_browser_automation_denied") as mark_denied,
     ):
         run.return_value = _completed(
             stderr="ChatGPT Atlas got an error: Can't get active tab of front window. (-1728)",
@@ -134,8 +134,8 @@ def test_browser_url_watcher_disables_unsupported_dialect_without_marking_denied
 def test_browser_url_watcher_skips_unsupported_frontmost_app():
     watcher = _watcher()
     with (
-        patch("keypulse.capture.watchers.browser_url._get_frontmost_app_name", return_value="Terminal"),
-        patch("keypulse.capture.watchers.browser_url.subprocess.run") as run,
+        patch("penpal.capture.watchers.browser_url._get_frontmost_app_name", return_value="Terminal"),
+        patch("penpal.capture.watchers.browser_url.subprocess.run") as run,
     ):
         event = watcher.capture_once()
 

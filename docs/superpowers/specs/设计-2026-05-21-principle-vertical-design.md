@@ -6,11 +6,11 @@
 
 ## 背景
 
-KeyPulse 当前 anchor 系统抓的是"项目长尾"（事件 / 主题 / 做了什么），漏抓用户的**方法论层**——判断标准、设计原则、反模式、类比、元决策。这层信息跨项目、长期有效、可复用——项目结束了它们还在。
+Penpal 当前 anchor 系统抓的是"项目长尾"（事件 / 主题 / 做了什么），漏抓用户的**方法论层**——判断标准、设计原则、反模式、类比、元决策。这层信息跨项目、长期有效、可复用——项目结束了它们还在。
 
 **触发素材**：用户 2026-05-21 跟 Codex 讨论 React workspace 设计时产生的对话片段。现场从一段对话中抽出 6 个方法论碎片，证明数据原料存在且可识别。
 
-**产品定位升级**：KeyPulse 当前是"项目记忆"，加 principle vertical 后是"**元认知镜子**"——你跨项目的判断逻辑、设计直觉、反模式库自动沉淀。这层是 second brain 工具（Roam/Obsidian/Logseq）一直手动收集的东西，KeyPulse 能自动抓。
+**产品定位升级**：Penpal 当前是"项目记忆"，加 principle vertical 后是"**元认知镜子**"——你跨项目的判断逻辑、设计直觉、反模式库自动沉淀。这层是 second brain 工具（Roam/Obsidian/Logseq）一直手动收集的东西，Penpal 能自动抓。
 
 ## V1 MVP 范围
 
@@ -46,11 +46,11 @@ KeyPulse 当前 anchor 系统抓的是"项目长尾"（事件 / 主题 / 做了�
 
 ### 新增组件
 
-- `keypulse/prompts/L7_principle_distillation.v1.md` — capability prompt
-- `keypulse/prompts/schemas/L7_principle_distillation_input.json` — input schema
-- `keypulse/prompts/schemas/L7_principle_distillation_output.json` — output schema
-- `keypulse/pipeline/principle_distillation.py` — pipeline 节点
-- `keypulse/obsidian/principle_exporter.py` — vault 输出
+- `penpal/prompts/L7_principle_distillation.v1.md` — capability prompt
+- `penpal/prompts/schemas/L7_principle_distillation_input.json` — input schema
+- `penpal/prompts/schemas/L7_principle_distillation_output.json` — output schema
+- `penpal/pipeline/principle_distillation.py` — pipeline 节点
+- `penpal/obsidian/principle_exporter.py` — vault 输出
 - Weekly orchestrator 加一节渲染
 
 ### 不改的部分
@@ -167,8 +167,8 @@ Weekly orchestrator 渲染时，扫本周 `vault/principles/<W-week-date-range>*
 ## 未来扩展（明确 roadmap）
 
 ### V2 — V1 验证通过后做
-- **现场检索 / 查询界面** — `keypulse principle search "心智对齐"` CLI 命令
-- **导出 / 分享接口** — `keypulse principle export --topic ux --format markdown` 输出可直接发布的素材
+- **现场检索 / 查询界面** — `penpal principle search "心智对齐"` CLI 命令
+- **导出 / 分享接口** — `penpal principle export --topic ux --format markdown` 输出可直接发布的素材
 
 V2 数据 schema 已经留好 hooks：`kind`/`confidence`/`source`/`quote` 都是 V2 查询和导出会用到的字段。V1 直接落对。
 
@@ -179,7 +179,7 @@ V2 数据 schema 已经留好 hooks：`kind`/`confidence`/`source`/`quote` 都�
 
 ### 永不做
 - 区分"对 AI 对话" vs "对自己思考"——原则就是原则，来源无关
-- 跨用户共享 / 团队特性——KeyPulse 是个人工具
+- 跨用户共享 / 团队特性——Penpal 是个人工具
 
 ## 成本预估
 
@@ -228,7 +228,7 @@ V2 数据 schema 已经留好 hooks：`kind`/`confidence`/`source`/`quote` 都�
 
 ### 长期目标
 
-跟 Hermes / 蒸馏框架文章（`docs/analysis/keypulse-endgame-and-distillation-framework.md`）对齐：**从行为数据生长出个人方法论图书馆，终局是用户跟自己的矿做 agent 对话挖矿**。
+跟 Hermes / 蒸馏框架文章（`docs/analysis/penpal-endgame-and-distillation-framework.md`）对齐：**从行为数据生长出个人方法论图书馆，终局是用户跟自己的矿做 agent 对话挖矿**。
 
 参见 memory `[[project_principle_agent_dialogue_endgame]]`。
 
@@ -265,7 +265,7 @@ principle vertical V1 已经把"采集→蒸馏→存储→周报"的**通用管
 
 | 借鉴点 | 阶段 | 怎么做 |
 |--------|------|--------|
-| 隐私写盘前过滤（35 app 黑名单 + 字段脱敏 + 隐私窗口检测）| V2 | 审计 keypulse 现状对照清单，缺口补上 |
+| 隐私写盘前过滤（35 app 黑名单 + 字段脱敏 + 隐私窗口检测）| V2 | 审计 penpal 现状对照清单，缺口补上 |
 | 同义合并由 LLM 主动建议 `replace X with Y because Y refines X` | V3 | 抛弃 embedding 相似度算法，直接让 LLM 看 `known_principles` 列表自决 |
 | "已存在即跳过"→"已存在但更精炼则 refine" | V2 | 加 `refines: <old_principle_id>` frontmatter 字段，LLM 自标，保留两版历史 |
 | 周度二次蒸馏（一周 principle 聚合成 meta-principle）| V3 | 跟 wiki 跨条聚合合并到一个能力点 |

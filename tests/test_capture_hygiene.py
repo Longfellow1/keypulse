@@ -9,25 +9,25 @@ from pathlib import Path
 
 import pytest
 
-from keypulse.capture.fusion import CaptureFusionEngine
-from keypulse.capture.hygiene import DROP, METADATA_ONLY, capture_gate
-from keypulse.capture.manager import CaptureManager
-from keypulse.capture.normalizer import (
+from penpal.capture.fusion import CaptureFusionEngine
+from penpal.capture.hygiene import DROP, METADATA_ONLY, capture_gate
+from penpal.capture.manager import CaptureManager
+from penpal.capture.normalizer import (
     normalize_ax_text_event,
     normalize_browser_url_event,
     normalize_clipboard_event,
     normalize_keyboard_chunk_event,
     normalize_window_event,
 )
-from keypulse.capture.watchers import keyboard_native
-from keypulse.capture.watchers.keyboard_chunk import KeyboardChunkBuffer
-from keypulse.config import Config
-from keypulse.privacy.desensitizer import desensitize
-from keypulse.privacy.detectors import luhn_valid, valid_id_card
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.migration_v24 import migrate_v24
-from keypulse.store.migrations import MIGRATIONS, run_migrations
+from penpal.capture.watchers import keyboard_native
+from penpal.capture.watchers.keyboard_chunk import KeyboardChunkBuffer
+from penpal.config import Config
+from penpal.privacy.desensitizer import desensitize
+from penpal.privacy.detectors import luhn_valid, valid_id_card
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.migration_v24 import migrate_v24
+from penpal.store.migrations import MIGRATIONS, run_migrations
 
 VALID_ID = "110101199003071233"  # synthetic, passes GB 11643
 VALID_CARD = "6222021234567890128"  # synthetic, passes Luhn
@@ -277,7 +277,7 @@ def test_blacklist_app_names_and_bundle_ids():
 
 
 def test_url_deny_hosts_apply_to_browser_url():
-    from keypulse.capture.manager import _should_drop_browser_event
+    from penpal.capture.manager import _should_drop_browser_event
 
     ev = normalize_browser_url_event("https://www.bilibili.com/v", "t", "Google Chrome")
     assert _should_drop_browser_event(ev, ["bilibili.com"]) is True
@@ -332,7 +332,7 @@ def _row(conn, n, source, etype, app, text, title=None, proc=None, meta=None):
     rid = cur.lastrowid
     if source != "claude_code":
         conn.execute("INSERT INTO evidence(event_id,locator,available,created_at) VALUES (?,?,1,'x')",
-                     (rid, f"keypulse://event/{rid}"))
+                     (rid, f"penpal://event/{rid}"))
     return rid
 
 
@@ -393,7 +393,7 @@ def test_v24_is_fast_on_25k_rows(tmp_path):
 
 
 def test_v25_hides_pre_fix_keyboard_rows_from_search_but_keeps_them(tmp_path):
-    from keypulse.search.engine import _NOT_ECHO_SQL
+    from penpal.search.engine import _NOT_ECHO_SQL
 
     conn = _db_at_v23(tmp_path / "old.db")
     kb = _row(conn, 1, "keyboard_chunk", "keyboard_chunk", "Notes", "hello world this is a test")

@@ -6,8 +6,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from keypulse.cli import _launchd_jobs, main
-from keypulse.config import Config, write_chat_apps_opt_in
+from penpal.cli import _launchd_jobs, main
+from penpal.config import Config, write_chat_apps_opt_in
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def _home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)
-    return tmp_path / ".keypulse" / "config.toml"
+    return tmp_path / ".penpal" / "config.toml"
 
 
 def _opt_in(path):
@@ -95,7 +95,7 @@ def test_health_is_alias_of_healthcheck(monkeypatch, tmp_path):
         calls.append(config_path)
         return {"overall": "ok", "alerts": []}
 
-    monkeypatch.setattr("keypulse.health.run_healthcheck", fake)
+    monkeypatch.setattr("penpal.health.run_healthcheck", fake)
     for name in ("health", "healthcheck"):
         r = CliRunner().invoke(main, [name])
         assert r.exit_code == 0 and '"overall": "ok"' in r.output
@@ -104,15 +104,15 @@ def test_health_is_alias_of_healthcheck(monkeypatch, tmp_path):
 
 
 def test_launchd_plists_use_cli_executable():
-    exe = Path("/opt/x/bin/keypulse")
+    exe = Path("/opt/x/bin/penpal")
     for payload in _launchd_jobs(exe).values():
         assert payload["ProgramArguments"][0] == str(exe)
-        assert "KeyPulse.app" not in str(payload)
+        assert "Penpal.app" not in str(payload)
 
 
 def test_no_static_plist_or_app_path_in_install_paths():
     assert not (ROOT / "integrations" / "launchd").exists()
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     block = makefile.split("install-plists:")[1].split("\n\n")[0]
-    assert "install launchd" in block and "KeyPulse.app" not in block
-    assert "KeyPulse.app/Contents/MacOS" not in (ROOT / "install.sh").read_text(encoding="utf-8")
+    assert "install launchd" in block and "Penpal.app" not in block
+    assert "Penpal.app/Contents/MacOS" not in (ROOT / "install.sh").read_text(encoding="utf-8")

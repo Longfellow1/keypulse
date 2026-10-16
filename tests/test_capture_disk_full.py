@@ -7,14 +7,14 @@ import sqlite3
 
 import pytest
 
-import keypulse.capture.manager as manager_module
-from keypulse.capabilities.builtin.capture_storage import DISK_FULL_CODE, CaptureStorageCapability
-from keypulse.capture.manager import CaptureManager
-from keypulse.capture.normalizer import normalize_clipboard_event
-from keypulse.config import Config
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
-from keypulse.store.repository import get_state
+import penpal.capture.manager as manager_module
+from penpal.capabilities.builtin.capture_storage import DISK_FULL_CODE, CaptureStorageCapability
+from penpal.capture.manager import CaptureManager
+from penpal.capture.normalizer import normalize_clipboard_event
+from penpal.config import Config
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
+from penpal.store.repository import get_state
 
 FULL = sqlite3.OperationalError("database or disk is full")
 

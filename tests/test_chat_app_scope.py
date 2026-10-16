@@ -5,18 +5,18 @@ from __future__ import annotations
 
 import pytest
 
-from keypulse.capture.chat_apps import chat_app_key, normalize_opt_ins
-from keypulse.capture.manager import CaptureManager
-from keypulse.capture.normalizer import (
+from penpal.capture.chat_apps import chat_app_key, normalize_opt_ins
+from penpal.capture.manager import CaptureManager
+from penpal.capture.normalizer import (
     normalize_ax_text_event,
     normalize_clipboard_event,
     normalize_keyboard_chunk_event,
     normalize_window_event,
 )
-from keypulse.config import Config
-from keypulse.mcp import auth
-from keypulse.store import buckets
-from keypulse.store.db import close, get_conn, init_db
+from penpal.config import Config
+from penpal.mcp import auth
+from penpal.store import buckets
+from penpal.store.db import close, get_conn, init_db
 from mcp_helpers import search
 
 WECHAT = dict(app_name="WeChat", process_name="com.tencent.xinWeChat")
