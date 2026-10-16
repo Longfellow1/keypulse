@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [retention, data-lifecycle, privacy]
 created: "2026-10-13T15:14:00"
-updated: "2026-10-13T15:24:20"
+updated: "2026-10-16T17:27:17"
 ---
 
 <!-- compiled_truth -->
@@ -37,3 +37,9 @@ Consequences: no code path may delete user rows without an explicit user command
   summary: "Scope (2026-10-13, PR #81): D32 removes runtime deletion (daemon startup retention). Historical one-time migrations stay as written (v17 exact-duplicate dedupe, v24 privacy hygiene gate drops, v26 noise cleanup): they already ran on existing DBs, and v24 enforces what should never have been stored (privacy), which is not retention. Any NEW migration or code path that deletes user rows needs an explicit user decision."
   source: tech lead review
   affects: [retention-keep-forever]
+
+- time: 2026-10-16T17:27:17
+  kind: note
+  summary: "D34 (2026-10-16) adds automatic cleanup for non-memory artifacts only (backups, caches, logs, eval output); memory rows remain under D32. See [[data-footprint-limits]]"
+  source: user 2026-10-16
+  affects: [retention-keep-forever, data-footprint-limits]
