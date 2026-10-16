@@ -1,8 +1,10 @@
-# Penpal
+# Penpal（笔友）
 
 > **给你所有 AI 共用的本地记忆。** Penpal 在你的 Mac 上记下你看过、写过、问过的东西，通过 MCP 交给 Claude Code、Codex、Cursor 查询，每条结果都能打开出处，每个 AI 能看到什么由你授权。
 
 [English](README.en.md) · [快速开始](#快速开始) · [记什么不记什么](#记什么不记什么) · [现在做到哪](#现在做到哪)
+
+> 名字的意思：它替你把看过、写过的东西记下来，再写给你的每一个 AI，像一位只在你本机的笔友。原名 KeyPulse，2026-10 改名；老用户升级说明见 [CHANGELOG](CHANGELOG.md)。
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
