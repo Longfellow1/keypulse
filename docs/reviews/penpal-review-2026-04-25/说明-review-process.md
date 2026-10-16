@@ -1,4 +1,4 @@
-# KeyPulse 阅读、测试与评审记录
+# Penpal 阅读、测试与评审记录
 
 日期：2026-04-25
 模式：代码评审
@@ -6,7 +6,7 @@
 
 ## 范围
 
-本次评审对象是 `/Users/Harland/Go/keypulse` 当前工作区，包含已提交代码和本地未提交改动。评审过程中没有修改业务源码。
+本次评审对象是 `/Users/Harland/Go/penpal` 当前工作区，包含已提交代码和本地未提交改动。评审过程中没有修改业务源码。
 
 重点查看了：
 
@@ -28,15 +28,15 @@ main
 评审时工作区状态：
 
 ```text
- M keypulse/capture/watchers/ax_text.py
- M keypulse/capture/watchers/clipboard.py
- M keypulse/obsidian/exporter.py
+ M penpal/capture/watchers/ax_text.py
+ M penpal/capture/watchers/clipboard.py
+ M penpal/obsidian/exporter.py
  M tests/test_capture_ax_text.py
 ?? config.toml.bak
 ?? config.toml.bak2
-?? keypulse/capture/active_app.py
-?? keypulse/pipeline/fragments.py
-?? keypulse/pipeline/normalize.py
+?? penpal/capture/active_app.py
+?? penpal/pipeline/fragments.py
+?? penpal/pipeline/normalize.py
 ?? tests/test_capture_active_app.py
 ?? tests/test_pipeline_fragments.py
 ?? tests/test_pipeline_normalize.py
@@ -68,33 +68,33 @@ e7cbb71 feat(obsidian): T1 scheduled triggers at 12/13/18/21 gated by activity
 
 核心代码路径：
 
-- `keypulse/config.py`
-- `keypulse/cli.py`
-- `keypulse/app.py`
-- `keypulse/store/db.py`
-- `keypulse/store/migrations.py`
-- `keypulse/store/models.py`
-- `keypulse/store/repository.py`
-- `keypulse/capture/manager.py`
-- `keypulse/capture/policy.py`
-- `keypulse/capture/normalizer.py`
-- `keypulse/capture/active_app.py`
-- `keypulse/capture/watchers/window.py`
-- `keypulse/capture/watchers/browser.py`
-- `keypulse/capture/watchers/clipboard.py`
-- `keypulse/capture/watchers/keyboard_chunk.py`
-- `keypulse/capture/watchers/ax_text.py`
-- `keypulse/capture/watchers/ocr.py`
-- `keypulse/privacy/detectors.py`
-- `keypulse/privacy/desensitizer.py`
-- `keypulse/obsidian/exporter.py`
-- `keypulse/pipeline/model.py`
-- `keypulse/pipeline/fragments.py`
-- `keypulse/pipeline/normalize.py`
-- `keypulse/pipeline/evidence.py`
-- `keypulse/pipeline/gates.py`
-- `keypulse/pipeline/narrative_v2.py`
-- `keypulse/pipeline/triggers.py`
+- `penpal/config.py`
+- `penpal/cli.py`
+- `penpal/app.py`
+- `penpal/store/db.py`
+- `penpal/store/migrations.py`
+- `penpal/store/models.py`
+- `penpal/store/repository.py`
+- `penpal/capture/manager.py`
+- `penpal/capture/policy.py`
+- `penpal/capture/normalizer.py`
+- `penpal/capture/active_app.py`
+- `penpal/capture/watchers/window.py`
+- `penpal/capture/watchers/browser.py`
+- `penpal/capture/watchers/clipboard.py`
+- `penpal/capture/watchers/keyboard_chunk.py`
+- `penpal/capture/watchers/ax_text.py`
+- `penpal/capture/watchers/ocr.py`
+- `penpal/privacy/detectors.py`
+- `penpal/privacy/desensitizer.py`
+- `penpal/obsidian/exporter.py`
+- `penpal/pipeline/model.py`
+- `penpal/pipeline/fragments.py`
+- `penpal/pipeline/normalize.py`
+- `penpal/pipeline/evidence.py`
+- `penpal/pipeline/gates.py`
+- `penpal/pipeline/narrative_v2.py`
+- `penpal/pipeline/triggers.py`
 
 相关测试：
 
@@ -118,15 +118,15 @@ git status --short
 git branch --show-current
 git log --oneline -n 8
 git diff --stat
-git diff -- keypulse/capture/watchers/ax_text.py keypulse/capture/watchers/clipboard.py keypulse/obsidian/exporter.py tests/test_capture_ax_text.py
+git diff -- penpal/capture/watchers/ax_text.py penpal/capture/watchers/clipboard.py penpal/obsidian/exporter.py tests/test_capture_ax_text.py
 ```
 
 针对性搜索：
 
 ```bash
-rg -n "private|incognito|无痕|隐私" keypulse tests README.md README.en.md
-rg -n "store_text|keyboard_chunk|content_text=text|normalize_keyboard_chunk_event|not record|raw key|按键" keypulse tests README.md README.en.md config.toml
-rg -n "TODO|FIXME|XXX|pass|except Exception|shell=True|subprocess|eval\\(|exec\\(|open\\(|write_text|unlink|rmtree|os\\.remove|input\\(|password|token|secret|api_key" keypulse tests -g '*.py'
+rg -n "private|incognito|无痕|隐私" penpal tests README.md README.en.md
+rg -n "store_text|keyboard_chunk|content_text=text|normalize_keyboard_chunk_event|not record|raw key|按键" penpal tests README.md README.en.md config.toml
+rg -n "TODO|FIXME|XXX|pass|except Exception|shell=True|subprocess|eval\\(|exec\\(|open\\(|write_text|unlink|rmtree|os\\.remove|input\\(|password|token|secret|api_key" penpal tests -g '*.py'
 ```
 
 测试：
@@ -151,11 +151,11 @@ pytest -q
 
 证据：
 
-- `keypulse/config.py` 定义了 `KeyboardChunkConfig.store_text`。
+- `penpal/config.py` 定义了 `KeyboardChunkConfig.store_text`。
 - `config.toml` 里 `store_text = true`。
-- `keypulse/capture/manager.py` 构造 `KeyboardChunkWatcher` 时没有传入 `store_text`。
-- `keypulse/capture/watchers/keyboard_chunk.py` 会 flush 标准化文本。
-- `keypulse/capture/normalizer.py` 会写入 `content_text=text`。
+- `penpal/capture/manager.py` 构造 `KeyboardChunkWatcher` 时没有传入 `store_text`。
+- `penpal/capture/watchers/keyboard_chunk.py` 会 flush 标准化文本。
+- `penpal/capture/normalizer.py` 会写入 `content_text=text`。
 - `README.md` 声称产品不记录键盘输入。
 
 建议：
@@ -170,9 +170,9 @@ pytest -q
 
 证据：
 
-- `keypulse/capture/manager.py` 只脱敏 content 和 window title。
-- `keypulse/capture/normalizer.py` 会把 browser `title` 放进 metadata。
-- `keypulse/capture/watchers/window.py` 会把 `primary_title` 放进 metadata。
+- `penpal/capture/manager.py` 只脱敏 content 和 window title。
+- `penpal/capture/normalizer.py` 会把 browser `title` 放进 metadata。
+- `penpal/capture/watchers/window.py` 会把 `primary_title` 放进 metadata。
 
 建议：
 
@@ -186,7 +186,7 @@ README 声称会排除 Safari/Chrome/Firefox 的隐私窗口。实际 browser wa
 证据：
 
 - `README.md` 有隐私窗口排除承诺。
-- `keypulse/capture/watchers/browser.py` 只读取 URL/title 并产生事件。
+- `penpal/capture/watchers/browser.py` 只读取 URL/title 并产生事件。
 - 没找到 private/incognito browser detection 的测试。
 
 建议：
@@ -201,7 +201,7 @@ README 声称会排除 Safari/Chrome/Firefox 的隐私窗口。实际 browser wa
 
 证据：
 
-- `keypulse/pipeline/model.py` 在 `local-first` 下返回 cloud fallback。
+- `penpal/pipeline/model.py` 在 `local-first` 下返回 cloud fallback。
 - `README.md` 声称除非明确导出，否则不发起网络请求。
 
 建议：
@@ -216,7 +216,7 @@ README 声称会排除 Safari/Chrome/Firefox 的隐私窗口。实际 browser wa
 
 证据：
 
-- `keypulse/cli.py` 里 `--dry-run` 和 `--apply` 的参数定义。
+- `penpal/cli.py` 里 `--dry-run` 和 `--apply` 的参数定义。
 
 建议：
 
@@ -243,7 +243,7 @@ README 声称会排除 Safari/Chrome/Firefox 的隐私窗口。实际 browser wa
 
 ## 产品观察
 
-KeyPulse 的产品 thesis 是成立的：本地优先的个人活动记忆，以 Obsidian 作为阅读界面，并带有“笔友”式 narrative 层。当前代码骨架也比较完整：
+Penpal 的产品 thesis 是成立的：本地优先的个人活动记忆，以 Obsidian 作为阅读界面，并带有“笔友”式 narrative 层。当前代码骨架也比较完整：
 
 - capture source 是模块化的。
 - storage model 简单，便于审计。
@@ -259,4 +259,4 @@ KeyPulse 的产品 thesis 是成立的：本地优先的个人活动记忆，以
 
 - 现有开源个人知识库、本地记忆、AI second brain 项目到底在做什么？
 - 它们创造的价值来自哪里：捕获、搜索、重现、反思、图谱、agent，还是写作辅助？
-- KeyPulse 应该与哪类产品竞争，应该避免与哪类产品竞争？
+- Penpal 应该与哪类产品竞争，应该避免与哪类产品竞争？

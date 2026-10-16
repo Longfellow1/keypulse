@@ -1,6 +1,6 @@
-# KeyPulse v0.1.0 Public Preview
+# Penpal v0.1.0 Public Preview
 
-KeyPulse is ready for early public testing as a local-first Mac companion for Obsidian-native daily reflection.
+Penpal is ready for early public testing as a local-first Mac companion for Obsidian-native daily reflection.
 
 This release focuses on one core loop:
 
@@ -41,7 +41,7 @@ I am especially interested in feedback from people who use:
 
 Useful feedback:
 
-- Does the README explain what KeyPulse is in 10 seconds?
+- Does the README explain what Penpal is in 10 seconds?
 - Does the privacy model feel credible?
 - Does the Obsidian workflow feel native, or bolted on?
 - Would the generated daily note be worth reviewing?

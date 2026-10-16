@@ -1,15 +1,15 @@
-> **已被 `docs/KeyPulse_V2.md`（KeyPulse V1 PRD｜开发基线 v1.2）取代，本文仅作历史参考。**
+> **已被 `docs/Penpal_V2.md`（Penpal V1 PRD｜开发基线 v1.2）取代，本文仅作历史参考。**
 
-# KeyPulse V1 PRD
+# Penpal V1 PRD
 
 > **版本定位**：产品基线 · V1  
 > **说明**：本文记录已对齐的产品目标、核心场景与能力边界，属于产品需求基线；P0/P1/P2 为规划优先级，不代表所有功能均已实现。
 
 ## 1. 产品定义
 
-**KeyPulse 是一个持续采集、整理并安全保存个人数字上下文的本地 Memory & Context 基础设施，并把这些记忆和上下文开放给任何 AI 调用。**
+**Penpal 是一个持续采集、整理并安全保存个人数字上下文的本地 Memory & Context 基础设施，并把这些记忆和上下文开放给任何 AI 调用。**
 
-KeyPulse 不试图成为新的通用 AI Assistant，也不要求用户维护传统知识库。
+Penpal 不试图成为新的通用 AI Assistant，也不要求用户维护传统知识库。
 
 核心价值：
 
@@ -79,7 +79,7 @@ KeyPulse 不试图成为新的通用 AI Assistant，也不要求用户维护传�
 
 **把真实发生过的东西留下来。**
 
-这是 KeyPulse 最底层、也是最重要的差异化能力。
+这是 Penpal 最底层、也是最重要的差异化能力。
 
 #### A. 动态数据
 
@@ -137,7 +137,7 @@ Local Personal Data Store
 
 这一层需要完整覆盖 Brain、Memmy 类产品已经验证的核心能力。
 
-KeyPulse 不能只保存 Raw Data，需要同时维护：
+Penpal 不能只保存 Raw Data，需要同时维护：
 
 ### 4.1 Episodic Memory
 
@@ -306,7 +306,7 @@ WorkBuddy
 
 不同 Agent 使用的是：
 
-> **同一份 KeyPulse Memory。**
+> **同一份 Penpal Memory。**
 
 因此必须支持：
 
@@ -334,7 +334,7 @@ WorkBuddy
 
 ## 7. L3 · AI Application Layer
 
-**KeyPulse 提供记忆，AI 提供智能。**
+**Penpal 提供记忆，AI 提供智能。**
 
 主要消费者：
 
@@ -353,7 +353,7 @@ WorkBuddy
 
 #### Resume
 
-> “接着昨天 KeyPulse 的工作继续。”
+> “接着昨天 Penpal 的工作继续。”
 
 #### Analyze
 
@@ -385,11 +385,11 @@ AI Reasoning
 Method / Skill / Action
 ```
 
-KeyPulse 不需要自己重新造一个大型 Agent。
+Penpal 不需要自己重新造一个大型 Agent。
 
 ---
 
-## 8. KeyPulse Client / HUD
+## 8. Penpal Client / HUD
 
 HUD 保留，但职责不再是日报 Dashboard。
 
@@ -397,7 +397,7 @@ HUD 保留，但职责不再是日报 Dashboard。
 
 > **Presence + Status + Trust Surface**
 
-用户需要知道 KeyPulse：
+用户需要知道 Penpal：
 
 - 是否正在运行
 - 是否正在采集
@@ -411,7 +411,7 @@ HUD 保留，但职责不再是日报 Dashboard。
 轻量呈现（概念示例，并非实时数据）：
 
 ```text
-KeyPulse ● Healthy
+Penpal ● Healthy
 
 Today
 2,431 events
@@ -438,7 +438,7 @@ HUD 提供陪伴感，但不承担主要内容消费。
 
 ## 9. Always-on 原则
 
-KeyPulse 保留 Always-on。
+Penpal 保留 Always-on。
 
 原因：
 
@@ -562,7 +562,7 @@ V1 不重点做：
 
 ---
 
-## 13. KeyPulse 的产品边界
+## 13. Penpal 的产品边界
 
 以后所有需求都问两个问题。
 
@@ -580,13 +580,13 @@ V1 不重点做：
 
 两者都不是：
 
-> 原则上不进入 KeyPulse Core。
+> 原则上不进入 Penpal Core。
 
 ---
 
 ## 14. 产品一句话
 
-> **KeyPulse 是 AI 的本地个人记忆与上下文数据库。**
+> **Penpal 是 AI 的本地个人记忆与上下文数据库。**
 
 它既拥有 Brain / Memmy 类产品的：
 

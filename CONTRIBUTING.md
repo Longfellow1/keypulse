@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你对 KeyPulse 的关注！我们欢迎任何形式的贡献。
+感谢你对 Penpal 的关注！我们欢迎任何形式的贡献。
 
 ## 🤝 如何贡献
 
@@ -31,8 +31,8 @@
 1. **Fork 项目**
    ```bash
    # 在 GitHub 上点击 Fork 按钮
-   git clone https://github.com/YOUR_USERNAME/keypulse.git
-   cd keypulse
+   git clone https://github.com/YOUR_USERNAME/penpal.git
+   cd penpal
    ```
 
 2. **创建分支**
@@ -164,10 +164,10 @@ class TextDesensitizer {
 
 ```bash
 # 启动时会输出日志
-keypulse start
+penpal start
 
 # 查看数据库
-sqlite3 ~/.keypulse/data.db
+sqlite3 ~/.penpal/data.db
 ```
 
 ### 常见问题
@@ -182,7 +182,7 @@ sqlite3 ~/.keypulse/data.db
    - 系统设置 → 隐私与安全性 → 辅助功能
 
 3. **数据库问题**
-   - 删除数据库重新开始：`rm -rf ~/.keypulse/`
+   - 删除数据库重新开始：`rm -rf ~/.penpal/`
 
 ## 🎯 优先级任务
 
@@ -211,7 +211,7 @@ sqlite3 ~/.keypulse/data.db
 
 ## 🙏 致谢
 
-感谢所有贡献者！你们的每一个 PR、Issue、建议都让 KeyPulse 变得更好。
+感谢所有贡献者！你们的每一个 PR、Issue、建议都让 Penpal 变得更好。
 
 ---
 

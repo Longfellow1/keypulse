@@ -1,14 +1,14 @@
-# KeyPulse dependency map
+# Penpal dependency map
 
-Repo: `/Users/Harland/Go/keypulse` (read-only). Analysis script: `scratchpad/analyze.py` (python3 -I, `ast`, static). Raw output: `scratchpad/analysis.json`.
+Repo: `/Users/Harland/Go/penpal` (read-only). Analysis script: `scratchpad/analyze.py` (python3 -I, `ast`, static). Raw output: `scratchpad/analysis.json`.
 
 ## Method
 
-- Scope: the 205 `.py` files under `keypulse/`. `tests/`, `scripts/` and root scripts are not in the graph.
-- Unit = subpackage directory (`capture`, `pipeline`, ...). Root modules are `root:<name>` (`root:cli` = `keypulse/cli.py`). `root:__init__` = `keypulse/__init__.py`.
+- Scope: the 205 `.py` files under `penpal/`. `tests/`, `scripts/` and root scripts are not in the graph.
+- Unit = subpackage directory (`capture`, `pipeline`, ...). Root modules are `root:<name>` (`root:cli` = `penpal/cli.py`). `root:__init__` = `penpal/__init__.py`.
 - Each `import`/`from ... import` statement counted once per (source unit, target unit) pair. Relative imports resolved. Self-edges dropped.
 - `module-level` = the import is a top-level statement; the rest are lazy (inside functions/methods). Lazy imports are included in the main count.
-- Static only: `importlib`/string-based imports are invisible. Third-party = top-level module not in `sys.stdlib_module_names` and not `keypulse`.
+- Static only: `importlib`/string-based imports are invisible. Third-party = top-level module not in `sys.stdlib_module_names` and not `penpal`.
 
 ## 1. Internal adjacency (source -> target: total imports / module-level)
 
@@ -131,7 +131,7 @@ Strongly connected components (Tarjan) on the unit graph.
 - All imports (incl. lazy): {config.py, utils/}; {capabilities/, capture/}; {health/, hud/, obsidian/, pipeline/, quality/, app.py, services/, sources/}
 - Module-level imports only: {health/, hud/, obsidian/, pipeline/, quality/, app.py, sources/}
 - File-level: no file-level cycle found among resolved files.
-- Concrete 2-cycles: `config <-> utils` = `keypulse/utils/dates.py:30` (lazy `from keypulse.config import Config`) and `keypulse/config.py:296` (lazy `from keypulse.utils.env import load_dotenv_quiet`). `capabilities <-> capture` = `capture/watchers/browser_url.py:7` and `capabilities/builtin/browser_automation.py:169` (lazy).
+- Concrete 2-cycles: `config <-> utils` = `penpal/utils/dates.py:30` (lazy `from penpal.config import Config`) and `penpal/config.py:296` (lazy `from penpal.utils.env import load_dotenv_quiet`). `capabilities <-> capture` = `capture/watchers/browser_url.py:7` and `capabilities/builtin/browser_automation.py:169` (lazy).
 - Large SCC paths (checked against the edge table): `pipeline <-> obsidian` (pipeline->obsidian 4, obsidian->pipeline 3); `quality <-> obsidian` (2 each way); `pipeline -> hud -> sources -> quality -> pipeline`; `hud -> health -> root:app -> pipeline -> hud`; `root:app -> services -> obsidian`, which closes the loop through `pipeline`.
 
 ## 4. Third-party imports per unit
@@ -149,65 +149,65 @@ Import statements by top-level module (from `ast`, includes lazy imports).
 | `pipeline/` | yaml (1), pydantic (1) |
 | `sources/` | click (1), objc (1), AppKit (1), Foundation (1) |
 
-No third-party imports (stdlib + keypulse only): `store`, `utils`, `privacy`, `search`, `services`, `obsidian`, `quality`, `health`, `prompts`, `integrations`, `observability`, `root:app`, `root:i18n`.
+No third-party imports (stdlib + penpal only): `store`, `utils`, `privacy`, `search`, `services`, `obsidian`, `quality`, `health`, `prompts`, `integrations`, `observability`, `root:app`, `root:i18n`.
 
 ## 5. pyobjc / Cocoa-binding files
 
-**17 files under `keypulse/`** import a pyobjc-family module (AppKit, ApplicationServices, Quartz, objc, Foundation, Vision, WebKit, CoreFoundation), with 1 more in `tests/test_browser_discovery.py`. This is **17, not the ~25 quoted**. Not reconciled with the earlier figure.
+**17 files under `penpal/`** import a pyobjc-family module (AppKit, ApplicationServices, Quartz, objc, Foundation, Vision, WebKit, CoreFoundation), with 1 more in `tests/test_browser_discovery.py`. This is **17, not the ~25 quoted**. Not reconciled with the earlier figure.
 
 | File | Line | Module |
 |---|---:|---|
-| `keypulse/capabilities/builtin/accessibility_permission.py` | 36 | ApplicationServices |
-| `keypulse/capabilities/builtin/appkit_runtime.py` | 17 | AppKit |
-| `keypulse/capabilities/builtin/screen_recording_permission.py` | 37 | Quartz |
-| `keypulse/capture/active_app.py` | 27 | AppKit |
-| `keypulse/capture/active_app.py` | 47 | AppKit |
-| `keypulse/capture/watchers/ax_text.py` | 81 | AppKit |
-| `keypulse/capture/watchers/ax_text.py` | 85 | ApplicationServices |
-| `keypulse/capture/watchers/browser.py` | 26 | AppKit |
-| `keypulse/capture/watchers/browser_discovery.py` | 9 | AppKit |
-| `keypulse/capture/watchers/browser_discovery.py` | 10 | objc |
-| `keypulse/capture/watchers/clipboard.py` | 33 | AppKit |
-| `keypulse/capture/watchers/idle.py` | 19 | Quartz |
-| `keypulse/capture/watchers/keyboard_native.py` | 23 | Quartz |
-| `keypulse/capture/watchers/keyboard_native.py` | 33 | ApplicationServices |
-| `keypulse/capture/watchers/keyboard_native.py` | 54 | Quartz |
-| `keypulse/capture/watchers/window.py` | 40 | AppKit |
-| `keypulse/capture/watchers/window.py` | 62 | ApplicationServices |
-| `keypulse/capture/watchers/window_capture.py` | 8 | AppKit |
-| `keypulse/capture/watchers/window_capture.py` | 12 | Quartz |
-| `keypulse/cli.py` | 1213 | AppKit |
-| `keypulse/cli.py` | 1220 | Quartz |
-| `keypulse/cli.py` | 1226 | Vision |
-| `keypulse/cli.py` | 1233 | ApplicationServices |
-| `keypulse/cli.py` | 1239 | Quartz |
-| `keypulse/cli.py` | 1246 | Quartz |
-| `keypulse/hud/app.py` | 11 | AppKit |
-| `keypulse/hud/app.py` | 12 | objc |
-| `keypulse/hud/app.py` | 13 | Foundation |
-| `keypulse/hud/app.py` | 14 | WebKit |
-| `keypulse/hud/approval_window.py` | 8 | AppKit |
-| `keypulse/hud/approval_window.py` | 13 | objc |
-| `keypulse/permissions.py` | 41 | ApplicationServices |
-| `keypulse/permissions.py` | 49 | ApplicationServices |
-| `keypulse/permissions.py` | 50 | CoreFoundation |
-| `keypulse/permissions.py` | 51 | objc |
-| `keypulse/permissions.py` | 66 | Quartz |
-| `keypulse/permissions.py` | 77 | Quartz |
-| `keypulse/permissions.py` | 89 | Quartz |
-| `keypulse/permissions.py` | 100 | Quartz |
-| `keypulse/sources/scheduler.py` | 84 | objc |
-| `keypulse/sources/scheduler.py` | 85 | AppKit |
-| `keypulse/sources/scheduler.py` | 92 | Foundation |
+| `penpal/capabilities/builtin/accessibility_permission.py` | 36 | ApplicationServices |
+| `penpal/capabilities/builtin/appkit_runtime.py` | 17 | AppKit |
+| `penpal/capabilities/builtin/screen_recording_permission.py` | 37 | Quartz |
+| `penpal/capture/active_app.py` | 27 | AppKit |
+| `penpal/capture/active_app.py` | 47 | AppKit |
+| `penpal/capture/watchers/ax_text.py` | 81 | AppKit |
+| `penpal/capture/watchers/ax_text.py` | 85 | ApplicationServices |
+| `penpal/capture/watchers/browser.py` | 26 | AppKit |
+| `penpal/capture/watchers/browser_discovery.py` | 9 | AppKit |
+| `penpal/capture/watchers/browser_discovery.py` | 10 | objc |
+| `penpal/capture/watchers/clipboard.py` | 33 | AppKit |
+| `penpal/capture/watchers/idle.py` | 19 | Quartz |
+| `penpal/capture/watchers/keyboard_native.py` | 23 | Quartz |
+| `penpal/capture/watchers/keyboard_native.py` | 33 | ApplicationServices |
+| `penpal/capture/watchers/keyboard_native.py` | 54 | Quartz |
+| `penpal/capture/watchers/window.py` | 40 | AppKit |
+| `penpal/capture/watchers/window.py` | 62 | ApplicationServices |
+| `penpal/capture/watchers/window_capture.py` | 8 | AppKit |
+| `penpal/capture/watchers/window_capture.py` | 12 | Quartz |
+| `penpal/cli.py` | 1213 | AppKit |
+| `penpal/cli.py` | 1220 | Quartz |
+| `penpal/cli.py` | 1226 | Vision |
+| `penpal/cli.py` | 1233 | ApplicationServices |
+| `penpal/cli.py` | 1239 | Quartz |
+| `penpal/cli.py` | 1246 | Quartz |
+| `penpal/hud/app.py` | 11 | AppKit |
+| `penpal/hud/app.py` | 12 | objc |
+| `penpal/hud/app.py` | 13 | Foundation |
+| `penpal/hud/app.py` | 14 | WebKit |
+| `penpal/hud/approval_window.py` | 8 | AppKit |
+| `penpal/hud/approval_window.py` | 13 | objc |
+| `penpal/permissions.py` | 41 | ApplicationServices |
+| `penpal/permissions.py` | 49 | ApplicationServices |
+| `penpal/permissions.py` | 50 | CoreFoundation |
+| `penpal/permissions.py` | 51 | objc |
+| `penpal/permissions.py` | 66 | Quartz |
+| `penpal/permissions.py` | 77 | Quartz |
+| `penpal/permissions.py` | 89 | Quartz |
+| `penpal/permissions.py` | 100 | Quartz |
+| `penpal/sources/scheduler.py` | 84 | objc |
+| `penpal/sources/scheduler.py` | 85 | AppKit |
+| `penpal/sources/scheduler.py` | 92 | Foundation |
 
 ## 6. Top coupling blockers (file:line verified)
 
-1. **pipeline/__init__.py:1-43 eager imports.** Lines 1-15 import aggregate, contracts, feedback, model, record, themes, surface, policy at package import time, so importing any `keypulse.pipeline.*` submodule loads the whole pipeline. Consequence: `pipeline` is effectively unmovable without a lazy `__init__`.
-2. **sources -> quality; quality -> obsidian.** `keypulse/sources/sink.py:11` imports `keypulse.quality.entity_extractor`. `keypulse/quality/strategies/cluster/s003_reject_url_like.py:1` and `s004_reject_file_path.py:1` import `keypulse.obsidian.layout.slugify`. The quality framework pulls the Obsidian layout module in.
-3. **capture <-> capabilities.** `keypulse/capture/watchers/browser_url.py:7` imports `keypulse.capabilities.builtin.browser_automation` at module top. The back-edge is `capabilities/builtin/browser_automation.py:169` (lazy import of `capture.watchers.browser_discovery`, which pulls AppKit). `keypulse/capabilities/builtin/__init__.py:20-32` imports the builtin capabilities (line 33 commented out), and `:68` `register_builtin_capabilities()` registers them all, so importing any builtin loads the whole set.
+1. **pipeline/__init__.py:1-43 eager imports.** Lines 1-15 import aggregate, contracts, feedback, model, record, themes, surface, policy at package import time, so importing any `penpal.pipeline.*` submodule loads the whole pipeline. Consequence: `pipeline` is effectively unmovable without a lazy `__init__`.
+2. **sources -> quality; quality -> obsidian.** `penpal/sources/sink.py:11` imports `penpal.quality.entity_extractor`. `penpal/quality/strategies/cluster/s003_reject_url_like.py:1` and `s004_reject_file_path.py:1` import `penpal.obsidian.layout.slugify`. The quality framework pulls the Obsidian layout module in.
+3. **capture <-> capabilities.** `penpal/capture/watchers/browser_url.py:7` imports `penpal.capabilities.builtin.browser_automation` at module top. The back-edge is `capabilities/builtin/browser_automation.py:169` (lazy import of `capture.watchers.browser_discovery`, which pulls AppKit). `penpal/capabilities/builtin/__init__.py:20-32` imports the builtin capabilities (line 33 commented out), and `:68` `register_builtin_capabilities()` registers them all, so importing any builtin loads the whole set.
 4. **app.py and cli.py hard-wired to pipeline/obsidian.** `app.py:20` imports `pipeline.daily_orchestrator.run_daily_after_obsidian_sync`; `app.py:156` imports `pipeline.load_model_gateway`; `app.py:276` and `app.py:305` import `pipeline.triggers`. `cli.py:52-85` imports triggers (52), services (53), search (54), capture (55), utils (56), hud (57), pipeline package (58-64), model (66), i18n (67), model_keychain (68), daily_orchestrator (76), daily_summary (77), onboarding (78), weekly_orchestrator (85).
-5. **DB schema ownership split.** `keypulse/store/migrations.py:4` `SCHEMA_VERSION = 19`. Legacy tables still created there: `profile_identity` (:137), `profile_entities` (:140), `profile_projects` (:143), `hourly_summaries` (:149), `daily_skeletons` (:159). Tables created outside the store: `keypulse/pipeline/triggers.py:49` `llm_trigger_log` (plus index at :60) and `keypulse/pipeline/run_record.py:236` `run_records` (plus index at :251).
-6. **hud <-> pipeline and health -> pipeline.** `keypulse/health/self_heal.py:17` imports `pipeline.daily_orchestrator.run_daily`. `hud -> pipeline` (`hud/summary.py:19` and `:305`, `pipeline.surface`) and `pipeline -> hud` (`pipeline/weekly_orchestrator.py:20`, `hud.state`) form a 2-cycle at unit level.
+5. **DB schema ownership split.** `penpal/store/migrations.py:4` `SCHEMA_VERSION = 19`. Legacy tables still created there: `profile_identity` (:137), `profile_entities` (:140), `profile_projects` (:143), `hourly_summaries` (:149), `daily_skeletons` (:159). Tables created outside the store: `penpal/pipeline/triggers.py:49` `llm_trigger_log` (plus index at :60) and `penpal/pipeline/run_record.py:236` `run_records` (plus index at :251).
+6. **hud <-> pipeline and health -> pipeline.** `penpal/health/self_heal.py:17` imports `pipeline.daily_orchestrator.run_daily`. `hud -> pipeline` (`hud/summary.py:19` and `:305`, `pipeline.surface`) and `pipeline -> hud` (`pipeline/weekly_orchestrator.py:20`, `hud.state`) form a 2-cycle at unit level.
 
 ## 7. Classification (copied from earlier scan) with checked evidence
 
@@ -220,7 +220,7 @@ Classification copied as given. Evidence column = facts checked in this pass, fr
 | EXTRACT-AS-IS | permissions.py | utils/(1) | app.py(1), cli.py(1) | Outgoing: utils (1). Incoming: root:app, root:cli. Imports pyobjc (ApplicationServices, Quartz, CoreFoundation, objc). |
 | EXTRACT-WITH-REFACTOR | store/ | none | capabilities/(7), capture/(11), health/(6), hud/(5), obsidian/(2), pipeline/(5), app.py(2), cli.py(7), search/(2), services/(5), sources/(4) | Leaf for internal imports. Holds legacy profile_*/hourly_summaries/daily_skeletons (migrations.py:137-159), SCHEMA_VERSION 19 (migrations.py:4). llm_trigger_log and run_records are created outside store (see blocker 5). |
 | EXTRACT-WITH-REFACTOR | capture/ | capabilities/(1), privacy/(1), config.py(1), store/(11), utils/(11) | capabilities/(1), hud/(1), app.py(2), cli.py(1) | Imports capabilities (1), privacy, utils, store, root:config. Imports pyobjc in 9 files (AppKit, Quartz, ApplicationServices, objc). |
-| EXTRACT-WITH-REFACTOR | sources/ | privacy/(3), quality/(1), config.py(1), store/(4), utils/(5) | hud/(3), pipeline/(3), quality/(1), app.py(1), cli.py(1) | sink.py:11 imports keypulse.quality.entity_extractor (verified). |
+| EXTRACT-WITH-REFACTOR | sources/ | privacy/(3), quality/(1), config.py(1), store/(4), utils/(5) | hud/(3), pipeline/(3), quality/(1), app.py(1), cli.py(1) | sink.py:11 imports penpal.quality.entity_extractor (verified). |
 | EXTRACT-WITH-REFACTOR | config.py + utils/ | utils/(1) | capabilities/(2), capture/(1), health/(1), hud/(3), integrations/(1), pipeline/(9), app.py(1), cli.py(1), sources/(1), utils/(1) | Cycle: utils/dates.py:30 <-> config.py:296 (lazy). |
 | EXTRACT-WITH-REFACTOR | services/ | obsidian/(1), store/(5), utils/(2) | app.py(1), cli.py(4) | services -> obsidian (1), store (5), utils (2). Obsidian coupling is the item to check; export.py itself was not read in this pass. |
 | UNCLEAR | quality/ | obsidian/(2), pipeline/(1), sources/(1) | obsidian/(2), sources/(1) | Imports obsidian (2), pipeline (1), sources (1). Blocker 2 (s003/s004 -> obsidian.layout) verified. |
@@ -239,29 +239,29 @@ Classification copied as given. Evidence column = facts checked in this pass, fr
 | STAY-IN-LEGACY | integrations/ | config.py(1) | pipeline/(2), app.py(1), cli.py(1) | Outgoing: root:config (1). Consumed by pipeline (2), root:app (1), root:cli (1). |
 | STAY-IN-LEGACY | observability/ | none | health/(1), pipeline/(1) | Leaf for internal imports; consumed by health, pipeline. |
 
-Note: `pipeline/model.py`, `model_keychain.py` and `triggers.py` are all under `keypulse/pipeline/` (the earlier list gave no prefix). Their rows show package-level edges only.
+Note: `pipeline/model.py`, `model_keychain.py` and `triggers.py` are all under `penpal/pipeline/` (the earlier list gave no prefix). Their rows show package-level edges only.
 
-## 8. Direct connections to keypulse.db
+## 8. Direct connections to penpal.db
 
-Default path: `keypulse/config.py:11` `db_path = "~/.keypulse/keypulse.db"`; resolved by `keypulse/utils/paths.py:11` (`get_data_dir() / "keypulse.db"`). Canonical connection factory: `keypulse/store/db.py:26`. Entries marked `db_path` use a `db_path` variable; its origin was not traced per site.
+Default path: `penpal/config.py:11` `db_path = "~/.penpal/penpal.db"`; resolved by `penpal/utils/paths.py:11` (`get_data_dir() / "penpal.db"`). Canonical connection factory: `penpal/store/db.py:26`. Entries marked `db_path` use a `db_path` variable; its origin was not traced per site.
 
 | File:line | Context |
 |---|---|
-| `keypulse/store/db.py:26` | canonical `_get_conn()` (store factory) |
-| `keypulse/app.py:215` | sqlite3.connect(db_path) |
-| `keypulse/pipeline/signals.py:116` | db_path parameter |
-| `keypulse/pipeline/run_record.py:232` | self.db_path (run_records) |
-| `keypulse/pipeline/triggers.py:82,114,141,168,197` | db_path (llm_trigger_log), 5 call sites |
-| `keypulse/pipeline/daily_orchestrator.py:542` | db_path parameter |
-| `keypulse/pipeline/evidence.py:58,176,194` | db_path parameter, 3 call sites |
-| `keypulse/capabilities/builtin/obsidian_sync_freshness.py:41` | db_path parameter (not traced) |
-| `keypulse/obsidian/exporter.py:178` | db_path; exporter.py:120 returns `_keypulse_home() / "keypulse.db"` |
+| `penpal/store/db.py:26` | canonical `_get_conn()` (store factory) |
+| `penpal/app.py:215` | sqlite3.connect(db_path) |
+| `penpal/pipeline/signals.py:116` | db_path parameter |
+| `penpal/pipeline/run_record.py:232` | self.db_path (run_records) |
+| `penpal/pipeline/triggers.py:82,114,141,168,197` | db_path (llm_trigger_log), 5 call sites |
+| `penpal/pipeline/daily_orchestrator.py:542` | db_path parameter |
+| `penpal/pipeline/evidence.py:58,176,194` | db_path parameter, 3 call sites |
+| `penpal/capabilities/builtin/obsidian_sync_freshness.py:41` | db_path parameter (not traced) |
+| `penpal/obsidian/exporter.py:178` | db_path; exporter.py:120 returns `_penpal_home() / "penpal.db"` |
 
-Not keypulse.db (external sources, mostly read-only `mode=ro` URIs): `sources/plugins/chrome_history.py:77`, `safari_history.py:64`, `approved_sqlite.py:145,237,500`, `knowledgec.py:115`; `sources/discoverers/sqlite.py:158,181,206` connects to discovered sqlite files with `uri=False` (not read-only).
+Not penpal.db (external sources, mostly read-only `mode=ro` URIs): `sources/plugins/chrome_history.py:77`, `safari_history.py:64`, `approved_sqlite.py:145,237,500`, `knowledgec.py:115`; `sources/discoverers/sqlite.py:158,181,206` connects to discovered sqlite files with `uri=False` (not read-only).
 
 ## 9. Not verified / caveats
 
-- Pyobjc count: 17 under `keypulse/` (AST), not ~25.
+- Pyobjc count: 17 under `penpal/` (AST), not ~25.
 - Classification items for `services/export.py`, `capabilities/builtin/llm_backend.py`, `pipeline/model.py`, `model_keychain.py` are classification-only; file bodies were not read in this pass.
 - Per-site origin of `db_path` (section 8) not traced except the ones cited.
 - Static analysis misses dynamic imports and any `importlib` loading; `capabilities/builtin/__init__.py` registration is by explicit import, so it is covered.

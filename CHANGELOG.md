@@ -5,6 +5,30 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased] - Penpal 改名
+
+### 破坏性变更
+
+- Python 包从 `keypulse` 改为 `penpal`，发行名为 `penpal-mcp`；不再提供 `import keypulse` 兼容层。
+- 主命令改为 `penpal`。`keypulse` 保留为 CLI 兼容别名，每次调用会向 stderr 提示新命令。
+
+### 变更
+
+- 首次运行时将 `~/.keypulse` 同盘原子改名为 `~/.penpal`，原位置只保留 `MIGRATED_TO_PENPAL` 标记。若新旧目录冲突或系统返回 `EXDEV`，迁移停止且不复制、不合并数据。
+- 旧目录中的数据库文件名和记录不回填；运行时继续读取已有 `keypulse.db` / `keypulse.log`，新安装默认使用 `penpal.db` / `penpal.log`。
+- 环境变量改为 `PENPAL_*`；旧 `KEYPULSE_*` 仍可读取并提示弃用，新旧并存时新变量优先。
+- launchd label 和 MCP server 配置名改为 `com.penpal.*` / `penpal`；安装流程先卸载旧服务，doctor 会报告旧服务残留。
+- 新 locator 和 self-echo metadata 使用 `penpal://event/` 与 `via_penpal`；读取端继续识别旧 locator、metadata 和 `keypulse_server_names` 配置，不回填数据库。
+
+### macOS 权限
+
+- CLI daemon 实际由 Homebrew `Python.app` 解释器运行。只改 CLI、包名、数据目录和 launchd label 不要求重新授权；重建开发 venv 且解释器相同也不要求。若 Homebrew Python 升级并改变解释器身份，可能需要重新授予辅助功能和输入监控；启用 OCR 时还包括屏幕录制。
+
+### 升级与回滚
+
+- 开发安装迁移后运行 `bash install.sh --dev` 重建 venv；旧 venv 内脚本的 shebang 仍指向 `~/.keypulse/venv`，不能随目录移动继续使用。
+- 手动回滚时删除只含迁移标记的 `~/.keypulse`，再将 `~/.penpal` 改回 `~/.keypulse`。任何含用户数据的目录都不要删除。
+
 ## [2.0.0] - 2026-02-27
 
 ### 🎉 重大升级：智能脱敏技术

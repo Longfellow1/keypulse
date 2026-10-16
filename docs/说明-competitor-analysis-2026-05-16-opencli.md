@@ -1,8 +1,8 @@
-# 竞品分析：OpenCLI / wx-cli 引发的赛道全景与 KeyPulse 生态位
+# 竞品分析：OpenCLI / wx-cli 引发的赛道全景与 Penpal 生态位
 
 **日期**：2026-05-16
 **触发**：朋友圈帖子《OpenCLI 把私域聊天全接了进来》
-**目的**：评估 KeyPulse 跟这波"私域 IM 数据导出"浪潮的关系，验证当前生态位是否立得住
+**目的**：评估 Penpal 跟这波"私域 IM 数据导出"浪潮的关系，验证当前生态位是否立得住
 
 ---
 
@@ -20,16 +20,16 @@
 
 ---
 
-## 二、层级区隔：它做的事 ≠ KeyPulse 做的事
+## 二、层级区隔：它做的事 ≠ Penpal 做的事
 
-| 维度 | OpenCLI / wx-cli | KeyPulse |
+| 维度 | OpenCLI / wx-cli | Penpal |
 |---|---|---|
 | 层级 | 取数层（数据管道） | 意义层（narrative） |
 | 受众 | dev / 极客 | 普通人（产品向） |
 | 承诺 | "接出来给你自己玩" | "接出来 + 替你想明白" |
 | 输出 | JSON / CSV 原始记录 | daily / weekly 体感校准 |
 
-**核心判断：上下游关系，不是同位竞品。** 它是水管工，KeyPulse 是厨子。
+**核心判断：上下游关系，不是同位竞品。** 它是水管工，Penpal 是厨子。
 
 ---
 
@@ -47,9 +47,9 @@
 | wechatferry | 2k | 活跃 | hook 接入层 |
 
 **关键观察**：
-- 取数层已经卷得很厉害，KeyPulse 没必要进去
+- 取数层已经卷得很厉害，Penpal 没必要进去
 - 真正应该警惕的不是 OpenCLI，是 **WeClone (17.8k stars)** —— 它走"IM → 训练数据 → 数字分身"路线，争夺**同一批数据源 + 同一批用户注意力**
-- 但 WeClone 是"做你的分身"，KeyPulse 是"懂你这周"，**生态位区隔成立**
+- 但 WeClone 是"做你的分身"，Penpal 是"懂你这周"，**生态位区隔成立**
 
 ---
 
@@ -63,7 +63,7 @@
 
 ---
 
-## 五、扩展调研：KeyPulse 真实生态位（Codex 第二轮）
+## 五、扩展调研：Penpal 真实生态位（Codex 第二轮）
 
 把视野从 IM 取数扩到"个人活动捕获 → 意义层产出"全赛道。
 
@@ -107,7 +107,7 @@
 ```
                   本地优先              云优先
                 ┌─────────────────────────────────┐
-活动信号→narrative│ KeyPulse (空) │ Rewind / Apple │
+活动信号→narrative│ Penpal (空) │ Rewind / Apple │
                 │               │ Intelligence   │
                 ├───────────────┼────────────────┤
 活动信号→搜索    │ screenpipe   │ Recall (Win11) │
@@ -121,7 +121,7 @@
                 └─────────────────────────────────┘
 ```
 
-KeyPulse 落点："**本地优先 + 开源 + 活动信号驱动的 narrative + 体感校准不是生产力优化**"
+Penpal 落点："**本地优先 + 开源 + 活动信号驱动的 narrative + 体感校准不是生产力优化**"
 
 这个落点没有强势玩家直接占位：
 - screenpipe / omi 是 capture，不是 narrative
@@ -152,7 +152,7 @@ KeyPulse 落点："**本地优先 + 开源 + 活动信号驱动的 narrative + �
    - **这正是当前 M5 内容质量问题的本质** — 解决它就是核心竞争力
 
 4. **Microsoft Recall 路径**
-   - 现在是上游基础设施 → KeyPulse 可以消费它的输出
+   - 现在是上游基础设施 → Penpal 可以消费它的输出
    - 如果未来开放语义导出 API → 变成强替代威胁
    - **应对**：保持 OS 抽象层，Recall 是 data source 之一不是依赖
 
@@ -162,7 +162,7 @@ KeyPulse 落点："**本地优先 + 开源 + 活动信号驱动的 narrative + �
 
 ### License & 引用关系
 
-- KeyPulse Apache 2.0 ↔ wx-cli/OpenCLI Apache 2.0：兼容
+- Penpal Apache 2.0 ↔ wx-cli/OpenCLI Apache 2.0：兼容
 - **集成方式：subprocess 调用 wx-cli**（它无 library 接口，强制只能这么用，反而最干净）
 - README / NOTICE 致谢上游，不要描述成"集成 OpenCLI"，用"支持 OpenCLI 作为可选数据源"
 - **不要 fork、不要抄代码进 repo**（即使法律允许）
@@ -171,7 +171,7 @@ KeyPulse 落点："**本地优先 + 开源 + 活动信号驱动的 narrative + �
 
 理由：
 - 微信解密是**无限期维护负担**（版本/平台/SIP/Apple Silicon）
-- 不是 KeyPulse 核心价值（核心是 narrative，不是取数）
+- 不是 Penpal 核心价值（核心是 narrative，不是取数）
 - 当前 M5 内容质量没修完，不该开新前线
 
 ### 长期 IM 优先级
@@ -187,7 +187,7 @@ KeyPulse 落点："**本地优先 + 开源 + 活动信号驱动的 narrative + �
 
 ---
 
-## 九、KeyPulse 新定位句（拍板）
+## 九、Penpal 新定位句（拍板）
 
 > **"不卷数据源，卷意义层。本地活动信号 + 开放 IM 数据 → 当周体感校准 + 下周钩子。"**
 

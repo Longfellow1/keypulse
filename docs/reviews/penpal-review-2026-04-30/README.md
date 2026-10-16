@@ -1,4 +1,4 @@
-# KeyPulse 架构 Review · 2026-04-30
+# Penpal 架构 Review · 2026-04-30
 
 > 主席：Opus（claude-opus-4-7）
 > 三路 scout：Haiku（claude-haiku-4-5）
@@ -19,7 +19,7 @@
 
 ### 1.2 三层链路
 
-KeyPulse 的核心数据流是：
+Penpal 的核心数据流是：
 
 ```
 [采集层] sources/* + watchers/*  →  raw_events / SemanticEvent
@@ -212,7 +212,7 @@ KeyPulse 的核心数据流是：
 - **改动点**：
   - `Watcher` 基类加 `_supervise` 包装层：捕获 `_run` 所有异常，记录 traceback 到日志，标记状态为 `crashed`，重启计数 +1
   - `manager` 加心跳轮询：每 60s 检查每个 watcher 状态，`crashed` 状态下指数退避重启（30s / 2min / 10min / 1h 上限）
-  - 暴露 `manager.health()` 给 `keypulse status` CLI 看
+  - 暴露 `manager.health()` 给 `penpal status` CLI 看
 - **验收标准**：
   - 在 watcher `_run` 里 raise 测试异常，daemon 不死，60s 内自动重启
   - 重启 5 次以上的 watcher 进入 `degraded` 状态，状态接口可见
@@ -224,7 +224,7 @@ KeyPulse 的核心数据流是：
 - **改动点**：
   - 在 `registry.read_all()` 出口加一个 `PrivacyFilter` 中间件：根据用户配置的 `privacy_max_tier`（默认 yellow）过滤 red 事件
   - red 事件进入"安全旁路"：只保留 timestamp + source + 占位 placeholder（不带原文 / metadata），用于统计但不进 LLM
-  - 配置项加到 `~/.keypulse/config.toml`：`[privacy] max_tier = "yellow"` / `red_action = "drop" | "redact"`
+  - 配置项加到 `~/.penpal/config.toml`：`[privacy] max_tier = "yellow"` / `red_action = "drop" | "redact"`
 - **验收标准**：
   - 配置 max_tier=yellow，wechat plugin 出来的 red 事件不出现在 narrative prompt 里
   - 配置 max_tier=red，所有事件都进；这个开关用户必须显式打开
@@ -397,7 +397,7 @@ CREATE INDEX idx_filtered_events_rule ON filtered_events(rule_id);
 
 写入异步化（后台 queue + worker），避免阻塞主流程。
 
-CLI 加查询命令：`keypulse trace filter --since 2d --rule L2_entropy`。
+CLI 加查询命令：`penpal trace filter --since 2d --rule L2_entropy`。
 
 #### 接口
 ```python
@@ -430,7 +430,7 @@ def filter_fragment(event: dict) -> tuple[bool, list[FilterDecision]]:
 ### 5.2 P1-#6 things outline ID 稳定性
 
 #### 问题复述
-`thing.id` 当前等于 `hash(LLM 生成的 title)`。LLM 不稳定，今天叫"调试 keypulse 日报"，明天叫"修 keypulse 日报 bug"，hash 完全不同，跨日聚类失效。
+`thing.id` 当前等于 `hash(LLM 生成的 title)`。LLM 不稳定，今天叫"调试 penpal 日报"，明天叫"修 penpal 日报 bug"，hash 完全不同，跨日聚类失效。
 
 #### 根因
 ID 不应该依赖 LLM 输出。LLM 是叙述层，ID 是数据层，两个职责混在一起。
@@ -519,7 +519,7 @@ def precheck_api_keys() -> dict[str, ApiKeyStatus]:
 
 boot check 异步执行，不阻塞 daemon 启动。但结果出来后日志按级别分：
 - `KeychainUnavailable` → WARN，提示用户解锁 Keychain 或用 .env
-- `KeyNotFound` → ERROR，提示用户运行 `keypulse setup`
+- `KeyNotFound` → ERROR，提示用户运行 `penpal setup`
 - `Unauthorized` → ERROR，提示用户更新 key
 
 backend selection 改造：`select_backend(require_auth=True)` 时，三种失败都视为不可用，直接走 fallback（如本地模型）。
@@ -650,7 +650,7 @@ def read_all(*, timeout_s: float = 30.0, max_retries: int = 3) -> list[ReadResul
   - 超时 → 标记 `failed_transient`，下一轮 read 时再试
 - 返回 `list[ReadResult]`，调用方拿到部分结果 + 失败明细
 
-failed plugin 在元信息里记录，状态接口可见：`keypulse status` 显示"plugin git_log 连续失败 3 次，上次错误：..."。
+failed plugin 在元信息里记录，状态接口可见：`penpal status` 显示"plugin git_log 连续失败 3 次，上次错误：..."。
 
 #### 接口
 

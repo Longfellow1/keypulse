@@ -42,16 +42,16 @@ launchd 拉起 → 15 分钟后又被 kill → 循环
 
 | 项 | 数值 | 文件 |
 |---|---|---|
-| `daemon starting` 次数 | **498** | `~/.keypulse/keypulse.log` |
-| `killed stale daemon` 次数 | **218** | `~/.keypulse/healthcheck.err` |
+| `daemon starting` 次数 | **498** | `~/.penpal/penpal.log` |
+| `killed stale daemon` 次数 | **218** | `~/.penpal/healthcheck.err` |
 | 5/17 14:17–15:18 一小时内重启 | **8 次** | 同上 |
-| `degraded_streak` | **143** | `~/.keypulse/health.json` |
+| `degraded_streak` | **143** | `~/.penpal/health.json` |
 | `self_heal_triggered` | **true** | 同上 |
-| `accessibility_permission.ok` | **false** `(ax_denied)` | `~/.keypulse/healthcheck.log` |
+| `accessibility_permission.ok` | **false** `(ax_denied)` | `~/.penpal/healthcheck.log` |
 | `ax_text_watcher.ok` | **true**（**应为 false**）| 同上 |
 | 5/17 watcher emit_24h | ax_text=0 / keyboard_chunk=0 / ocr=0 / clipboard=20 / window=138 / idle=129 | health.json `product_status` |
-| 5/17 daily events_capped | **725 → 40 (token_guard)** | keypulse.log |
-| 5/17 daily quality_gate | **REFUSED thing_count=0<3** | keypulse.log |
+| 5/17 daily events_capped | **725 → 40 (token_guard)** | penpal.log |
+| 5/17 daily quality_gate | **REFUSED thing_count=0<3** | penpal.log |
 | 5/06 → 5/17 增量 daily 改动 | `560a1b2` H3 多 cluster 匹配 / `1aa1d4f` v3 收口 / `1d12f1a` wiring-fix / `65dd664` M0-M3 自愈 | git log |
 
 ---
@@ -76,12 +76,12 @@ launchd 拉起 → 15 分钟后又被 kill → 循环
 
 ### Step 0：手动恢复 AX 权限（重启第一件事）
 
-系统设置 → 隐私与安全性 → 辅助功能 → 删 **KeyPulse** → 重加 → 启动 daemon
+系统设置 → 隐私与安全性 → 辅助功能 → 删 **Penpal** → 重加 → 启动 daemon
 
 预期验证：
 ```bash
 # 5 分钟后看
-cat ~/.keypulse/health.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['product_status']['watcher_emit_counts_24h'])"
+cat ~/.penpal/health.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['product_status']['watcher_emit_counts_24h'])"
 # ax_text / keyboard_chunk 应该 > 0
 ```
 
@@ -114,8 +114,8 @@ cat ~/.keypulse/health.json | python3 -c "import json,sys; d=json.load(sys.stdin
 上下文：
 - 现状证据见 docs/incident-2026-05-17-selfheal-loop.md
 - 关键模块：
-  - keypulse/pipeline/daily_orchestrator.py
-  - keypulse/pipeline/daily_summary.py
+  - penpal/pipeline/daily_orchestrator.py
+  - penpal/pipeline/daily_summary.py
   - 自愈逻辑：grep self_heal / degraded_streak / killed stale
   - capability：grep ax_text_watcher / accessibility_permission / fact override
 - 5/12 fa90da6 是上一次 fact override 修复，没覆盖到 keyboard_chunk
@@ -131,8 +131,8 @@ cat ~/.keypulse/health.json | python3 -c "import json,sys; d=json.load(sys.stdin
 ### Step 3：验证
 
 1. 重启后 8 小时内观察：
-   - `wc -l ~/.keypulse/healthcheck.err`（killed stale daemon 不应增长）
-   - `grep -c "daemon starting" ~/.keypulse/keypulse.log` 增长应停在 launchd 自然次数
+   - `wc -l ~/.penpal/healthcheck.err`（killed stale daemon 不应增长）
+   - `grep -c "daemon starting" ~/.penpal/penpal.log` 增长应停在 launchd 自然次数
    - `watcher_emit_counts_24h.ax_text > 0`
 2. 5/18 daily 自动跑完后：
    - JSON 里 cluster 应能跨时间合并（time_range 不再 start==end）
@@ -174,7 +174,7 @@ P2.1/P2.2 浏览器 URL watcher land 后 `make install` 重打 .app + launchctl 
 
 ### 9.2 这一轮真根因
 
-`keypulse/health/self_heal.py:57` 时区 bug：
+`penpal/health/self_heal.py:57` 时区 bug：
 
 ```python
 kickstart_ts = datetime.now().isoformat()   # ← 本地时间 无 tz：2026-05-19T19:43:12
@@ -191,13 +191,13 @@ kickstart_ts = datetime.now().isoformat()   # ← 本地时间 无 tz：2026-05-
 | 项 | 内容 |
 |---|---|
 | Commit | `d638f68 fix(self-heal): kickstart_ts 必须用 UTC，否则反复 SIGTERM daemon` |
-| 改动 | `keypulse/health/self_heal.py:60` 改 `datetime.now()` → `datetime.now(timezone.utc)` |
+| 改动 | `penpal/health/self_heal.py:60` 改 `datetime.now()` → `datetime.now(timezone.utc)` |
 | 回归测试 | `tests/test_self_heal.py::test_kickstart_ts_uses_utc_so_core_emit_count_finds_new_rows` 不 mock `step_wait_core_emit`，验证 cutoff 跟实际 `ts_start` 兼容 |
 | 部署 | `make install` 重打 .app + launchctl reload 新 daemon 加载 |
 
 ### 9.4 副作用：.app 重打包让 macOS 权限失效
 
-`make install` 走 `rm -rf /Applications/KeyPulse.app + cp` 替换 bundle。bundle id 不变但 codesign hash 变了，macOS 静默撤销之前授予的 **Accessibility**（可能也包括 Input Monitoring / Screen Recording）。
+`make install` 走 `rm -rf /Applications/Penpal.app + cp` 替换 bundle。bundle id 不变但 codesign hash 变了，macOS 静默撤销之前授予的 **Accessibility**（可能也包括 Input Monitoring / Screen Recording）。
 
 观察证据：
 - `capability_status.json` 报 `accessibility_permission.ok=true`（浅检测：仅 `AXIsProcessTrusted()` 返回值）
@@ -205,13 +205,13 @@ kickstart_ts = datetime.now().isoformat()   # ← 本地时间 无 tz：2026-05-
 - daemon 内部 `_apply_ax_denied_fact_overrides` (`app.py:104-121`) 把 fact 强制覆盖为 `accessibility_permission=ax_denied`（5/17 改的兜底）
 - HUD 拿到这个 fact 显示"前往系统设置 → 自动化"
 
-**用户修复路径**：系统设置 → 隐私与安全性 → 辅助功能 → 找 KeyPulse → 取消勾选 → 重新勾选（或删除条目让 KeyPulse 重新弹询问）。同样查 Input Monitoring。
+**用户修复路径**：系统设置 → 隐私与安全性 → 辅助功能 → 找 Penpal → 取消勾选 → 重新勾选（或删除条目让 Penpal 重新弹询问）。同样查 Input Monitoring。
 
 ### 9.5 这次没做（待后续）
 
 - **5/17 incident Step 1 的 A/B/C 改造（self_heal 彻底砍 / 严格限缩 / 单点重启 watcher）** —— 这次只修了"时区 bug 导致永远失败"这一层，self_heal 动作层（SIGTERM daemon）依旧危险；下次有时间按 Step 1 推完整改造
 - **HUD 文案错误**（`hud/app.py:115`）：accessibility denied 时不应提示"前往自动化"，应提示"前往辅助功能"——是另一个 product bug，留做单独 task
-- **`make install` 后自动重新授权引导**：bundle 重打必然让 macOS 撤权限，install 流程应在最后给出用户引导（"请去系统设置确认 KeyPulse 在辅助功能 + 输入监控里仍勾选"）
+- **`make install` 后自动重新授权引导**：bundle 重打必然让 macOS 撤权限，install 流程应在最后给出用户引导（"请去系统设置确认 Penpal 在辅助功能 + 输入监控里仍勾选"）
 
 ### 9.6 新增 memory
 

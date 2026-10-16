@@ -1,11 +1,11 @@
-# KeyPulse 终局分析：从笔友到方法论操作系统
+# Penpal 终局分析：从笔友到方法论操作系统
 
-> 写于 2026-05-08，基于对 KeyPulse 代码库的调研和对 AI 协作知识蒸馏框架的思考。
+> 写于 2026-05-08，基于对 Penpal 代码库的调研和对 AI 协作知识蒸馏框架的思考。
 > 此文档面向人类阅读，也面向 Claude Code / Codex 作为项目蓝图输入。
 
 ---
 
-## 一、KeyPulse 现在在做什么
+## 一、Penpal 现在在做什么
 
 一个五层架构的 macOS 行为采集与叙事系统：
 
@@ -69,7 +69,7 @@ Pipeline
 
 Readme 第 218-238 行的原文是最精确的终局声明：
 
-> Obsidian 不只是一个笔记本，它是一张图。当日报、主题卡、事件卡不断累积、互相链接，它们慢慢构成的不是「你做过什么」，而是「你是怎么工作的」。KeyPulse 未来会坐在这张图的上面，像一个有耐心的读者 —— 注意那些反复出现的边、提出关于"你怎么做事"的小假设，然后邀请你去命名它们。
+> Obsidian 不只是一个笔记本，它是一张图。当日报、主题卡、事件卡不断累积、互相链接，它们慢慢构成的不是「你做过什么」，而是「你是怎么工作的」。Penpal 未来会坐在这张图的上面，像一个有耐心的读者 —— 注意那些反复出现的边、提出关于"你怎么做事"的小假设，然后邀请你去命名它们。
 
 > 方向上，有点像 Karpathy 提过的 auto-research，但不是"让模型替你做研究"，而是"让模型给你提出关于你自己的小问题，由你来回答"。时间久了，你的答案本身，就成了产出。
 
@@ -84,7 +84,7 @@ Readme 第 218-238 行的原文是最精确的终局声明：
 
 三个具体的终局行为示例（来自 Readme）：
 
-| 观察到的模式 | KeyPulse 的提问 | 产出的方法论 |
+| 观察到的模式 | Penpal 的提问 | 产出的方法论 |
 |-------------|----------------|-------------|
 | 这周五次会话反复打开同一个文件 | "这更像是你思考的地方，而不是你改代码的地方" | 工作流里一个被命名的位置 |
 | 每次都是 docs → 终端 → 编辑器 的顺序 | "这可能是你进入深度工作的热身仪式" | 一个可以保留、打破、或研究的模式 |
@@ -98,7 +98,7 @@ Readme 第 218-238 行的原文是最精确的终局声明：
     └──────────────────── 循环持续 ─────────────────────────────────┘
 ```
 
-关键洞察：**命名权始终在人手里**。KeyPulse 只提假设（"你是不是在..."），不做判断（"你应该..."）。这和 Readme 里的产品哲学一致：
+关键洞察：**命名权始终在人手里**。Penpal 只提假设（"你是不是在..."），不做判断（"你应该..."）。这和 Readme 里的产品哲学一致：
 
 1. 这个设计是在**增加关系**，还是只在增加**功能**？
 2. 这段文字像**笔友**，还是像**管家**？
@@ -119,7 +119,7 @@ Readme 第 218-238 行的原文是最精确的终局声明：
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  L0: 捕捉层 (Capture)                                    │
-│  来源：KeyPulse raw_events + 手动 session-notes.md       │
+│  来源：Penpal raw_events + 手动 session-notes.md       │
 │  粒度：原始事件 / 原始笔记                                │
 │  保留期限：30 天（之后归档到 wiki）                        │
 ├─────────────────────────────────────────────────────────┤
@@ -131,7 +131,7 @@ Readme 第 218-238 行的原文是最精确的终局声明：
 │  L2: 归纳层 (Synthesize → skills/)                      │
 │  粒度：可复用工作流                                       │
 │  格式：触发条件 + 步骤 + 陷阱 + 验证清单                   │
-│  创建阈值：同一模式出现 3 次以上，或 KeyPulse 跨日模式命中  │
+│  创建阈值：同一模式出现 3 次以上，或 Penpal 跨日模式命中  │
 ├─────────────────────────────────────────────────────────┤
 │  L3: 归档层 (Archive → wiki/)                           │
 │  粒度：深度分析、架构决策、技术调研                         │
@@ -167,7 +167,7 @@ Hermes 的 memory 不是存整个对话，而是存**稳定的命题**。每次�
 蒸馏框架的 L1 直接对标这个设计。文件格式：
 
 ```markdown
-# Project Memory — KeyPulse
+# Project Memory — Penpal
 
 > 本文件由蒸馏框架维护。一句一行。新事实追加到对应小节末尾。
 > 每次 CC/Codex 启动时，CLAUDE.md 引用此文件。
@@ -176,10 +176,10 @@ Hermes 的 memory 不是存整个对话，而是存**稳定的命题**。每次�
 - SQLAlchemy 2.0 async 模式，session 生命周期严格 request-scoped
 - Pydantic v2 风格，用 model_validate() 不用 parse_obj()
 - pytest 配置在 pyproject.toml，markers: slow/integration/unit
-- 日志通过 keypulse.utils.logging.get_logger()，不直接用 logging.getLogger()
+- 日志通过 penpal.utils.logging.get_logger()，不直接用 logging.getLogger()
 
 ## API / 外部依赖
-- LLM 后端通过 keypulse.pipeline.model.ModelGateway 统一调用
+- LLM 后端通过 penpal.pipeline.model.ModelGateway 统一调用
 - Obsidian vault 路径由 config.obsidian.vault_path 决定，默认 ~/Go/Knowledge
 - 所有外部 HTTP 调用必须有 timeout=20s 和 try/except
 
@@ -272,7 +272,7 @@ metadata:
 # Testing Workflow
 
 ## Overview
-KeyPulse 项目用 pytest，800+ tests，有 golden set 基线。这个 skill 确保测试相关的操作符合项目约定。
+Penpal 项目用 pytest，800+ tests，有 golden set 基线。这个 skill 确保测试相关的操作符合项目约定。
 
 ## When to Use
 - 用户要求写测试、跑测试、修测试
@@ -290,7 +290,7 @@ KeyPulse 项目用 pytest，800+ tests，有 golden set 基线。这个 skill �
 1. **不要直接调用 pytest**：`scripts/run_tests.sh` 会设置环境变量隔离，直接跑可能用错配置
 2. **Golden set 是基线**：修改 pipeline 阈值时必须跑 golden set，防止静默退化
 3. **capability 测试**：涉及 app.py 变更时，需确认 capability 框架的架构不变量测试通过
-4. **不要在测试里硬编码路径**：用 `tmp_path` fixture，不引用 `~/.keypulse/`
+4. **不要在测试里硬编码路径**：用 `tmp_path` fixture，不引用 `~/.penpal/`
 
 ## Verification Checklist
 - [ ] `python -m pytest tests/ -q` 全绿
@@ -359,13 +359,13 @@ hermes cron create "every sunday 9pm" \
   --enabled-toolsets "file,terminal,skills"
 ```
 
-### 3.3 蒸馏框架与 KeyPulse 的映射和互补
+### 3.3 蒸馏框架与 Penpal 的映射和互补
 
-| 蒸馏框架的层 | KeyPulse 的对应 | 状态 | 谁负责 |
+| 蒸馏框架的层 | Penpal 的对应 | 状态 | 谁负责 |
 |-------------|----------------|------|--------|
-| L0 捕捉 | `raw_events` SQLite + watchers | **已实现**，daemon 常驻自动化 | KeyPulse |
+| L0 捕捉 | `raw_events` SQLite + watchers | **已实现**，daemon 常驻自动化 | Penpal |
 | L1 提取 (memory.md) | 主题卡 (Topics) + 事物 (Things) | **雏形存在**，缺跨日聚合和项目上下文 | 蒸馏框架（可 cron） |
-| L2 归纳 (skills/) | 终局的"方法论文件" | **未实现**，是下一步 | 蒸馏框架 + KeyPulse 模式发现 |
+| L2 归纳 (skills/) | 终局的"方法论文件" | **未实现**，是下一步 | 蒸馏框架 + Penpal 模式发现 |
 | L3 归档 (wiki/) | Obsidian 图本身 | **存在**（vault 作为阅读面） | 蒸馏框架增强 |
 | 反哺 | CLAUDE.md | **未接入** | 蒸馏框架 |
 
@@ -397,8 +397,8 @@ CC/Codex 启动时读取 CLAUDE.md，CLAUDE.md 作为路由中心引用所有知
 │   ├── concepts/
 │   └── comparisons/
 │
-└── ~/.keypulse/                ← KeyPulse 数据（面向人）
-    ├── keypulse.db             ← raw_events, sessions, FTS5
+└── ~/.penpal/                ← Penpal 数据（面向人）
+    ├── penpal.db             ← raw_events, sessions, FTS5
     └── config.toml
 ```
 
@@ -442,20 +442,20 @@ CC/Codex 启动时读取 CLAUDE.md，CLAUDE.md 作为路由中心引用所有知
 
 ### 3.6 端到端工作流示例
 
-以一个完整的周期演示 KeyPulse + 蒸馏框架的协同：
+以一个完整的周期演示 Penpal + 蒸馏框架的协同：
 
-**Day 1-3：KeyPulse 采集**
+**Day 1-3：Penpal 采集**
 
 ```
-KeyPulse 记录：
+Penpal 记录：
 - Day 1: 14:23 打开 CC → 14:25 切到 Obsidian 写了一段 → 14:30 切回 CC → 15:10 关闭 CC
 - Day 2: 10:05 打开 CC → 10:07 切 Obsidian → 10:15 切回 CC → 11:00 关闭 CC
 - Day 3: 09:30 打开 CC → 09:32 切 Obsidian → 09:45 切回 CC → 10:20 关闭 CC
 ```
 
-**Day 4：KeyPulse 跨日模式发现**
+**Day 4：Penpal 跨日模式发现**
 
-KeyPulse 日报附言：
+Penpal 日报附言：
 > "我注意到这三天你每次开 CC 之前，都会先在 Obsidian 里写点什么。你好像在让 AI 帮忙之前，会先自己把问题想清楚。这是你刻意保持的习惯吗？要不要给它一个名字？"
 
 **Day 4：用户命名 + 蒸馏框架执行**
@@ -511,7 +511,7 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 - 你某次急匆匆丢给 CC 一个模糊需求
 - CC 回复："要不要先在 Obsidian 里理一下思路？给我 3 个关键点就行。"
 - 你意识到自己跳过了热身 → 回到 Obsidian 写清楚 → CC 首轮高质量输出
-- KeyPulse 在当晚日报记录：AI 协作流畅度 ↑
+- Penpal 在当晚日报记录：AI 协作流畅度 ↑
 
 这就完成了一个完整的 **观察 → 发现 → 命名 → 入库 → 反哺 → 验证** 循环。
 
@@ -519,11 +519,11 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 
 ## 四、两者的互补关系（架构图）
 
-**KeyPulse 是传感器阵列，蒸馏框架是精炼厂。**
+**Penpal 是传感器阵列，蒸馏框架是精炼厂。**
 
 ```
                     ┌──────────────────────────┐
-                    │    KeyPulse (传感器阵列)    │
+                    │    Penpal (传感器阵列)    │
                     │                          │
                     │  观察人在做什么            │
                     │  观察人怎么用 CC/Codex     │
@@ -556,7 +556,7 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
                                │
                                │ 更好的协作 →
                                │ 更流畅的工作 →
-                               │ KeyPulse 观察到变化
+                               │ Penpal 观察到变化
                                │
                                └──────→ 回到顶部，循环
 ```
@@ -565,14 +565,14 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 
 ## 五、终局的完整图景：方法论操作系统
 
-把 KeyPulse + 蒸馏框架放在一起看，它们在 build 的是同一个东西的不同面：
+把 Penpal + 蒸馏框架放在一起看，它们在 build 的是同一个东西的不同面：
 
 ```
                     方法论操作系统
                           │
           ┌───────────────┴───────────────┐
           │                               │
-    面朝人 (KeyPulse)              面朝 AI 工具 (蒸馏框架)
+    面朝人 (Penpal)              面朝 AI 工具 (蒸馏框架)
           │                               │
     "我是怎么工作的？"            "怎么让 AI 配合我的方式？"
           │                               │
@@ -583,9 +583,9 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
           └───────────────┬───────────────┘
                           │
                     方法论库 (Obsidian + .claude/)
-                    ├─ 日报 (Daily)               ← KeyPulse 产出
-                    ├─ 主题卡 (Topics)             ← KeyPulse 产出
-                    ├─ 事物卡 (Events)             ← KeyPulse 产出
+                    ├─ 日报 (Daily)               ← Penpal 产出
+                    ├─ 主题卡 (Topics)             ← Penpal 产出
+                    ├─ 事物卡 (Events)             ← Penpal 产出
                     ├─ 方法论文件 (methods/)        ← 终局产出
                     ├─ 项目记忆 (memory.md)         ← 蒸馏框架 L1
                     ├─ 技能流程 (skills/)           ← 蒸馏框架 L2
@@ -605,7 +605,7 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 
 对比现有工具的定位：
 
-| | 仪表盘类 | 量化自我 | AI 助理 | KeyPulse 终局 |
+| | 仪表盘类 | 量化自我 | AI 助理 | Penpal 终局 |
 |---|---|---|---|---|
 | 记录什么 | 指标 | 数字 | 你的任务 | 你的模式 |
 | 反馈方式 | 图表 | 分数 | 替你做事 | 提假设 |
@@ -633,7 +633,7 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 
 **P0 — 蒸馏框架的基础设施落地**
 
-不依赖 KeyPulse 的新功能。纯手动 + 纯文件。本周就能做。
+不依赖 Penpal 的新功能。纯手动 + 纯文件。本周就能做。
 
 - [ ] 在项目根目录创建 `.claude/` 目录结构（memory.md + skills/ + capture/）
 - [ ] 从现有 CLAUDE.md 中提取项目级约定写入 memory.md
@@ -641,7 +641,7 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 - [ ] 在 CLAUDE.md 中加入知识系统路由段
 - [ ] 开始写 session-notes.md（每次 CC/Codex 会话后 30 秒追加）
 
-**P1 — 跨日模式识别引擎（KeyPulse 侧）**
+**P1 — 跨日模式识别引擎（Penpal 侧）**
 
 - 当前只做单日聚合，不做跨日比较
 - 需要：检测"反复出现"的模式（同一个文件、同一个 App 切换序列、同一个时间段的类似行为）
@@ -649,21 +649,21 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 - 输入：`raw_events` 中的 App 切换序列、主题标签、文件路径
 - 输出：候选模式列表（带出现次数、跨天数、置信度）
 
-**P2 — 假设生成与提问（KeyPulse 侧）**
+**P2 — 假设生成与提问（Penpal 侧）**
 
 - 模式识别出来后，需要一个"翻译层"把模式变成人话提问
 - "这周五次都...是不是...？"的生成逻辑
 - 可以用 LLM（local-first 模式下用本地模型），也可以规则+模板兜底
 
-**P3 — 方法论文件系统（KeyPulse 侧）**
+**P3 — 方法论文件系统（Penpal 侧）**
 
 - 当用户确认一个方法论命名后，创建 `methods/<name>.md`
 - 包含：观察到的模式证据、用户的命名和描述、相关的日报链接
 - 用 Obsidian wikilink 连接到 Daily/Events/Topics
 
-**P4 — KeyPulse → 蒸馏框架自动桥接**
+**P4 — Penpal → 蒸馏框架自动桥接**
 
-- KeyPulse 产出的方法论自动同步到项目的 CLAUDE.md（或 .claude/skills/）
+- Penpal 产出的方法论自动同步到项目的 CLAUDE.md（或 .claude/skills/）
 - 实现蒸馏框架的反哺链路自动化
 - 可能的实现：方法论确认后，触发 hook 写 `.claude/skills/<method>.md`
 
@@ -676,15 +676,15 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 
 1. **冷启动问题**：模式识别需要足够的数据量。新用户的前 2-4 周可能只能看到日报，看不到跨日模式。
    - 缓解：明确告知用户"我在积累素材"，用天数作为进度指示
-   - P0 蒸馏框架不依赖 KeyPulse 数据量，手工即可启动
+   - P0 蒸馏框架不依赖 Penpal 数据量，手工即可启动
 
 2. **假阳性模式**：频繁模式挖掘会产生噪音。一次碰巧的行为序列不是方法论。
    - 缓解：设置置信度阈值（至少出现 N 次、跨 M 天），并始终让用户确认
 
-3. **隐私与模式发现的矛盾**：越好的模式识别需要越多的数据。但 KeyPulse 的隐私承诺限制了数据粒度。
+3. **隐私与模式发现的矛盾**：越好的模式识别需要越多的数据。但 Penpal 的隐私承诺限制了数据粒度。
    - 缓解：模式识别只看聚合信号（App 切换序列、时间段分布、主题标签），不看原始内容
 
-4. **笔友语气的一致性**：当 KeyPulse 从"聊今天"变成"聊你的模式"时，语气不能滑向"管家汇报"。
+4. **笔友语气的一致性**：当 Penpal 从"聊今天"变成"聊你的模式"时，语气不能滑向"管家汇报"。
    - 缓解：所有假设性提问走同一个产品哲学的三条红线检查
 
 5. **知识腐烂**：skills/ 和 memory.md 需要维护。项目演进后过时的约定会产生误导。
@@ -694,12 +694,12 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 
 ## 七、立即可以做的事（CC 接棒清单）
 
-以下是不需要 KeyPulse 新功能、不需要 cron、今天就能让 CC 执行的任务：
+以下是不需要 Penpal 新功能、不需要 cron、今天就能让 CC 执行的任务：
 
 ### Task 1: 创建蒸馏框架目录结构
 
 ```
-在 keypulse 项目根目录下创建：
+在 penpal 项目根目录下创建：
   .claude/memory.md
   .claude/skills/testing-workflow.md
   .claude/skills/python-patterns.md
@@ -719,7 +719,7 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 ### Task 3: 识别已有工作流编写 skill
 
 ```
-基于 keypulse 代码库的已有模式，编写至少 2 个 skill：
+基于 penpal 代码库的已有模式，编写至少 2 个 skill：
 1. testing-workflow.md — 基于 scripts/run_tests.sh + golden set
 2. python-patterns.md — 基于 pydantic config 模式、logger 约定、observer 模式等
 ```
@@ -727,7 +727,7 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 ### Task 4: 提取项目记忆
 
 ```
-扫描 keypulse 代码库中的约定和模式，填入 memory.md：
+扫描 penpal 代码库中的约定和模式，填入 memory.md：
 - 技术栈约定（SQLAlchemy async、Pydantic v2、pytest 配置）
 - API/外部依赖约定（ModelGateway、Obsidian vault 路径、timeout 约定）
 - 代码风格（注释中文/docstring英文、测试命名、依赖管理）
@@ -738,7 +738,7 @@ description: Use when starting a new task with Claude Code or Codex. The user pr
 
 ## 八、总结
 
-KeyPulse 的终局不是"一个更好的日记应用"，而是：
+Penpal 的终局不是"一个更好的日记应用"，而是：
 
 **一个从你日常行为数据中生长出来的个人方法论图书馆。它观察你是如何工作的，提出关于你的工作方式的假设，邀请你来命名和确认，最终形成一套只有你才有的、但可以分享给他人的工作方法。**
 
@@ -754,13 +754,13 @@ Hermes Agent 为这个系统提供了最成熟的参考实现：Memory（一句�
 
 ### 9.1 基因约束：什么不能做
 
-在做路线图之前，先列负面清单。这些东西跟 KeyPulse 的 DNA 直接冲突——违了基因，赚到钱也活不久。
+在做路线图之前，先列负面清单。这些东西跟 Penpal 的 DNA 直接冲突——违了基因，赚到钱也活不久。
 
 **不能是 SaaS。**
-Readme 第 57 行："本地、可审计、在你自己机器上。不是收割你注意力数据的 SaaS。" 一旦数据离开用户机器，信任就碎了。这不是功能取舍，是存在论级别的约束。KeyPulse 的隐私承诺不是 marketing，是架构。打破它，产品就没有存在的理由。
+Readme 第 57 行："本地、可审计、在你自己机器上。不是收割你注意力数据的 SaaS。" 一旦数据离开用户机器，信任就碎了。这不是功能取舍，是存在论级别的约束。Penpal 的隐私承诺不是 marketing，是架构。打破它，产品就没有存在的理由。
 
 **不能按"效率工具"定价。**
-KeyPulse 拒绝"仪表盘"和"量化自我"定位。按 Dashboard 模式收费（$X/月看报表）等于背叛产品哲学。用户不是来买一份报告的——报告只是表层，方法论才是底层价值。定价应该围绕"方法论发现和命名"的能力，而不是"看数据"的能力。
+Penpal 拒绝"仪表盘"和"量化自我"定位。按 Dashboard 模式收费（$X/月看报表）等于背叛产品哲学。用户不是来买一份报告的——报告只是表层，方法论才是底层价值。定价应该围绕"方法论发现和命名"的能力，而不是"看数据"的能力。
 
 **B 端不能卖"员工监控"。**
 虽然技术上有采集能力，但笔友人设一旦沾监控，用户关系立即变成敌对关系。"在陪伴你"和"在监视你"之间有一道墙，跨过去就回不来。团队版的价值主张必须是"自愿共享方法论"，不是"管理者看报表"。
@@ -784,14 +784,14 @@ KeyPulse 拒绝"仪表盘"和"量化自我"定位。按 Dashboard 模式收费�
 
 #### Phase 2：开源 + 社区建设（1→N 用户价值）
 
-**目标**：让"个人方法论"成为一个被认可的品类。KeyPulse 不是"又一个活动追踪器"，而是"方法论操作系统的第一个实现"。
+**目标**：让"个人方法论"成为一个被认可的品类。Penpal 不是"又一个活动追踪器"，而是"方法论操作系统的第一个实现"。
 
 **开源策略：**
 
 ```
 开源什么（Apache 2.0）：
-├─ keypulse-core      — 采集 + Pipeline + Obsidian 输出
-├─ keypulse-cli       — timeline / search / stats / export
+├─ penpal-core      — 采集 + Pipeline + Obsidian 输出
+├─ penpal-cli       — timeline / search / stats / export
 ├─ 蒸馏框架规范        — SKILL.md 格式 / memory.md 格式 / CLAUDE.md 路由模板（CC0）
 └─ 方法论文件示范集     — 你命名的前 10 个方法论，脱敏后公开（CC0）
 
@@ -809,7 +809,7 @@ KeyPulse 拒绝"仪表盘"和"量化自我"定位。按 Dashboard 模式收费�
 
 3. **蒸馏框架需要社区维护。** skills/ 里的内容需要不断更新（依赖升级、API 变更、新工具出现）。开源社区天然适合这种持续维护。一个 skill 文件被 50 个人 fork 和改进，比一个人维护准确得多。
 
-4. **品类定义权。** 率先开源+社区化，KeyPulse 就能定义"方法论文件"的格式标准（类似 Docker 定义了 Dockerfile）。后来的竞品无论闭源还是开源，都得兼容这个格式。
+4. **品类定义权。** 率先开源+社区化，Penpal 就能定义"方法论文件"的格式标准（类似 Docker 定义了 Dockerfile）。后来的竞品无论闭源还是开源，都得兼容这个格式。
 
 **这一阶段的增长模型：**
 
@@ -819,8 +819,8 @@ KeyPulse 拒绝"仪表盘"和"量化自我"定位。按 Dashboard 模式收费�
 
 增长飞轮：
 ```
-更多人用 KeyPulse → 更多方法论被发现和命名 → 更多方法论分享到社区 →
-品类认知扩大 → 更多人知道"方法论"这个概念 → 更多人用 KeyPulse → ...
+更多人用 Penpal → 更多方法论被发现和命名 → 更多方法论分享到社区 →
+品类认知扩大 → 更多人知道"方法论"这个概念 → 更多人用 Penpal → ...
 ```
 
 **关键里程碑：**
@@ -835,14 +835,14 @@ KeyPulse 拒绝"仪表盘"和"量化自我"定位。按 Dashboard 模式收费�
 
 #### Phase 3：商业化（N→可持续）
 
-**目标**：KeyPulse 本身永远免费。赚钱的是另一个东西。
+**目标**：Penpal 本身永远免费。赚钱的是另一个东西。
 
 核心洞察：方法论文件天然是**可商品化的知识资产**。它不是通用课程（任何人都能做），而是经过个人数据验证的、带使用效果背书的工作方式。这给了它独特的定价权。
 
 **产品矩阵：**
 
 ```
-KeyPulse Capture + Pipeline     ← 永远免费开源 (Apache 2.0)
+Penpal Capture + Pipeline     ← 永远免费开源 (Apache 2.0)
     │
     ├─ 个人用：方法论发现引擎
     │
@@ -858,7 +858,7 @@ KeyPulse Capture + Pipeline     ← 永远免费开源 (Apache 2.0)
 
 **三个收入来源：**
 
-**① KeyPulse Pro（$8/mo）— 个人高级分析**
+**① Penpal Pro（$8/mo）— 个人高级分析**
 
 不是解锁功能（那会跟开源精神冲突），而是解锁**分析深度**。
 
@@ -869,7 +869,7 @@ KeyPulse Capture + Pipeline     ← 永远免费开源 (Apache 2.0)
 - 浏览和下载社区方法论
 
 Pro 版增加的：
-- **跨项目方法论对比**（"你在 KeyPulse 项目里的模式 vs 在工作项目里的模式"）
+- **跨项目方法论对比**（"你在 Penpal 项目里的模式 vs 在工作项目里的模式"）
 - **AI 辅助命名和假设提出**（用更好的模型做模式→方法论翻译，Note：这用的是云 API，所以有成本，收费合理）
 - **方法论效果追踪**（"自从用了「先搜再挖」，你的 debug 时间降了 40%"）
 - **年度方法论回顾**（像 Spotify Wrapped 但是关于你怎么工作的——"今年你命名了 7 个方法论，最高频的是..."）
@@ -879,7 +879,7 @@ Pro 版增加的：
 
 **② 方法论市场（Creator 分成）— 知识交易**
 
-这是最独特的商业化路径，也是 KeyPulse 区别于所有现有工具的地方。
+这是最独特的商业化路径，也是 Penpal 区别于所有现有工具的地方。
 
 **卖什么：**
 方法论作者把命名好的方法论文档 + 配套 skill 文件打包上架。一个方法论包包含：
@@ -894,7 +894,7 @@ method-thinking-before-asking/
 ```
 
 **为什么有人会买：**
-- 这不是通用课程。"如何在 Claude Code 里做 TDD" 是通用知识，YouTube 上有。但 "Harland 在 KeyPulse 项目中经过 6 个月验证的 TDD 工作流" 是独特的——它带有个人品牌和验证数据。
+- 这不是通用课程。"如何在 Claude Code 里做 TDD" 是通用知识，YouTube 上有。但 "Harland 在 Penpal 项目中经过 6 个月验证的 TDD 工作流" 是独特的——它带有个人品牌和验证数据。
 - 买方法论的人买的不是"知识"，是"已经验证过的、可以立刻复制到我的 .claude/skills/ 里的工作方式"。
 - 类似 Substack 的付费 newsletter，但是卖的不是观点，是可执行的工作流。
 
@@ -903,15 +903,15 @@ method-thinking-before-asking/
 - 平台抽 30%（覆盖审核、分发、支付）
 - 方法论版本更新（作者持续维护）免费推送给已购用户
 
-**③ KeyPulse Teams（$20/seat/mo）— 团队方法论共享**
+**③ Penpal Teams（$20/seat/mo）— 团队方法论共享**
 
 这是在隐私约束下的 B 端产品。注意：不是监控员工。
 
 **价值主张：**
-> "用 KeyPulse 的团队，新人 ramp-up 快 3 周。因为他们不需要从零学习团队的工作方式——团队的方法论库已经在那里了，而且是从真实工作数据中长出来的，不是某个架构师拍脑袋写的 wiki。"
+> "用 Penpal 的团队，新人 ramp-up 快 3 周。因为他们不需要从零学习团队的工作方式——团队的方法论库已经在那里了，而且是从真实工作数据中长出来的，不是某个架构师拍脑袋写的 wiki。"
 
 **工作方式：**
-- 个人数据永远在本地。KeyPulse 不碰。
+- 个人数据永远在本地。Penpal 不碰。
 - 只有被命名、脱敏后的方法论文件可以分享到团队库
 - 团队库 → 新人 onboarding 直接有一套"这里的人怎么工作"
 - 每个方法论文件标注"最早观察于""最近验证于"——不是过时的文档
@@ -923,11 +923,11 @@ method-thinking-before-asking/
 
 **为什么这个方法行得通：**
 
-1. **隐私约束不是弱点，是壁垒。** Rewind AI 融资 $35M 做云端记忆，但用户隐私焦虑是它最大的天花板。KeyPulse 的本地优先架构一旦被信任，竞品没法复制——因为 SaaS 基因的公司做不到真正的本地。架构决定信任，信任决定留存。这是结构性优势，不是 feature 优势。
+1. **隐私约束不是弱点，是壁垒。** Rewind AI 融资 $35M 做云端记忆，但用户隐私焦虑是它最大的天花板。Penpal 的本地优先架构一旦被信任，竞品没法复制——因为 SaaS 基因的公司做不到真正的本地。架构决定信任，信任决定留存。这是结构性优势，不是 feature 优势。
 
-2. **方法论品类是蓝海。** "效率工具"是个红海（Todoist、Things、Notion、Linear...），"AI 助理"正在变成红海（Copilot、CC、Codex、Cursor、Windsurf、Devin...）。但"方法论操作系统"——一个帮你发现、命名、优化、分享**你是怎么工作的**的系统——没有人在做。最接近的是 Obsidian（知识管理）和 Roam Research（思维工具），但它们的关注点是"你知道了什么"，不是"你是怎么做的"。KeyPulse 盯着的是过程而不是结果，是方法而不是知识。
+2. **方法论品类是蓝海。** "效率工具"是个红海（Todoist、Things、Notion、Linear...），"AI 助理"正在变成红海（Copilot、CC、Codex、Cursor、Windsurf、Devin...）。但"方法论操作系统"——一个帮你发现、命名、优化、分享**你是怎么工作的**的系统——没有人在做。最接近的是 Obsidian（知识管理）和 Roam Research（思维工具），但它们的关注点是"你知道了什么"，不是"你是怎么做的"。Penpal 盯着的是过程而不是结果，是方法而不是知识。
 
-3. **AI 工具的普及是 KeyPulse 的顺风。** CC、Codex、Copilot、Cursor 用的人越多，"怎么跟 AI 协作"就越是一个需要被命名的方法论。就像 1990 年代"怎么用搜索引擎"是一个需要被命名的技能一样。KeyPulse 是唯一盯着人机协作方法论交叉点的工具。AI 工具的每一波增长都是 KeyPulse 的免费获客。
+3. **AI 工具的普及是 Penpal 的顺风。** CC、Codex、Copilot、Cursor 用的人越多，"怎么跟 AI 协作"就越是一个需要被命名的方法论。就像 1990 年代"怎么用搜索引擎"是一个需要被命名的技能一样。Penpal 是唯一盯着人机协作方法论交叉点的工具。AI 工具的每一波增长都是 Penpal 的免费获客。
 
 4. **方法论市场有网络效应。** 每个新方法论都会扩大品类的认知边界。不像社交网络（需要用户量才能用），方法论市场的价值在第一个精心制作的方法论发布时就存在。买第 3 个方法论的人会发现前 2 个也值得买。这不是"先有鸡还是先有蛋"的问题——第一个精心制作的方法论就是第一只鸡。
 
@@ -935,14 +935,14 @@ method-thinking-before-asking/
 
 | 谁 | 做什么 | 为什么不冲突/为什么危险 |
 |----|--------|------------------------|
-| Obsidian | 知识管理，本地 markdown | 互补。KeyPulse 的产出落在 Obsidian 里。可能是渠道而非竞品 |
-| Rewind AI | 云端记忆，全量录屏 | 定位不同（Rewind 是"记忆"，KeyPulse 是"方法论"）。但 Rewind 的隐私争议会让用户流向 KeyPulse |
+| Obsidian | 知识管理，本地 markdown | 互补。Penpal 的产出落在 Obsidian 里。可能是渠道而非竞品 |
+| Rewind AI | 云端记忆，全量录屏 | 定位不同（Rewind 是"记忆"，Penpal 是"方法论"）。但 Rewind 的隐私争议会让用户流向 Penpal |
 | Raycast / Alfred | 启动器+工作流 | 工具层，不碰"模式"层。但 Raycast 如果做 AI 协作功能可能撞车 |
-| 量化自我类 (RescueTime, Toggl) | 时间追踪、效率评分 | KeyPulse 明确拒绝这个定位。但用户认知可能混淆——需要品类教育 |
-| AI 助理类 (CC, Codex, Copilot) | 替你写代码 | 不冲突。KeyPulse 观察你怎么用它们，不是替代它们 |
-| 大厂 (Apple Screen Time, Microsoft) | 屏幕时间统计 | 粗粒度、无方法论层。但如果 Apple 做"模式发现"功能，KeyPulse 需要足够深的护城河 |
+| 量化自我类 (RescueTime, Toggl) | 时间追踪、效率评分 | Penpal 明确拒绝这个定位。但用户认知可能混淆——需要品类教育 |
+| AI 助理类 (CC, Codex, Copilot) | 替你写代码 | 不冲突。Penpal 观察你怎么用它们，不是替代它们 |
+| 大厂 (Apple Screen Time, Microsoft) | 屏幕时间统计 | 粗粒度、无方法论层。但如果 Apple 做"模式发现"功能，Penpal 需要足够深的护城河 |
 
-最大的风险不是某个竞品，而是**大厂把"方法论发现"作为 OS 级功能内置**。如果 macOS 16 自带"Work Patterns"功能，KeyPulse 需要靠社区+方法论市场+跨平台来防御。
+最大的风险不是某个竞品，而是**大厂把"方法论发现"作为 OS 级功能内置**。如果 macOS 16 自带"Work Patterns"功能，Penpal 需要靠社区+方法论市场+跨平台来防御。
 
 ### 9.4 关键风险
 
@@ -953,7 +953,7 @@ method-thinking-before-asking/
 | 隐私丑闻（一次泄露就死） | 极高 | 架构已做隔离（采集→隐私→存储三层）。开源可审计比闭源更安全。永不做云端采集 |
 | macOS 天花板 | 中 | Windows/Linux 支持在 Phase 2 由社区贡献。采集层已抽象（watcher 接口），移植成本可控 |
 | 笔友人设在商业化中崩坏 | 极高 | 产品哲学三条红线写进公司治理文件/贡献指南。商业化层只碰方法论文件，不碰原始数据。笔友语气是 A/B test 免疫项 |
-| 大厂 OS 内置模式发现 | 中 | 社区 + 跨平台 + 方法论市场深度。如果 Apple 做了，KeyPulse 的差异是"可分享的方法论"和"跨平台" |
+| 大厂 OS 内置模式发现 | 中 | 社区 + 跨平台 + 方法论市场深度。如果 Apple 做了，Penpal 的差异是"可分享的方法论"和"跨平台" |
 
 ### 9.5 路线图时间线（推测）
 
@@ -974,17 +974,17 @@ method-thinking-before-asking/
   └─ 方法论分享机制上线
 
 2027 Q4     Phase 3: 商业化启动
-  ├─ KeyPulse Pro ($8/mo) 上线
+  ├─ Penpal Pro ($8/mo) 上线
   └─ 方法论市场 Alpha（邀请制 Creator）
 
 2028        规模化
   ├─ 方法论市场开放
-  ├─ KeyPulse Teams ($20/seat/mo) 上线
+  ├─ Penpal Teams ($20/seat/mo) 上线
   └─ Windows/Linux 社区版稳定
 ```
 
 ### 9.6 一句话总结
 
-**开源 KeyPulse core + 蒸馏框架规范，让"个人方法论"成为一个被认可的品类。然后在这个品类上建一个方法论市场——卖的不是工具、不是数据，是"如何工作的知识"。**
+**开源 Penpal core + 蒸馏框架规范，让"个人方法论"成为一个被认可的品类。然后在这个品类上建一个方法论市场——卖的不是工具、不是数据，是"如何工作的知识"。**
 
 Readme 第 233 行已经写了终局：**"把这件事变成一个你可以回看、甚至可以分享的东西"**——市场就是"分享"的那个环节。不是后来加上的商业模式，是产品基因里本来就有的终点。

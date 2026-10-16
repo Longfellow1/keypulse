@@ -1,13 +1,13 @@
-# KeyPulse project structure tree
+# Penpal project structure tree
 
-Source: `/Users/Harland/Go/keypulse` (read-only). LOC = `wc -l`. Totals count `.py` only unless noted.
-Excluded: .git, .venv, build, dist, __pycache__, .claude, .codex-home, .sandbox-home, node_modules, *.log, .keypulse (runtime data), plus .DS_Store, keypulse.egg-info, .gitnexus, .pytest_cache, .ruff_cache (tooling caches, not project source).
+Source: `/Users/Harland/Go/penpal` (read-only). LOC = `wc -l`. Totals count `.py` only unless noted.
+Excluded: .git, .venv, build, dist, __pycache__, .claude, .codex-home, .sandbox-home, node_modules, *.log, .penpal (runtime data), plus .DS_Store, penpal.egg-info, .gitnexus, .pytest_cache, .ruff_cache (tooling caches, not project source).
 
 ## 0. Top level
 
 | Entry | Content |
 |---|---|
-| `keypulse/` | Python package, 205 `.py` files, 40,879 LOC (plus 29 md, 28 json, 1 yaml non-py files) |
+| `penpal/` | Python package, 205 `.py` files, 40,879 LOC (plus 29 md, 28 json, 1 yaml non-py files) |
 | `tests/` | 164 `.py` files, 26,025 LOC, flat, plus `fixtures/` and `golden/` |
 | `scripts/` | 12 `.py`, 1 `.sh`, 2 launchd plists (one-off migrations, evals, preflight) |
 | `docs/` | 40 top-level files + 56 files in 10 subdirs (design, eval, prompt-candidate and review notes) |
@@ -15,12 +15,12 @@ Excluded: .git, .venv, build, dist, __pycache__, .claude, .codex-home, .sandbox-
 | `integrations/` | launchd plists (3) and the Obsidian vault bridge (README, 3 templates, layout note) |
 | root files | `app_main.py`, `setup_app.py`, `pyproject.toml`, `Makefile`, `install.sh`, `config.toml`, `README*.md`, `CLAUDE.md`, `AGENTS.md`, `BRAIN.md`, `CHANGELOG.md`, `TESTING.md`, `SUMMARY.md`, several `备忘-*.md` design notes, `config.toml.bak`/`.bak2` |
 
-## 1. keypulse/ package (file-level tree)
+## 1. penpal/ package (file-level tree)
 
 Format: `name  LOC  one-line purpose`. Purpose = first non-empty line of the module docstring (`(no docstring)` if none). Non-py files show their first heading line (md) or type.
 
 ```
-keypulse/  [205 .py, 40,879 LOC]
+penpal/  [205 .py, 40,879 LOC]
   __init__.py                              1  (no docstring)
   app.py                                 442  (no docstring)
   cli.py                                4645  (no docstring)
@@ -77,7 +77,7 @@ keypulse/  [205 .py, 40,879 LOC]
       window.py                              288  (no docstring)
       window_capture.py                       51  (no docstring)
   data/  [1 .py, 1 LOC]
-    __init__.py                              1  Static data assets for KeyPulse.
+    __init__.py                              1  Static data assets for Penpal.
     holidays.yaml                           93  YAML data (holiday calendar)
   health/  [6 .py, 985 LOC]
     __init__.py                              3  (no docstring)
@@ -318,7 +318,7 @@ keypulse/  [205 .py, 40,879 LOC]
 | Subpackage | .py files | LOC |
 |---|---:|---:|
 | `pipeline/` | 52 | 16,943 |
-| `keypulse/` root files | 6 | 5,603 |
+| `penpal/` root files | 6 | 5,603 |
 | `sources/` | 34 | 5,602 |
 | `capture/` | 28 | 3,939 |
 | `hud/` | 8 | 2,516 |
@@ -339,7 +339,7 @@ keypulse/  [205 .py, 40,879 LOC]
 
 ## 2. tests/ (flat, 164 .py files)
 
-Grouped by the keypulse subpackage each test imports most often (`keypulse.<unit>` import count per file; `root:<x>` = root module `keypulse/<x>.py`). Counts include `conftest.py`.
+Grouped by the penpal subpackage each test imports most often (`penpal.<unit>` import count per file; `root:<x>` = root module `penpal/<x>.py`). Counts include `conftest.py`.
 
 | Tested subpackage | Test files | LOC |
 |---|---:|---:|
@@ -348,7 +348,7 @@ Grouped by the keypulse subpackage each test imports most often (`keypulse.<unit
 | `capture` | 19 | 2,626 |
 | `root:cli` | 14 | 1,916 |
 | `store` | 13 | 1,669 |
-| `(no keypulse import)` | 8 | 748 |
+| `(no penpal import)` | 8 | 748 |
 | `capabilities` | 6 | 1,003 |
 | `root:config` | 6 | 545 |
 | `obsidian` | 5 | 1,120 |
@@ -380,20 +380,20 @@ Grouped by the keypulse subpackage each test imports most often (`keypulse.<unit
 | File | LOC | Purpose |
 |---|---:|---|
 | `benchmark_m0_entities.py` | 68 | Minimal benchmark for M0 entity extraction overhead (100 events). |
-| `com.keypulse.daily.plist` | 44 | launchd job wrapping a `zsh -lc` daily run |
-| `com.keypulse.weekly.plist` | 33 | launchd job wrapping a `zsh -lc` weekly run |
+| `com.penpal.daily.plist` | 44 | launchd job wrapping a `zsh -lc` daily run |
+| `com.penpal.weekly.plist` | 33 | launchd job wrapping a `zsh -lc` weekly run |
 | `eval_daily_flagship_v4_candidates.py` | 231 | Evaluate daily_flagship v4 candidate prompts on a real day (2026-05-06). |
 | `eval_entity_extractor.py` | 905 | Entity extractor LLM-as-judge multi-day eval harness. |
 | `eval_l5_weekly_v3_candidates.py` | 380 | Evaluate L5 weekly v3 prompt candidates on a target ISO week. |
 | `lint_topics.py` | 345 | Lint and optionally clean topic notes under <vault>/Topics. |
-| `migrate_anchor_display.py` | 166 | 一次性清洗 ~/.keypulse/anchors.json 里 display 字段的「完成XX」前缀。 |
-| `migrate_to_keypulse_dir.py` | 181 | Migrate vault Events/Topics to ~/.keypulse/events|topics. |
+| `migrate_anchor_display.py` | 166 | 一次性清洗 ~/.penpal/anchors.json 里 display 字段的「完成XX」前缀。 |
+| `migrate_to_penpal_dir.py` | 181 | Migrate vault Events/Topics to ~/.penpal/events|topics. |
 | `migrate_v0_entities.py` | 207 | Backfill raw_events.metadata_json.entities for M0. |
-| `migrate_weekly_anchor_to_anchors.py` | 56 | One-off migration: ~/.keypulse/weekly-anchor.json -> ~/.keypulse/anchors.json. |
+| `migrate_weekly_anchor_to_anchors.py` | 56 | One-off migration: ~/.penpal/weekly-anchor.json -> ~/.penpal/anchors.json. |
 | `preflight_app.py` | 92 | Preflight check for the built .app bundle via capability registry. |
 | `scrub_history.py` | 379 | One-time backfill scrub for historical raw_events. |
 | `skeleton_mvp.py` | 344 | 骨架 MVP（叙事骨架 v0） |
-| `smoke_py2app.sh` | 40 | Smoke test: runs the built `/Applications/KeyPulse.app` binary (py2app bundle) |
+| `smoke_py2app.sh` | 40 | Smoke test: runs the built `/Applications/Penpal.app` binary (py2app bundle) |
 
 ## 4. docs/ (by subdir, recursive file counts)
 
@@ -409,7 +409,7 @@ Grouped by the keypulse subpackage each test imports most often (`keypulse.<unit
 | `docs/reviews/` | 5 | External review rounds 2026-04-25 and 2026-04-30 (+ judgment notes) |
 | `docs/superpowers/` | 1 | Design spec(s) under superpowers/specs |
 | `docs/weekly-prompt-candidates-v3/` | 10 | Weekly v3 candidates a/b/c, run1 exec/plain + meta.json |
-| `docs/` (top level) | 40 | Design notes, PRD (`KeyPulse_V1_PRD.md`), HUD mockups, eval JSON/MD, 说明/设计/记录 notes |
+| `docs/` (top level) | 40 | Design notes, PRD (`Penpal_V1_PRD.md`), HUD mockups, eval JSON/MD, 说明/设计/记录 notes |
 
 ## 5. brain/
 
@@ -428,5 +428,5 @@ Grouped by the keypulse subpackage each test imports most often (`keypulse.<unit
 
 | Path | Purpose |
 |---|---|
-| `integrations/launchd/` (3 plists) | `com.keypulse.healthcheck` (StartInterval, runs `KeyPulse healthcheck`); `com.keypulse.obsidian-sync-hourly` (StartInterval, `keypulse obsidian`); `com.keypulse.obsidian-sync` (StartCalendarInterval, `keypulse obsidian`) |
-| `integrations/obsidian/` | Local KeyPulse-to-Obsidian bridge: `README.md`, `备忘-vault-layout.md`, `templates/` (daily-note, event-card, topic-card templates) |
+| `integrations/launchd/` (3 plists) | `com.penpal.healthcheck` (StartInterval, runs `Penpal healthcheck`); `com.penpal.obsidian-sync-hourly` (StartInterval, `penpal obsidian`); `com.penpal.obsidian-sync` (StartCalendarInterval, `penpal obsidian`) |
+| `integrations/obsidian/` | Local Penpal-to-Obsidian bridge: `README.md`, `备忘-vault-layout.md`, `templates/` (daily-note, event-card, topic-card templates) |

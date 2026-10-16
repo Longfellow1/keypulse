@@ -1,8 +1,8 @@
-# KeyPulse Launch Checklist
+# Penpal Launch Checklist
 
 ## Repo packaging
 
-- [x] GitHub profile README points to KeyPulse
+- [x] GitHub profile README points to Penpal
 - [x] English-first README hero section
 - [x] Chinese intro preserved
 - [x] Quick start present

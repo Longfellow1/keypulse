@@ -1,6 +1,6 @@
 # 数据采集策略 · 产品判决（2026-04-30）
 
-> 本文档是 KeyPulse 数据采集策略的固化决策记录。后续任何"加新 watcher"、"重新打开 keyboard tap"之类的提议，必须先回来对照本判决书并升级证据等级。
+> 本文档是 Penpal 数据采集策略的固化决策记录。后续任何"加新 watcher"、"重新打开 keyboard tap"之类的提议，必须先回来对照本判决书并升级证据等级。
 
 ---
 
@@ -8,7 +8,7 @@
 
 **判决：DE-SCOPE / 降级**
 
-KeyPulse 的数据采集策略从 v0（深度 watcher，全开权限）转为 **v1 主路径（无权限）+ v0 兜底（默认关闭，opt-in）**。
+Penpal 的数据采集策略从 v0（深度 watcher，全开权限）转为 **v1 主路径（无权限）+ v0 兜底（默认关闭，opt-in）**。
 
 | 数据源 | 处置 | 默认状态 | 需权限 |
 |--------|------|---------|--------|
@@ -20,7 +20,7 @@ KeyPulse 的数据采集策略从 v0（深度 watcher，全开权限）转为 **
 | OCR | 留作兜底 | **off** | Screen Recording |
 | keyboard_chunk | **砍** | — | Input Monitoring（已删） |
 
-**新用户安装路径：0 权限弹窗即可使用。** 进阶兜底功能在 `~/.keypulse/config.toml` 显式打开。
+**新用户安装路径：0 权限弹窗即可使用。** 进阶兜底功能在 `~/.penpal/config.toml` 显式打开。
 
 ---
 
@@ -37,7 +37,7 @@ v0 watcher 路径（OCR / AX / keyboard tap）当初的设计逻辑是"既然能
 - macOS 静默轮换权限 = 持续维护负担（**2026-04-30 当天发生**）
 - launchd 跑 Python 拿不全权限 = 长期 bug 来源
 
-KeyPulse 的卖点是"私人数据感知"，但安装流程长得像 keylogger。两件事天然冲突。
+Penpal 的卖点是"私人数据感知"，但安装流程长得像 keylogger。两件事天然冲突。
 
 ### 假设审讯（Strike 2）— ROI 矩阵
 
@@ -69,9 +69,9 @@ Month 2: 朋友看到 "Input Monitoring" 弹窗，犹豫 5 秒，关了。
          一周后说"那个工具我没在用"
 Month 3: 你的 macOS 升级，权限静默掉（重演今天）
          你忙别的没注意，daily 连续 5 天空白
-Month 4: 你想推广 KeyPulse 到一两个深度用户
+Month 4: 你想推广 Penpal 到一两个深度用户
          发现"我得手把手带他过 4 个 macOS 设置"
-Month 6: KeyPulse 停留在"自己用，没法分发"
+Month 6: Penpal 停留在"自己用，没法分发"
          因为分发门槛 = 信任 + 冷启动 = 不可承受
 ```
 
@@ -107,7 +107,7 @@ Month 6: KeyPulse 停留在"自己用，没法分发"
 ## 证据级别与重审条件
 
 - **当前判决**：基于 L2（行为观察 = 2026-04-30 macOS 权限静默失效的实际事件）+ 产品直觉
-- **升级到 L3 的方法**：选一个朋友 / 同事，**纯 v1 模式**装一周 KeyPulse，看 daily 质量是否够 70 分
+- **升级到 L3 的方法**：选一个朋友 / 同事，**纯 v1 模式**装一周 Penpal，看 daily 质量是否够 70 分
 - **重审触发条件**（任一）：
   - L3 实验显示 daily 质量 <70 分，且确认根因是缺 v0 数据
   - 用户多次主动反馈 "我装了 ax_text 之后日报质量提升 X%"（L1 → 升级到 L2 需复现）
@@ -122,4 +122,4 @@ Month 6: KeyPulse 停留在"自己用，没法分发"
 - 决策人：Harland（用户）
 - 复核：Claude Opus 4.7
 - 日期：2026-04-30
-- 关联文档：`./README.md`（架构 review）、`../keypulse-review-2026-04-25/`（上次 review）
+- 关联文档：`./README.md`（架构 review）、`../penpal-review-2026-04-25/`（上次 review）

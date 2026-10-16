@@ -1,7 +1,7 @@
-# KeyPulse V1 重构计划｜里程碑、验收规则、交付物
+# Penpal V1 重构计划｜里程碑、验收规则、交付物
 
 > 版本：v1.0（2026-10-10，产品负责人确认）
-> 上游：`docs/KeyPulse_V2.md`（V1 PRD v1.2，D13–D23）、`docs/KeyPulse_Eval_PRD.md` v1.0
+> 上游：`docs/Penpal_V2.md`（V1 PRD v1.2，D13–D23）、`docs/Penpal_Eval_PRD.md` v1.0
 > 任务：GitHub issues #16–#33（标签 `v1-p0`；`afk` = 可由 Agent 执行，`hitl` = 需产品负责人参与）
 > 原则：从旧版抽取并与新目标两头拉齐，能改造不重写；仅 MCP、授权、证据、记忆、审计为新建（D20–D22）。
 

@@ -6,11 +6,11 @@
 {
   "entities": {
     "commit_hash": "21c290d...",
-    "file_paths": ["keypulse/hud/summary.py"],
+    "file_paths": ["penpal/hud/summary.py"],
     "urls": ["https://github.com/foo/bar"],
     "session_id": "claude-2026-05-06-abc",
     "app_bundle_id": "com.todesktop.230313mzl4w4u92",
-    "named_entities": ["keypulse", "hud", "weekly-report"]
+    "named_entities": ["penpal", "hud", "weekly-report"]
   }
 }
 ```

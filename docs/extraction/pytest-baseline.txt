@@ -19,9 +19,9 @@ ss....................F..s........s...s..ss............................. [ 11%]
 =================================== FAILURES ===================================
 E   AssertionError: assert 0 == 1
      +  where 0 = <MagicMock name='run' id='4514960720'>.call_count
-/Users/Harland/Go/keypulse/tests/test_capture_browser_url.py:119: AssertionError: assert 0 == 1
+/Users/Harland/Go/penpal/tests/test_capture_browser_url.py:119: AssertionError: assert 0 == 1
 E   assert []
-/Users/Harland/Go/keypulse/tests/test_daily_flagship_payload.py:13: assert []
+/Users/Harland/Go/penpal/tests/test_daily_flagship_payload.py:13: assert []
 E   FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/2026-W19-plain.md'
 /opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/2026-W19-plain.md'
 E   FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/2026-W19-exec.md'
@@ -29,31 +29,31 @@ E   FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/
 E   FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/2026-W19-plain.md'
 /opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/2026-W19-plain.md'
 E   FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/2026-W19-plain.md'
-/Users/Harland/Go/keypulse/tests/test_m3_default_l4_l6.py:84: FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/2026-W19-plain.md'
-E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/keypulse/docs/golden-daily/2026-05-06.md'
-/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/keypulse/docs/golden-daily/2026-05-06.md'
-E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/keypulse/docs/golden-daily/2026-05-09.md'
-/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/keypulse/docs/golden-daily/2026-05-09.md'
-E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/keypulse/docs/golden-daily/2026-05-06.md'
-/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/keypulse/docs/golden-daily/2026-05-06.md'
-E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/keypulse/keypulse/prompts/daily_flagship.v2.md'
-/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/keypulse/keypulse/prompts/daily_flagship.v2.md'
+/Users/Harland/Go/penpal/tests/test_m3_default_l4_l6.py:84: FileNotFoundError: [Errno 2] No such file or directory: 'docs/golden-weekly/2026-W19-plain.md'
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/penpal/docs/golden-daily/2026-05-06.md'
+/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/penpal/docs/golden-daily/2026-05-06.md'
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/penpal/docs/golden-daily/2026-05-09.md'
+/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/penpal/docs/golden-daily/2026-05-09.md'
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/penpal/docs/golden-daily/2026-05-06.md'
+/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/penpal/docs/golden-daily/2026-05-06.md'
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/penpal/penpal/prompts/daily_flagship.v2.md'
+/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py:537: FileNotFoundError: [Errno 2] No such file or directory: '/Users/Harland/Go/penpal/penpal/prompts/daily_flagship.v2.md'
 =============================== warnings summary ===============================
 tests/test_pipeline_triggers.py::TestT2AlwaysAllows::test_t2_allowed_no_activity
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:87: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:87: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestT1Activity::test_t1_denied_no_activity
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:98: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:98: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestT1Activity::test_t1_allowed_with_activity
 tests/test_pipeline_triggers.py::TestIntegration::test_t1_workflow
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:45: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:45: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestT1Activity::test_t1_allowed_with_activity
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:106: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:106: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestT3Caps::test_t3_denied_3_in_5h
@@ -61,43 +61,43 @@ tests/test_pipeline_triggers.py::TestT3Caps::test_t3_denied_3_in_5h
 tests/test_pipeline_triggers.py::TestT3Caps::test_t3_denied_3_in_5h
 tests/test_pipeline_triggers.py::TestT3Caps::test_t3_denied_1_in_1h_global_cap
 tests/test_pipeline_triggers.py::TestT3Caps::test_t3_allowed_old_and_sparse
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:57: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:57: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestT3Caps::test_t3_denied_3_in_5h
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:121: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:121: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestT3Caps::test_t3_denied_1_in_1h_global_cap
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:130: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:130: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestT3Caps::test_t3_allowed_old_and_sparse
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:139: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:139: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestErrorHandling::test_unknown_kind
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:150: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:150: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestRecordTrigger::test_record_trigger_idempotent
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:161: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:161: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestPendingDoubleWrite::test_record_pending_returns_id
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:180: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:180: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestPendingDoubleWrite::test_finalize_pending_updates_outcome
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:194: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:194: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestPendingDoubleWrite::test_finalize_stale_pending_cleans_old_rows
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:209: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:209: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 tests/test_pipeline_triggers.py::TestIntegration::test_t1_workflow
-  /Users/Harland/Go/keypulse/tests/test_pipeline_triggers.py:249: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  /Users/Harland/Go/penpal/tests/test_pipeline_triggers.py:249: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
     now = datetime.utcnow()
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

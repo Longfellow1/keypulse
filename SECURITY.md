@@ -11,7 +11,7 @@
 
 ## 报告安全漏洞
 
-我们非常重视 KeyPulse 的安全性。如果你发现了安全漏洞，请**不要**公开披露。
+我们非常重视 Penpal 的安全性。如果你发现了安全漏洞，请**不要**公开披露。
 
 ### 如何报告
 
@@ -19,7 +19,7 @@
 
 1. **邮件报告**（推荐）
    - 发送至：Harland5588@outlook.com
-   - 主题：[Security] KeyPulse 安全漏洞报告
+   - 主题：[Security] Penpal 安全漏洞报告
    
 2. **GitHub Security Advisory**
    - 访问：https://github.com/Longfellow1/keypulse/security/advisories
@@ -107,7 +107,7 @@
 
 ## 隐私声明
 
-KeyPulse 的设计原则：
+Penpal 的设计原则：
 
 1. **本地优先**
    - 所有数据存储在本地

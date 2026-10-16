@@ -1,4 +1,4 @@
-# KeyPulse 数据源架构重构方案
+# Penpal 数据源架构重构方案
 
 **起草日期**：2026-04-28
 **作者**：Harland + Claude（产品讨论纪要 + 工程规划）
@@ -8,9 +8,9 @@
 
 ## 0. 缘起
 
-2026-04-28 验收 Daily 报告体验后，确认 KeyPulse 当前距离"产生用户价值"还有不小差距。对照 Claude 回忆功能的产出（按事件级问题/做法/结论的高密度叙事），我们识别出**根本差距**：
+2026-04-28 验收 Daily 报告体验后，确认 Penpal 当前距离"产生用户价值"还有不小差距。对照 Claude 回忆功能的产出（按事件级问题/做法/结论的高密度叙事），我们识别出**根本差距**：
 
-| 维度 | 当前 KeyPulse | Claude 回忆（金标准） |
+| 维度 | 当前 Penpal | Claude 回忆（金标准） |
 |---|---|---|
 | 报告单位 | 动机分类（维护/理解/创造 7 桶） | 具体的事（服务器调试 / 选型决策 / 求职准备）|
 | 证据形态 | 屏幕表象（"在终端切换目录"） | 问题→做法→结论→产物 |
@@ -85,7 +85,7 @@ class DataSource:
 |---|---|
 | `knowledgeC.db` | 应用使用时长、文档打开关闭、屏幕锁定、Siri 查询、通知 |
 | Spotlight / mdfind | 全文索引、最近修改文件 |
-| Screen Time API | 系统级应用使用统计（比 KeyPulse 自己窗口聚焦更准）|
+| Screen Time API | 系统级应用使用统计（比 Penpal 自己窗口聚焦更准）|
 | 统一日志 `log show` | 应用启动 / 失败、登录、网络 |
 | Quick Look cache | 用户预览过哪些文件 |
 
@@ -177,7 +177,7 @@ class DataSource(ABC):
 
 **交付代码**：
 ```
-keypulse/sources/
+penpal/sources/
 ├── types.py        # SemanticEvent + DataSource 接口
 ├── registry.py     # 注册表 + 启动 discover 流程
 ├── discover.py     # CLI 入口
@@ -189,14 +189,14 @@ tests/
 ├── test_sources_registry.py
 └── test_sources_git_log.py
 
-keypulse/cli.py     # +1 group: sources
+penpal/cli.py     # +1 group: sources
 ```
 
 **可运行命令**：
 ```bash
-keypulse sources list
-keypulse sources discover
-keypulse sources read --source=git_log --since=2026-04-28 [--json]
+penpal sources list
+penpal sources discover
+penpal sources read --source=git_log --since=2026-04-28 [--json]
 ```
 
 **验收点**：
@@ -214,7 +214,7 @@ keypulse sources read --source=git_log --since=2026-04-28 [--json]
 
 **Part A：三类通用发现器**：
 ```
-keypulse/sources/discoverers/
+penpal/sources/discoverers/
 ├── sqlite.py       # 扫 ~/Library 找 sqlite，schema 启发式
 ├── jsonl.py        # 扫 ~ 找 jsonl，按头部内容识别
 └── plist.py        # 扫 ~/Library/Preferences 读最近文件
@@ -229,7 +229,7 @@ SQLite 发现器规则：
 
 **Part B：精读适配器**：
 ```
-keypulse/sources/plugins/
+penpal/sources/plugins/
 ├── git_log.py          # S0 已有
 ├── claude_code.py      # ~/.claude/projects/**/*.jsonl
 ├── codex_cli.py        # ~/.codex/sessions/（先调研路径）
@@ -255,7 +255,7 @@ keypulse/sources/plugins/
 
 **S1 决策记录**：
 - SQLite 扫描深度：首次扫 `~/Library` 全量（30-60 秒），后续增量
-- 候选金矿确认方式：S1 先 CLI（`keypulse sources approve <id>`），HUD 集成放 S4
+- 候选金矿确认方式：S1 先 CLI（`penpal sources approve <id>`），HUD 集成放 S4
 
 ---
 
