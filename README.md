@@ -1,4 +1,4 @@
-# Penpal
+# Penpal（笔友）
 
 > **给你所有 AI 共用的本地记忆。** Penpal 在你的 Mac 上记下你看过、写过、问过的东西，通过 MCP 交给 Claude Code、Codex、Cursor 查询，每条结果都能打开出处，每个 AI 能看到什么由你授权。
 
