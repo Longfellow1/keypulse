@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-14T11:20:20.080Z._
+_Auto-generated. Last updated 2026-10-16T09:27:17.613Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -11,6 +11,7 @@ _Auto-generated. Last updated 2026-10-14T11:20:20.080Z._
 - [cli-core-app-optional](pages/cli-core-app-optional.md) — category: decision | tags: [product, distribution, hud, app] | **Decision (owner, 2026-10-14):** split the product route into two install tiers.
 - [core-no-embedded-llm](pages/core-no-embedded-llm.md) — category: decision | tags: [core, llm, privacy] | ## Decision
 - [daily-single-render-entry](pages/daily-single-render-entry.md) — category: decision | status: archived | ## Decision
+- [data-footprint-limits](pages/data-footprint-limits.md) — category: decision | tags: [retention, data-lifecycle, storage, doctor] | Decision (user, 2026-10-16): the data directory must not grow without bound. Memory rows stay under [[retention-keep-forever]] (D32): never
 - [db-direct-read-over-screen-capture](pages/db-direct-read-over-screen-capture.md) — category: decision | ## Decision
 - [email-domain-kept-mask](pages/email-domain-kept-mask.md) — category: decision | tags: [privacy, redaction, mcp] | D31 (2026-10-12, product owner): emails are masked in the local part only, keeping the domain (`***@gmail.com`).
 - [eval-prd-separate](pages/eval-prd-separate.md) — category: decision | tags: [eval, prd] | ## Decision

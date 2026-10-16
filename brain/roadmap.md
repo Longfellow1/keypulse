@@ -2,7 +2,7 @@
 slug: roadmap
 title: Roadmap
 role: milestones
-updated: "2026-10-10T10:51:22"
+updated: "2026-10-16T17:27:23"
 ---
 
 # Roadmap
@@ -39,3 +39,7 @@ Grey = designed, not implemented (no matching code found).
 - Test count and suite health not re-verified in this pass.
 - `keypulse/prompts` files moved; confirm the loader still finds them by `capability:` after rename (not tested here).
 - Legacy extraction blockers: [[legacy-extraction-blockers]].
+
+## Planned (2026-10-16)
+- **Rename KeyPulse → Penpal**: branch `rename/penpal`, in progress.
+- **D34 bounded data footprint**: caps and automatic cleanup for migration backups, LLM cache, logs and eval artifacts; doctor shows a footprint breakdown. Memory itself stays under D32. Spec: [[data-footprint-limits]]. Owner: separate agent.
