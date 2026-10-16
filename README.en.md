@@ -4,8 +4,6 @@
 
 [中文](README.md) · [Quick start](#quick-start) · [What it records](#what-it-records-and-what-it-doesnt) · [Where it stands](#where-it-stands)
 
-> About the name: it writes down what you've seen and written, then writes back to each of your AIs, like a pen pal that lives only on your machine. Formerly KeyPulse, renamed in October 2026; upgrade notes for existing users are in the [CHANGELOG](CHANGELOG.md).
-
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
 [![Tests](https://img.shields.io/badge/tests-1000%2B%20passing-brightgreen.svg)](tests/)

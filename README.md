@@ -4,8 +4,6 @@
 
 [English](README.en.md) · [快速开始](#快速开始) · [记什么不记什么](#记什么不记什么) · [现在做到哪](#现在做到哪)
 
-> 名字的意思：它替你把看过、写过的东西记下来，再写给你的每一个 AI，像一位只在你本机的笔友。原名 KeyPulse，2026-10 改名；老用户升级说明见 [CHANGELOG](CHANGELOG.md)。
-
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
 [![Tests](https://img.shields.io/badge/tests-1000%2B%20passing-brightgreen.svg)](tests/)
