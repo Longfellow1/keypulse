@@ -29,6 +29,27 @@ def test_install_script_unloads_legacy_services_before_data_migration():
     assert unload_call < migration_call
 
 
+def test_install_script_homebrew_path_uses_qualified_names_and_uninstalls_old_formula_first():
+    install_script = Path(__file__).parents[1] / "install.sh"
+    source = install_script.read_text(encoding="utf-8")
+    brew_start = source.index('header "3/4  Installing Penpal"')
+    brew_block = source[brew_start:source.index('header "4/4  Initializing runtime"')]
+
+    # Every install/upgrade/reinstall uses the fully qualified formula name.
+    assert "brew install longfellow1/penpal/penpal" in brew_block
+    assert "brew upgrade longfellow1/penpal/penpal || brew reinstall longfellow1/penpal/penpal" in brew_block
+    assert "brew list --formula penpal" in brew_block
+    assert "brew install penpal" not in brew_block
+    assert "brew upgrade penpal" not in brew_block
+    assert "brew reinstall penpal" not in brew_block
+    assert "brew tap Longfellow1/penpal" not in brew_block
+
+    # The old keypulse formula is removed before the old tap is untapped.
+    uninstall_idx = brew_block.index("brew uninstall keypulse")
+    untap_idx = brew_block.index("brew untap longfellow1/keypulse")
+    assert uninstall_idx < untap_idx
+
+
 def test_install_launchd_writes_plists_with_absolute_keypulse_path(monkeypatch, tmp_path):
     executable = tmp_path / "bin" / "penpal"
     executable.parent.mkdir(parents=True)

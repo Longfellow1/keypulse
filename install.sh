@@ -198,20 +198,27 @@ if [[ "$DEV_MODE" != true ]]; then
   success "Homebrew $(brew --version | head -n 1 | awk '{print $2}')"
 
   header "3/4  Installing Penpal"
-  # Users of the pre-rename tap (Longfellow1/keypulse) get it removed. If it still has
-  # installed formulae, brew refuses; that is tolerated and the new tap is added anyway.
+  # Pre-rename formula: remove it before touching taps so the qualified install below is
+  # unambiguous. Only the package is removed; user data in ~/.penpal is kept.
+  if brew list --formula keypulse &>/dev/null; then
+    info "Removing old keypulse formula (your data in ~/.penpal is not touched)…"
+    brew uninstall keypulse || warn "Could not uninstall keypulse; run manually: brew uninstall keypulse"
+  fi
+  # Users of the pre-rename tap (Longfellow1/keypulse) get it removed. brew refuses to untap
+  # while formulae from it are installed or it is untrusted; that is reported and tolerated.
   old_taps="$(brew tap 2>/dev/null || true)"
   if printf '%s\n' "$old_taps" | grep -qix 'longfellow1/keypulse'; then
     info "Removing old tap Longfellow1/keypulse…"
-    brew untap longfellow1/keypulse 2>/dev/null || warn "Old tap Longfellow1/keypulse still has installed formulae; leaving it in place"
+    if ! brew untap longfellow1/keypulse 2>/dev/null; then
+      warn "Could not remove old tap Longfellow1/keypulse; if the install below fails, run: brew untap longfellow1/keypulse"
+    fi
   fi
-  info "Tapping Longfellow1/penpal…"
-  brew tap Longfellow1/penpal
+  # The fully qualified name auto-taps Longfellow1/penpal, so no separate tap step is needed.
   if brew list --formula penpal &>/dev/null; then
     info "Penpal already installed; upgrading…"
-    brew upgrade penpal || brew reinstall penpal
+    brew upgrade longfellow1/penpal/penpal || brew reinstall longfellow1/penpal/penpal
   else
-    brew install penpal
+    brew install longfellow1/penpal/penpal
   fi
   success "penpal executable installed"
 
