@@ -259,15 +259,11 @@ class Config(BaseModel):
                 with open(p, "rb") as f:
                     data = tomllib.load(f)
                 config = cls.model_validate(data)
-                old_root = Path.home() / ".keypulse"
-                new_root = Path.home() / ".penpal"
+                # A path still under the legacy ~/.keypulse (the migration marker dir) resolves to ~/.penpal.
+                from penpal.utils.paths import resolve_legacy_data_path
+
                 for field in ("db_path", "log_path"):
-                    expanded = Path(getattr(config.app, field)).expanduser()
-                    try:
-                        relative = expanded.relative_to(old_root)
-                    except ValueError:
-                        continue
-                    setattr(config.app, field, str(new_root / relative))
+                    setattr(config.app, field, resolve_legacy_data_path(getattr(config.app, field)))
                 return config
         return cls()
 

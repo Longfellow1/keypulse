@@ -93,6 +93,15 @@ def _run_capability_self_check(registry: CapabilityRegistry) -> None:
     states = _apply_ax_denied_fact_overrides(states)
     save_capability_states(states)
 
+    # Record what this process sees for its own permissions, so `penpal doctor` can report the
+    # background service instead of the terminal it runs in. Never let this break the self-check.
+    try:
+        from penpal.health.capture_health import record_daemon_permissions
+
+        record_daemon_permissions()
+    except Exception as exc:
+        logger.warning(f"daemon permission self-report failed: {exc}")
+
     capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS)
     set_state("capture_error_code", "" if capture_failure is None else capture_failure.state.code)
 

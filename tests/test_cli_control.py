@@ -105,7 +105,6 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
     assert "runtime_ocr_count=1" in result.output
 
 
-@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
     cfg = type("Cfg", (), {"db_path_expanded": tmp_path / "penpal.db"})()
     cfg.db_path_expanded.parent.mkdir(parents=True, exist_ok=True)
@@ -122,4 +121,6 @@ def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
     result = CliRunner().invoke(main, ["doctor", "--plain"])
 
     assert "后台正文采集线程: OK" in result.output
-    assert "后台屏幕识别线程: OK" in result.output
+    # OCR is disabled: shown as information, never as a failing thread check.
+    assert "后台屏幕识别线程" not in result.output
+    assert "屏幕识别（OCR）: DISABLED (OCR off)" in result.output
