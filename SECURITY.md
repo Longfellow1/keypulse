@@ -22,7 +22,7 @@
    - 主题：[Security] Penpal 安全漏洞报告
    
 2. **GitHub Security Advisory**
-   - 访问：https://github.com/Longfellow1/keypulse/security/advisories
+   - 访问：https://github.com/Longfellow1/penpal/security/advisories
    - 点击 "Report a vulnerability"
 
 ### 报告内容

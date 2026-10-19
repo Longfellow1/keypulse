@@ -13,7 +13,7 @@ So I built Penpal.
 
 Local-first. macOS. Obsidian-native. Privacy by architecture.
 
-https://github.com/Longfellow1/keypulse
+https://github.com/Longfellow1/penpal
 ```
 
 ## V2EX
@@ -34,7 +34,7 @@ https://github.com/Longfellow1/keypulse
 3. 这个每日复盘产出对你有没有价值？
 
 GitHub：
-https://github.com/Longfellow1/keypulse
+https://github.com/Longfellow1/penpal
 ```
 
 ## Obsidian Forum
@@ -58,7 +58,7 @@ I am looking for feedback from Obsidian users on:
 - what a lightweight companion plugin should do, if any
 
 Repo:
-https://github.com/Longfellow1/keypulse
+https://github.com/Longfellow1/penpal
 ```
 ## Hacker News / Reddit
 
@@ -78,5 +78,5 @@ I am especially interested in feedback on:
 - whether the positioning feels different from time-tracking tools
 
 Repo:
-https://github.com/Longfellow1/keypulse
+https://github.com/Longfellow1/penpal
 ```

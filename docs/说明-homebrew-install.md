@@ -7,7 +7,7 @@ Homebrew installs the `penpal` executable. The Penpal CLI owns runtime initializ
 ## Public install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Longfellow1/keypulse/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Longfellow1/penpal/main/install.sh | bash
 ```
 
 The script checks macOS and Homebrew, taps the Penpal formula, installs or upgrades `penpal`, then runs:
@@ -19,7 +19,7 @@ penpal install init
 ## Manual install
 
 ```bash
-brew tap Longfellow1/keypulse
+brew tap Longfellow1/penpal
 brew install penpal
 penpal install init
 ```
