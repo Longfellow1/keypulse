@@ -43,8 +43,8 @@ Anything the app can do, the CLI can do. A CLI-only install doesn't fail silentl
 
 ```bash
 # 1. Install the CLI, initialize the runtime, register the background service at login
-curl -fsSL https://raw.githubusercontent.com/Longfellow1/keypulse/main/install.sh | bash
-# or manually: brew tap Longfellow1/keypulse && brew install penpal && penpal install init
+curl -fsSL https://raw.githubusercontent.com/Longfellow1/penpal/main/install.sh | bash
+# or manually: brew tap Longfellow1/penpal && brew install penpal && penpal install init
 
 # 2. Check system permissions: doctor lists what's missing, which program to grant, and which Settings pane
 penpal doctor

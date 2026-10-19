@@ -8,7 +8,7 @@
 
 如果你发现了 bug，请：
 
-1. 检查 [Issues](https://github.com/Longfellow1/keypulse/issues) 是否已有相同问题
+1. 检查 [Issues](https://github.com/Longfellow1/penpal/issues) 是否已有相同问题
 2. 如果没有，创建新 Issue，包含：
    - 清晰的标题
    - 详细的问题描述

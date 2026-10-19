@@ -37,14 +37,14 @@ This keeps Homebrew as the distribution layer and Penpal as the lifecycle owner.
 The public README should eventually be able to offer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Longfellow1/keypulse/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Longfellow1/penpal/main/install.sh | bash
 ```
 
 Expected behavior:
 
 1. Verify macOS.
 2. Verify Homebrew exists, or provide a clear install instruction.
-3. Run `brew tap Longfellow1/keypulse`.
+3. Run `brew tap Longfellow1/penpal`.
 4. Run `brew install penpal`.
 5. Run `penpal install init`.
 6. End with the exact next user action, usually permissions and `penpal doctor`.
@@ -54,7 +54,7 @@ Expected behavior:
 Advanced users should be able to run:
 
 ```bash
-brew tap Longfellow1/keypulse
+brew tap Longfellow1/penpal
 brew install penpal
 penpal install init
 ```
@@ -261,7 +261,7 @@ Minimum expected behavior:
 The integration is acceptable when a fresh Mac user can run:
 
 ```bash
-brew tap Longfellow1/keypulse
+brew tap Longfellow1/penpal
 brew install penpal
 penpal install init
 penpal doctor

@@ -43,8 +43,8 @@ App 能做的事，CLI 都能做。只装 CLI 也不会"坏了没人知道"：�
 
 ```bash
 # 1. 安装 CLI，初始化运行环境，注册开机自启的后台服务
-curl -fsSL https://raw.githubusercontent.com/Longfellow1/keypulse/main/install.sh | bash
-# 或手动：brew tap Longfellow1/keypulse && brew install penpal && penpal install init
+curl -fsSL https://raw.githubusercontent.com/Longfellow1/penpal/main/install.sh | bash
+# 或手动：brew tap Longfellow1/penpal && brew install penpal && penpal install init
 
 # 2. 检查系统权限：缺哪个、该给哪个程序授权、去哪个设置面板，doctor 都会列出来
 penpal doctor

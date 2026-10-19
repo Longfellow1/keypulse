@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "penpal-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first personal activity memory layer for macOS"
 requires-python = ">=3.11"
 keywords = [
@@ -44,10 +44,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Longfellow1/keypulse"
-Repository = "https://github.com/Longfellow1/keypulse"
-Issues = "https://github.com/Longfellow1/keypulse/issues"
-Changelog = "https://github.com/Longfellow1/keypulse/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Longfellow1/penpal"
+Repository = "https://github.com/Longfellow1/penpal"
+Issues = "https://github.com/Longfellow1/penpal/issues"
+Changelog = "https://github.com/Longfellow1/penpal/blob/main/CHANGELOG.md"
 
 [project.scripts]
 penpal = "penpal.cli:main"
