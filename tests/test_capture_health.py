@@ -184,8 +184,8 @@ def test_report_lists_granted_and_missing_with_binaries(monkeypatch):
     missing = findings["input_monitoring"]
     assert not missing.granted and missing.status == "missing"
     assert missing.settings_pane.endswith("Privacy_ListenEvent")
-    import os, sys
-    assert os.path.realpath(sys.executable) in missing.executables
+    import sys
+    assert ch.grant_target(sys.executable) in missing.executables
 
 
 def test_report_daemon_denial_overrides_local_grant(monkeypatch):
@@ -213,8 +213,8 @@ def test_doctor_fails_on_missing_permission_and_names_binary_and_pane(monkeypatc
     failing = [line for line in result.output.splitlines() if line.endswith(": FAIL")]
     assert any("Input Monitoring" in line for line in failing)
     assert "Privacy_ListenEvent" in result.output
-    import os, sys
-    assert os.path.realpath(sys.executable) in result.output
+    import sys
+    assert ch.grant_target(sys.executable) in result.output
 
 
 def test_doctor_permission_items_pass_when_granted(monkeypatch, tmp_path):

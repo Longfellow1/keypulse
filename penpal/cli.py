@@ -895,8 +895,7 @@ def status(plain):
         enabled.append("浏览器")
     if getattr(cfg.watchers, "ax_text", False):
         enabled.append("当前看到的正文")
-    if getattr(cfg.watchers, "ocr", False):
-        enabled.append("屏幕识别补充")
+    # OCR ("屏幕识别补充") is switched off in capture/manager.py, so it is never listed as enabled.
 
     paused_now = is_capture_paused()
     disabled_now = sorted(disabled_sources())
@@ -941,7 +940,7 @@ def status(plain):
         table.add_row("已启用采集源", "、".join(enabled) if enabled else "无")
         table.add_row("键盘分块状态", "已启用" if getattr(cfg.watchers, "keyboard_chunk", False) else "未启用")
         table.add_row("正文采集状态", "已运行" if ax_running else "未见运行")
-        table.add_row("屏幕识别状态", "已运行" if ocr_running else "未见运行")
+        table.add_row("屏幕识别状态", "已停用（OCR 已关闭）")
         table.add_row("后台宿主 PID", str(runtime_pid))
         table.add_row("后台宿主路径", str(runtime_host))
         table.add_row("正文采集条数", str(ax_count))
@@ -1044,19 +1043,17 @@ def doctor(plain):
     except ImportError:
         checks["图像与事件框架"] = False
 
-    try:
-        import Vision  # noqa: F401
-        checks["本地屏幕识别能力"] = True
-    except ImportError:
-        checks["本地屏幕识别能力"] = False
-
     # macOS permissions needed by the sources that are switched on (read-only; never prompts).
+    # Prefers the daemon's own report; falls back to this terminal process when there is none.
     from penpal.health.capture_health import permission_report
 
-    runtime_for_perm = _load_capture_runtime_state() or {}
-    perm_findings = permission_report(cfg, runtime=runtime_for_perm)
+    perm_findings = permission_report(cfg)
     for finding in perm_findings:
-        checks[f"{finding.label} 权限（{', '.join(finding.sources)}）"] = finding.granted
+        if finding.checked_by == "daemon":
+            who = f"后台服务，{finding.age_sec} 秒前检查"
+        else:
+            who = "当前终端进程，非后台服务"
+        checks[f"{finding.label} 权限（{', '.join(finding.sources)}；{who}）"] = finding.granted
 
     # DB path writable
     db_path = cfg.db_path_expanded
@@ -1077,12 +1074,15 @@ def doctor(plain):
     if runtime_watchers:
         checks["后台正文采集线程"] = bool((runtime_watchers.get("ax_text") or {}).get("running"))
         checks["后台键盘分块线程"] = bool((runtime_watchers.get("keyboard_chunk") or {}).get("running"))
-        checks["后台屏幕识别线程"] = bool((runtime_watchers.get("ocr") or {}).get("running"))
+    # OCR is switched off (watcher commented out in capture/manager.py). Shown for information only, never a failure.
+    info_rows = {"屏幕识别（OCR）": "已停用（OCR 已关闭）"}
 
     if plain:
         for check_name, passed in checks.items():
             status = "OK" if passed else "FAIL"
             print(f"{check_name}: {status}")
+        for check_name in info_rows:
+            print(f"{check_name}: DISABLED (OCR off)")
         if stale_venv:
             print(
                 f"venv_entry={stale_venv[0]} points to {stale_venv[1]}; "
@@ -1099,6 +1099,8 @@ def doctor(plain):
         for check_name, passed in checks.items():
             status = "[green]正常[/green]" if passed else "[red]未通过[/red]"
             table.add_row(check_name, status)
+        for check_name, note in info_rows.items():
+            table.add_row(check_name, note)
         console.print(table)
         if stale_venv:
             console.print(
@@ -1119,8 +1121,15 @@ def doctor(plain):
             )
     missing = [f for f in perm_findings if not f.granted]
     for finding in missing:
+        if finding.checked_by == "daemon":
+            header = f"后台服务缺少权限：{finding.label}（{', '.join(finding.sources)} 需要）。请在系统设置里授予下面的程序："
+        else:
+            header = (
+                f"后台服务状态不可用（未运行或无近期记录），以下只是当前终端进程的检查结果：{finding.label} 未授予"
+                f"（{', '.join(finding.sources)} 需要）。采集正常可忽略；异常时请在系统设置里授予下面的程序："
+            )
         lines = [
-            f"缺少权限：{finding.label}（{', '.join(finding.sources)} 需要）。请在系统设置里授予下面的程序：",
+            header,
             *[f"  - {exe}" for exe in finding.executables],
             f"  打开设置面板：open \"{finding.settings_pane}\"",
         ]
