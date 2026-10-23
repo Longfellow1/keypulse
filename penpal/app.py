@@ -126,6 +126,13 @@ def _apply_ax_denied_fact_overrides(states: dict[str, HealthState]) -> dict[str,
     return overridden
 
 
+def _on_mac_wake(registry: CapabilityRegistry, scheduler: SourcesScheduler) -> None:
+    """After the Mac wakes: the same read-only self-check the supervisor runs (updates the stored
+    permission state that doctor and MCP capture_health read), then a rescan of every source."""
+    _run_capability_self_check(registry)
+    scheduler.rescan_all(reason="mac_wake")
+
+
 _self_check_supervisor_started = False
 
 
@@ -193,6 +200,8 @@ def run(config: Optional[Config] = None):
     from penpal.capture.manager import CaptureManager
 
     manager = CaptureManager(config)
+    manager.set_wake_handler(lambda: _on_mac_wake(registry, scheduler))
+
     def _shutdown(signum, frame):
         logger.info(f"Signal {signum} received, shutting down")
         try:

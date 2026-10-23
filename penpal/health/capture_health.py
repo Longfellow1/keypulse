@@ -24,11 +24,14 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from penpal import permissions
+from penpal.capture.wake import LAST_WAKE_STATE_KEY
 from penpal.permissions import PermissionStatus
 
 # The daemon persists capture_runtime every >= 2 s while its flush loop is alive.
 # 5 min tolerates a few missed persists without hiding a real stall for long.
 HEARTBEAT_STALE_SEC = 300.0
+# After a detected Mac wake the heartbeat is stale only because the machine slept; do not alarm for this long.
+WAKE_GRACE_SEC = 120.0
 CACHE_TTL_SEC = 30.0
 
 # Watcher (= source) -> macOS permissions it needs. keyboard_chunk also depends on AX
@@ -69,13 +72,18 @@ def _runtime_state() -> dict[str, Any]:
 
 def _daemon_denied_permissions() -> set[str]:
     """Permissions the daemon itself reported denied (it runs under launchd, a different TCC identity
-    from the process running doctor or the MCP server)."""
+    from the process running doctor or the MCP server). Covers the capability probe for accessibility and
+    the daemon's permission snapshot for every permission it checks (so a wake re-check is reflected)."""
     from penpal.capabilities.store import load_states
 
     denied: set[str] = set()
     state = load_states().get("accessibility_permission")
     if state is not None and not state.ok and state.code == "ax_denied":
         denied.add("accessibility")
+    snapshot = daemon_permission_snapshot()
+    for key, value in ((snapshot or {}).get("permissions") or {}).items():
+        if value == PermissionStatus.DENIED.value:
+            denied.add(key)
     return denied
 
 
@@ -180,6 +188,13 @@ def daemon_permission_snapshot(now: Optional[datetime] = None) -> Optional[dict[
         return None
     value["age_sec"] = int(checked)
     return value
+
+
+def _within_wake_grace(now: datetime) -> bool:
+    from penpal.store.repository import get_state
+
+    since_wake = _seconds_since(get_state(LAST_WAKE_STATE_KEY), now)
+    return since_wake is not None and since_wake < WAKE_GRACE_SEC
 
 
 def _seconds_since(iso: Any, now: datetime) -> Optional[float]:
@@ -310,7 +325,7 @@ def compute_capture_health(cfg: Any = None, *, now: Optional[datetime] = None) -
             "code": CODE_DAEMON_NOT_RUNNING,
             "message": f"Penpal has not recorded anything {quiet}: the daemon is stopped. Run `penpal start`.",
         }
-    if minutes is not None and minutes * 60 >= HEARTBEAT_STALE_SEC:
+    if minutes is not None and minutes * 60 >= HEARTBEAT_STALE_SEC and not _within_wake_grace(now):
         return {
             "code": CODE_HEARTBEAT_STALE,
             "message": (

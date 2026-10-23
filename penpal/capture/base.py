@@ -151,6 +151,9 @@ class BaseWatcher(abc.ABC):
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def is_paused(self) -> bool:
+        return self._paused.is_set()
+
     def health(self) -> dict:
         last_emit_age_sec = None
         last_beat_age_sec = None

@@ -8,7 +8,7 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 from urllib.parse import urlsplit
 
 from penpal.capture.aggregator import Aggregator
@@ -38,6 +38,7 @@ from penpal.capture.normalizer import (
     normalize_manual_event,
 )
 from penpal.capture.user_presence import is_user_present
+from penpal.capture.wake import LAST_WAKE_STATE_KEY, detect_wake
 from penpal.config import Config
 from penpal.privacy.desensitizer import desensitize, desensitize_json_value, truncate
 from penpal.store.db import get_conn, init_db
@@ -224,6 +225,7 @@ class CaptureManager:
         self._storage_dropped = 0
         self._storage_next_probe_mono = 0.0
         self._runtime_persist_failed = False
+        self._wake_handler: Optional[Callable[[], None]] = None
 
     def start(self):
         """Initialize DB, seed policies, start watchers and flush loop."""
@@ -463,10 +465,7 @@ class CaptureManager:
         log an ERROR so the user can see permission rotation events.
         """
         # Sleep first so quick pytest scenarios don't race startup.
-        slept = 0.0
-        while self._running.is_set() and slept < self.HEARTBEAT_CHECK_INTERVAL_SEC:
-            time.sleep(0.5)
-            slept += 0.5
+        self._wait_for_next_check()
         while self._running.is_set():
             try:
                 if not self._paused.is_set():
@@ -478,10 +477,70 @@ class CaptureManager:
                             logger.error("heartbeat check for %s failed: %s", name, exc)
             except Exception as exc:  # pragma: no cover - defensive
                 logger.error("heartbeat loop error: %s", exc)
-            slept = 0.0
-            while self._running.is_set() and slept < self.HEARTBEAT_CHECK_INTERVAL_SEC:
-                time.sleep(0.5)
-                slept += 0.5
+            self._wait_for_next_check()
+
+    def _wait_for_next_check(self) -> None:
+        """Sleep one heartbeat interval in 0.5 s slices and watch the wall clock for a sleep/wake jump.
+
+        A slice that took far longer on the wall clock than the 0.5 s it asked for means the Mac slept
+        in between; the wake is handled at the first slice after resume (within ~0.5 s).
+        """
+        slept = 0.0
+        while self._running.is_set() and slept < self.HEARTBEAT_CHECK_INTERVAL_SEC:
+            wall_before = time.time()
+            time.sleep(0.5)
+            slept += 0.5
+            if detect_wake(time.time() - wall_before, 0.5):
+                self.handle_wake()
+
+    def set_wake_handler(self, handler: Optional[Callable[[], None]]) -> None:
+        """Callback run after each detected wake, after the manager's own watcher restart.
+
+        penpal.app wires it to the same capability self-check the supervisor runs, plus a source rescan.
+        """
+        self._wake_handler = handler
+
+    def handle_wake(self) -> None:
+        """Re-check the daemon after the Mac wakes from sleep.
+
+        Also the test seam: a test injects a fake wake by calling this directly.
+        Steps: record the wake time (the MCP grace window reads it), restart watchers that stopped, persist
+        the runtime heartbeat now, then run the wake handler (permission self-check and source rescan).
+        """
+        logger.info("Mac woke from sleep: re-checking watchers, permissions and sources")
+        try:
+            set_state(LAST_WAKE_STATE_KEY, datetime.now(timezone.utc).isoformat())
+        except Exception as exc:
+            logger.error("recording wake time failed: %s", exc)
+        self._restart_watchers_after_wake()
+        try:
+            self._persist_runtime_state(force=True)
+        except Exception as exc:  # e.g. disk full: the flush loop reports it
+            logger.error("runtime state not persisted after wake: %s", type(exc).__name__)
+        handler = self._wake_handler
+        if handler is not None:
+            try:
+                handler()
+            except Exception as exc:
+                logger.error("wake handler failed: %s", exc)
+
+    def _restart_watchers_after_wake(self) -> None:
+        """Restart enabled, non-paused watchers whose thread is gone (sleep can leave them silent).
+
+        Watchers paused on purpose (camera, a source switched off, a user pause) are left alone, and so are
+        live threads: a running but silent watcher is still covered by the heartbeat supervisor.
+        """
+        if self._paused.is_set():
+            return
+        disabled = disabled_sources()
+        for name, watcher in list(self._watchers.items()):
+            if name in disabled or watcher.is_paused() or watcher.is_running():
+                continue
+            try:
+                watcher.start()
+                logger.info("watcher %s restarted after wake", name)
+            except Exception as exc:
+                logger.error("watcher %s restart after wake failed: %s", name, exc)
 
     def _flush_loop(self):
         while self._running.is_set():
