@@ -13,6 +13,7 @@ from penpal.capture.capture_control import (
     disabled_sources,
     set_source_enabled,
 )
+from penpal.capture.keyboard_notice import KEYBOARD_SOURCE, keyboard_capture_enabled, switch_hint
 from penpal.config import Config
 from penpal.sources.approval import ApprovalRecord, ApprovalStore
 from penpal.sources.discoverers import CandidateSource, discover_all_candidates
@@ -35,7 +36,8 @@ def sources_group() -> None:
 
 @sources_group.command("list")
 def list_command() -> None:
-    init_db(Config.load().db_path_expanded)
+    cfg = Config.load()
+    init_db(cfg.db_path_expanded)
     disabled = disabled_sources()
     for plugin in list_sources():
         desc = getattr(plugin, "description", "") or ""
@@ -43,6 +45,12 @@ def list_command() -> None:
             f"{plugin.name}\t[{plugin.privacy_tier}/{plugin.liveness}]\t{_switch_label(plugin.name, disabled)}\t{desc}"
         )
     for name in sorted(CAPTURE_SOURCES):
+        if name == KEYBOARD_SOURCE:
+            # Effective state (watcher config and switch) plus the command that changes it (issue #29).
+            on = keyboard_capture_enabled(cfg.watchers.keyboard_chunk)
+            label = "[on]" if on else "[off]"
+            click.echo(f"{name}\t[capture watcher]\t{label}\t{switch_hint(on)}")
+            continue
         click.echo(f"{name}\t[capture watcher]\t{_switch_label(name, disabled)}")
 
 

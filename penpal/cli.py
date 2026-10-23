@@ -54,6 +54,16 @@ from penpal.services.sessionizer import sessions_for_today, recent_sessions
 from penpal.search.engine import search, recent_clipboard, recent_manual, recent_sessions_docs
 from penpal.capture.normalizer import normalize_manual_event
 from penpal.capture.capture_control import disabled_sources, is_capture_paused
+from penpal.capture.keyboard_notice import (
+    DISABLE_COMMAND,
+    ENABLE_COMMAND,
+    KEYBOARD_SOURCE,
+    keyboard_capture_enabled,
+    mark_notice_shown,
+    notice_pending,
+    notice_text,
+    switch_hint,
+)
 from penpal.utils.dates import local_day_bounds, resolve_local_date, local_timezone
 from penpal.hud import run_hud
 from penpal.i18n import CLI_LANG as _CLI_LANG, T, current_lang
@@ -438,6 +448,15 @@ def _echo_launchd_results(results: list[tuple[str, Path, str, bool]], *, plain: 
             console.print(f"[green]{label}[/green] {status_text} ({load_text}) -> {path}")
 
 
+def _show_keyboard_notice_once() -> None:
+    """Print the keyboard capture risk notice the first time install/onboarding runs (issue #29)."""
+    if not notice_pending():
+        return
+    click.echo(notice_text())
+    click.echo("")
+    mark_notice_shown()
+
+
 def _stale_moved_dev_venv_script() -> tuple[Path, str] | None:
     bin_dir = get_data_dir() / "venv" / "bin"
     old_venv = Path.home() / ".keypulse" / "venv"
@@ -487,6 +506,7 @@ def install_init(no_launchd, no_load, force_config, force_launchd, plain):
     if not no_launchd:
         launchd_results = _install_launchd_jobs(load=not no_load, force=force_launchd)
 
+    _show_keyboard_notice_once()
     if plain:
         print(f"data_dir={data_dir}")
         print(f"logs_dir={logs_dir}")
@@ -593,6 +613,7 @@ def install_onboard(non_interactive: bool):
     )
 
     console.print("[bold]Penpal 权限引导[/bold]\n")
+    _show_keyboard_notice_once()
     console.print(
         "重新打包后 macOS 会撤销以下权限，需要重新授权。"
         "我会按顺序检查每一项，缺失时打开系统设置对应面板。\n"
@@ -1075,14 +1096,23 @@ def doctor(plain):
         checks["后台正文采集线程"] = bool((runtime_watchers.get("ax_text") or {}).get("running"))
         checks["后台键盘分块线程"] = bool((runtime_watchers.get("keyboard_chunk") or {}).get("running"))
     # OCR is switched off (watcher commented out in capture/manager.py). Shown for information only, never a failure.
-    info_rows = {"屏幕识别（OCR）": "已停用（OCR 已关闭）"}
+    # Information only, never a failure: (table note, plain-output text). Keyboard capture is a user choice.
+    keyboard_on = keyboard_capture_enabled(cfg.watchers.keyboard_chunk)
+    info_rows = {
+        "屏幕识别（OCR）": ("已停用（OCR 已关闭）", "DISABLED (OCR off)"),
+        f"键盘文本片段（{KEYBOARD_SOURCE}）": (
+            f"{'开启' if keyboard_on else '关闭'}；{switch_hint(keyboard_on)}",
+            (f"ON; to turn off: {DISABLE_COMMAND}" if keyboard_on
+             else f"OFF; to turn on again: {ENABLE_COMMAND}"),
+        ),
+    }
 
     if plain:
         for check_name, passed in checks.items():
             status = "OK" if passed else "FAIL"
             print(f"{check_name}: {status}")
-        for check_name in info_rows:
-            print(f"{check_name}: DISABLED (OCR off)")
+        for check_name, (_note, plain_text) in info_rows.items():
+            print(f"{check_name}: {plain_text}")
         if stale_venv:
             print(
                 f"venv_entry={stale_venv[0]} points to {stale_venv[1]}; "
@@ -1099,7 +1129,7 @@ def doctor(plain):
         for check_name, passed in checks.items():
             status = "[green]正常[/green]" if passed else "[red]未通过[/red]"
             table.add_row(check_name, status)
-        for check_name, note in info_rows.items():
+        for check_name, (note, _plain_text) in info_rows.items():
             table.add_row(check_name, note)
         console.print(table)
         if stale_venv:

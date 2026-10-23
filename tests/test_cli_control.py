@@ -106,7 +106,7 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
 
 
 def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
-    cfg = type("Cfg", (), {"db_path_expanded": tmp_path / "penpal.db"})()
+    cfg = type("Cfg", (), {"db_path_expanded": tmp_path / "penpal.db", "watchers": type("W", (), {"keyboard_chunk": True})()})()
     cfg.db_path_expanded.parent.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr("penpal.cli.get_config", lambda: cfg)
     monkeypatch.setattr("penpal.cli.get_config_path", lambda: tmp_path / "config.toml")
