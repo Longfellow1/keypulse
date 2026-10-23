@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [v1, refactor, plan]
 created: "2026-10-10T14:19:24"
-updated: "2026-10-14T19:20:20"
+updated: "2026-10-23T23:22:21"
 ---
 
 <!-- compiled_truth -->
@@ -92,4 +92,10 @@ V1 重构计划（docs/KeyPulse_V1_重构计划.md，v1.0，owner 2026-10-10 批
   kind: decision
   summary: "D33 (2026-10-14): M3 gate changed from 'HUD fully usable + owner HUD review' to 'CLI control surface complete + failures visible without UI'; HUD/app moved to an optional app track (design baseline: v3 interaction draft). See cli-core-app-optional."
   source: owner decision 2026-10-14
+  affects: [v1-refactor-plan]
+
+- time: 2026-10-23T23:22:21
+  kind: note
+  summary: "2026-10-23 state: project renamed KeyPulse to Penpal (#102-#108); v0.2.0-preview.1 pre-release published 2026-10-19. M0/M1/M2 done (M1 sign-off date unconfirmed). M3 in progress: open #22 #26 #29 #31 #64; HUD #27 and #10 moved to app-track (D33). M4 not started: #32 #33, plus #11 #14 as external-validation prerequisites; release gated by Eval PRD three layers plus D30 external validation (10-15 users, 14 days, zero permission leaks). Plan doc synced."
+  source: repo history and issue tracker 2026-10-23
   affects: [v1-refactor-plan]
