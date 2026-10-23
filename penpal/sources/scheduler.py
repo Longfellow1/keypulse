@@ -79,6 +79,7 @@ class SourcesScheduler:
         self._always_thread: threading.Thread | None = None
         self._event_source: WorkspaceEventSource | None = None
 
+        self._all_plugins: set[str] = set()
         self._always_plugins: set[str] = set()
         self._unlock_plugins: set[str] = set()
         self._launch_routes: dict[str, set[str]] = {}
@@ -160,7 +161,17 @@ class SourcesScheduler:
 
         LOGGER.info("sources scheduler stopped")
 
+    def rescan_all(self, *, reason: str) -> None:
+        """Re-read every known source once (used after a Mac wake).
+
+        Nothing here resets cursors: each plugin's own cursor or since-window decides what is new, and the
+        unique indexes on raw_events make re-reading an already stored record a no-op.
+        """
+        for plugin_name in sorted(self._all_plugins):
+            self._schedule_scan(plugin_name, reason=reason)
+
     def _rebuild_routes(self) -> None:
+        self._all_plugins.clear()
         self._always_plugins.clear()
         self._unlock_plugins.clear()
         self._launch_routes.clear()
@@ -176,6 +187,7 @@ class SourcesScheduler:
             name = str(getattr(plugin, "name", "") or "")
             if not name:
                 continue
+            self._all_plugins.add(name)
             liveness = str(getattr(plugin, "liveness", "") or "").strip()
             app_hints = tuple(getattr(plugin, "app_hints", ()) or ())
 
