@@ -17,7 +17,7 @@ from penpal.capture.keyboard_notice import KEYBOARD_SOURCE, keyboard_capture_ena
 from penpal.config import Config
 from penpal.sources.approval import ApprovalRecord, ApprovalStore
 from penpal.sources.discoverers import CandidateSource, discover_all_candidates
-from penpal.sources.registry import discover_all, get_source, list_sources, read_all
+from penpal.sources.registry import discover_all, get_source, list_sources, read_all, source_availability
 from penpal.sources.types import DataSourceInstance, SemanticEvent
 from penpal.sources.wechat_probe import (
     is_authorized,
@@ -39,10 +39,11 @@ def list_command() -> None:
     cfg = Config.load()
     init_db(cfg.db_path_expanded)
     disabled = disabled_sources()
-    for plugin in list_sources():
+    for plugin, state in source_availability():
         desc = getattr(plugin, "description", "") or ""
+        status = "[available]" if state.available else f"[unavailable: {state.reason}]"
         click.echo(
-            f"{plugin.name}\t[{plugin.privacy_tier}/{plugin.liveness}]\t{_switch_label(plugin.name, disabled)}\t{desc}"
+            f"{plugin.name}\t[{plugin.privacy_tier}/{plugin.liveness}]\t{_switch_label(plugin.name, disabled)}\t{status}\t{desc}"
         )
     for name in sorted(CAPTURE_SOURCES):
         if name == KEYBOARD_SOURCE:

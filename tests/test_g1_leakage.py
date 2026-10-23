@@ -59,6 +59,8 @@ G1_COVERED_RESPONSE_FIELDS = {
     "coverage.time_range.start", "coverage.time_range.end", "coverage.buckets", "coverage.sources",
     # M2-2: per-source span inside the grant (names / times of in-scope sources only; NO excluded counts)
     "recorded",  # rate_result: {"status": "ok", "recorded": true}
+    # issue #22: in-grant sources that could not be read (fixed reason enum; names inside the grant only)
+    "coverage.unavailable_sources", "coverage.unavailable_sources[].source", "coverage.unavailable_sources[].reason",
     "coverage.by_source", "coverage.by_source[].source", "coverage.by_source[].earliest",
     "coverage.by_source[].latest", "coverage.by_source[].has_events_in_range",
     # search_context per-keyword feedback: index = caller's own position (no text echoed); in_scope /

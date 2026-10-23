@@ -1106,6 +1106,10 @@ def doctor(plain):
              else f"OFF; to turn on again: {ENABLE_COMMAND}"),
         ),
     }
+    # Sources that cannot be read right now are a status, not a failure (issue #22).
+    from penpal.sources.registry import unavailable_sources
+
+    unavailable_rows = unavailable_sources()
 
     if plain:
         for check_name, passed in checks.items():
@@ -1113,6 +1117,8 @@ def doctor(plain):
             print(f"{check_name}: {status}")
         for check_name, (_note, plain_text) in info_rows.items():
             print(f"{check_name}: {plain_text}")
+        for row in unavailable_rows:
+            print(f"source {row['source']}: UNAVAILABLE reason={row['reason']}")
         if stale_venv:
             print(
                 f"venv_entry={stale_venv[0]} points to {stale_venv[1]}; "
@@ -1131,6 +1137,8 @@ def doctor(plain):
             table.add_row(check_name, status)
         for check_name, (note, _plain_text) in info_rows.items():
             table.add_row(check_name, note)
+        for row in unavailable_rows:
+            table.add_row(f"数据源 {row['source']}", f"不可用（{row['reason']}）")
         console.print(table)
         if stale_venv:
             console.print(
