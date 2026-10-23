@@ -122,7 +122,7 @@ def test_install_doctor_reports_old_launchd_and_stale_moved_venv(monkeypatch, tm
     executable.chmod(0o755)
     monkeypatch.setattr(cli, "_keypulse_executable_path", lambda: executable)
     monkeypatch.setattr(cli, "get_config_path", lambda: tmp_path / ".penpal" / "config.toml")
-    monkeypatch.setattr(cli.Config, "load", lambda: SimpleNamespace(db_path_expanded=tmp_path / ".penpal" / "penpal.db"))
+    monkeypatch.setattr(cli.Config, "load", lambda: SimpleNamespace(db_path_expanded=tmp_path / ".penpal" / "penpal.db", watchers=SimpleNamespace(keyboard_chunk=True)))
     monkeypatch.setattr(cli, "_launchd_label_loaded", lambda _label: False)
 
     config = tmp_path / ".penpal" / "config.toml"
@@ -162,7 +162,7 @@ def _prepare_main_doctor(monkeypatch, tmp_path):
     config.parent.mkdir()
     config.write_text("", encoding="utf-8")
     database = home / ".penpal" / "penpal.db"
-    monkeypatch.setattr(cli.Config, "load", lambda: SimpleNamespace(db_path_expanded=database))
+    monkeypatch.setattr(cli.Config, "load", lambda: SimpleNamespace(db_path_expanded=database, watchers=SimpleNamespace(keyboard_chunk=True)))
     monkeypatch.setattr(cli, "get_config_path", lambda: config)
     monkeypatch.setattr(cli, "_launchd_label_loaded", lambda _label: False)
     monkeypatch.setattr(cli, "_load_capture_runtime_state", lambda: {})
