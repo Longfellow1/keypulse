@@ -8,18 +8,21 @@ from pathlib import Path
 from typing import Iterator
 
 from penpal.privacy.desensitizer import desensitize
+from penpal.sources.availability import FILE_MISSING, Availability, check_sqlite, unavailable
 from penpal.sources.cleaning.file_whitelist import is_blocked_sqlite
 from penpal.store.locators import browser_locator
 from penpal.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
 _WEBKIT_EPOCH_OFFSET_US = 11_644_473_600 * 1_000_000
+_CHROME_TABLES = ("urls", "visits")
 
 
 class ChromeHistorySource(DataSource):
     name = "chrome_history"
     privacy_tier = "green"
     liveness = "app_running"
+    cheap_probe = True
     app_hints = ("com.google.Chrome", "Google Chrome", "Chrome")
     description = "Chrome visit history reader"
 
@@ -49,6 +52,14 @@ class ChromeHistorySource(DataSource):
                 )
             )
         return instances
+
+    def availability(self) -> Availability:
+        # Usable if any profile's History DB passes the schema check; otherwise the first profile's reason.
+        instances = self.discover()
+        if not instances:
+            return unavailable(FILE_MISSING)
+        reasons = [check_sqlite(Path(item.locator), required_tables=_CHROME_TABLES) for item in instances]
+        return next((item for item in reasons if item.available), reasons[0])
 
     def read(
         self,

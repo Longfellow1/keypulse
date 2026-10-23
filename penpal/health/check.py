@@ -264,6 +264,7 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
         "capture_error_code": capture_error_code,
         "paused": paused_flag,
         "disabled_sources": _disabled_sources_snapshot(),
+        "sources_unavailable": _unavailable_sources_snapshot(),
     }
     write_health_report(HEALTH_JSON_PATH, result)
     return result
@@ -332,6 +333,17 @@ def _disabled_sources_snapshot() -> list[str]:
         from penpal.capture.capture_control import disabled_sources
 
         return sorted(disabled_sources())
+    except Exception:
+        return []
+
+
+def _unavailable_sources_snapshot() -> list[dict[str, str]]:
+    """Source plugins that cannot be read right now, with a reason code (issue #22). Not a failure: an
+    absent app's history is simply unavailable. Empty on any probe error."""
+    try:
+        from penpal.sources.registry import unavailable_sources
+
+        return unavailable_sources()
     except Exception:
         return []
 

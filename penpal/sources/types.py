@@ -8,6 +8,18 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping
 
+from penpal.sources.availability import (
+    AVAILABLE,
+    NOT_FOUND,
+    PERMISSION_DENIED,
+    PROBE_ERROR,
+    Availability,
+    unavailable,
+)
+from penpal.utils.logging import get_logger
+
+LOGGER = get_logger("sources.types")
+
 
 # Upper bound on stored message text per source event (bounds row size, keeps tails searchable).
 MAX_INTENT_CHARS = 32_000
@@ -107,6 +119,8 @@ class DataSource(ABC):
     liveness: str
     app_hints: tuple[str, ...] = ()
     description: str = ""
+    # True when availability() is a cheap stat/schema probe, safe to run on every search (MCP coverage).
+    cheap_probe: bool = False
 
     @abstractmethod
     def discover(self) -> list[DataSourceInstance]:
@@ -120,6 +134,18 @@ class DataSource(ABC):
         until: datetime,
     ) -> Iterator[SemanticEvent]:
         pass
+
+    def availability(self) -> Availability:
+        """Explicit available / unavailable(reason) state (issue #22). Default: available iff discover() finds
+        an instance. Plugins with a known original override this with a precise reason code."""
+        try:
+            found = bool(self.discover())
+        except PermissionError:
+            return unavailable(PERMISSION_DENIED)
+        except Exception as exc:
+            LOGGER.warning("availability probe failed for %s: %s", self.name, exc)
+            return unavailable(PROBE_ERROR)
+        return AVAILABLE if found else unavailable(NOT_FOUND)
 
 
 def _tabular_to_event(

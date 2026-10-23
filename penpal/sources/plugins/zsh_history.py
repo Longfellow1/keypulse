@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from penpal.sources.availability import Availability, check_file
 from penpal.sources.cleaning.content_quality import is_low_signal_event
 from penpal.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
@@ -62,6 +63,7 @@ class ZshHistorySource(DataSource):
     name = "zsh_history"
     privacy_tier = "green"
     liveness = "always"
+    cheap_probe = True
     description = "zsh extended history reader"
 
     def __init__(self, *, history_path: Path | None = None, use_cursor: bool = False) -> None:
@@ -80,6 +82,9 @@ class ZshHistorySource(DataSource):
                 metadata={},
             )
         ]
+
+    def availability(self) -> Availability:
+        return check_file(self._history_path)
 
     def read(
         self,

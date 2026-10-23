@@ -8,18 +8,21 @@ from pathlib import Path
 from typing import Iterator
 
 from penpal.privacy.desensitizer import desensitize
+from penpal.sources.availability import Availability, check_sqlite
 from penpal.sources.cleaning.file_whitelist import is_blocked_sqlite
 from penpal.store.locators import browser_locator
 from penpal.sources.types import DataSource, DataSourceInstance, SemanticEvent
 
 
 _CF_EPOCH_OFFSET_S = 978_307_200
+_SAFARI_TABLES = ("history_items", "history_visits")
 
 
 class SafariHistorySource(DataSource):
     name = "safari_history"
     privacy_tier = "green"
     liveness = "app_running"
+    cheap_probe = True
     app_hints = ("com.apple.Safari", "Safari")
     description = "Safari visit history reader"
 
@@ -37,6 +40,9 @@ class SafariHistorySource(DataSource):
                 metadata={},
             )
         ]
+
+    def availability(self) -> Availability:
+        return check_sqlite(self._history_path, required_tables=_SAFARI_TABLES)
 
     def read(
         self,

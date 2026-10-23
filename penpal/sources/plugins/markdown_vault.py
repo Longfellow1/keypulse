@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
 from penpal.sources.approval import ApprovalStore
+from penpal.sources.availability import (
+    AVAILABLE, FILE_MISSING, NOT_FOUND, PERMISSION_DENIED, Availability, unavailable,
+)
 from penpal.sources.types import ContentShape, DataSource, DataSourceInstance, SemanticEvent
 
 _VAULT_EXCLUDE_DIRS = frozenset({
@@ -23,6 +27,7 @@ class MarkdownVaultSource(DataSource):
     name = "markdown_vault"
     privacy_tier = "yellow"
     liveness = "always"
+    cheap_probe = True
     description = "读取用户已批准的 markdown vault/document 文件目录"
 
     def __init__(
@@ -33,6 +38,19 @@ class MarkdownVaultSource(DataSource):
     ) -> None:
         self._explicit_roots = roots
         self._approval_store = approval_store or ApprovalStore()
+
+    def availability(self) -> Availability:
+        roots = self._approved_roots()
+        if self._explicit_roots is not None:
+            roots = [*roots, *self._explicit_roots]
+        if not roots:
+            return unavailable(NOT_FOUND)
+        existing = [root for root in roots if root.is_dir()]
+        if not existing:
+            return unavailable(FILE_MISSING)
+        if not all(os.access(root, os.R_OK | os.X_OK) for root in existing):
+            return unavailable(PERMISSION_DENIED)
+        return AVAILABLE
 
     def discover(self) -> list[DataSourceInstance]:
         instances: dict[str, DataSourceInstance] = {}

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from penpal.sources.cleaning.config import PRIVACY_TIERS, load_cleaning_config
 from penpal.sources.cleaning.content_quality import is_low_signal_event
 from penpal.sources.cleaning.dedup import dedup_events
+from penpal.sources.availability import NOT_FOUND, PROBE_ERROR, Availability, unavailable
 from penpal.sources.plugins.approved_sqlite import ApprovedSqliteSource
 from penpal.sources.plugins.chrome_history import ChromeHistorySource
 from penpal.sources.plugins.claude_code import ClaudeCodeSource
@@ -50,6 +51,42 @@ def register(source: DataSource) -> None:
 
 def list_sources() -> list[DataSource]:
     return sorted(_PLUGINS.values(), key=lambda plugin: plugin.name)
+
+
+def source_availability(source: str | None = None) -> list[tuple[DataSource, Availability]]:
+    """Explicit available / unavailable(reason) per plugin (issue #22). A probe that raises is reported as
+    probe_error for that plugin only; it never fails the others."""
+    rows: list[tuple[DataSource, Availability]] = []
+    for plugin in _select_sources(source):
+        try:
+            state = plugin.availability()
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.warning("availability failed for %s: %s", plugin.name, exc)
+            state = unavailable(PROBE_ERROR)
+        rows.append((plugin, state))
+    return rows
+
+
+def unavailable_sources(allowed: Iterable[str] | None = None) -> list[dict[str, str]]:
+    """Plugins whose original could not be read right now, limited to `allowed` names when given (MCP coverage
+    uses the caller's grant so nothing outside it is named). `not_found` (nothing configured to read, e.g. no
+    approved vault or a plugin never set up) is not a failed read, so it is left out here; `penpal sources
+    list` still shows it."""
+    allowed_set = None if allowed is None else set(allowed)
+    # Only cheap probes run here: this is called on every search_context / health / doctor. Plugins that rely
+    # on discover() (e.g. Spotlight shelling out to mdfind) are reported only by `penpal sources list`.
+    rows: list[dict[str, str]] = []
+    for plugin in list_sources():
+        if not plugin.cheap_probe or (allowed_set is not None and plugin.name not in allowed_set):
+            continue
+        try:
+            state = plugin.availability()
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.warning("availability failed for %s: %s", plugin.name, exc)
+            state = unavailable(PROBE_ERROR)
+        if not state.available and state.reason != NOT_FOUND:
+            rows.append({"source": plugin.name, "reason": state.reason or PROBE_ERROR})
+    return rows
 
 
 def get_source(name: str) -> DataSource | None:

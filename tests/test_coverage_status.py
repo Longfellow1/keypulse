@@ -81,7 +81,9 @@ def test_out_of_scope_source_never_named_and_nothing_counted(db) -> None:
         text = json.dumps(resp)
         assert OUT_SRC not in text
         assert "excluded" not in text
-        assert set(resp["coverage"]) == {"partial", "note", "time_range", "buckets", "sources", "by_source"}
+        assert set(resp["coverage"]) == {
+            "partial", "note", "time_range", "buckets", "sources", "by_source", "unavailable_sources",
+        }
 
 
 def test_source_grant_hides_same_bucket_other_source(db) -> None:

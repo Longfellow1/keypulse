@@ -11,6 +11,7 @@ from penpal.search.engine import (
     TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, keyword_in_scope, normalize_keywords, parse_time_bound, scoped_evidence,
     search_events, source_coverage, timeline_events,
 )
+from penpal.sources.registry import unavailable_sources
 from penpal.store import feedback
 from penpal.store.db import get_conn
 from penpal.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, is_keypulse_locator
@@ -161,6 +162,18 @@ def _coverage(grant: Grant, start: Optional[str], end: Optional[str]) -> dict[st
                   for n in grant.sources if n not in seen]
         spans.sort(key=lambda s: s["source"])
     coverage["by_source"] = spans
+    # Sources inside the grant that could not be read right now (issue #22): they were NOT searched.
+    # Only names + fixed reason codes; sources outside the grant are never probed into the response.
+    try:
+        unavailable_now = unavailable_sources(list(grant.sources) if grant.sources is not None else None)
+    except Exception:  # pragma: no cover - defensive: availability must never break a search
+        unavailable_now = None
+    coverage["unavailable_sources"] = unavailable_now
+    if unavailable_now:
+        coverage["note"] += (
+            " Sources listed in unavailable_sources could not be read (reason given) and were NOT searched: "
+            "say that instead of claiming nothing exists in them."
+        )
     return coverage
 
 
