@@ -200,6 +200,7 @@ class SourcesSchedulerConfig(BaseModel):
     enabled: bool = True
     poll_interval_sec: int = 600
     debounce_sec: int = 300
+    fast_poll_interval_sec: int = 120
 
 
 class SourcesConfig(BaseModel):

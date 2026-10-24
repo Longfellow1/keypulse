@@ -63,6 +63,7 @@ class ZshHistorySource(DataSource):
     name = "zsh_history"
     privacy_tier = "green"
     liveness = "always"
+    fast_poll = True
     cheap_probe = True
     description = "zsh extended history reader"
 

@@ -147,7 +147,8 @@ class PenpalHUDApp(NSObject):
         webview = getattr(self, "webview", None)
         if webview is None:
             return
-        script = f"window.render({json.dumps(model, ensure_ascii=False).replace('</', '<\\/')});"
+        payload = json.dumps(model, ensure_ascii=False).replace('</', '<\\/')
+        script = f"window.render({payload});"
         try:
             webview.evaluateJavaScript_completionHandler_(script, None)
         except Exception:

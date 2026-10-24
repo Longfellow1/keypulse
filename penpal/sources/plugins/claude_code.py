@@ -21,6 +21,7 @@ class ClaudeCodeSource(DataSource):
     name = "claude_code"
     privacy_tier = "green"
     liveness = "always"
+    fast_poll = True
     description = "Claude Code session JSONL reader"
 
     def __init__(

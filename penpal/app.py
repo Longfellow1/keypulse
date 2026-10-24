@@ -195,6 +195,7 @@ def run(config: Optional[Config] = None):
         enabled=scheduler_cfg.enabled,
         poll_interval_sec=scheduler_cfg.poll_interval_sec,
         debounce_sec=scheduler_cfg.debounce_sec,
+        fast_poll_interval_sec=scheduler_cfg.fast_poll_interval_sec,
     )
 
     from penpal.capture.manager import CaptureManager
