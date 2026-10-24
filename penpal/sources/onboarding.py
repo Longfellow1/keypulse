@@ -9,10 +9,12 @@ Rules this module enforces:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from penpal.capture.capture_control import set_source_enabled
 from penpal.sources.availability import NOT_FOUND, PERMISSION_DENIED, PROBE_ERROR, Availability, unavailable
+from penpal.sources.history_gate import mark_onboarded
 from penpal.sources.importer import ImportResult
 from penpal.sources.registry import discover_all, list_sources
 from penpal.sources.types import DataSourceInstance
@@ -22,8 +24,18 @@ LOGGER = get_logger("sources.onboarding")
 
 # Not part of the source choice: has its own authorization step.
 EXCLUDED_FROM_CHOICE = frozenset({"wechat"})
-# How far back the first import reads for sources that are not cursor-based.
-FIRST_IMPORT_LOOKBACK_DAYS = 30
+# How far back the first import reads for sources that are not cursor-based. None = no lower bound: the first
+# import takes everything the source still holds, because keeping records past the source's own retention is the
+# point. Batching and resume make a large first import safe. Set a number of days to cap it.
+FIRST_IMPORT_LOOKBACK_DAYS: int | None = None
+# Lower bound used when there is no cap (the earliest timestamp any plugin reads).
+IMPORT_SINCE_FLOOR = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def first_import_since(now: datetime, days: int | None = FIRST_IMPORT_LOOKBACK_DAYS) -> datetime:
+    if days is None:
+        return IMPORT_SINCE_FLOOR
+    return now - timedelta(days=days)
 
 PANE_FULL_DISK_ACCESS = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 PANE_FILES_AND_FOLDERS = "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"
@@ -79,6 +91,7 @@ def apply_choice(chosen: Iterable[str]) -> dict[str, bool]:
     """Write the switches: chosen sources on, every other registered source off. Returns name -> enabled."""
     chosen_set = set(chosen)
     applied: dict[str, bool] = {}
+    mark_onboarded("onboard")  # any explicit choice lifts the historical-import gate (#32)
     for plugin in list_sources():
         if plugin.name in EXCLUDED_FROM_CHOICE:
             continue

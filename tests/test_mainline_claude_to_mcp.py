@@ -278,6 +278,9 @@ def test_token_plaintext_never_stored(env, token) -> None:
 # ── wiring: scheduler + CLI ───────────────────────────────────────────────────
 
 def test_daemon_scheduler_scan_populates_events_via_same_path(env) -> None:
+    from penpal.sources.history_gate import mark_onboarded
+
+    mark_onboarded("test")  # historical imports wait for onboarding on a fresh install (#32)
     scheduler = SourcesScheduler(enabled=True, poll_interval_sec=600)
     scheduler._scan_plugin("claude_code", "test")
     flush_named_entity_backfill()
@@ -297,6 +300,9 @@ def cli_config(env, monkeypatch):
 
 
 def test_cli_sources_sync_populates_db(env, cli_config) -> None:
+    from penpal.sources.history_gate import mark_onboarded
+
+    mark_onboarded("test")  # historical imports wait for onboarding on a fresh install (#32)
     out = CliRunner().invoke(sources_group, ["sync", "--source", "claude_code"])
     assert out.exit_code == 0, out.output
     assert "claude_code\t3" in out.output

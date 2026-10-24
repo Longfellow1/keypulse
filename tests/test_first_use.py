@@ -275,3 +275,81 @@ def test_ac3_denied_permission_leaves_other_sources_importing(home, claude_plugi
     assert f"source safari_history: UNAVAILABLE reason={PERMISSION_DENIED}" in doctor.output
     assert PANE_FULL_DISK_ACCESS in doctor.output
     assert "source claude_code:" not in doctor.output  # claude_code is readable, so it is not listed
+
+
+# ── Historical import gate (fresh install waits for onboarding; existing installs unaffected) ──
+
+def _recording_scheduler(calls: list, *, gate=None):
+    from penpal.sources.scheduler import SourcesScheduler
+
+    def fake_read_all(since, until, *, source=None, persist_raw_events=True):
+        calls.append(source)
+        return iter(())
+
+    kwargs = {} if gate is None else {"history_allowed_fn": gate}
+    return SourcesScheduler(enabled=False, list_sources_fn=lambda: [], read_all_fn=fake_read_all, **kwargs)
+
+
+def test_fresh_home_daemon_does_not_read_history_until_onboarding(home, claude_plugin):
+    from penpal.sources.onboarding import apply_choice
+
+    calls: list = []
+    scheduler = _recording_scheduler(calls)
+
+    scheduler._scan_plugin("claude_code", "always_interval")
+    assert calls == []  # fresh install: the daemon's scheduler does not read history
+    assert "history_imports=waiting_onboarding" in CliRunner().invoke(cli.main, ["status", "--plain"]).output
+
+    apply_choice(["claude_code"])  # what onboarding does with the user's choice
+
+    scheduler._scan_plugin("claude_code", "always_interval")
+    assert calls == ["claude_code"]
+    assert "history_imports=enabled" in CliRunner().invoke(cli.main, ["status", "--plain"]).output
+
+
+def test_live_capture_rows_do_not_open_the_history_gate(home, claude_plugin):
+    from penpal.sources import history_gate
+    from penpal.store.models import RawEvent
+    from penpal.store.repository import insert_raw_event
+
+    insert_raw_event(RawEvent(source="window", event_type="window_focus", ts_start="2026-10-24T00:00:00+00:00",
+                              content_text="live capture row", metadata_json="{}"))
+
+    assert not history_gate.historical_imports_allowed()
+
+
+def test_existing_install_with_history_is_treated_as_onboarded_once(home, claude_plugin):
+    from penpal.sources import history_gate
+    from penpal.store.repository import get_state
+    from penpal.store.sync_repo import ensure_source
+
+    _write_claude_session(home, n=2, keyword="quokkaexisting")
+    ensure_source("claude_code", claude_plugin.discover()[0].locator)  # an earlier import left a source row
+
+    calls: list = []
+    _recording_scheduler(calls)._scan_plugin("claude_code", "always_interval")
+
+    assert calls == ["claude_code"]  # no onboarding needed: existing history keeps flowing
+    marker = get_state(history_gate.ONBOARDED_KEY)
+    assert marker and '"migration"' in marker  # set once by the migration
+    assert "history_imports=enabled" in CliRunner().invoke(cli.main, ["status", "--plain"]).output
+
+
+def test_first_import_has_no_lower_bound_by_default(home, claude_plugin, monkeypatch):
+    from penpal.sources import importer, onboarding
+
+    seen: list = []
+    real_import = importer.import_source
+
+    def capture_since(name, *, since, until, batch_size=importer.DEFAULT_BATCH_SIZE, on_batch=None):
+        seen.append(since)
+        return real_import(name, since=since, until=until, batch_size=batch_size, on_batch=on_batch)
+
+    monkeypatch.setattr(importer, "import_source", capture_since)
+    _write_claude_session(home, n=2, keyword="quokkaall")
+
+    result = CliRunner().invoke(cli.main, ["install", "onboard", "--sources", "claude_code", "--non-interactive"])
+
+    assert result.exit_code == 0, result.output
+    assert onboarding.FIRST_IMPORT_LOOKBACK_DAYS is None
+    assert seen == [onboarding.IMPORT_SINCE_FLOOR]

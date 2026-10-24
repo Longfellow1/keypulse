@@ -524,6 +524,9 @@ def install_init(no_launchd, no_load, force_config, force_launchd, plain):
         launchd_results = _install_launchd_jobs(load=not no_load, force=force_launchd)
 
     _show_keyboard_notice_once()
+    from penpal.sources.history_gate import historical_imports_allowed
+
+    history_waiting = not historical_imports_allowed()
     if plain:
         print(f"data_dir={data_dir}")
         print(f"logs_dir={logs_dir}")
@@ -531,6 +534,8 @@ def install_init(no_launchd, no_load, force_config, force_launchd, plain):
         print(f"db_path={cfg.db_path_expanded}")
         for label, path, status_text, loaded in launchd_results:
             print(f"launchd.{label}={status_text},path={path},loaded={loaded}")
+        if history_waiting:
+            print("next=penpal install onboard")
         return
 
     console.print("[green]Penpal runtime initialized.[/green]")
@@ -542,6 +547,8 @@ def install_init(no_launchd, no_load, force_config, force_launchd, plain):
         _echo_launchd_results(launchd_results)
     console.print("")
     console.print("Next steps:")
+    if history_waiting:
+        console.print("  penpal install onboard   # 选择要导入的历史来源（之前不读取历史）")
     console.print("  penpal doctor")
 
 
@@ -790,12 +797,12 @@ def _echo_source_recheck(chosen: list[str]) -> None:
 
 def _onboard_first_import(chosen: list[str]) -> None:
     """First import of the chosen sources, in batches; a failure leaves the saved cursor for the next run."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     from penpal.sources import importer, onboarding
 
     now = datetime.now(timezone.utc)
-    since = now - timedelta(days=onboarding.FIRST_IMPORT_LOOKBACK_DAYS)
+    since = onboarding.first_import_since(now)
     console.print("[bold]首次导入[/bold]")
     for name in chosen:
         console.print(f"  {name} …", markup=False)
@@ -1067,6 +1074,9 @@ def status(plain):
     from penpal.sources import importer
 
     import_rows = importer.progress_rows()
+    from penpal.sources.history_gate import WAITING_TEXT, historical_imports_allowed
+
+    history_open = historical_imports_allowed()
 
     if plain:
         print(f"running={is_running}")
@@ -1081,6 +1091,7 @@ def status(plain):
                 f"events={record.get('events', 0)},resumed={bool(record.get('resumed'))},"
                 f"updated_at={record.get('updated_at', '')}"
             )
+        print(f"history_imports={'enabled' if history_open else 'waiting_onboarding'}")
         print(f"started_at={started_at}")
         print(f"db_path={db_path}")
         print(f"db_size_mb={db_size_mb:.2f}")
@@ -1107,6 +1118,8 @@ def status(plain):
         table.add_row("采集阶段", status_label)
         table.add_row("全局暂停", "[yellow]是[/yellow]" if paused_now else "否")
         table.add_row("已关闭的数据源", "、".join(disabled_now) if disabled_now else "无")
+        if not history_open:
+            table.add_row("历史导入", WAITING_TEXT)
         for source_name, record in import_rows:
             table.add_row(f"数据导入（{source_name}）", _format_import_progress(record))
         table.add_row("启动时间", started_at)
@@ -1253,6 +1266,8 @@ def doctor(plain):
     # OCR is switched off (watcher commented out in capture/manager.py). Shown for information only, never a failure.
     # Information only, never a failure: (table note, plain-output text). Keyboard capture is a user choice.
     keyboard_on = keyboard_capture_enabled(cfg.watchers.keyboard_chunk)
+    from penpal.sources.history_gate import WAITING_TEXT, historical_imports_allowed
+
     info_rows = {
         "屏幕识别（OCR）": ("已停用（OCR 已关闭）", "DISABLED (OCR off)"),
         f"键盘文本片段（{KEYBOARD_SOURCE}）": (
@@ -1261,6 +1276,8 @@ def doctor(plain):
              else f"OFF; to turn on again: {ENABLE_COMMAND}"),
         ),
     }
+    if not historical_imports_allowed():
+        info_rows["历史导入"] = (WAITING_TEXT, "WAITING: run penpal install onboard")
     # Sources that cannot be read right now are a status, not a failure (issue #22). Checked for every source
     # that is switched on, with the fix path (issue #32); a source that was never found is not a fault.
     from penpal.sources.onboarding import source_problems

@@ -275,6 +275,7 @@ def wechat_revoke_command() -> None:
 def read_command(source_name: str | None, since: str | None, until: str | None, as_json: bool) -> None:
     if source_name and get_source(source_name) is None:
         raise click.ClickException(f"unknown source: {source_name}")
+    _require_history_gate_open()
 
     since_dt = _parse_bound(since, is_since=True)
     until_dt = _parse_bound(until, is_since=False)
@@ -303,6 +304,7 @@ def sync_command(source_name: str | None, lookback_hours: int) -> None:
     if source_name and get_source(source_name) is None:
         raise click.ClickException(f"unknown source: {source_name}")
     init_db(Config.load().db_path_expanded)
+    _require_history_gate_open()
     now = datetime.now(timezone.utc)
     counts: dict[str, int] = {}
     for event in read_all(now - timedelta(hours=lookback_hours), now, source=source_name):
@@ -315,19 +317,18 @@ def sync_command(source_name: str | None, lookback_hours: int) -> None:
 
 @sources_group.command("import")
 @click.option("--source", "source_name", default=None, help="Only import one source")
-@click.option("--days", default=30, show_default=True, type=int, help="Window for sources without a cursor")
+@click.option("--days", default=None, type=int, help="Cap the window for sources without a cursor (default: all)")
 @click.option("--batch-size", default=DEFAULT_BATCH_SIZE, show_default=True, type=int, help="Events stored per batch")
-def import_command(source_name: str | None, days: int, batch_size: int) -> None:
+def import_command(source_name: str | None, days: int | None, batch_size: int) -> None:
     """Import enabled sources in batches. After an interruption, rerunning resumes from the saved cursor (#32)."""
-    from datetime import timedelta
-
     from penpal.capture.capture_control import source_writes_allowed
     from penpal.sources import importer
-    from penpal.sources.onboarding import EXCLUDED_FROM_CHOICE, format_import_result
+    from penpal.sources.onboarding import EXCLUDED_FROM_CHOICE, first_import_since, format_import_result
 
     if source_name and get_source(source_name) is None:
         raise click.ClickException(f"unknown source: {source_name}")
     init_db(Config.load().db_path_expanded)
+    _require_history_gate_open()
     names = [source_name] if source_name else [
         plugin.name for plugin in list_sources() if plugin.name not in EXCLUDED_FROM_CHOICE
     ]
@@ -336,8 +337,16 @@ def import_command(source_name: str | None, days: int, batch_size: int) -> None:
         if not source_writes_allowed(name):
             click.echo(f"{name}\toff")
             continue
-        result = importer.import_source(name, since=now - timedelta(days=days), until=now, batch_size=batch_size)
+        result = importer.import_source(name, since=first_import_since(now, days), until=now, batch_size=batch_size)
         click.echo(f"{name}\t{format_import_result(result)}")
+
+
+def _require_history_gate_open() -> None:
+    """Reading historical sources waits for `penpal install onboard` on a fresh install (#32)."""
+    from penpal.sources.history_gate import WAITING_TEXT, historical_imports_allowed
+
+    if not historical_imports_allowed():
+        raise click.ClickException(WAITING_TEXT)
 
 
 def _parse_bound(raw: str | None, *, is_since: bool) -> datetime:

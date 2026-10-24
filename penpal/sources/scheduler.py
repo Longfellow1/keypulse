@@ -8,6 +8,7 @@ from typing import Callable, Iterator, Protocol
 
 from penpal.capture.capture_control import source_writes_allowed
 from penpal.capture.workspace_events import NSWorkspaceEventSource
+from penpal.sources.history_gate import historical_imports_allowed
 from penpal.sources.registry import list_sources, read_all
 from penpal.sources.types import DataSource, SemanticEvent
 from penpal.utils.logging import get_logger
@@ -58,6 +59,7 @@ class SourcesScheduler:
         debounce_sec: int = 300,
         list_sources_fn: Callable[[], list[DataSource]] = list_sources,
         read_all_fn: Callable[..., Iterator[SemanticEvent]] = read_all,
+        history_allowed_fn: Callable[[], bool] = historical_imports_allowed,
         event_source_factory: Callable[[], WorkspaceEventSource | None] | None = None,
         now_fn: Callable[[], datetime] | None = None,
         monotonic_fn: Callable[[], float] = time.monotonic,
@@ -67,6 +69,7 @@ class SourcesScheduler:
         self._debounce_sec = max(float(debounce_sec), 0.0)
         self._list_sources_fn = list_sources_fn
         self._read_all_fn = read_all_fn
+        self._history_allowed_fn = history_allowed_fn
         self._event_source_factory = event_source_factory or (_default_event_source)
         self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
         self._monotonic_fn = monotonic_fn
@@ -287,6 +290,11 @@ class SourcesScheduler:
         return True
 
     def _scan_plugin(self, plugin_name: str, reason: str) -> None:
+        # Historical sources stay off until onboarding (or an existing install is detected). Live capture is a
+        # separate watcher path and never goes through here (#32, D26).
+        if not self._history_allowed_fn():
+            LOGGER.debug("sources scheduler skip plugin=%s reason=%s (waiting for onboarding)", plugin_name, reason)
+            return
         now = self._as_utc(self._now_fn())
         with self._lock:
             since = self._last_success_utc.get(plugin_name)
