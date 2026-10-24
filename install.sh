@@ -46,8 +46,25 @@ done
 PENPAL_DIR="$HOME/.penpal"
 VENV_DIR="$PENPAL_DIR/venv"
 BIN_DIR="$HOME/.local/bin"
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$REPO_DIR/scripts/compat-wrapper.sh"
+# Piped runs (README: curl ... | bash) have no BASH_SOURCE and no checkout. The Homebrew
+# path must work there, so it fetches its one helper from the repo instead.
+PENPAL_RAW_BASE="https://raw.githubusercontent.com/Longfellow1/penpal/main"
+REPO_DIR=""
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+if [[ -n "$REPO_DIR" && -f "$REPO_DIR/scripts/compat-wrapper.sh" ]]; then
+  source "$REPO_DIR/scripts/compat-wrapper.sh"
+else
+  COMPAT_TMP="$(mktemp)"
+  curl -fsSL "$PENPAL_RAW_BASE/scripts/compat-wrapper.sh" -o "$COMPAT_TMP"
+  source "$COMPAT_TMP"
+  rm -f "$COMPAT_TMP"
+fi
+if [[ "$DEV_MODE" == true && -z "$REPO_DIR" ]]; then
+  error "--dev needs a checkout. Run: git clone https://github.com/Longfellow1/penpal.git && cd penpal && bash install.sh --dev"
+  exit 1
+fi
 LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.penpal.daemon.plist"
 HEALTHCHECK_PLIST="$HOME/Library/LaunchAgents/com.penpal.healthcheck.plist"
 CONFIG_FILE="$PENPAL_DIR/config.toml"
@@ -125,7 +142,7 @@ remove_legacy_obsidian_plists() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 header "Penpal Installer"
-echo "  Repo:    $REPO_DIR"
+echo "  Repo:    ${REPO_DIR:-(none: piped run, Homebrew only)}"
 if [[ "$DEV_MODE" == true ]]; then
   echo "  Mode:    developer editable install"
   echo "  Venv:    $VENV_DIR"
@@ -173,8 +190,11 @@ success "Python $($PYTHON --version 2>&1 | awk '{print $2}')  ($PYTHON)"
 # Stop old services before get_data_dir() can rename their working directory.
 remove_legacy_obsidian_plists
 
-# The helper uses only the standard library and checkout code; it never copies on EXDEV.
-if ! PYTHONPATH="$REPO_DIR${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON" -c '
+# Runs the data-dir migration through the given Python. It only imports penpal.utils.paths and never
+# copies on EXDEV. It must run before anything creates ~/.penpal.
+check_data_dir_migration() {
+  local py="$1"
+  if ! "$py" -c '
 import sys
 from penpal.utils.paths import DataDirMigrationError, get_data_dir
 try:
@@ -183,9 +203,10 @@ except DataDirMigrationError as exc:
     print(exc, file=sys.stderr)
     sys.exit(1)
 '; then
-  error "Data directory migration failed; the installer stopped without merging or copying data."
-  exit 1
-fi
+    error "Data directory migration failed; the installer stopped without merging or copying data."
+    exit 1
+  fi
+}
 
 if [[ "$DEV_MODE" != true ]]; then
   header "2/4  Checking Homebrew"
@@ -221,6 +242,8 @@ if [[ "$DEV_MODE" != true ]]; then
     brew install longfellow1/penpal/penpal
   fi
   success "penpal executable installed"
+  # Use the formula's own Python: a piped run has no checkout to import penpal from.
+  check_data_dir_migration "$(brew --prefix penpal)/libexec/bin/python"
 
   header "4/4  Initializing runtime"
   penpal install init
@@ -239,6 +262,9 @@ if [[ "$DEV_MODE" != true ]]; then
 fi
 
 # ── 3. Create venv ────────────────────────────────────────────────────────────
+export PYTHONPATH="$REPO_DIR${PYTHONPATH:+:$PYTHONPATH}"
+check_data_dir_migration "$PYTHON"
+
 header "2/7  Setting up virtual environment"
 
 mkdir -p "$PENPAL_DIR"
