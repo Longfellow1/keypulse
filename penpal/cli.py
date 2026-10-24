@@ -2106,9 +2106,55 @@ def rules():
     pass
 
 
-@main.group("privacy", help=T("隐私开关（聊天 App 白名单等）。", "Privacy switches (chat app opt-in, ...)."))
+@main.group("privacy", help=T("管理隐私开关和网站排除名单。", "Manage privacy switches and blocked websites."))
 def privacy_group():
     """Privacy group."""
+
+
+def _set_url_deny_host(host: str, blocked: bool) -> None:
+    from penpal.config import set_url_deny_host
+
+    try:
+        key, _hosts = set_url_deny_host(host, blocked)
+    except ValueError as exc:
+        raise click.ClickException(T(f"无法识别网站地址 {host!r}。", f"Could not parse website address {host!r}.")) from exc
+    if blocked:
+        message = T(
+            f"已屏蔽网站 {key}（含其子域名）。新事件会在后台重新加载配置后生效；请运行 penpal stop && penpal start。",
+            f"Blocked {key} and its subdomains. This applies to new events after the daemon reloads its config; run penpal stop && penpal start.",
+        )
+    else:
+        message = T(
+            f"已取消屏蔽网站 {key}（含其子域名）。新事件会在后台重新加载配置后生效；请运行 penpal stop && penpal start。",
+            f"Unblocked {key} and its subdomains. This applies to new events after the daemon reloads its config; run penpal stop && penpal start.",
+        )
+    console.print(message, markup=False)
+
+
+@privacy_group.command("block-site", help=T("屏蔽网站（同时覆盖它的子域名）。", "Block a website, including its subdomains."))
+@click.argument("host")
+def privacy_block_site(host):
+    """Block a website host."""
+    _set_url_deny_host(host, True)
+
+
+@privacy_group.command("unblock-site", help=T("取消屏蔽网站及其子域名。", "Unblock a website and its subdomains."))
+@click.argument("host")
+def privacy_unblock_site(host):
+    """Unblock a website host."""
+    _set_url_deny_host(host, False)
+
+
+@privacy_group.command("blocked-sites", help=T("列出当前屏蔽的网站。", "List currently blocked websites."))
+def privacy_blocked_sites():
+    """List blocked website hosts."""
+    hosts = get_config().privacy.url_deny_hosts
+    if not hosts:
+        console.print(T("没有屏蔽的网站。", "No blocked websites."), markup=False)
+        return
+    console.print(T("已屏蔽的网站：", "Blocked websites:"), markup=False)
+    for host in hosts:
+        print(host)
 
 
 @privacy_group.group("chat-apps", help=T("聊天 App 默认不采集；可逐个放行（放行后归入 Private 桶）。", "Chat apps are not captured by default; opt individual apps in (they land in the Private bucket)."))

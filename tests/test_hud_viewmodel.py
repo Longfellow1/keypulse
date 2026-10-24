@@ -306,10 +306,15 @@ def test_chat_app_page():
 
 
 def test_exclusion_page_is_a_read_only_list():
-    m = build_model(snap(), UiState(tab="privacy", page="exclude"))
+    m = build_model(
+        snap(exclusions=(("app", "1Password"), ("content", "password"), ("domain", "example.com"))),
+        UiState(tab="privacy", page="exclude"),
+    )
     rows = m["sections"][0]["rows"]
-    assert [(r["title"], r["sub"]) for r in rows] == [("1Password", "App"), ("password", "内容关键词")]
+    assert [(r["title"], r["sub"]) for r in rows] == [
+        ("1Password", "App"), ("password", "内容关键词"), ("example.com", "网站域名（含子域名）")]
     assert all(r["action"] is None for r in rows)
+    assert "penpal privacy block-site" in m["sections"][0]["footer"]
 
 
 def test_delete_page_with_dry_run_counts_and_danger_button():

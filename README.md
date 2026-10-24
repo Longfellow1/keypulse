@@ -110,10 +110,13 @@ penpal app uninstall        # 移除 App 和启动项，不影响后台服务与
 | 暂停、继续（重启后仍保持暂停） | `penpal pause`、`penpal resume` |
 | 开关某个来源 | `penpal source list`、`penpal source disable keyboard_chunk` |
 | 放行某个聊天 App | `penpal privacy chat-apps allow Slack` |
+| 屏蔽、取消屏蔽或查看网站 | `penpal privacy block-site example.com`、`penpal privacy unblock-site example.com`、`penpal privacy blocked-sites` |
 | 管 AI 授权 | `penpal mcp list`、`penpal mcp revoke <client>`、`penpal mcp rotate <client>` |
 | 删除数据（先预览数量） | `penpal purge --source chrome_history --dry-run` |
 
 完整参考：`penpal --help`。
+
+网站屏蔽会覆盖该域名及其子域名。更改后运行 `penpal stop && penpal start`，新事件会在后台重新加载配置后按新清单处理。
 
 ## 现在做到哪
 

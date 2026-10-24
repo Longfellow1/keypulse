@@ -110,10 +110,13 @@ A checkable, line-by-line privacy boundary with code and test references: [docs/
 | Pause, resume (pause survives restarts) | `penpal pause`, `penpal resume` |
 | Toggle a source | `penpal source list`, `penpal source disable keyboard_chunk` |
 | Allow a chat app | `penpal privacy chat-apps allow Slack` |
+| Block, unblock or list websites | `penpal privacy block-site example.com`, `penpal privacy unblock-site example.com`, `penpal privacy blocked-sites` |
 | Manage AI grants | `penpal mcp list`, `penpal mcp revoke <client>`, `penpal mcp rotate <client>` |
 | Delete data (preview the count first) | `penpal purge --source chrome_history --dry-run` |
 
 Full reference: `penpal --help`.
+
+Website blocking covers the host and its subdomains. After a change, run `penpal stop && penpal start`; new events use the updated list after the daemon reloads its config.
 
 ## Where it stands
 

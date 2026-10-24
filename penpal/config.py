@@ -5,6 +5,7 @@ import re
 import tomllib
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -281,17 +282,13 @@ class Config(BaseModel):
         return legacy if legacy is not None and not path.exists() and legacy.exists() else path
 
 
-_OPT_IN_KEY_RE = re.compile(r"^[ \t]*chat_apps_opt_in[ \t]*=[ \t]*\[.*?\]", re.S | re.M)
 _TABLE_HEADER_RE = re.compile(r"^[ \t]*\[[^\]\n]+\][ \t]*(?:#.*)?$", re.M)
 
 
-def write_chat_apps_opt_in(path: Path, keys: list[str]) -> None:
-    """Persist `[privacy] chat_apps_opt_in` in a user config.toml, leaving the rest of the file as is.
-
-    Text edit (no TOML writer dependency): replaces the existing array, else adds the key under
-    [privacy], else appends a [privacy] table. The result is re-parsed and validated before it is written.
-    """
-    line = "chat_apps_opt_in = [" + ", ".join(json.dumps(k, ensure_ascii=False) for k in keys) + "]"
+def _write_privacy_list(path: Path, key: str, values: list[str]) -> None:
+    """Update one `[privacy]` string array without reformatting the rest of config.toml."""
+    key_re = re.compile(r"^[ \t]*" + re.escape(key) + r"[ \t]*=[ \t]*\[.*?\]", re.S | re.M)
+    line = key + " = [" + ", ".join(json.dumps(value, ensure_ascii=False) for value in values) + "]"
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     privacy = re.search(r"^[ \t]*\[privacy\][ \t]*(?:#.*)?$", text, re.M)
     if privacy is None:
@@ -301,16 +298,52 @@ def write_chat_apps_opt_in(path: Path, keys: list[str]) -> None:
         nxt = _TABLE_HEADER_RE.search(text, privacy.end())
         end = nxt.start() if nxt else len(text)
         body = text[privacy.end():end]
-        if _OPT_IN_KEY_RE.search(body):
-            body = _OPT_IN_KEY_RE.sub(lambda _m: line, body, count=1)
+        if key_re.search(body):
+            body = key_re.sub(lambda _m: line, body, count=1)
         else:
             body = "\n" + line + body
         new = text[: privacy.end()] + body + text[end:]
     parsed = Config.model_validate(tomllib.loads(new))  # raises on a broken edit; nothing written yet
-    if parsed.privacy.chat_apps_opt_in != keys:
-        raise ValueError("could not update privacy.chat_apps_opt_in in " + str(path))
+    if getattr(parsed.privacy, key) != values:
+        raise ValueError("could not update privacy." + key + " in " + str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(new, encoding="utf-8")
+
+
+def write_chat_apps_opt_in(path: Path, keys: list[str]) -> None:
+    """Persist `[privacy] chat_apps_opt_in` in a user config.toml, leaving the rest of the file as is.
+
+    Text edit (no TOML writer dependency): replaces the existing array, else adds the key under
+    [privacy], else appends a [privacy] table. The result is re-parsed and validated before it is written.
+    """
+    _write_privacy_list(path, "chat_apps_opt_in", keys)
+
+
+def normalize_url_deny_host(value: str) -> str:
+    """Extract a canonical host from a URL or host, dropping scheme, path, port and leading www."""
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("website host cannot be empty")
+    source = raw if "://" in raw else "//" + raw
+    try:
+        parts = urlsplit(source)
+        host = parts.hostname
+        parts.port  # validate the optional port instead of silently accepting malformed values
+    except ValueError as exc:
+        raise ValueError("website address must contain a valid host and port") from exc
+    if not host:
+        raise ValueError("website address must contain a host")
+    host = host.rstrip(".").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if not host:
+        raise ValueError("website address must contain a host")
+    return host
+
+
+def write_url_deny_hosts(path: Path, hosts: list[str]) -> None:
+    """Persist `[privacy] url_deny_hosts`, leaving the rest of config.toml as is."""
+    _write_privacy_list(path, "url_deny_hosts", hosts)
 
 
 def set_chat_app_opt_in(name: str, allowed: bool, *, path: Path | None = None) -> tuple[str, list[str]]:
@@ -329,4 +362,25 @@ def set_chat_app_opt_in(name: str, allowed: bool, *, path: Path | None = None) -
     elif not allowed:
         current = [k for k in current if k != key]
     write_chat_apps_opt_in(path or get_config_path(), current)
+    return key, current
+
+
+def set_url_deny_host(host: str, blocked: bool, *, path: Path | None = None) -> tuple[str, list[str]]:
+    """Block or unblock a website host and persist the effective deny list."""
+    from penpal.utils.paths import get_config_path
+
+    key = normalize_url_deny_host(host)
+    current: list[str] = []
+    for existing in Config.load().privacy.url_deny_hosts:
+        try:
+            value = normalize_url_deny_host(existing)
+        except ValueError:
+            value = existing.strip().lower()
+        if value and value not in current:
+            current.append(value)
+    if blocked and key not in current:
+        current.append(key)
+    elif not blocked:
+        current = [value for value in current if value != key]
+    write_url_deny_hosts(path or get_config_path(), current)
     return key, current

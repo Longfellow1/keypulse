@@ -49,7 +49,7 @@ DENY_TEXT = {
     "client_mismatch": "已拒绝：客户端不匹配",
     "client_not_whitelisted": "已拒绝：客户端不匹配",
 }
-SCOPE_TYPE_TEXT = {"app": "App", "window": "窗口标题", "source": "来源", "content": "内容关键词"}
+SCOPE_TYPE_TEXT = {"app": "App", "window": "窗口标题", "source": "来源", "content": "内容关键词", "domain": "网站域名（含子域名）"}
 DELETE_COUNT_ROWS = (
     ("raw_events", "记录原文"),
     ("raw_events_fts", "搜索索引"),
@@ -429,7 +429,7 @@ def page_chat(snap: Snapshot) -> list[dict]:
 
 def page_exclude(snap: Snapshot) -> list[dict]:
     rows = [row(value or "（空）", sub=SCOPE_TYPE_TEXT.get(kind, kind)) for kind, value in snap.exclusions]
-    footer = "这里的内容一律不记录。添加或移除用 penpal rules add / disable。"
+    footer = "这里的内容一律不记录。网站域名用 penpal privacy block-site / unblock-site 管理；对 daemon 重新加载配置后的新事件生效。其他策略用 penpal rules add / disable。"
     return [lst(rows, footer=footer)] if rows else [lst([row("还没有规则")], footer=footer)]
 
 
