@@ -226,28 +226,6 @@ penpal stop && penpal start
 
 ---
 
-## 11. Database Schema Verification
-
-```bash
-sqlite3 ~/.penpal/penpal.db ".tables"
-```
-
-Expected tables:
-
-```
-_schema_version   app_state   policies   raw_events
-search_docs       search_docs_fts        sessions
-```
-
-Check migration version:
-
-```bash
-sqlite3 ~/.penpal/penpal.db "SELECT * FROM _schema_version;"
-# 1|<timestamp>
-```
-
----
-
 ## 12. Single Instance Lock
 
 ```bash
@@ -286,6 +264,5 @@ ls -lh ~/.penpal/penpal.db
 | Limitation | Notes |
 |-----------|-------|
 | macOS only | Linux/Windows watchers not implemented |
-| No browser URL capture | Only window title captured for browsers |
 | Clipboard: text only | Images/files not indexed |
 | Accessibility required | Without it, window titles fall back to app name only |

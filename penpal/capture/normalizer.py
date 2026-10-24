@@ -187,28 +187,6 @@ def normalize_ax_text_event(
     )
 
 
-def normalize_ocr_text_event(
-    text: str,
-    app_name: Optional[str] = None,
-    window_title: Optional[str] = None,
-    process_name: Optional[str] = None,
-    ts_start: Optional[str] = None,
-    metadata: Optional[dict] = None,
-) -> RawEvent:
-    return RawEvent(
-        source="ocr_text",
-        event_type="ocr_text_capture",
-        ts_start=ts_start or _now(),
-        app_name=app_name,
-        window_title=window_title,
-        process_name=process_name,
-        content_text=text,
-        content_hash=_hash(text),
-        metadata_json=json.dumps(metadata) if metadata else None,
-        semantic_weight=_semantic_weight_for("ocr_text"),
-    )
-
-
 def normalize_browser_tab_event(
     url: str,
     title: Optional[str] = None,

@@ -1,39 +1,12 @@
 from __future__ import annotations
 
-import pytest
-
 import json
 
 from penpal.capture.manager import CaptureManager
 from penpal.capture.normalizer import normalize_ax_text_event
 from penpal.capture.normalizer import normalize_keyboard_chunk_event
 from penpal.capture.normalizer import normalize_manual_event
-from penpal.capture.normalizer import normalize_window_event
 from penpal.config import Config
-
-
-@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
-def test_manager_wires_light_capture_watchers_only_when_enabled():
-    config = Config.model_validate(
-        {
-            "watchers": {
-                "window": False,
-                "idle": False,
-                "clipboard": False,
-                "manual": False,
-                "keyboard_chunk": True,
-                "browser": False,
-                "ax_text": True,
-                "ocr": True,
-            }
-        }
-    )
-
-    manager = CaptureManager(config)
-
-    manager._init_watchers()
-
-    assert set(manager._watchers) == {"keyboard_chunk", "ax_text", "ocr"}
 
 
 def test_manager_wires_keyboard_chunk_watcher_when_enabled():
@@ -47,7 +20,6 @@ def test_manager_wires_keyboard_chunk_watcher_when_enabled():
                 "keyboard_chunk": True,
                 "browser": False,
                 "ax_text": False,
-                "ocr": False,
             }
         }
     )
@@ -70,7 +42,6 @@ def test_manager_wires_browser_watcher_when_enabled():
                 "keyboard_chunk": False,
                 "browser": True,
                 "ax_text": False,
-                "ocr": False,
             }
         }
     )
@@ -80,73 +51,6 @@ def test_manager_wires_browser_watcher_when_enabled():
     manager._init_watchers()
 
     assert set(manager._watchers) == {"browser"}
-
-
-class _StubOCRWatcher:
-    def __init__(self):
-        self.capture_calls = []
-
-    def capture_once(self, **kwargs):
-        self.capture_calls.append(kwargs)
-        from penpal.capture.normalizer import normalize_ocr_text_event
-
-        return normalize_ocr_text_event(
-            text="ocr from manager",
-            metadata={"provider": "stub"},
-        )
-
-
-class _StubWindowAwareOCRWatcher:
-    def __init__(self):
-        self.window_calls = []
-
-    def note_window_change(self, now=None):
-        self.window_calls.append(now)
-
-
-@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
-def test_manager_notifies_ocr_on_window_title_change():
-    manager = CaptureManager(Config())
-    ocr = _StubWindowAwareOCRWatcher()
-    manager._watchers["ocr"] = ocr
-
-    manager._feed_light_capture_watchers(
-        normalize_window_event(
-            event_type="window_title_changed",
-            app_name="Code",
-            window_title="main.py",
-            process_name="com.microsoft.VSCode",
-        )
-    )
-
-    assert ocr.window_calls == [None]
-
-
-@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
-def test_manager_can_trigger_ocr_from_explicit_image():
-    manager = CaptureManager(Config())
-    ocr = _StubOCRWatcher()
-    manager._watchers["ocr"] = ocr
-
-    event = manager.capture_ocr_image(
-        image_ref="/tmp/input.png",
-        now=3.0,
-        app_name="Preview",
-        window_title="Scan",
-        process_name="com.apple.Preview",
-        content_signature="sig-1",
-    )
-
-    assert event is not None
-    assert event.content_text == "ocr from manager"
-    assert ocr.capture_calls[0]["image_ref"] == "/tmp/input.png"
-    context = ocr.capture_calls[0]["context"]
-    assert context.app_name == "Preview"
-    assert context.window_title == "Scan"
-    assert context.process_name == "com.apple.Preview"
-    assert context.content_signature == "sig-1"
-    metadata = json.loads(event.metadata_json)
-    assert metadata["provider"] == "stub"
 
 
 def test_manager_runtime_snapshot_tracks_multi_source_counts():

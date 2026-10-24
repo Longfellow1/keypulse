@@ -5,7 +5,7 @@ category: project
 status: active
 tags: [handoff, state, refactor]
 created: "2026-10-10T11:19:23"
-updated: "2026-10-10T14:19:38"
+updated: "2026-10-25T00:40:44"
 ---
 
 <!-- compiled_truth -->
@@ -27,7 +27,7 @@ updated: "2026-10-10T14:19:38"
   - real-data test `test_daily_flagship_context_helpers_read_real_may_9_history` (depends on real `~/.keypulse` data);
   - env test `test_browser_url_watcher_disables_unsupported_dialect_without_marking_denied` (suspected macOS / env);
   - `test_path_filter_excludes_backup_and_cache` fails only when HOME is redirected to mktemp (`/private/var` resolve mismatch).
-- Pointers: `docs/extraction/pytest-baseline.txt`.
+- Historical test baseline snapshot under docs/extraction was removed on 2026-10-25 because it described an earlier repository state.
 
 ## Branch state (after rewrite)
 - Done:
@@ -66,7 +66,7 @@ updated: "2026-10-10T14:19:38"
    - Working mode: Opus manages and reviews; Haiku/Sonnet subagents implement; key decisions go to the owner as multiple-choice questions.
 4. Extraction order: store, then search, then privacy / permissions (extended per PRD, not as-is), then capture / sources. `hud` stays in place (D21) but is a P0 trust surface (PRD §3.9). Blockers and cut list: [[legacy-extraction-blockers]].
 - Refactor policy: [[refactor-in-place-with-legacy-tag]]. Decisions: [[keypulse-v1-local-memory-infra]], [[v1-development-baseline-prd]], [[multi-host-mcp-integration]], [[keyboard-capture-p0-experimental]].
-- Structure and dependency analysis: `docs/extraction/structure-tree.md`, `docs/extraction/dependency-map.md`, scripts in `docs/extraction/scripts/`.
+- Historical structure and dependency snapshots and their one-off scripts under docs/extraction were removed on 2026-10-25 because they no longer matched the repository.
 
 
 ## Timeline
@@ -141,4 +141,10 @@ updated: "2026-10-10T14:19:38"
   kind: decision
   summary: "Next step set: start M0 (#16) after owner go; plan in docs/KeyPulse_V1_重构计划.md"
   source: "docs/KeyPulse_V1_重构计划.md v1.0"
+  affects: [session-handoff-2026-10-10]
+
+- time: 2026-10-25T00:40:44
+  kind: decision
+  summary: Rewrote compiled_truth to the new best understanding
+  source: 2026-10-25 repository hygiene cleanup
   affects: [session-handoff-2026-10-10]

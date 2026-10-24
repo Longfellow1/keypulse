@@ -59,7 +59,6 @@ def _cfg():
     cfg = Config()
     cfg.watchers.keyboard_chunk = True
     cfg.watchers.ax_text = False
-    cfg.watchers.ocr = True  # OCR is switched on in config but its watcher is off: must not need Screen Recording
     return cfg
 
 
@@ -118,14 +117,6 @@ def test_no_daemon_record_uses_terminal_check(monkeypatch):
 
 
 # ── permission scope and grant target ──────────────────────────────────────────
-
-def test_ocr_does_not_require_screen_recording():
-    cfg = Config()
-    cfg.watchers.ocr = True
-    cfg.watchers.keyboard_chunk = False
-    cfg.watchers.ax_text = False
-    assert "screen_recording" not in ch.required_permissions(cfg, frozenset())
-
 
 def test_grant_target_is_the_python_app_bundle_when_present(tmp_path):
     framework = tmp_path / "Python.framework" / "Versions" / "3.13"

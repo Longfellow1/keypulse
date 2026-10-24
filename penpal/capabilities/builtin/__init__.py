@@ -29,7 +29,6 @@ from penpal.capabilities.builtin.browser_automation import BrowserAutomationCapa
 from penpal.capabilities.builtin.capture_storage import CaptureStorageCapability
 from penpal.capabilities.builtin.health_freshness import HealthFreshnessCapability
 from penpal.capabilities.builtin.pause_state import PauseStateCapability
-# from penpal.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
 
 
 # Each entry is a zero-arg factory returning a Capability. Factories instead
@@ -40,11 +39,6 @@ _DEFAULT_CAPABILITY_FACTORIES: list[Callable[..., Capability]] = [
     AccessibilityPermissionCapability,
     BrowserAutomationCapability,
     CaptureStorageCapability,
-    # === OCR watcher 已下线 2026-05-14 ===
-    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
-    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
-    # 历史 raw_events 中 ocr_text_capture 数据保留可读
-    # ScreenRecordingPermissionCapability,
     HealthFreshnessCapability,
 ]
 

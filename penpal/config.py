@@ -89,17 +89,6 @@ class BrowserHistoryConfig(BaseModel):
     )
 
 
-class OCRConfig(BaseModel):
-    provider: Literal["vision_native"] = "vision_native"
-    # === OCR watcher 已下线 2026-05-14 ===
-    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
-    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
-    # 历史 raw_events 中 ocr_text_capture 数据保留可读
-    # window_switch_delay_sec: float = 0.8
-    # stable_interval_sec: float = 10.0
-    # keyboard_quiet_sec: float = 2.0
-
-
 def _default_title_deny():
     from penpal.capture.hygiene import DEFAULT_TITLE_DENY_PATTERNS
 
@@ -239,7 +228,6 @@ class Config(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     browser_url: BrowserURLConfig = Field(default_factory=BrowserURLConfig)
     browser_history: BrowserHistoryConfig = Field(default_factory=BrowserHistoryConfig)
-    ocr: OCRConfig = Field(default_factory=OCRConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
     buckets: BucketsConfig = Field(default_factory=BucketsConfig)

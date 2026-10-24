@@ -148,14 +148,4 @@ WATCHER_HEALTH_SPECS: list[WatcherHealthSpec] = [
         hint="AX 文本采集线程异常，请重启 daemon；可能与辅助功能权限相关",
         silent_timeout_sec=1800.0,
     ),
-    # === OCR watcher 已下线 2026-05-14 ===
-    # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
-    # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
-    # 历史 raw_events 中 ocr_text_capture 数据保留可读
-    # WatcherHealthSpec(
-    #     watcher_name="ocr",
-    #     capability_name="ocr_watcher",
-    #     hint="OCR 采集线程异常，请重启 daemon",
-    #     silent_timeout_sec=3600.0,
-    # ),
 ]
