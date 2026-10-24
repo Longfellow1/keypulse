@@ -148,7 +148,9 @@ def _keypulse_executable_path() -> Path:
             resolved = shutil.which(str(path))
             path = Path(resolved) if resolved else path
         if path.exists():
-            return path.resolve()
+            # Keep Homebrew's stable symlink (/opt/homebrew/bin/penpal): resolving it would pin the versioned
+            # Cellar path, which `brew upgrade` removes, leaving launchd jobs pointing at a deleted binary.
+            return path.absolute()
     raise click.ClickException(
         "Could not find the installed `penpal` executable. "
         "Install with Homebrew first, or set PENPAL_EXECUTABLE=/absolute/path/to/penpal."
@@ -312,6 +314,16 @@ def _launchd_plist_path(label: str) -> Path:
     return _launch_agents_dir() / f"{label}.plist"
 
 
+def _is_own_versioned_plist(existing: Any, label: str) -> bool:
+    """Our own plist from an earlier install that pinned a versioned Homebrew Cellar path (or a binary that is
+    gone). Replacing it needs no --force: it is not a user customization, and it breaks on `brew upgrade`."""
+    if not isinstance(existing, dict) or existing.get("Label") != label:
+        return False
+    args = existing.get("ProgramArguments") or []
+    program = str(args[0]) if args else ""
+    return "/Cellar/penpal/" in program or (program != "" and not Path(program).exists())
+
+
 def _write_launchd_plist(label: str, payload: dict[str, Any], *, force: bool = False) -> str:
     path = _launchd_plist_path(label)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -322,7 +334,7 @@ def _write_launchd_plist(label: str, payload: dict[str, Any], *, force: bool = F
             existing = None
         if existing == payload:
             return "unchanged"
-        if not force:
+        if not force and not _is_own_versioned_plist(existing, label):
             raise click.ClickException(f"{path} already exists and differs. Re-run with --force to replace it.")
         status = "updated"
     else:

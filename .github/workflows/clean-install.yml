@@ -100,8 +100,9 @@ jobs:
           set -euo pipefail
           TRANSCRIPT="$RUNNER_TEMP/clean-install-transcript.txt"
           exec > >(tee -a "$TRANSCRIPT") 2>&1
-          expected="$(readlink -f "$(which penpal)")"
+          expected="$(which penpal)"
           echo "expected executable=$expected"
+          case "$expected" in */Cellar/*) echo "FAIL: expected the stable brew symlink, got a versioned Cellar path"; exit 1;; esac
           for label in com.penpal.daemon com.penpal.healthcheck; do
             plist="$HOME/Library/LaunchAgents/$label.plist"
             args="$(python3 -c 'import plistlib,sys; print("\n".join(plistlib.load(open(sys.argv[1],"rb"))["ProgramArguments"]))' "$plist")"
