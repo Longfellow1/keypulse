@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Callable, Any
 
 from penpal.capabilities.capture_facts import CAPTURE_FACT_CAPS as _CAPTURE_FACT_CAPS
@@ -12,11 +13,14 @@ from penpal.capabilities.registry import CapabilityRegistry, get_default_registr
 from penpal.capabilities.store import save_states as save_capability_states
 from penpal.capture.browser_automation_state import clear_browser_automation_denied_browsers_on_startup
 from penpal.config import Config
+from penpal.foundation.runtime_identity import IdentityWatcher, RELOAD_EXIT_CODE
 from penpal.i18n import T
 from penpal.utils.lock import SingleInstanceLock
 from penpal.utils.paths import get_daemon_lock_path, get_pid_path
 from penpal.utils.logging import setup_logging, get_logger
-from penpal.store.db import init_db
+from penpal.store.db import DatabaseSchemaTooNewError, init_db, read_schema_version
+from penpal.store.migrations import SCHEMA_VERSION
+from penpal.runtime.evaluate import current_identity, loaded_identity
 from penpal.sources.scheduler import SourcesScheduler
 from penpal.services.capability_monitor import (
     _apply_ax_denied_fact_overrides,
@@ -63,7 +67,7 @@ def _spawn_self_check_supervisor(interval_sec: float = 60.0, registry: Capabilit
     logger.info(f"self-check supervisor running (interval={interval_sec}s)")
 
 
-def run(config: Optional[Config] = None):
+def run(config: Optional[Config] = None, *, config_path: str | Path | None = None):
     """
     Main daemon execution: starts CaptureManager, blocks until SIGTERM/SIGINT.
     Runs in the foreground under launchd or directly for diagnostics.
@@ -83,6 +87,17 @@ def run(config: Optional[Config] = None):
         )
         sys.stderr.write(message + "\n")
         sys.exit(73)
+
+    recorded_schema = read_schema_version(config.db_path_expanded)
+    if recorded_schema is not None and recorded_schema > SCHEMA_VERSION:
+        logger.error(
+            "database schema is newer than this daemon supports; refusing database writes "
+            "(recorded=%s supported=%s)",
+            recorded_schema,
+            SCHEMA_VERSION,
+        )
+        lock.release()
+        sys.exit(RELOAD_EXIT_CODE)
 
     try:
         from penpal.permissions import trigger_required_prompts
@@ -117,6 +132,7 @@ def run(config: Optional[Config] = None):
     from penpal.capture.manager import CaptureManager
 
     manager = CaptureManager(config)
+    manager._runtime_identity = loaded_identity(config, config_path=config_path)
     manager.set_runtime_component("sources_scheduler", "running" if scheduler.enabled else "disabled")
     scheduler.set_progress_callback(lambda: manager.report_progress("sources_scheduler"))
     manager.set_wake_handler(lambda: _on_mac_wake(registry, scheduler))
@@ -141,7 +157,27 @@ def run(config: Optional[Config] = None):
 
         scheduler.start()
 
+        identity_watcher = IdentityWatcher(
+            manager._runtime_identity,
+            lambda: current_identity(config, config_path=config_path),
+        )
+
         while True:
+            try:
+                identity_changed = identity_watcher.check()
+            except (OSError, RuntimeError, ValueError) as exc:
+                logger.warning("runtime identity check failed: %s", type(exc).__name__)
+                identity_changed = False
+            if identity_changed:
+                logger.info("runtime identity changed; flushing and reloading daemon")
+                scheduler.stop()
+                try:
+                    manager.stop()
+                except DatabaseSchemaTooNewError:
+                    logger.error("newer database schema prevents the old daemon from flushing")
+                manager._write_runtime_record(force=True)
+                lock.release()
+                sys.exit(RELOAD_EXIT_CODE)
             time.sleep(1)
     except Exception as e:
         logger.error(f"Fatal error: {e}")

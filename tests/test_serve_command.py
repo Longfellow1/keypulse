@@ -12,8 +12,9 @@ def test_serve_invokes_foreground_runner(monkeypatch):
     def fake_load():
         return Config()
 
-    def fake_run(cfg):
+    def fake_run(cfg, *, config_path=None):
         captured["cfg"] = cfg
+        captured["config_path"] = config_path
 
     monkeypatch.setattr("penpal.cli.daemon.Config.load", fake_load)
     monkeypatch.setattr("penpal.cli.daemon.run", fake_run)
@@ -22,6 +23,7 @@ def test_serve_invokes_foreground_runner(monkeypatch):
 
     assert result.exit_code == 0
     assert "cfg" in captured
+    assert captured["config_path"] is None
 
 
 def test_mcp_server_identity_is_penpal():

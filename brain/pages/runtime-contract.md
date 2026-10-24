@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [runtime, health, hud, doctor, launchd, mcp]
 created: "2026-10-24T23:46:07"
-updated: "2026-10-25T03:10:23"
+updated: "2026-10-25T03:49:13"
 ---
 
 <!-- compiled_truth -->
@@ -45,4 +45,10 @@ Decision (D36, 2026-10-24, owner accepted all recommendations after a deep-fix a
   kind: decision
   summary: "PR2 control rules settled: penpal.runtime.control is the only launchd mutator (kickstart -k when plist unchanged, else bootout → bounded wait → bootstrap ×3); restart succeeds only when a new generation's core loop progresses. Watchdog acts on hung / outdated / not_running ONLY while launchd still manages the job (penpal stop boots it out, so a user stop is never undone); 2 consecutive failures, 15-min cooldown, 3 restarts/hour, then report-only. Single instance via flock on run/daemon.lock (second serve exits 73); PID files are diagnostics only."
   source: D36 PR2 review 2026-10-25
+  affects: [runtime-contract]
+
+- time: 2026-10-25T03:49:13
+  kind: decision
+  summary: "PR3 self-reload settled: identity = code fingerprint + package version + config.toml hash + DB schema version; schema newer than code → OUTDATED and the store refuses writes. Daemon exits 75 on identity change and launchd relaunches it (KeepAlive SuccessfulExit=false); HUD execv from its timer; MCP serve execs only between requests, replaying the saved initialize params into the new process and filtering the synthetic response, sends tools/list_changed when the tool list differs, and exits on stdin EOF or parent death. Depends on MCP SDK low-level stdio API → pinned mcp>=1.30,<1.31; bumping the SDK requires re-running the handoff tests and the 3-host manual check."
+  source: D36 PR3 review 2026-10-25
   affects: [runtime-contract]

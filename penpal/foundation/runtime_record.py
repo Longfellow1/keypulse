@@ -23,6 +23,7 @@ RECORD_WRITE_INTERVAL_SEC = _interval_from_env()
 COMPONENT_STATES = frozenset({
     "running", "idle", "gave_up", "missing_permission", "storage_error", "disabled",
 })
+CURRENT_RECORD_FORMAT_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,9 @@ class RuntimeRecord:
     written_at: str
     progress: dict[str, Progress] = field(default_factory=dict)
     components: dict[str, Component] = field(default_factory=dict)
+    config_fingerprint: str = "unknown"
+    database_schema_version: int = 0
+    record_format_version: int = CURRENT_RECORD_FORMAT_VERSION
 
 
 def utc_now() -> str:
@@ -65,6 +69,17 @@ def _record_from_dict(value: Any) -> RuntimeRecord | None:
         "generation", "process_start_time", "version", "code_fingerprint", "started_at", "written_at",
     )
     if any(not isinstance(value.get(key), str) or not value[key] for key in required):
+        return None
+    format_version = value.get("record_format_version", 1)
+    config_fingerprint = value.get("config_fingerprint", "")
+    database_schema_version = value.get("database_schema_version", 0)
+    if (
+        format_version not in (1, CURRENT_RECORD_FORMAT_VERSION)
+        or not isinstance(config_fingerprint, str)
+        or not isinstance(database_schema_version, int)
+        or database_schema_version < 0
+        or (format_version == CURRENT_RECORD_FORMAT_VERSION and not config_fingerprint)
+    ):
         return None
     if not isinstance(value.get("pid"), int) or value["pid"] <= 0:
         return None
@@ -95,6 +110,8 @@ def _record_from_dict(value: Any) -> RuntimeRecord | None:
         process_start_time=value["process_start_time"], version=value["version"],
         code_fingerprint=value["code_fingerprint"], started_at=value["started_at"],
         written_at=value["written_at"], progress=progress, components=components,
+        config_fingerprint=config_fingerprint, database_schema_version=database_schema_version,
+        record_format_version=format_version,
     )
 
 

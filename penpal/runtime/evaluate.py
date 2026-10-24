@@ -4,16 +4,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 import ctypes
 import os
 import sys
 from typing import Callable
 
-from penpal import __version__
-from penpal.foundation.runtime_identity import installed_fingerprint as _installed_fingerprint
+from penpal.config import Config, config_fingerprint
+from penpal.foundation.runtime_identity import (
+    RuntimeIdentity,
+    code_fingerprint as _code_fingerprint,
+    installed_fingerprint as _installed_fingerprint,
+    installed_package_version,
+    loaded_package_version,
+    make_identity,
+)
 from penpal.foundation.runtime_launchd import is_installed, probe_daemon, probe_label, process_start_time
 from penpal.foundation.runtime_record import RECORD_WRITE_INTERVAL_SEC, Component, RuntimeRecord, read_record
 from penpal.i18n import T
+from penpal.store.db import read_schema_version
+from penpal.store.migrations import SCHEMA_VERSION
 
 HUNG_AFTER_SEC = RECORD_WRITE_INTERVAL_SEC * 3
 STARTING_GRACE_SEC = RECORD_WRITE_INTERVAL_SEC * 3
@@ -43,6 +53,53 @@ STATE_COPY: dict[RuntimeState, tuple[str, str, str, str, str]] = {
 _FAILED_STATES = frozenset({
     RuntimeState.NOT_INSTALLED, RuntimeState.NOT_RUNNING, RuntimeState.HUNG, RuntimeState.OUTDATED,
 })
+
+
+def _identity_config(config: Config | None, config_path: Path | str | None) -> Config:
+    try:
+        if config_path is not None:
+            from penpal.config import read_config
+
+            return read_config(config_path)
+        return Config.load()
+    except (OSError, ValueError):
+        # The raw config fingerprint still detects a broken edit. Keep the running process
+        # on its last valid settings long enough to exec the replacement process.
+        if config is not None:
+            return config
+        raise
+
+
+def current_identity(
+    config: Config | None = None,
+    *,
+    config_path: Path | str | None = None,
+) -> RuntimeIdentity:
+    """Resolve the one installed identity shared by the evaluator and runtime consumers."""
+    current_config = _identity_config(config, config_path)
+    return make_identity(
+        code_fingerprint=_installed_fingerprint(),
+        package_version=installed_package_version(),
+        config_fingerprint=config_fingerprint(Path(config_path) if config_path is not None else None),
+        database_schema_version=read_schema_version(current_config.db_path_expanded),
+        supported_schema_version=SCHEMA_VERSION,
+    )
+
+
+def loaded_identity(
+    config: Config | None = None,
+    *,
+    config_path: Path | str | None = None,
+) -> RuntimeIdentity:
+    """Resolve the identity captured from this process's loaded package at import time."""
+    current_config = _identity_config(config, config_path)
+    return make_identity(
+        code_fingerprint=_code_fingerprint(),
+        package_version=loaded_package_version(),
+        config_fingerprint=config_fingerprint(Path(config_path) if config_path is not None else None),
+        database_schema_version=read_schema_version(current_config.db_path_expanded),
+        supported_schema_version=SCHEMA_VERSION,
+    )
 
 
 @dataclass(frozen=True)
@@ -253,14 +310,32 @@ def evaluate(
     *,
     record_reader: Callable[[], RuntimeRecord | None] = read_record,
     launchd_probe: Callable[[], dict] = probe_daemon,
-    installed_fingerprint: Callable[[], str] = _installed_fingerprint,
+    installed_fingerprint: Callable[[], str] | None = None,
+    identity_reader: Callable[[], RuntimeIdentity] = current_identity,
     paused_reader: Callable[[], bool] = _paused,
     wake_time_reader: Callable[[], datetime | None] = _read_last_system_wake_time,
 ) -> RuntimeStatus:
     """Evaluate installed code and daemon progress; idle event streams are healthy."""
     now = now or datetime.now(timezone.utc)
+    identity = identity_reader()
+    if installed_fingerprint is not None:
+        identity = RuntimeIdentity(
+            code_fingerprint=installed_fingerprint(),
+            package_version=identity.package_version,
+            config_fingerprint=identity.config_fingerprint,
+            database_schema_version=identity.database_schema_version,
+            supported_schema_version=identity.supported_schema_version,
+        )
     last_wake = _normalise_datetime(wake_time_reader())
     record = record_reader()
+    if identity.schema_is_newer_than_code:
+        state = RuntimeState.OUTDATED
+        issue = _state_issue(state)
+        return RuntimeStatus(
+            state, (issue,) if issue else (),
+            pid=record.pid if record else None,
+            generation=record.generation if record else None,
+        )
     launchd = launchd_probe()
     loaded = bool(launchd.get("loaded"))
     launchd_pid = launchd.get("pid")
@@ -289,7 +364,7 @@ def evaluate(
             issue = _state_issue(state)
             return RuntimeStatus(state, (issue,) if issue else (), pid=record.pid, generation=record.generation, managed=loaded)
 
-    if record.code_fingerprint != installed_fingerprint() or record.version != __version__:
+    if record.code_fingerprint != identity.code_fingerprint or record.version != identity.package_version:
         state = RuntimeState.OUTDATED
     elif paused_reader():
         state = RuntimeState.PAUSED

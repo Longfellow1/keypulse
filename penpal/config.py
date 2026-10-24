@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import tomllib
@@ -287,6 +288,22 @@ class Config(BaseModel):
         return legacy if legacy is not None and not path.exists() and legacy.exists() else path
 
 
+def config_fingerprint(path: Path | None = None) -> str:
+    """Hash the exact config.toml bytes selected by Config.load()."""
+    if path is None:
+        candidates = (get_config_path(), Path("config.toml"))
+        path = next((candidate for candidate in candidates if candidate.exists()), None)
+    digest = hashlib.sha256()
+    if path is None:
+        digest.update(b"<missing-config>")
+    else:
+        try:
+            digest.update(path.read_bytes())
+        except FileNotFoundError:
+            digest.update(b"<missing-config>")
+    return digest.hexdigest()
+
+
 def read_toml(path: Path | str) -> dict:
     """Read and parse TOML from an explicit path."""
     config_path = Path(path)
@@ -436,7 +453,7 @@ def set_chat_app_opt_in(name: str, allowed: bool, *, path: Path | None = None) -
     """Allow / deny one chat app (``penpal privacy chat-apps allow|deny``, and the HUD switch).
 
     Returns the canonical key and the new opt-in list. Raises ValueError for an unknown app name.
-    The daemon reads the list at start, so a running daemon needs a restart to pick the change up.
+    The daemon notices the updated config and reloads itself within about one minute.
     """
     key = normalize_opt_ins([name])[0]
     current = list(Config.load().privacy.chat_apps_opt_in)

@@ -31,7 +31,7 @@ def start():
 def serve(config_path):
     """Run foreground service."""
     cfg = Config.load() if not config_path else _load_config_from(config_path)
-    run(cfg)
+    run(cfg, config_path=config_path)
 
 def _load_config_from(path: str) -> Config:
     """Load config from explicit path."""

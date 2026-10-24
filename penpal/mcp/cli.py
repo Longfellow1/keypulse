@@ -9,8 +9,9 @@ import sys
 import click
 
 from penpal.config import Config
+from penpal.foundation.runtime_identity import RELOAD_EXIT_CODE
 from penpal.mcp.auth import CLIENT_ENV, TOKEN_ENV
-from penpal.store.db import init_db
+from penpal.store.db import DatabaseSchemaTooNewError, init_db
 
 HOSTS = ("claude", "codex", "cursor", "generic")
 EGRESS_NOTICE = "提示：Penpal 返回给该 AI 的内容会进入它的对话，并可能发送到该 AI 的云端模型服务。"
@@ -93,13 +94,21 @@ def rotate_output_lines(client_id: str, token: str, exe: str) -> list[str]:
 
 @mcp_group.command("serve", help="Run the MCP server over stdio (env PENPAL_TOKEN + PENPAL_CLIENT).")
 def serve_command() -> None:
+    parent_pid = os.getppid()
     from penpal.mcp import tools
     from penpal.mcp.server import serve_stdio
 
     cfg = Config.load()
     tools.configure(mask_emails=cfg.privacy.redact_emails)
-    init_db(cfg.db_path_expanded)
-    serve_stdio()
+    try:
+        init_db(cfg.db_path_expanded)
+    except DatabaseSchemaTooNewError as exc:
+        click.echo(
+            f"Database schema {exc.recorded} is newer than this version supports ({exc.supported}); refusing writes.",
+            err=True,
+        )
+        raise click.exceptions.Exit(RELOAD_EXIT_CODE) from exc
+    serve_stdio(parent_pid=parent_pid)
 
 
 @mcp_group.command("grant", help="Authorize an AI client: creates a token (shown once) and prints connection config.")

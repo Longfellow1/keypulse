@@ -65,7 +65,7 @@ Also: the WeChat message source (`penpal/sources/plugins/wechat.py`) currently p
 
 - **Apps**: set `blacklist_app_names` / `blacklist_bundle_ids` under `[privacy]` in `config.toml` (a match drops the event), or use `penpal rules add --scope-type app --scope-value <name> --mode deny`.
 - **Domains**: use `penpal privacy block-site <host>` to block a website, `penpal privacy unblock-site <host>` to unblock it, and `penpal privacy blocked-sites` to list blocked hosts. The command removes the URL scheme, path, port and leading `www.`, then lowercases the host. Matching covers that host and all its subdomains (`hygiene.py` `host_matches_denylist`).
-- New live capture events use the updated list after the daemon reloads its config. Run `penpal restart` after a change. Existing data is not deleted by this setting.
+- New live capture events use the updated list within about one minute; no manual restart is needed. Existing data is not deleted by this setting.
 - Domain exclusion now covers three places:
   1. Live URL events: dropped.
   2. **Browser-history import**: matching visits are not stored (`sources/importer.py`, `sources/registry.py`). Test: `tests/test_issue26_capture_chain.py::test_at18_browser_history_from_excluded_domain_is_not_stored`.
