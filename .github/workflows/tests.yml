@@ -28,3 +28,17 @@ jobs:
           name: eval-report
           path: eval-report.json
           if-no-files-found: ignore
+
+  py311-import:
+    # requires-python is >=3.11 but the suite runs on 3.12; catch 3.12-only syntax cheaply.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile and import on the minimum Python
+        run: |
+          python -m compileall -q penpal
+          pip install -e ".[macos]"
+          python -c "import penpal.cli, penpal.hud.app" && penpal --help > /dev/null

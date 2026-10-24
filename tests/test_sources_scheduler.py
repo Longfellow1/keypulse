@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+from penpal.config import SourcesSchedulerConfig
 from penpal.sources.scheduler import SourcesScheduler
 from penpal.sources.types import DataSource, DataSourceInstance
 
@@ -59,6 +60,13 @@ def _wait_for(predicate, *, timeout: float = 1.0, interval: float = 0.01) -> boo
             return True
         time.sleep(interval)
     return predicate()
+
+
+def test_scheduler_config_defaults() -> None:
+    config = SourcesSchedulerConfig()
+
+    assert config.poll_interval_sec == 240
+    assert config.debounce_sec == 120
 
 
 def test_scheduler_polls_always_plugins() -> None:
