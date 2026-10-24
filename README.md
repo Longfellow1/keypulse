@@ -80,7 +80,7 @@ penpal app uninstall        # 移除 App 和启动项，不影响后台服务与
 | `get_evidence` | 打开某条结果的原始出处 |
 | `rate_result` | 对结果打分，用来改进排序 |
 
-只读。查到的内容会进入该 AI 的对话，可能发送到它的云端服务。授权时按分类（Work / Personal / Private / Financial）限定，`penpal mcp audit` 能看到谁在什么时候查过、结果有几条，不记录查询内容。
+只读：AI 不能写入或修改记忆（`rate_result` 只在本机记一条评分）。查到的内容会进入该 AI 的对话，可能发送到它的云端服务。授权时按分类（Work / Personal / Private / Financial）限定，`penpal mcp audit` 能看到谁在什么时候查过、结果有几条，不记录查询内容。
 
 ## 记什么不记什么
 
@@ -93,12 +93,14 @@ penpal app uninstall        # 移除 App 和启动项，不影响后台服务与
 **不会记录或默认排除**：
 
 - 密码管理器等默认排除名单里的 App 不记录；无痕浏览窗口只记应用和时间，不记内容；摄像头开启期间暂停屏幕文字采集
-- 银行、支付类内容自动归入 Financial 分类，没有授权 Financial 的 AI 查不到
+- 银行、支付类 App 和网站（按内置名单）的内容自动归入 Financial 分类，没有授权 Financial 的 AI 查不到
 - 聊天 App（微信、Slack、飞书等）默认不采集；单独开启后进入 Private 分类，只有授权了 Private 的 AI 能查到
 - 键盘：不存逐个按键，只存过滤后的文字片段；默认开启，和其他来源一样，在已授权的分类内可被 AI 搜索；一条命令可关（`penpal source disable keyboard_chunk`）
-- 邮箱 @ 前面打码、域名保留，令牌、密钥、卡号入库前遮盖
+- 令牌、密钥等凭据入库前遮盖；实时采集的内容还会遮盖邮箱 @ 前部分、手机号、证件号、卡号；返回给 AI 时邮箱 @ 前统一打码
 
 数据只在你本机 `~/.penpal/`，没有云端、没有埋点。不会自动删除，删除由你决定，删的时候原文、索引、出处、相关查询记录一起清掉。
+
+逐条可核对的隐私边界（附代码与测试出处）：[docs/privacy.md](docs/privacy.md)
 
 ## 日常控制
 

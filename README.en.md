@@ -80,7 +80,7 @@ penpal app uninstall        # removes the app and its login item; the daemon and
 | `get_evidence` | Open the original source of a result |
 | `rate_result` | Rate a result to improve ranking |
 
-Read-only. Whatever is returned enters that AI's conversation and may be sent to its cloud service. Grants are scoped by category (Work / Personal / Private / Financial). `penpal mcp audit` shows who queried when and how many results came back; query text is not logged.
+Read-only: the AI can't write or change memory (`rate_result` only stores a rating locally). Whatever is returned enters that AI's conversation and may be sent to its cloud service. Grants are scoped by category (Work / Personal / Private / Financial). `penpal mcp audit` shows who queried when and how many results came back; query text is not logged.
 
 ## What it records and what it doesn't
 
@@ -93,12 +93,14 @@ Read-only. Whatever is returned enters that AI's conversation and may be sent to
 **Not recorded, or excluded by default:**
 
 - Apps on the default exclusion list, such as password managers, are not recorded. Private browsing windows record only the app and time, not content. Screen-text capture pauses while the camera is on.
-- Banking and payment content goes into the Financial category automatically; an AI without a Financial grant can't see it.
+- Content from banking and payment apps and sites (a built-in list) goes into the Financial category automatically; an AI without a Financial grant can't see it.
 - Chat apps (WeChat, Slack, Feishu, etc.) are not captured by default. Once enabled individually they go into the Private category, visible only to AIs granted Private.
 - Keyboard: individual keystrokes are not stored, only filtered text snippets. On by default; like other sources they are searchable by an AI within the categories it is granted. One command turns it off (`penpal source disable keyboard_chunk`).
-- The part of an email address before @ is masked (the domain is kept). Tokens, keys and card numbers are masked before storage.
+- Tokens, keys and other credentials are masked before storage. Live-captured content also has the part of emails before @, phone numbers, ID numbers and card numbers masked. Results returned to an AI always mask the part of emails before @.
 
 Data stays on your machine in `~/.penpal/`. No cloud, no telemetry. Nothing is deleted automatically; deletion is your call, and it removes the original text, index, source and related query records together.
+
+A checkable, line-by-line privacy boundary with code and test references: [docs/privacy.en.md](docs/privacy.en.md)
 
 ## Day-to-day control
 
