@@ -1,8 +1,8 @@
 .PHONY: bootstrap app app-clean app-alias install reload preflight install-plists tcc-reset onboard post-onboard-kick
 
-PYTHON := /Users/Harland/Go/penpal/.venv/bin/python
+ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+PYTHON := $(ROOT)/.venv/bin/python
 BOOTSTRAP_PYTHON := python3
-ROOT := /Users/Harland/Go/penpal
 APP_DEST := /Applications/Penpal.app
 PLIST_DST := $(HOME)/Library/LaunchAgents
 LAUNCH_AGENTS := \

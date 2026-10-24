@@ -32,11 +32,9 @@ from penpal.capture.hygiene import (
     strip_url_query,
 )
 from penpal.capture.policy import PolicyEngine
-# from penpal.capture.provider import build_ocr_provider
 from penpal.capture.normalizer import (
     WINDOW_FOCUS_EVENT,
     WINDOW_TITLE_CHANGED_EVENT,
-    is_window_session_event_type,
     normalize_manual_event,
 )
 from penpal.capture.user_presence import is_user_present
@@ -316,38 +314,6 @@ class CaptureManager:
         event = normalize_manual_event(text=text, tags=tags)
         self._queue.put(event)
 
-    def capture_ocr_image(
-        self,
-        image_ref,
-        now: float | None = None,
-        app_name: str | None = None,
-        window_title: str | None = None,
-        process_name: str | None = None,
-        ax_text_available: bool = False,
-        content_signature: str | None = None,
-    ):
-        # === OCR watcher 已下线 2026-05-14 ===
-        # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
-        # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
-        # 历史 raw_events 中 ocr_text_capture 数据保留可读
-        return None
-        # ocr_watcher = self._watchers.get("ocr")
-        # if ocr_watcher is None or not hasattr(ocr_watcher, "capture_once"):
-        #     return None
-        # from penpal.capture.watchers.ocr import OCRContext
-        #
-        # return ocr_watcher.capture_once(
-        #     now=now,
-        #     image_ref=image_ref,
-        #     context=OCRContext(
-        #         app_name=app_name,
-        #         window_title=window_title,
-        #         process_name=process_name,
-        #         ax_text_available=ax_text_available,
-        #         content_signature=content_signature,
-        #     ),
-        # )
-
     def _init_watchers(self):
         cfg = self.config.watchers
         if cfg.window:
@@ -415,30 +381,9 @@ class CaptureManager:
                 copy_to_cache=self.config.browser_history.copy_to_cache,
                 browsers=self.config.browser_history.browsers,
             )
-        # === OCR watcher 已下线 2026-05-14 ===
-        # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
-        # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
-        # 历史 raw_events 中 ocr_text_capture 数据保留可读
-        # if cfg.ocr:
-        #     from penpal.capture.watchers.ocr import OCRTriggerGate, OCRWatcher
-        #
-        #     self._watchers["ocr"] = OCRWatcher(
-        #         self._queue,
-        #         provider=build_ocr_provider(self.config.ocr.provider),
-        #         trigger_gate=OCRTriggerGate(
-        #             window_switch_delay_sec=self.config.ocr.window_switch_delay_sec,
-        #             stable_interval_sec=self.config.ocr.stable_interval_sec,
-        #             keyboard_quiet_sec=self.config.ocr.keyboard_quiet_sec,
-        #         ),
-        #     )
-
     def _start_camera_monitor(self) -> None:
         if not self.config.privacy.camera_scene_pause:
             return
-        # === OCR watcher 已下线 2026-05-14 ===
-        # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
-        # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
-        # 历史 raw_events 中 ocr_text_capture 数据保留可读
         watched_names = [name for name in ("ax_text",) if name in self._watchers]
         if not watched_names:
             return
@@ -691,7 +636,6 @@ class CaptureManager:
             event.process_name = None
 
         self._sync_window_idle_state(event)
-        self._feed_light_capture_watchers(event)
         if event.source == "window" and event.event_type in {WINDOW_FOCUS_EVENT, WINDOW_TITLE_CHANGED_EVENT}:
             return
 
@@ -820,27 +764,6 @@ class CaptureManager:
             insert_search_doc(doc)
 
         set_state("last_flush", datetime.now(timezone.utc).isoformat())
-
-    def _feed_light_capture_watchers(self, event: RawEvent) -> None:
-        # === OCR watcher 已下线 2026-05-14 ===
-        # 原因：日均 9 条 / 权重 0.5 / macOS Vision 绑死 / 屏幕录制权限门槛高 / 键盘+AX+clipboard 已覆盖
-        # 回退方法：移除本块注释 + 恢复 manager.py 里 OCR 调度分支
-        # 历史 raw_events 中 ocr_text_capture 数据保留可读
-        return
-        # ocr_watcher = self._watchers.get("ocr")
-        # if ocr_watcher is None:
-        #     return
-        # # window_focus and window_title_changed both mean the frontmost context moved.
-        # if event.source == "window" and is_window_session_event_type(event.event_type) and hasattr(ocr_watcher, "note_window_change"):
-        #     ocr_watcher.note_window_change()
-        #     return
-        # if event.source == "window" and event.event_type == "window_focus_session" and hasattr(ocr_watcher, "note_window_change"):
-        #     try:
-        #         metadata = json.loads(event.metadata_json or "{}")
-        #     except Exception:
-        #         metadata = {}
-        #     if metadata.get("reason") == "app_switch":
-        #         ocr_watcher.note_window_change()
 
     def _current_window_session_id(self) -> str | None:
         watcher = self._watchers.get("window")
