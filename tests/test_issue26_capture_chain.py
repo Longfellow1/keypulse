@@ -21,6 +21,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from penpal.capture.manager import CaptureManager
 from penpal.capture.normalizer import (
     normalize_ax_text_event,
+    normalize_browser_tab_event,
     normalize_browser_url_event,
     normalize_clipboard_event,
     normalize_keyboard_chunk_event,
@@ -274,3 +275,95 @@ def test_at18_browser_history_from_excluded_domain_is_not_stored(db, monkeypatch
     assert _mcp_search(auth.create_grant("work-host", buckets=WORK_PERSONAL_HOST), ["zebracorn"])["results"]
     assert _mcp_search(auth.create_grant("all-host", buckets=["Work", "Personal", "Private"]),
                        ["clinic"])["status"] == "no_results"
+
+
+# ── AT18 across streams: text typed, read or copied in an excluded-domain browser tab ───────
+CHROME = dict(app_name="Google Chrome", process_name="com.google.Chrome")
+SAFARI = dict(app_name="Safari", process_name="com.apple.Safari")
+ALLOWED_URL = "https://docs.example.org/zebracorn"
+
+
+def _page(mgr: CaptureManager, url: str, title: str, browser: dict = CHROME, n: int = 1) -> None:
+    """Browser URL watcher event (emitted on tab / URL change), through the queue."""
+    _feed(mgr, [normalize_browser_url_event(url, title, browser["app_name"], ts_start=TS.format(n))])
+
+
+def _typed(mgr: CaptureManager, text: str, n: int, browser: dict = CHROME) -> None:
+    _feed(mgr, [
+        normalize_keyboard_chunk_event(text, ts_start=TS.format(n), **browser),
+        normalize_ax_text_event(text, window_title="Tab", ts_start=TS.format(n + 1), **browser),
+        # Distinct wording: identical text is merged by the fusion step into the AX row (existing behaviour).
+        normalize_clipboard_event("zebracorn quarterly figure copied", app_name=browser["app_name"], ts_start=TS.format(n + 2),
+                                  process_name=browser["process_name"]),
+    ])
+
+
+def _content_for(text: str) -> list[dict]:
+    return [r for r in _rows() if r["content_text"] and text in r["content_text"]]
+
+
+def test_typing_in_excluded_domain_tab_is_not_stored_as_content(db, monkeypatch):
+    cfg = _excluded_config()
+    _use_config(monkeypatch, cfg)
+    mgr = CaptureManager(cfg)
+    _page(mgr, f"https://{EXCLUDED_DOMAIN}/visit/1", "clinic booking")  # dropped itself, but tracked
+    _typed(mgr, "zebracorn typed patient note", n=2)
+
+    assert _content_for("zebracorn") == []
+    kb = [r for r in _rows() if r["source"] == "keyboard_chunk"]
+    assert len(kb) == 1 and kb[0]["app_name"] == "Google Chrome"  # app and time kept, as for private windows
+    assert kb[0]["window_title"] is None
+    assert json.loads(kb[0]["metadata_json"])["text_dropped"] == "denied_domain"
+    assert not any(r["source"] == "browser_url" for r in _rows())  # the URL event itself is still dropped
+    assert _mcp_search(auth.create_grant("all-host", buckets=["Work", "Personal", "Private"]),
+                       ["zebracorn"])["status"] == "no_results"
+
+
+def test_same_browser_on_allowed_domain_stores_text(db, monkeypatch):
+    cfg = _excluded_config()
+    _use_config(monkeypatch, cfg)
+    mgr = CaptureManager(cfg)
+    _page(mgr, ALLOWED_URL, "zebracorn docs")
+    _typed(mgr, "zebracorn typed a sprint note", n=2)
+
+    assert {r["source"] for r in _content_for("zebracorn typed")} >= {"keyboard_chunk", "ax_text"}
+    assert {r["source"] for r in _content_for("quarterly figure")} == {"clipboard"}
+
+
+def test_switching_tabs_updates_the_page_used_for_the_check(db, monkeypatch):
+    cfg = _excluded_config()
+    _use_config(monkeypatch, cfg)
+    mgr = CaptureManager(cfg)
+    _page(mgr, ALLOWED_URL, "zebracorn docs", n=1)
+    _typed(mgr, "zebracorn first tab text", n=2)
+    _page(mgr, f"https://{EXCLUDED_DOMAIN}/visit/1", "clinic", n=5)  # switch to excluded tab
+    _typed(mgr, "zebracorn second tab text", n=6)
+    _page(mgr, ALLOWED_URL, "zebracorn docs", n=9)  # back to the allowed tab
+    _typed(mgr, "zebracorn third tab text", n=10)
+
+    assert _content_for("first tab")
+    assert _content_for("third tab")
+    assert _content_for("second tab") == []
+
+
+def test_unknown_page_is_not_blocked(db, monkeypatch):
+    cfg = _excluded_config()
+    _use_config(monkeypatch, cfg)
+    mgr = CaptureManager(cfg)
+    # No URL seen for Chrome yet (URL watcher off or not polled yet): unknown, so not blocked.
+    _typed(mgr, "zebracorn typed before any url", n=2)
+    assert _content_for("before any url")
+    # A URL for another browser does not apply to Chrome.
+    _page(mgr, f"https://{EXCLUDED_DOMAIN}/visit/1", "clinic", browser=SAFARI, n=5)
+    _typed(mgr, "zebracorn chrome text", n=6)
+    assert _content_for("chrome text")
+
+
+def test_browser_tab_watcher_event_also_sets_the_page(db, monkeypatch):
+    cfg = _excluded_config()
+    _use_config(monkeypatch, cfg)
+    mgr = CaptureManager(cfg)
+    _feed(mgr, [normalize_browser_tab_event(f"https://{EXCLUDED_DOMAIN}/visit/2", "clinic", "Google Chrome",
+                                            ts_start=TS.format(1))])
+    _typed(mgr, "zebracorn tab watcher text", n=2)
+    assert _content_for("tab watcher") == []

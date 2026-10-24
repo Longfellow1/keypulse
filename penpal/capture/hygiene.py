@@ -26,6 +26,7 @@ import math
 import re
 from collections import Counter
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from penpal.capture.active_app import SYSTEM_OVERLAY_APPS
 from penpal.utils.text_filters import looks_like_ime_composition, strip_invisible
@@ -257,6 +258,25 @@ def is_internal_browser_page(source: str, window_title: str | None, url: str | N
     return False
 
 
+PAGE_SCOPED_STREAMS = frozenset({"keyboard_chunk", "ax_text", "clipboard"})
+
+
+def page_in_denied_domain(page_url: str | None, deny_hosts) -> bool:
+    """True when the page's host is on the user's excluded-domain list.
+
+    An unknown page (None) is not blocked: the browser URL watcher is off by default, and until it reports
+    a URL for the frontmost browser there is nothing to check. A known page is the last URL that browser
+    showed. It has no age limit, because the watcher emits only on a change and a long read emits nothing.
+    """
+    if not page_url or not deny_hosts:
+        return False
+    try:
+        host = urlsplit(page_url).hostname
+    except ValueError:
+        return False
+    return bool(host) and host_matches_denylist(host, list(deny_hosts))
+
+
 def capture_gate(
     *,
     source: str,
@@ -266,8 +286,15 @@ def capture_gate(
     content_text: str | None,
     url: str | None = None,
     title_deny_patterns=None,
+    page_url: str | None = None,
+    url_deny_hosts=None,
 ) -> GateVerdict | None:
-    """Decide the fate of one capture event. Never logs or returns content."""
+    """Decide the fate of one capture event. Never logs or returns content.
+
+    page_url: the URL the frontmost browser showed when this event was captured, resolved by the capture
+    manager (None when no browser URL is known for the frontmost app). With url_deny_hosts it applies the
+    user's excluded-domain list to typed, read and copied text, the same way private windows are handled.
+    """
     # Zero-width characters must not hide a keyword from the rules below.
     window_title = strip_invisible(window_title)
     content_text = strip_invisible(content_text)
@@ -276,6 +303,8 @@ def capture_gate(
     if source in _CONTENT_STREAMS or source == "window":
         if is_private_window(window_title, url):
             return GateVerdict(METADATA_ONLY, "private_window")
+        if source in PAGE_SCOPED_STREAMS and page_in_denied_domain(page_url, url_deny_hosts):
+            return GateVerdict(METADATA_ONLY, "denied_domain")
         patterns = DEFAULT_TITLE_DENY_PATTERNS if title_deny_patterns is None else title_deny_patterns
         if _title_denied(window_title, patterns):
             return GateVerdict(METADATA_ONLY, "title_deny")
