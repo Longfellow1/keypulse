@@ -295,6 +295,7 @@ def test_source_alias_is_registered_on_main_cli():
 
 def test_status_plain_exposes_pause_and_disabled_sources(cfg, monkeypatch):
     import penpal.cli as cli
+    from penpal.cli import daemon as daemon_cli
 
     class _NoDaemonLock:
         def __init__(self, *a, **k) -> None:
@@ -306,11 +307,11 @@ def test_status_plain_exposes_pause_and_disabled_sources(cfg, monkeypatch):
         def is_running(self) -> bool:
             return False
 
-    monkeypatch.setattr(cli, "get_config", lambda: cfg)
-    monkeypatch.setattr(cli, "SingleInstanceLock", _NoDaemonLock)
-    monkeypatch.setattr(cli, "_launchd_label_loaded", lambda label: False)
+    monkeypatch.setattr(daemon_cli, "get_config", lambda: cfg)
+    monkeypatch.setattr(daemon_cli, "SingleInstanceLock", _NoDaemonLock)
+    monkeypatch.setattr(daemon_cli, "_launchd_label_loaded", lambda label: False)
     from penpal.runtime import RuntimeState, RuntimeStatus
-    monkeypatch.setattr(cli, "evaluate", lambda: RuntimeStatus(RuntimeState.PAUSED))
+    monkeypatch.setattr(daemon_cli, "evaluate", lambda: RuntimeStatus(RuntimeState.PAUSED))
     set_source_enabled("keyboard_chunk", False)
     set_state("status", "paused")
 

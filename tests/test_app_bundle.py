@@ -120,7 +120,7 @@ def test_cli_install_and_uninstall_in_tmp_dirs(dirs, monkeypatch):
     apps, agents = dirs
     run = Recorder()
     monkeypatch.setattr(app_bundle, "_run", run)
-    monkeypatch.setattr("penpal.cli._keypulse_executable_path", lambda: EXE)
+    monkeypatch.setattr("penpal.cli.app._keypulse_executable_path", lambda: EXE)
     out = CliRunner().invoke(main, ["app", "install", "--login", "--dir", str(apps), "--agents-dir", str(agents)])
     assert out.exit_code == 0, out.output
     assert (apps / "Penpal.app/Contents/Info.plist").exists() and (agents / "com.penpal.hud.plist").exists()
@@ -133,7 +133,7 @@ def test_cli_install_and_uninstall_in_tmp_dirs(dirs, monkeypatch):
 
 def test_cli_reports_errors_without_a_traceback(dirs, monkeypatch):
     apps, agents = dirs
-    monkeypatch.setattr("penpal.cli._keypulse_executable_path", lambda: EXE)
+    monkeypatch.setattr("penpal.cli.app._keypulse_executable_path", lambda: EXE)
     (apps / "Penpal.app" / "Contents").mkdir(parents=True)
     out = CliRunner().invoke(main, ["app", "install", "--dir", str(apps), "--agents-dir", str(agents)])
     assert out.exit_code != 0 and "not a Penpal app" in out.output and "Traceback" not in out.output

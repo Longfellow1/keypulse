@@ -62,9 +62,10 @@ def _cfg():
 
 def _run_doctor(monkeypatch, tmp_path, cfg):
     from penpal import cli
+    from penpal.cli import doctor as doctor_cli
 
-    monkeypatch.setattr(cli, "get_config", lambda: cfg)
-    monkeypatch.setattr(cli, "get_config_path", lambda: tmp_path / "config.toml")
+    monkeypatch.setattr(doctor_cli, "get_config", lambda: cfg)
+    monkeypatch.setattr(doctor_cli, "get_config_path", lambda: tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text("x=1")
     return CliRunner().invoke(cli.main, ["doctor", "--plain"])
 

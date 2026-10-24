@@ -15,8 +15,8 @@ def test_serve_invokes_foreground_runner(monkeypatch):
     def fake_run(cfg):
         captured["cfg"] = cfg
 
-    monkeypatch.setattr("penpal.cli.Config.load", fake_load)
-    monkeypatch.setattr("penpal.cli.run", fake_run)
+    monkeypatch.setattr("penpal.cli.daemon.Config.load", fake_load)
+    monkeypatch.setattr("penpal.cli.daemon.run", fake_run)
 
     result = CliRunner().invoke(main, ["serve"])
 

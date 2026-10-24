@@ -7,7 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # PR 2 replaces these legacy PID/control paths with the runtime control entry and flock.
 PR2_LIVENESS_ALLOWLIST = {
-    "penpal/cli.py",  # PID-based start/stop and HUD control move to penpal.runtime.control.
+    "penpal/cli/install.py",  # PID-based start/stop and HUD control move to penpal.runtime.control.
+    "penpal/cli/daemon.py",
+    "penpal/cli/app.py",
     "penpal/capture/base.py",  # watcher PID lock reconciliation moves to flock.
     "penpal/health/self_heal.py",  # self-heal's launchd/PID scanner is removed in PR 2.
     "penpal/utils/lock.py",  # daemon single-instance PID probing is replaced by flock in PR 2.

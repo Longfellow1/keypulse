@@ -327,6 +327,10 @@ def test_launchd_probe_parses_output_with_injected_runner(monkeypatch):
 
 def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     from penpal import cli
+    from penpal.cli import _shared as cli_shared
+    from penpal.cli import daemon as daemon_cli
+    from penpal.cli import doctor as doctor_cli
+    from penpal.cli import install as install_cli
     from penpal.health import capture_health
     from penpal.health import check as healthcheck
     from penpal.health.product_delivery import DeliveryHealth
@@ -336,7 +340,9 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     from penpal.store.db import close, init_db
     from click.testing import CliRunner
 
-    monkeypatch.setattr(cli, "evaluate", lambda: runtime)
+    monkeypatch.setattr(daemon_cli, "evaluate", lambda: runtime)
+    monkeypatch.setattr(doctor_cli, "evaluate", lambda: runtime)
+    monkeypatch.setattr(install_cli, "evaluate", lambda: runtime)
     monkeypatch.setattr(capture_health, "evaluate", lambda **_kwargs: runtime)
     monkeypatch.setattr("penpal.hud.snapshot.evaluate", lambda **_kwargs: runtime)
     monkeypatch.setattr(healthcheck, "evaluate", lambda **_kwargs: runtime)
@@ -345,13 +351,16 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     monkeypatch.setattr(healthcheck, "_capabilities_snapshot", lambda: ({}, ""))
     monkeypatch.setattr(healthcheck, "write_health_report", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(healthcheck, "HEALTH_JSON_PATH", tmp_path / "health.json")
-    monkeypatch.setattr(cli, "require_db", lambda _cfg: None)
-    monkeypatch.setattr(cli, "get_config", Config)
-    monkeypatch.setattr(cli, "get_state", lambda key: {"status": "running", "started_at": "—", "last_flush": "—"}.get(key))
-    monkeypatch.setattr(cli, "disabled_sources", lambda: frozenset())
+    monkeypatch.setattr(daemon_cli, "require_db", lambda _cfg: None)
+    monkeypatch.setattr(daemon_cli, "get_config", Config)
+    monkeypatch.setattr(daemon_cli, "get_state", lambda key: {"status": "running", "started_at": "—", "last_flush": "—"}.get(key))
+    monkeypatch.setattr(daemon_cli, "disabled_sources", lambda: frozenset())
     monkeypatch.setattr("penpal.sources.importer.progress_rows", lambda: [])
     monkeypatch.setattr("penpal.sources.history_gate.historical_imports_allowed", lambda: True)
-    monkeypatch.setattr(cli, "keyboard_capture_enabled", lambda _enabled: False)
+    monkeypatch.setattr(doctor_cli, "get_config", Config)
+    monkeypatch.setattr(doctor_cli, "require_db", lambda _cfg: None)
+    monkeypatch.setattr(doctor_cli, "disabled_sources", lambda: frozenset())
+    monkeypatch.setattr(doctor_cli, "keyboard_capture_enabled", lambda _enabled: False)
     init_db(Config().db_path_expanded)
 
     status_result = CliRunner().invoke(cli.main, ["status", "--plain"])
@@ -360,11 +369,11 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
 
     config_path = tmp_path / "config.toml"
     config_path.write_text("", encoding="utf-8")
-    monkeypatch.setattr(cli, "get_config_path", lambda: config_path)
-    monkeypatch.setattr(cli, "_stale_moved_dev_venv_script", lambda: None)
-    monkeypatch.setattr(cli, "_legacy_mcp_config_findings", lambda: [])
-    monkeypatch.setattr(cli, "_launchd_label_loaded", lambda _label: False)
-    monkeypatch.setattr(cli, "_launchd_plist_path", lambda label: tmp_path / f"{label}.plist")
+    monkeypatch.setattr(doctor_cli, "get_config_path", lambda: config_path)
+    monkeypatch.setattr(doctor_cli, "_stale_moved_dev_venv_script", lambda: None)
+    monkeypatch.setattr(doctor_cli, "_legacy_mcp_config_findings", lambda: [])
+    monkeypatch.setattr(doctor_cli, "_launchd_label_loaded", lambda _label: False)
+    monkeypatch.setattr(doctor_cli, "_launchd_plist_path", lambda label: tmp_path / f"{label}.plist")
     monkeypatch.setattr(capture_health, "permission_report", lambda *_args, **_kwargs: [])
     from penpal.sources import onboarding, registry
     monkeypatch.setattr(onboarding, "source_problems", lambda _names: [])
@@ -377,12 +386,16 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     executable = tmp_path / "bin" / "penpal"
     executable.parent.mkdir(exist_ok=True)
     executable.write_text("", encoding="utf-8")
-    monkeypatch.setattr(cli, "_keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr(install_cli, "get_config_path", lambda: config_path)
+    monkeypatch.setattr(install_cli, "_stale_moved_dev_venv_script", lambda: None)
+    monkeypatch.setattr(install_cli, "_launchd_label_loaded", lambda _label: False)
+    monkeypatch.setattr(install_cli, "_launchd_plist_path", lambda label: tmp_path / f"{label}.plist")
+    monkeypatch.setattr(install_cli, "_keypulse_executable_path", lambda: executable)
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: Config()))
     install_result = CliRunner().invoke(cli.main, ["install", "doctor", "--plain"])
     assert f"runtime={'OK' if not runtime.failed else 'FAIL'} state={runtime.code}" in install_result.output
 
-    line = cli._runtime_status_line(cli.evaluate())
+    line = cli_shared._runtime_status_line(daemon_cli.evaluate())
     assert runtime.code in line
     bar = status_bar(Snapshot(now=NOW, runtime_status=runtime))
     assert bar["code"] == runtime.code

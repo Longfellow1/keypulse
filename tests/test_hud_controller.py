@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from click.testing import CliRunner
 
-from penpal import cli as cli_module
+from penpal.cli import daemon as cli_module
 from penpal import config as config_module
 from penpal import permissions
 from penpal.capture import capture_control

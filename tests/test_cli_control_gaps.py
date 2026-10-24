@@ -6,7 +6,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from penpal.cli import _launchd_jobs, main
+from penpal.cli import main
+from penpal.cli.install import _launchd_jobs
 from penpal.config import Config, write_chat_apps_opt_in
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -24,6 +24,8 @@ import pytest
 from click.testing import CliRunner
 
 from penpal import cli
+from penpal.cli import doctor as doctor_cli
+from penpal.cli import install as install_cli
 from penpal.capture.capture_control import disabled_sources
 from penpal.mcp import auth, tools
 from penpal.sources import importer, registry
@@ -56,10 +58,10 @@ def home(tmp_path, monkeypatch):
     # Install-time side effects: no launchctl, no real plists, no real MCP host configs.
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr("penpal.permissions.PERMISSION_SPECS", ())
-    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: None)
-    monkeypatch.setattr(cli, "_launchd_label_loaded", lambda label: False)
-    monkeypatch.setattr(cli, "_launchd_plist_path", lambda label: fake_home / "Library" / f"{label}.plist")
-    monkeypatch.setattr(cli, "_legacy_mcp_config_findings", lambda home=None: [])
+    monkeypatch.setattr(install_cli.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(install_cli, "_launchd_label_loaded", lambda label: False)
+    monkeypatch.setattr(install_cli, "_launchd_plist_path", lambda label: fake_home / "Library" / f"{label}.plist")
+    monkeypatch.setattr(doctor_cli, "_legacy_mcp_config_findings", lambda home=None: [])
     yield fake_home
     close()
 
