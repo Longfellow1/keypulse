@@ -163,7 +163,7 @@ def collect_snapshot(cfg, *, now: Optional[datetime] = None) -> Snapshot:
     paused = runtime_status is not None and runtime_status.state == RuntimeState.PAUSED
     health = None
     if runtime_status is not None and (runtime_status.state != RuntimeState.RUNNING or runtime_status.issues):
-        health = {"code": runtime_status.code, "message": state_message(runtime_status)}
+        health = {"code": runtime_status.code, "message": state_message(runtime_status, language="zh")}
 
     db_path = cfg.db_path_expanded
 

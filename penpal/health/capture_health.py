@@ -265,7 +265,7 @@ def compute_capture_health(cfg: Any = None, *, now: Optional[datetime] = None) -
     status = evaluate(now=now)
     if status.state == RuntimeState.RUNNING and not status.issues:
         return None
-    return {"code": status.code, "message": state_message(status)}
+    return {"code": status.code, "message": state_message(status, language="en")}
 
 
 def current_capture_health() -> Optional[dict[str, str]]:

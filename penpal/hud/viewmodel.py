@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from penpal.i18n import T
 from penpal.runtime import RuntimeState, state_message, state_text
 from penpal.hud.snapshot import (
     BUCKET_LABELS,
@@ -204,19 +203,19 @@ def alerts(snap: Snapshot) -> list[tuple[str, dict]]:
         RuntimeState.NOT_INSTALLED, RuntimeState.NOT_RUNNING, RuntimeState.HUNG, RuntimeState.OUTDATED,
     }:
         out.append(("red", row(
-            state_text(status.state), dot="red", sub=state_message(status), sub_tone="red",
+            state_text(status.state, language="zh"), dot="red", sub=state_message(status, language="zh"), sub_tone="red",
             value="修复" if status.fix_command else "", value_tone="blue",
             action="daemon.restart" if status.fix_command else None,
         )))
     elif status is not None and status.state == RuntimeState.STARTING:
-        out.append(("amber", row(state_text(status.state), dot="amber", sub=state_message(status), sub_tone="amber")))
+        out.append(("amber", row(state_text(status.state, language="zh"), dot="amber", sub=state_message(status, language="zh"), sub_tone="amber")))
     if status is not None:
         for issue in status.issues:
             if issue.component == "daemon":
                 continue
             tone = "red" if issue.severity == "error" else "amber"
-            message = T(issue.message_zh, issue.message_en)
-            label = T(issue.label_zh or issue.component, issue.label_en or issue.component)
+            message = issue.message_zh
+            label = issue.label_zh or issue.component
             out.append((tone, row(label, dot=tone, sub=message, sub_tone=tone)))
     for issue in snap.perm_issues:
         names = "、".join(source_label(s) for s in issue.sources)
@@ -233,11 +232,11 @@ def alerts(snap: Snapshot) -> list[tuple[str, dict]]:
 def status_bar(snap: Snapshot) -> dict:
     status = snap.runtime_status
     if status is not None and status.state == RuntimeState.PAUSED:
-        return {"code": status.code, "tone": "grey", "text": state_text(status.state), "sub": "重启后仍保持暂停 · 不会补记"}
+        return {"code": status.code, "tone": "grey", "text": state_text(status.state, language="zh"), "sub": "重启后仍保持暂停 · 不会补记"}
     found = alerts(snap)
     reds = [t for t in found if t[0] == "red"]
     last = rel_time(snap.now, snap.last_write_ts)
-    label = state_text(status.state) if status is not None else "未知"
+    label = state_text(status.state, language="zh") if status is not None else "未知"
     if reds:
         sub = f"{len(found)} 个问题" + (f" · {last}最后写入" if last else "")
         return {"code": status.code if status else "unknown", "tone": "red", "text": label, "sub": sub}

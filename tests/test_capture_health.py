@@ -91,14 +91,14 @@ def test_disk_full_gives_component_issue(monkeypatch):
     from penpal.runtime.evaluate import Issue
     _runtime(monkeypatch, issues=(Issue("storage", "error", "磁盘已满", "disk is full", "penpal doctor"),))
     health = ch.compute_capture_health(_cfg())
-    assert health["code"] == "running" and "磁盘已满" in health["message"]
+    assert health["code"] == "running" and "disk is full" in health["message"]
 
 
 def test_missing_permission_for_enabled_source_gives_field(monkeypatch):
     from penpal.runtime.evaluate import Issue
     _runtime(monkeypatch, issues=(Issue("permission.accessibility", "warning", "ax_text 缺少系统权限。", "permission missing", "penpal doctor"),))
     health = ch.compute_capture_health(_cfg(ax_text=True))
-    assert health["code"] == "running" and "缺少系统权限" in health["message"]
+    assert health["code"] == "running" and "permission missing" in health["message"]
 
 
 def test_component_permission_issue_surfaces_through_shared_evaluator(monkeypatch):
