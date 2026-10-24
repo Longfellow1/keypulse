@@ -83,9 +83,9 @@ def test_runtime_component_does_not_persist_watcher_exception_text(monkeypatch):
             "heartbeat_gave_up": False, "last_error": "RuntimeError: private window title",
         },
     })()
-    monkeypatch.setattr("penpal.capture.manager.disabled_sources", lambda: frozenset())
-    monkeypatch.setattr("penpal.capture.manager.is_capture_paused", lambda: False)
-    monkeypatch.setattr("penpal.capture.manager.get_state", lambda _key: "")
+    monkeypatch.setattr("penpal.capture.manager_runtime.disabled_sources", lambda: frozenset())
+    monkeypatch.setattr("penpal.capture.manager_runtime.is_capture_paused", lambda: False)
+    monkeypatch.setattr("penpal.capture.manager_runtime.get_state", lambda _key: "")
 
     component = manager._component_snapshot()["private_test"]
 
@@ -109,9 +109,9 @@ def test_manager_attaches_current_window_session_id_to_non_window_events(monkeyp
 
     monkeypatch.setattr(manager._policy, "apply", lambda event: event)
     monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
-    monkeypatch.setattr("penpal.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
-    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager_events.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         normalize_manual_event(
@@ -132,9 +132,9 @@ def test_manager_redacts_keyboard_chunk_content_before_persisting(monkeypatch):
 
     monkeypatch.setattr(manager._policy, "apply", lambda event: event)
     monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
-    monkeypatch.setattr("penpal.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
-    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager_events.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         normalize_manual_event(
@@ -155,9 +155,9 @@ def test_manager_keeps_keyboard_chunk_weight_high_for_chat_style_apps(monkeypatc
 
     monkeypatch.setattr(manager._policy, "apply", lambda event: event)
     monkeypatch.setattr(manager._aggregator, "process", lambda event: None)
-    monkeypatch.setattr("penpal.capture.manager.insert_raw_event", lambda event: captured.append(event) or 1)
-    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_raw_event", lambda event: captured.append(event) or 1)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager_events.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         normalize_keyboard_chunk_event(

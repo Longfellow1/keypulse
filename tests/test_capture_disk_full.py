@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-import penpal.capture.manager as manager_module
+import penpal.capture.manager_events as event_module
 from penpal.capabilities.builtin.capture_storage import DISK_FULL_CODE, CaptureStorageCapability
 from penpal.capture.manager import CaptureManager
 from penpal.capture.normalizer import normalize_clipboard_event
@@ -74,7 +74,7 @@ def _runtime_storage():
 
 
 def test_disk_full_stops_writes_and_reports_error(mgr, monkeypatch) -> None:
-    real_insert = manager_module.insert_raw_event
+    real_insert = event_module.insert_raw_event
     attempts: list[int] = []
     full = {"on": True}
 
@@ -84,7 +84,7 @@ def test_disk_full_stops_writes_and_reports_error(mgr, monkeypatch) -> None:
             raise FULL
         return real_insert(event)
 
-    monkeypatch.setattr(manager_module, "insert_raw_event", fake_insert)
+    monkeypatch.setattr(event_module, "insert_raw_event", fake_insert)
 
     for i in range(1, 6):
         mgr._process_event(_event(i))  # must not raise, must not loop
@@ -111,7 +111,7 @@ def test_disk_full_stops_writes_and_reports_error(mgr, monkeypatch) -> None:
 
 
 def test_capture_resumes_after_space_is_back(mgr, monkeypatch) -> None:
-    real_insert = manager_module.insert_raw_event
+    real_insert = event_module.insert_raw_event
     full = {"on": True}
 
     def fake_insert(event):
@@ -119,7 +119,7 @@ def test_capture_resumes_after_space_is_back(mgr, monkeypatch) -> None:
             raise FULL
         return real_insert(event)
 
-    monkeypatch.setattr(manager_module, "insert_raw_event", fake_insert)
+    monkeypatch.setattr(event_module, "insert_raw_event", fake_insert)
     mgr.DISK_FULL_PROBE_SEC = 0.0  # every event is a probe for this test
 
     mgr._process_event(_event(1))
@@ -144,7 +144,7 @@ def test_other_operational_errors_still_raise(mgr, monkeypatch) -> None:
     def locked(event):
         raise sqlite3.OperationalError("database is locked")
 
-    monkeypatch.setattr(manager_module, "insert_raw_event", locked)
+    monkeypatch.setattr(event_module, "insert_raw_event", locked)
     with pytest.raises(sqlite3.OperationalError, match="locked"):
         mgr._process_event(_event(1))
     assert mgr._storage_error is None
@@ -157,8 +157,8 @@ def test_state_write_failure_during_disk_full_does_not_raise(mgr, monkeypatch) -
     def full_insert(event):
         raise FULL
 
-    monkeypatch.setattr(manager_module, "set_state", full_write)
-    monkeypatch.setattr(manager_module, "insert_raw_event", full_insert)
+    monkeypatch.setattr(event_module, "set_state", full_write)
+    monkeypatch.setattr(event_module, "insert_raw_event", full_insert)
 
     mgr._process_event(_event(1))  # insert fails, state write fails too: still no exception
     assert mgr._storage_error == "disk_full"

@@ -40,7 +40,7 @@ def test_process_event_persists_derived_speaker(tmp_path, monkeypatch) -> None:
     manager = CaptureManager(config)
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager_events.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         RawEvent(
