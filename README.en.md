@@ -55,6 +55,14 @@ penpal mcp grant claude --buckets Work,Personal
 
 Then ask Claude Code as usual, for example "What was I researching yesterday afternoon?"
 
+### Verified hosts
+
+| Host | Version | Notes |
+|---|---|---|
+| Claude Code | 2.1.303 (`claude --version`) | Printed config checked by MCP protocol-level tests (simulated client) |
+| Codex CLI | codex-cli 0.162.1 (`codex --version`) | Same as above |
+| Cursor | no `cursor` command detected | Config format checked against official docs; not verified on a real machine |
+
 ## Tools the AI can use
 
 | Tool | What it does |

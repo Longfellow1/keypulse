@@ -57,7 +57,13 @@ def _host_config_lines(host: str, exe: str, token: str, client_id: str) -> list[
             f"  codex mcp add penpal --env {TOKEN_ENV}={token} --env {CLIENT_ENV}={client_id} -- {shlex.quote(exe)} mcp serve\n",
         ]
     if host == "cursor":
-        return ["Cursor: write this JSON to ~/.cursor/mcp.json:\n", json_block]
+        # Cursor's docs list "type": "stdio" for stdio servers (the example omits it); explicit is harmless.
+        cursor_server = {"type": "stdio", **server}
+        cursor_block = json.dumps({"mcpServers": {"penpal": cursor_server}}, indent=2)
+        return [
+            "Cursor: write this JSON to ~/.cursor/mcp.json (all projects) or .cursor/mcp.json (one project):\n",
+            cursor_block,
+        ]
     return ["Generic MCP client (JSON snippet):\n", json_block]
 
 
