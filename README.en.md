@@ -31,13 +31,14 @@ An AI can already read local files, so indexing files that already exist is not 
 
 ## Two install tiers
 
-| | CLI (required minimum) | Desktop app (optional, not yet released) |
+| | CLI (required minimum) | Desktop app (optional) |
 |---|---|---|
 | For | Developers who live in the terminal | People who want to see capture status and manage it visually |
-| Includes | Background capture + MCP server + all control commands | Menu-bar control center: status, source toggles, AI grants, deletion |
+| Includes | Background capture + MCP server + all control commands | Menu-bar HUD: status, source toggles, AI grants, privacy and deletion |
+| Install | See Quick start below | Install the CLI first, then `penpal app install` (add `--login` to start at login) |
 | Core capability | Everything works in your AI once installed | Same core, different interface |
 
-Anything the app can do, the CLI can do. A CLI-only install doesn't fail silently either: if capture stops, the disk fills up or a permission is lost, the AI receives a warning in its next query result and tells you.
+Anything the app can do, the CLI can do. The app needs no system permission of its own: it only launches `penpal hud`, and the permissions capture needs stay with the background service. A CLI-only install doesn't fail silently either: if capture stops, the disk fills up or a permission is lost, the AI receives a warning in its next query result and tells you.
 
 ## Quick start
 
@@ -54,6 +55,13 @@ penpal mcp grant claude --buckets Work,Personal
 ```
 
 Then ask Claude Code as usual, for example "What was I researching yesterday afternoon?"
+
+Want the menu-bar interface (optional)?
+
+```bash
+penpal app install          # builds Penpal.app in ~/Applications; add --login to start at login
+penpal app uninstall        # removes the app and its login item; the daemon and your data are untouched
+```
 
 ### Verified hosts
 
@@ -112,7 +120,7 @@ Full reference: `penpal --help`.
   - Keyboard snippets are reliable only for English; capturing committed text from Chinese input methods is still experimental.
   - macOS only.
   - AIs can read but cannot write back to long-term memory.
-  - The desktop app is not released.
+  - The desktop app is the HUD only for now; features that need a UI, such as daily and weekly reports, come later.
 
 ## License
 

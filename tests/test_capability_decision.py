@@ -7,7 +7,6 @@ from pathlib import Path
 
 from penpal.capabilities.base import CheckResult, HealthState, Signal
 from penpal.capabilities.registry import CapabilityRegistry
-from penpal.hud import summary
 from penpal.store.db import close, init_db
 from penpal.store.repository import get_state
 
@@ -101,37 +100,3 @@ def test_watcher_failure_reflects_in_capture_error_code(tmp_path) -> None:
         assert get_state("capture_error_code") == "ax_watcher_gave_up"
     finally:
         close()
-
-
-def test_hud_summary_probe_only_failure_renders_as_hint(monkeypatch) -> None:
-    monkeypatch.setattr(
-        summary,
-        "load_capability_states",
-        lambda: {
-            "accessibility_permission": HealthState(
-                ok=False,
-                code="ax_denied",
-                last_checked=10.0,
-                detail="denied",
-            ),
-            "ax_text_watcher": HealthState(ok=True, code="ok", last_checked=11.0),
-        },
-    )
-    monkeypatch.setattr(summary, "read_health", lambda: {})
-    monkeypatch.setattr(
-        summary,
-        "get_state",
-        lambda key: {
-            "capture_error_code": "",
-            "llm_error_code": "",
-        }.get(key, ""),
-    )
-
-    level, label, hint, action = summary.determine_service_status(
-        capture_status="running",
-    )
-
-    assert level == "warn"
-    assert label != "采集异常"
-    assert "辅助功能" in hint
-    assert action.startswith("open://")

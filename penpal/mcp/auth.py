@@ -179,6 +179,22 @@ def list_grants() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def active_grants() -> list[dict]:
+    """Grants that can still serve calls (not revoked, not expired), with the scope parsed into tuples.
+    A malformed scope column reads as an empty scope, like the serving path (fails closed)."""
+    out: list[dict] = []
+    for row in list_grants():
+        if row["revoked_at"] or _expired(row["expires_at"]):
+            continue
+        try:
+            buckets = tuple(normalize_bucket(b) for b in (_json_tuple(row["buckets"]) or ()))
+            sources, operations = _json_tuple(row["sources"]), tuple(_json_tuple(row["operations"]) or ())
+        except (ValueError, TypeError):
+            buckets, sources, operations = (), (), ()
+        out.append({**row, "buckets": buckets, "sources": sources, "operations": operations})
+    return out
+
+
 def _json_tuple(raw: Optional[str]) -> Optional[tuple[str, ...]]:
     """Parse a JSON string array; raises ValueError on anything else."""
     if raw is None:

@@ -40,6 +40,11 @@ def is_capture_paused() -> bool:
     return (get_state("status") or "").strip() == PAUSED_STATUS
 
 
+def set_capture_paused(paused: bool) -> None:
+    """Global pause / resume (``penpal pause`` / ``penpal resume``, and the HUD button). Persists across restarts."""
+    set_state("status", PAUSED_STATUS if paused else "running")
+
+
 def disabled_sources() -> frozenset[str]:
     """Return disabled source names. Malformed stored JSON reads as "nothing disabled"."""
     raw = (get_state(DISABLED_SOURCES_KEY) or "").strip()

@@ -25,7 +25,6 @@ from penpal.store.repository import (
     get_sessions,
     get_session_by_id,
     query_raw_events,
-    purge_raw_events,
     get_state,
     set_state,
     get_all_policies,
@@ -53,7 +52,7 @@ from penpal.services.export import export_json, export_csv, export_markdown
 from penpal.services.sessionizer import sessions_for_today, recent_sessions
 from penpal.search.engine import search, recent_clipboard, recent_manual, recent_sessions_docs
 from penpal.capture.normalizer import normalize_manual_event
-from penpal.capture.capture_control import disabled_sources, is_capture_paused
+from penpal.capture.capture_control import disabled_sources, is_capture_paused, set_capture_paused
 from penpal.capture.keyboard_notice import (
     DISABLE_COMMAND,
     ENABLE_COMMAND,
@@ -1001,7 +1000,7 @@ def pause():
     """Pause monitoring."""
     cfg = get_config()
     require_db(cfg)
-    set_state("status", "paused")
+    set_capture_paused(True)
     console.print("[yellow]Monitoring paused[/yellow]")
 
 
@@ -1014,7 +1013,7 @@ def resume():
     """Resume monitoring."""
     cfg = get_config()
     require_db(cfg)
-    set_state("status", "running")
+    set_capture_paused(False)
     console.print("[green]Monitoring resumed[/green]")
 
 
@@ -1519,6 +1518,52 @@ def hud_status(plain):
     _show_hud_status(plain=plain)
 
 
+@main.group("app", help=T("可选桌面 App（菜单栏 HUD）的安装与卸载。", "Install / remove the optional desktop App (menu bar HUD)."))
+def app_group():
+    """Optional desktop App."""
+
+
+def _app_dir_option(func):
+    func = click.option("--agents-dir", "agents_dir", type=click.Path(path_type=Path), default=None, hidden=True,
+                        help="Override the LaunchAgents directory (tests)")(func)
+    return click.option("--dir", "apps_dir", type=click.Path(path_type=Path), default=None,
+                        help=T("安装目录（默认 ~/Applications）", "Install directory (default ~/Applications)"))(func)
+
+
+@app_group.command("install", help=T("安装 Penpal.app（只启动已安装的 `penpal hud`，自身不需要系统权限）。",
+                                     "Install Penpal.app (only launches the installed `penpal hud`; needs no system permission itself)."))
+@click.option("--login", is_flag=True, default=False, help=T("登录时自动启动（注册 com.penpal.hud 启动项）", "Start at login (registers the com.penpal.hud launch agent)"))
+@_app_dir_option
+def app_install(login, apps_dir, agents_dir):
+    """Install Penpal.app."""
+    from penpal import __version__
+    from penpal.app_bundle import AppBundleError, install_app
+
+    try:
+        result = install_app(_keypulse_executable_path(), version=__version__, apps_dir=apps_dir,
+                             agents_dir=agents_dir, login=login)
+    except AppBundleError as exc:
+        raise click.ClickException(str(exc)) from exc
+    for line in result.actions:
+        console.print(f"[green]{line}[/green]")
+    console.print(T("提示：App 只是 HUD 的入口，不需要任何系统权限；采集权限仍由后台 daemon 持有。",
+                    "Note: the App is only a HUD launcher and needs no system permission; capture permissions stay with the daemon."))
+
+
+@app_group.command("uninstall", help=T("卸载 Penpal.app 和登录启动项（不影响 daemon 与数据）。", "Remove Penpal.app and its login agent (the daemon and your data are untouched)."))
+@_app_dir_option
+def app_uninstall(apps_dir, agents_dir):
+    """Uninstall Penpal.app."""
+    from penpal.app_bundle import AppBundleError, uninstall_app
+
+    try:
+        result = uninstall_app(apps_dir=apps_dir, agents_dir=agents_dir)
+    except AppBundleError as exc:
+        raise click.ClickException(str(exc)) from exc
+    for line in result.actions or ["nothing to remove"]:
+        console.print(f"[green]{line}[/green]")
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 7. SAVE
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1956,23 +2001,14 @@ def purge(today, last_hours, app, source, dry_run, confirm):
     cfg = get_config()
     require_db(cfg)
 
-    now = datetime.now(timezone.utc)
-    since = until = None
-    if today:
-        since = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        until = now.isoformat()
-    elif last_hours is not None:
-        since = (now - timedelta(hours=last_hours)).isoformat()
-        until = now.isoformat()
+    from penpal.services.purge import purge_selector, run_purge
 
-    if since is None and app is None and source is None:
+    selector = purge_selector(today=today, last_hours=last_hours, app=app, source=source)
+    if selector is None:
         err_console.print("[red]Specify --today, --last-hours, --app or --source[/red]")
         sys.exit(1)
 
-    # Fix the upper bound now, so events captured between the prompt and the delete are not included.
-    until = until or now.isoformat()
-    selector = dict(since=since, until=until, app_name=app, source=source)
-    counts = purge_raw_events(**selector, dry_run=True)
+    counts = run_purge(selector, dry_run=True)
     if counts["raw_events"] == 0:
         console.print("[yellow]No data found to delete.[/yellow]")
         return
@@ -1995,7 +2031,7 @@ def purge(today, last_hours, app, source, dry_run, confirm):
             console.print("[yellow]Cancelled.[/yellow]")
             return
 
-    counts = purge_raw_events(**selector)
+    counts = run_purge(selector)
     console.print("[green]Deleted:[/green]")
     for name, n in counts.items():
         console.print(f"  {name}: {n}")
@@ -2081,18 +2117,12 @@ def _chat_app_key_or_error(name: str) -> str:
 
 
 def _set_chat_app_opt_in(name: str, allowed: bool) -> list[str]:
-    from penpal.config import write_chat_apps_opt_in
+    from penpal.config import set_chat_app_opt_in
 
-    key = _chat_app_key_or_error(name)
-    current = list(get_config().privacy.chat_apps_opt_in)
-    if allowed and key not in current:
-        current.append(key)
-    elif not allowed:
-        current = [k for k in current if k != key]
-    path = get_config_path()
-    write_chat_apps_opt_in(path, current)
+    _chat_app_key_or_error(name)
+    key, current = set_chat_app_opt_in(name, allowed)
     verb = "allowed" if allowed else "denied"
-    console.print(f"[green]{key} {verb}.[/green] Config: {path}")
+    console.print(f"[green]{key} {verb}.[/green] Config: {get_config_path()}")
     if allowed:
         console.print("Note: an allowed chat app is captured into the Private bucket.")
     console.print("Restart the daemon (`penpal stop && penpal start`) for this to take effect.")

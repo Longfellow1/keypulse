@@ -20,6 +20,11 @@
 - launchd label 和 MCP server 配置名改为 `com.penpal.*` / `penpal`；安装流程先卸载旧服务，doctor 会报告旧服务残留。
 - 新 locator 和 self-echo metadata 使用 `penpal://event/` 与 `via_penpal`；读取端继续识别旧 locator、metadata 和 `keypulse_server_names` 配置，不回填数据库。
 
+### 桌面 App（可选，D33）
+
+- 菜单栏 HUD 按 v3 交互稿重做：固定状态栏与三个标签（概览 / AI 访问 / 隐私与删除），最多两层；旧日报类面板（今日重点、主题、周回声、成本等）已删除。
+- HUD 只调用与 CLI 相同的核心函数；新增 `penpal app install [--login]` / `penpal app uninstall`，生成 `~/Applications/Penpal.app`（仅启动 `penpal hud`，自身不需要系统权限）。
+
 ### macOS 权限
 
 - CLI daemon 实际由 Homebrew `Python.app` 解释器运行。只改 CLI、包名、数据目录和 launchd label 不要求重新授权；重建开发 venv 且解释器相同也不要求。若 Homebrew Python 升级并改变解释器身份，可能需要重新授予辅助功能和输入监控；启用 OCR 时还包括屏幕录制。

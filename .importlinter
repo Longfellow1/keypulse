@@ -48,3 +48,22 @@ source_modules =
     penpal.capture
 forbidden_modules =
     penpal.capabilities
+
+[importlinter:contract:hud-logic-without-appkit]
+name = HUD view-model / controller / renderer stay AppKit-free (only hud.app is the shell)
+type = forbidden
+source_modules =
+    penpal.hud.snapshot
+    penpal.hud.viewmodel
+    penpal.hud.controller
+    penpal.hud.render
+forbidden_modules =
+    AppKit
+    Foundation
+    Quartz
+    objc
+    ApplicationServices
+    CoreFoundation
+    Vision
+    WebKit
+allow_indirect_imports = True

@@ -35,11 +35,18 @@ class StepResult:
     suggested_action: str = ""
 
 
+def reset_transient_error_state() -> None:
+    """清掉重启前的临时错误状态，让 daemon 起来后 capability 从干净状态开始探测。"""
+    set_state("capture_error_code", "")
+
+
 def run_self_heal(*, dry_run: bool = False, source: str = "hud") -> dict[str, Any]:
     now = int(time.time())
     if str(get_state(_SELF_HEAL_RUNNING_KEY) or "").strip() == "1":
         return {"started": False, "status": "busy", "failed_step": ""}
     set_state(_SELF_HEAL_RUNNING_KEY, "1")
+    if not dry_run:
+        reset_transient_error_state()
     deadline = time.monotonic() + _TOTAL_TIMEOUT_SEC
     steps: list[StepResult] = []
     try:

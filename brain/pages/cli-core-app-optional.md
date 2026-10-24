@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [product, distribution, hud, app]
 created: "2026-10-14T13:52:22"
-updated: "2026-10-14T13:52:22"
+updated: "2026-10-24T12:25:19"
 ---
 
 <!-- compiled_truth -->
@@ -34,4 +34,10 @@ updated: "2026-10-14T13:52:22"
   kind: decision
   summary: "CLI minimal set, App optional superset"
   source: owner decision 2026-10-14
+  affects: [cli-core-app-optional]
+
+- time: 2026-10-24T12:25:19
+  kind: decision
+  summary: "HUD v3 built as view-model + controller + HTML renderer + thin AppKit shell; shell holds no logic and the controller calls the same core functions as the CLI. A grant's scope is read-only in the HUD (core has no edit; change = revoke + regrant). New token/config is shown once on a second-level page and never persisted. A never-seen source (file_missing, no rows) is not an alert. Optional install via penpal app install/uninstall (launcher bundle, no own TCC)."
+  source: PR feat/27-hud-v3
   affects: [cli-core-app-optional]

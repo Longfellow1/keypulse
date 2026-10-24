@@ -165,8 +165,15 @@ def trigger_required_prompts() -> dict[str, PermissionStatus]:
     return results
 
 
+FULL_DISK_ACCESS_PANE = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+
+
+def open_settings_url(url: str) -> None:
+    subprocess.run(["open", url], check=False)
+
+
 def open_settings_pane(spec: PermissionSpec) -> None:
-    subprocess.run(["open", spec.settings_pane], check=False)
+    open_settings_url(spec.settings_pane)
 
 
 def find_spec(key: str) -> PermissionSpec | None:
