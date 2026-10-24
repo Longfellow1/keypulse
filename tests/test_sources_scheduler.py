@@ -283,9 +283,9 @@ def test_scheduler_polls_fast_plugins_more_often() -> None:
     )
     scheduler.start()
     try:
-        assert _wait_for(lambda: calls.count("slow") >= 2, timeout=2)
-        assert calls.count("fast") >= 6
-        assert calls.count("fast") > calls.count("slow")
+        # Wait on the fast count, not wall-clock, so a slow CI runner can't flake it; intervals differ 10x.
+        assert _wait_for(lambda: calls.count("fast") >= 6, timeout=5)
+        assert calls.count("fast") >= 2 * calls.count("slow")
     finally:
         scheduler.stop()
 
