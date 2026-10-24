@@ -5,8 +5,14 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from penpal.foundation.runtime_logs import (
+    DAEMON_STDERR_NAME,
+    DAEMON_STDOUT_NAME,
+    HEALTHCHECK_STDERR_NAME,
+    HEALTHCHECK_STDOUT_NAME,
+)
 from penpal.utils.env import get_env_compat
-from penpal.utils.paths import get_data_dir
+from penpal.utils.paths import get_logs_dir
 
 
 def resolve_penpal_executable() -> Path:
@@ -30,7 +36,7 @@ def resolve_penpal_executable() -> Path:
 
 def launchd_jobs(executable: Path | None = None) -> dict[str, dict[str, Any]]:
     executable = executable or resolve_penpal_executable()
-    logs = get_data_dir() / "logs"
+    logs = get_logs_dir()
     env = {
         "PATH": ":".join(dict.fromkeys((
             str(executable.parent), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin",
@@ -44,8 +50,8 @@ def launchd_jobs(executable: Path | None = None) -> dict[str, dict[str, Any]]:
             "RunAtLoad": True,
             "KeepAlive": {"SuccessfulExit": False},
             "ThrottleInterval": 10,
-            "StandardOutPath": str(logs / "daemon.log"),
-            "StandardErrorPath": str(logs / "daemon.err"),
+            "StandardOutPath": str(logs / DAEMON_STDOUT_NAME),
+            "StandardErrorPath": str(logs / DAEMON_STDERR_NAME),
             "EnvironmentVariables": env,
         },
         "com.penpal.healthcheck": {
@@ -53,8 +59,8 @@ def launchd_jobs(executable: Path | None = None) -> dict[str, dict[str, Any]]:
             "ProgramArguments": [str(executable), "healthcheck"],
             "StartInterval": 600,
             "RunAtLoad": True,
-            "StandardOutPath": str(logs / "healthcheck.log"),
-            "StandardErrorPath": str(logs / "healthcheck.err"),
+            "StandardOutPath": str(logs / HEALTHCHECK_STDOUT_NAME),
+            "StandardErrorPath": str(logs / HEALTHCHECK_STDERR_NAME),
             "EnvironmentVariables": env,
         },
     }

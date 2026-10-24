@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [runtime, health, hud, doctor, launchd, mcp]
 created: "2026-10-24T23:46:07"
-updated: "2026-10-25T04:24:57"
+updated: "2026-10-25T05:00:26"
 ---
 
 <!-- compiled_truth -->
@@ -57,4 +57,10 @@ Decision (D36, 2026-10-24, owner accepted all recommendations after a deep-fix a
   kind: decision
   summary: "PR4 settled: HUD builds its model on one background worker, main thread only applies results; HUD writes run/hud.json and evaluate() owns HUD issues (doctor never judges on its own). Menu-bar visibility: report only a confirmed hidden item; unknown visibility is NOT an issue, because macOS 26 has no API for the System Settings → Menu Bar toggle (isVisible may stay true) — covered by manual check R7. HUD tick staleness is anchored at last wake like the daemon. Penpal.app's executable is a native stub embedding libpython (so the menu-bar entry is 'Penpal', not 'Python'); it bakes the Homebrew opt path (not the versioned Cellar path) and falls back to exec the penpal command when its Python is gone after an upgrade."
   source: D36 PR4 review 2026-10-25
+  affects: [runtime-contract]
+
+- time: 2026-10-25T05:00:26
+  kind: decision
+  summary: "PR5 settled (D36 epic complete): the app log is penpal.log (5 MiB x 3 rotating), written only by the daemon (CLI/HUD/MCP log to stderr) so rotation has a single writer; launchd stdout/stderr files are capped at 1 MiB by in-place truncation (launchd keeps them open). A configured keypulse.log in the data dir maps to penpal.log. Legacy artifacts are reported by doctor as WARN with fix commands; Penpal deletes only KeyPulse-named PID/log files in its own data dir (penpal maintenance clean-legacy) and never removes user apps or launchd jobs; the post-migration ~/.keypulse marker dir is not reported."
+  source: D36 PR5 review 2026-10-25
   affects: [runtime-contract]

@@ -283,9 +283,9 @@ class Config(BaseModel):
 
     @property
     def log_path_expanded(self) -> Path:
-        path = Path(self.app.log_path).expanduser()
-        legacy = path.with_name("keypulse.log") if path.name == "penpal.log" else None
-        return legacy if legacy is not None and not path.exists() and legacy.exists() else path
+        from penpal.utils.paths import get_log_path
+
+        return get_log_path(self.app.log_path)
 
 
 def config_fingerprint(path: Path | None = None) -> str:

@@ -82,7 +82,7 @@ def _running_legacy_processes(old: Path) -> list[str]:
     return _find_legacy_mcp_serve_processes()
 
 
-def _is_migration_marker_dir(old: Path, new: Path) -> bool:
+def is_migration_marker_dir(old: Path, new: Path) -> bool:
     if old.is_symlink():
         return False
     try:
@@ -115,7 +115,7 @@ def migrate_legacy_data_dir(home: Path | None = None) -> bool:
     if new.exists():
         if not old.exists() and not old.is_symlink():
             return False
-        if _is_migration_marker_dir(old, new):
+        if is_migration_marker_dir(old, new):
             return False
         raise DataDirMigrationError(
             f"Both {old} and {new} exist, and {old} is not Penpal's migration marker directory. "
@@ -126,7 +126,7 @@ def migrate_legacy_data_dir(home: Path | None = None) -> bool:
         raise DataDirMigrationError(f"Cannot migrate {old}: expected a real directory, not a symbolic link.")
     if not old.exists():
         return False
-    if _is_migration_marker_dir(old, new):
+    if is_migration_marker_dir(old, new):
         raise DataDirMigrationError(
             f"{old} contains a Penpal migration marker, but the destination {new} is missing. "
             "Restore the data directory or remove the marker only after confirming the data is safe."
@@ -281,10 +281,32 @@ def get_launchd_plist_path(label: str) -> Path:
     return _guard_penpal_path(get_launchd_agents_dir() / f"{label}.plist")
 
 
-def get_log_path() -> Path:
-    current = _guard_penpal_path(get_data_dir() / "penpal.log")
-    legacy = current.with_name("keypulse.log")
-    return _guard_penpal_path(legacy if not current.exists() and legacy.exists() else current)
+def get_logs_dir() -> Path:
+    return _guard_penpal_path(get_data_dir() / "logs")
+
+
+def get_log_path(configured_path: str | Path | None = None) -> Path:
+    """Resolve the app log path and perform the one-time KeyPulse log rename."""
+    data_dir = get_data_dir()
+    current = _guard_penpal_path(data_dir / "penpal.log")
+    if configured_path is not None:
+        configured = _guard_penpal_path(Path(configured_path).expanduser())
+        configured = Path(resolve_legacy_data_path(str(configured)))
+        # Old config files can still name ~/.penpal/keypulse.log after their
+        # directory path has been rewritten. Keep that migration here only.
+        if configured.parent != data_dir or configured.name not in {"penpal.log", "keypulse.log"}:
+            return configured
+
+    legacy = _guard_penpal_path(data_dir / "keypulse.log")
+    if not current.exists() and legacy.is_file() and not legacy.is_symlink():
+        try:
+            legacy.rename(current)
+        except OSError as exc:
+            # Logging can proceed at the canonical path; doctor will report the
+            # legacy file if the one-time rename could not be completed.
+            if not (current.exists() and not legacy.exists()):
+                print(f"Warning: could not rename legacy log {legacy} to {current} ({exc}).", file=sys.stderr)
+    return current
 
 
 def get_config_path() -> Path:

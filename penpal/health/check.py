@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -66,6 +67,13 @@ def _speaker_mislabel_ratio(checked_at: datetime) -> float:
 
 
 def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
+    from penpal.foundation.runtime_logs import cap_launchd_output_logs
+
+    for path, exc in cap_launchd_output_logs():
+        logging.getLogger("penpal.health").warning(
+            "could not cap launchd output log %s: %s", path.name, type(exc).__name__
+        )
+
     checked_at = _utc_now()
     cfg, config_loadable = _load_config(config_path)
     db_path = cfg.db_path_expanded if config_loadable else Path("/tmp/penpal-healthcheck.db")

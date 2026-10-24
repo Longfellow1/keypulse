@@ -92,6 +92,12 @@ To remove old entries, quit any old HUD with `penpal hud stop`, then move the ol
 
 Visibility is best-effort in `hud.json`: `NSStatusItem.isVisible()` plus the status button window’s `occlusionState` when available. macOS 26 does not expose the System Settings allow/deny switch through a public API, and `isVisible()` may remain true when that switch is off. The manual check is therefore the R7 authority.
 
+### PR 5: legacy files and log cleanup (owner manual check)
+
+1. Run `penpal doctor` and confirm its **遗留文件 / Legacy files** section lists the old KeyPulse.app if one is present.
+2. Run `penpal maintenance clean-legacy`; it should remove only old PID/log files inside `~/.penpal`.
+3. Run `penpal doctor` again. Confirm data-dir files are gone, while an old app remains listed until you move it to Trash yourself.
+
 ### R4: in-place upgrade with three MCP hosts
 
 Run this checklist once each in Claude Code, Codex, and Cursor on the owner’s Mac. Keep the same host session and conversation open during the upgrade. Use a distinctive keyword from an existing, authorized Penpal record so the query has a known result.

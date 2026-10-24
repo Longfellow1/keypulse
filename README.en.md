@@ -65,6 +65,14 @@ penpal app uninstall        # removes the app and its login item; the daemon and
 
 Open Penpal.app from Finder after installation. On macOS 26, enable Penpal under System Settings → Menu Bar → Allow in the Menu Bar. If the icon is missing, check `penpal doctor` and `penpal hud status`. Public macOS APIs cannot always detect when System Settings suppresses a status item, so confirm the icon in the menu bar itself.
 
+### Upgrading from KeyPulse
+
+After upgrading, run `penpal doctor`. Its **Legacy files** section reports old KeyPulse.app bundles, old PID/log files, old launchd plists, and a `~/.keypulse` directory left after migration. These are warnings with suggested commands. Doctor never moves or deletes an app; after confirming the old app, run the shown `mv … ~/.Trash/` command yourself or move it to Trash in Finder.
+
+Run `penpal maintenance clean-legacy` to remove only regular `keypulse*.pid` and `keypulse*.log` files inside `~/.penpal`. It does not touch apps, launchd plists, or `~/.keypulse`. Run `penpal doctor` again afterward; items that need manual review remain listed. An old `keypulse.log` is renamed once only when `penpal.log` does not exist. If both files exist, the old file is preserved and reported by doctor.
+
+The daemon alone writes the rotating `penpal.log` (5 MiB with up to 3 backups). Launchd daemon/healthcheck stdout and stderr files are capped at 1 MiB and truncated in place when they exceed the cap.
+
 ### Verified hosts
 
 | Host | Version | Notes |

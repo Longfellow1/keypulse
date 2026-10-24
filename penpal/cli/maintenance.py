@@ -3,14 +3,41 @@ import sys
 import click
 from penpal.store.db import get_conn
 from penpal.i18n import T
+from penpal.utils.paths import get_data_dir
 from . import main
 from ._shared import console, err_console, get_config, require_db
+from .legacy import clean_legacy_data_files
 
 
 @main.group(help=T("维护与清理命令。", "Maintenance and cleanup commands."))
 def maintenance():
     """Maintenance group."""
     pass
+
+
+@maintenance.command(
+    name="clean-legacy",
+    help=T("仅清理 Penpal 数据目录内的旧版 PID 与日志文件。", "Remove old PID and log files from the Penpal data directory only."),
+)
+def maintenance_clean_legacy():
+    """Remove only Penpal-owned KeyPulse-named runtime files from ~/.penpal."""
+    try:
+        removed = clean_legacy_data_files(get_data_dir())
+    except OSError as exc:
+        raise click.ClickException(T(
+            f"无法清理遗留文件：{exc}",
+            f"Could not clean legacy files: {exc}",
+        )) from exc
+    if removed:
+        console.print(T(f"已清理 {len(removed)} 个遗留文件：", f"Removed {len(removed)} legacy files:"))
+        for path in removed:
+            console.print(f"  {path}")
+    else:
+        console.print(T("数据目录中没有可清理的遗留 PID 或日志文件。", "No legacy PID or log files found in the data directory."))
+    console.print(T(
+        "旧版 App、launchd plist 和 ~/.keypulse 目录不会由此命令移除。",
+        "This command does not remove old apps, launchd plists, or the ~/.keypulse directory.",
+    ))
 
 @maintenance.command(name="scrub-secrets", help=T("扫描并脱敏数据库内的敏感信息。", "Scan and redact secrets from the database."))
 @click.option("--dry-run", is_flag=True, default=True, help=T("预览变更但不应用（默认 true）", "Preview changes without applying (default: true)"))

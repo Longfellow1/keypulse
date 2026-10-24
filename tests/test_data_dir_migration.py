@@ -72,7 +72,7 @@ def test_stale_legacy_pid_allows_migration(tmp_path, monkeypatch):
     data_dir = paths.get_data_dir()
 
     assert data_dir == tmp_path / ".penpal"
-    assert paths._is_migration_marker_dir(tmp_path / ".keypulse", data_dir)
+    assert paths.is_migration_marker_dir(tmp_path / ".keypulse", data_dir)
 
 
 def test_mocked_legacy_mcp_process_refuses_migration(tmp_path, monkeypatch):
@@ -166,7 +166,7 @@ def test_repeat_migration_is_idempotent(tmp_path):
     assert paths.migrate_legacy_data_dir(tmp_path) is True
     assert paths.migrate_legacy_data_dir(tmp_path) is False
     assert (tmp_path / ".penpal" / "data.txt").read_text(encoding="utf-8") == "keep"
-    assert paths._is_migration_marker_dir(tmp_path / ".keypulse", tmp_path / ".penpal")
+    assert paths.is_migration_marker_dir(tmp_path / ".keypulse", tmp_path / ".penpal")
 
 
 def test_marker_write_interruption_rolls_directory_back(tmp_path, monkeypatch):
@@ -219,4 +219,4 @@ def test_config_reads_migrated_database_at_old_filename(tmp_path, monkeypatch):
 
     assert config.db_path_expanded == tmp_path / ".penpal" / "keypulse.db"
     assert config.db_path_expanded.read_bytes() == b"database"
-    assert config.log_path_expanded == tmp_path / ".penpal" / "keypulse.log"
+    assert config.log_path_expanded == tmp_path / ".penpal" / "penpal.log"
