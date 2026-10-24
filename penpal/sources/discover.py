@@ -20,6 +20,7 @@ from penpal.sources.discoverers import CandidateSource, discover_all_candidates
 from penpal.sources.importer import DEFAULT_BATCH_SIZE
 from penpal.sources.registry import discover_all, get_source, list_sources, read_all, source_availability
 from penpal.sources.types import DataSourceInstance, SemanticEvent
+from penpal.utils.paths import get_wechat_authorization_path
 from penpal.sources.wechat_probe import (
     is_authorized,
     mark_authorized,
@@ -180,7 +181,6 @@ def list_rejected_command() -> None:
     _print_approval_records(records, status_symbol="❌", note_label="reason")
 
 
-_WECHAT_AUTH_RELATIVE_PATH = Path(".penpal") / "wechat-authorized"
 _WECHAT_AUTHORIZE_WARNING = """
 ⚠️  你即将写入本机的微信来源授权标记。
 
@@ -493,7 +493,7 @@ def _display_path(path: str) -> str:
 
 
 def _wechat_authorization_path() -> Path:
-    return Path.home() / _WECHAT_AUTH_RELATIVE_PATH
+    return get_wechat_authorization_path()
 
 
 def _read_wechat_authorized_at() -> str | None:

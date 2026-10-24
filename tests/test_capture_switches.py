@@ -309,6 +309,8 @@ def test_status_plain_exposes_pause_and_disabled_sources(cfg, monkeypatch):
     monkeypatch.setattr(cli, "get_config", lambda: cfg)
     monkeypatch.setattr(cli, "SingleInstanceLock", _NoDaemonLock)
     monkeypatch.setattr(cli, "_launchd_label_loaded", lambda label: False)
+    from penpal.runtime import RuntimeState, RuntimeStatus
+    monkeypatch.setattr(cli, "evaluate", lambda: RuntimeStatus(RuntimeState.PAUSED))
     set_source_enabled("keyboard_chunk", False)
     set_state("status", "paused")
 

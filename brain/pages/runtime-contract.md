@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [runtime, health, hud, doctor, launchd, mcp]
 created: "2026-10-24T23:46:07"
-updated: "2026-10-24T23:46:07"
+updated: "2026-10-25T01:17:24"
 ---
 
 <!-- compiled_truth -->
@@ -33,4 +33,10 @@ Decision (D36, 2026-10-24, owner accepted all recommendations after a deep-fix a
   kind: decision
   summary: Rewrote compiled_truth to the new best understanding
   source: brain update-truth
+  affects: [runtime-contract]
+
+- time: 2026-10-25T01:17:24
+  kind: decision
+  summary: "PR1 evaluator rules settled: core-loop staleness is measured from max(last progress, last system wake via kern.waketime) so sleep/wake never reads as hung; a live launchd pid without a matching record is starting within the grace window, then hung (alive but not progressing) — not_running only when no live daemon process exists; PENPAL_ISOLATED=1 makes utils.paths refuse real-home Penpal paths and conftest sets it session-wide."
+  source: D36 PR1 review 2026-10-25
   affects: [runtime-contract]

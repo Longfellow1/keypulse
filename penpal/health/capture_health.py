@@ -1,13 +1,13 @@
 """Headless failure visibility (D33: the CLI is the minimal install, there is no UI to notice a stall).
 
-Two consumers share this module and read only existing state (``app_state`` keys written by the
-daemon: ``capture_runtime`` heartbeat snapshot, ``status``, and the supervisor's ``capabilities``):
+Two consumers share this module: ``permission_report`` reads the daemon's permission self-report, while
+MCP health adapts the shared runtime evaluator:
 
 - ``penpal doctor``: ``permission_report`` lists, per enabled source, which macOS permission it needs
   and whether it is granted, plus the binaries the permission must be granted to. Read-only: it uses
   the ``check`` side of ``PermissionSpec`` and never the ``request`` side, so no prompt can appear.
 - the MCP server: ``current_capture_health`` returns ``{"code", "message"}`` when capture is broken,
-  else ``None``, cached per process for ``CACHE_TTL_SEC``.
+  else ``None``.
 """
 
 from __future__ import annotations
@@ -16,23 +16,14 @@ import json
 import os
 import re
 import sys
-import threading
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from penpal import permissions
-from penpal.capture.wake import LAST_WAKE_STATE_KEY
 from penpal.permissions import PermissionStatus
-
-# The daemon persists capture_runtime every >= 2 s while its flush loop is alive.
-# 5 min tolerates a few missed persists without hiding a real stall for long.
-HEARTBEAT_STALE_SEC = 300.0
-# After a detected Mac wake the heartbeat is stale only because the machine slept; do not alarm for this long.
-WAKE_GRACE_SEC = 120.0
-CACHE_TTL_SEC = 30.0
+from penpal.runtime import RuntimeState, evaluate, state_message
 
 # Watcher (= source) -> macOS permissions it needs. keyboard_chunk also depends on AX
 # (see app._AX_DEPENDENT_FACT_CAPS). OCR is off (watcher commented out in capture/manager.py), so it
@@ -47,29 +38,7 @@ SOURCE_PERMISSIONS: dict[str, tuple[str, ...]] = {
 DAEMON_PERMISSIONS_KEY = "daemon_permissions"
 DAEMON_PERMISSION_MAX_AGE_SEC = 150.0
 
-CODE_DAEMON_NOT_RUNNING = "daemon_not_running"
-CODE_HEARTBEAT_STALE = "heartbeat_stale"
-CODE_PAUSED = "capture_paused"
-CODE_DISK_FULL = "disk_full"
-CODE_STORAGE_ERROR = "storage_error"
-CODE_PERMISSION_MISSING = "permission_missing"
-
-
-# ── shared readers ──────────────────────────────────────────────────────────────
-
-def _runtime_state() -> dict[str, Any]:
-    from penpal.store.repository import get_state
-
-    raw = get_state("capture_runtime")
-    if not raw:
-        return {}
-    try:
-        value = json.loads(raw)
-    except ValueError:
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
+# ── shared permission readers ───────────────────────────────────────────────────
 def _daemon_denied_permissions() -> set[str]:
     """Permissions the daemon itself reported denied (it runs under launchd, a different TCC identity
     from the process running doctor or the MCP server). Covers the capability probe for accessibility and
@@ -190,13 +159,6 @@ def daemon_permission_snapshot(now: Optional[datetime] = None) -> Optional[dict[
     return value
 
 
-def _within_wake_grace(now: datetime) -> bool:
-    from penpal.store.repository import get_state
-
-    since_wake = _seconds_since(get_state(LAST_WAKE_STATE_KEY), now)
-    return since_wake is not None and since_wake < WAKE_GRACE_SEC
-
-
 def _seconds_since(iso: Any, now: datetime) -> Optional[float]:
     if not isinstance(iso, str) or not iso:
         return None
@@ -297,114 +259,18 @@ def _status_from_value(value: Any) -> PermissionStatus:
 
 # ── MCP capture_health ──────────────────────────────────────────────────────────
 
-def _minutes_since(iso: Any, now: datetime) -> Optional[int]:
-    if not isinstance(iso, str) or not iso:
-        return None
-    try:
-        then = datetime.fromisoformat(iso)
-    except ValueError:
-        return None
-    if then.tzinfo is None:
-        then = then.replace(tzinfo=timezone.utc)
-    return max(0, int((now - then).total_seconds() // 60))
-
 
 def compute_capture_health(cfg: Any = None, *, now: Optional[datetime] = None) -> Optional[dict[str, str]]:
-    """Uncached. ``None`` when healthy or when state cannot be read (unknown is not an alarm)."""
-    from penpal.store.repository import get_state
-
-    now = now or datetime.now(timezone.utc)
-    runtime = _runtime_state()
-    status = (get_state("status") or "").strip()
-    minutes = _minutes_since(runtime.get("captured_at"), now)
-    quiet = f"for {minutes} min" if minutes is not None else "yet"
-
-    # 1. Daemon down / silent
-    if not runtime or status == "stopped" or runtime.get("running") is False:
-        return {
-            "code": CODE_DAEMON_NOT_RUNNING,
-            "message": f"Penpal has not recorded anything {quiet}: the daemon is stopped. Run `penpal start`.",
-        }
-    if minutes is not None and minutes * 60 >= HEARTBEAT_STALE_SEC and not _within_wake_grace(now):
-        return {
-            "code": CODE_HEARTBEAT_STALE,
-            "message": (
-                f"Penpal has not recorded anything for {minutes} min: the daemon has stopped responding "
-                "(no heartbeat). Run `penpal doctor`, then `penpal start`."
-            ),
-        }
-    # 2. Paused on purpose, but the user may have forgotten
-    if status == "paused":
-        return {
-            "code": CODE_PAUSED,
-            "message": "Penpal capture is paused, so new activity is not being recorded. Run `penpal resume` to continue.",
-        }
-    # 3. Writes failing
-    storage = runtime.get("storage")
-    if isinstance(storage, dict) and storage.get("status") == "error":
-        if storage.get("reason") == "disk_full":
-            return {
-                "code": CODE_DISK_FULL,
-                "message": "Penpal cannot save new records because the disk is full. Free up disk space; capture resumes by itself.",
-            }
-        return {
-            "code": CODE_STORAGE_ERROR,
-            "message": "Penpal cannot save new records (storage error). Run `penpal doctor`.",
-        }
-    # 4. A permission the daemon needs was lost
-    try:
-        denied = _daemon_denied_permissions()
-    except Exception:
-        denied = set()
-    if denied:
-        if cfg is None:
-            from penpal.config import Config
-
-            try:
-                cfg = Config.load()
-            except Exception:
-                cfg = Config()
-        try:
-            from penpal.capture.capture_control import disabled_sources
-
-            off = disabled_sources()
-        except Exception:
-            off = frozenset()
-        affected = [(k, s) for k, s in required_permissions(cfg, off).items() if k in denied]
-        if affected:
-            names = ", ".join(sorted({src for _, srcs in affected for src in srcs}))
-            labels = ", ".join(permissions.spec_by_key(k).label.split("（")[0] if permissions.spec_by_key(k) else k for k, _ in affected)
-            return {
-                "code": CODE_PERMISSION_MISSING,
-                "message": (
-                    f"Penpal lost a macOS permission ({labels}), so {names} capture is not recording. "
-                    "Run `penpal doctor` to see which program to grant it to."
-                ),
-            }
-    return None
-
-
-_cache_lock = threading.Lock()
-_cache: tuple[float, Optional[dict[str, str]]] | None = None
+    """Adapt the shared state to MCP's existing ``{code, message}`` response shape."""
+    status = evaluate(now=now)
+    if status.state == RuntimeState.RUNNING and not status.issues:
+        return None
+    return {"code": status.code, "message": state_message(status, language="en")}
 
 
 def current_capture_health() -> Optional[dict[str, str]]:
-    """Cached (``CACHE_TTL_SEC``) per process; never raises."""
-    global _cache
-    now = time.monotonic()
-    with _cache_lock:
-        if _cache is not None and now < _cache[0]:
-            return dict(_cache[1]) if _cache[1] else None
+    """Read the same current runtime state as CLI, HUD and healthcheck; never raises."""
     try:
-        value = compute_capture_health()
+        return compute_capture_health()
     except Exception:
-        value = None
-    with _cache_lock:
-        _cache = (now + CACHE_TTL_SEC, value)
-    return dict(value) if value else None
-
-
-def reset_cache() -> None:
-    global _cache
-    with _cache_lock:
-        _cache = None
+        return None

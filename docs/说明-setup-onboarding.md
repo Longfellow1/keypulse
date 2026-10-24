@@ -22,7 +22,7 @@ penpal install onboard   # 引导授予 macOS 权限
 
 ```bash
 penpal status        # daemon 状态与采集运行信息
-penpal healthcheck   # daemon 进程 + 事件流活性
+penpal healthcheck   # daemon 核心循环进度与组件状态
 penpal doctor        # 诊断安装 / 配置 / 权限问题
 ```
 

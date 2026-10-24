@@ -93,15 +93,10 @@ def test_healthcheck_embeds_capabilities_from_state_repo(tmp_path, monkeypatch) 
             },
         )()
 
-        class FakeRun:
-            returncode = 0
-            stdout = "PID = 1\n"
-            stderr = ""
-
         monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
         monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-        monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *a, **kw: FakeRun())
-        monkeypatch.setattr("penpal.health.check.os.kill", lambda pid, sig: None)
+        from penpal.runtime import RuntimeState, RuntimeStatus
+        monkeypatch.setattr("penpal.health.check.evaluate", lambda **_kwargs: RuntimeStatus(RuntimeState.RUNNING, pid=1))
 
         from penpal.health.check import run_healthcheck
 

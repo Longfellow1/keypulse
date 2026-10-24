@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from penpal.capabilities.builtin._common import _watchers_payload
 from penpal.health.alerts import ProductAlert, render_alert
 from penpal.observability.watcher_tiers import WATCHER_TIERS
+from penpal.runtime import RuntimeStatus, evaluate
 from penpal.store.db import get_conn
 
 _CORE_LABELS = {
@@ -33,33 +33,16 @@ def _emit_count_since(*, source: str, cutoff_iso: str) -> int:
     return int(row["c"] or 0)
 
 
-def _watcher_failure_detail(entry: dict[str, Any] | None) -> str | None:
-    """Return failure detail string if watcher is genuinely failed, else None.
-
-    Heartbeat-based — does NOT use emit count. emit==0 is normal when the user
-    isn't producing events (idle never fires, browser not used, clipboard idle).
-    A None entry means the watcher isn't registered with the daemon (e.g.
-    ocr_text retired, camera/browser_history not enabled) — that is NOT a
-    failure, just absence.
-    """
+def _watcher_failure_detail(entry: Any | None) -> str | None:
+    """Return the daemon-record component failure, without treating silence as a fault."""
     if entry is None:
         return None
-    if entry.get("heartbeat_gave_up") or entry.get("gave_up"):
-        return "watcher 已放弃自愈"
-    last_error = entry.get("last_error")
-    if last_error:
-        return f"watcher 报错：{str(last_error)[:120]}"
-    if not entry.get("running"):
-        return "watcher 线程未运行"
-    beat_age = entry.get("last_beat_age_sec")
-    timeout = entry.get("heartbeat_timeout_sec")
-    if (
-        isinstance(beat_age, (int, float))
-        and isinstance(timeout, (int, float))
-        and timeout > 0
-        and beat_age > timeout * 2
-    ):
-        return f"心跳已 {int(beat_age)}s 未刷新（阈值 {int(timeout)}s）"
+    if entry.state == "gave_up":
+        return entry.detail or "watcher 已放弃重试"
+    if entry.state == "missing_permission":
+        return "缺少系统权限"
+    if entry.state == "storage_error":
+        return "采集存储错误"
     return None
 
 
@@ -67,9 +50,10 @@ def _watcher_alerts(
     *,
     now_utc: datetime,
     window_hours: int,
+    runtime_status: RuntimeStatus | None = None,
 ) -> tuple[list[ProductAlert], dict[str, int]]:
     cutoff = (now_utc - timedelta(hours=window_hours)).isoformat()
-    watchers = _watchers_payload()
+    watchers = (runtime_status or evaluate()).components
     alerts: list[ProductAlert] = []
     counts: dict[str, int] = {}
     for source, tier in WATCHER_TIERS.items():
@@ -113,11 +97,16 @@ def evaluate_delivery_health(
     *,
     now_utc: datetime | None = None,
     watcher_window_hours: int = 24,
+    runtime_status: RuntimeStatus | None = None,
 ) -> DeliveryHealth:
     utc_now = now_utc or datetime.now(timezone.utc)
 
     alerts: list[ProductAlert] = []
-    watcher_alerts, counts = _watcher_alerts(now_utc=utc_now, window_hours=watcher_window_hours)
+    watcher_alerts, counts = _watcher_alerts(
+        now_utc=utc_now,
+        window_hours=watcher_window_hours,
+        runtime_status=runtime_status,
+    )
     alerts.extend(watcher_alerts)
     degraded = any(item.level in {"warn", "critical"} for item in alerts)
     return DeliveryHealth(

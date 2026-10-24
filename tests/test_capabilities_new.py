@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -17,17 +16,21 @@ from penpal.capabilities.builtin._watcher_health import (
     WatcherHealthSpec,
 )
 from penpal.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
+from penpal.runtime import RuntimeState, RuntimeStatus
+from penpal.runtime.record import Component
+
+
+def _runtime(monkeypatch, components):
+    status = RuntimeStatus(RuntimeState.RUNNING, components=components)
+    monkeypatch.setattr("penpal.capabilities.builtin._watcher_health.evaluate", lambda: status)
 
 
 # ---- WatcherHealthCapability ---------------------------------------------------
 
 
-def test_watcher_health_capability_ok_when_no_runtime(monkeypatch):
-    """Without capture_runtime state set, capability is OK (not a failure)."""
-    monkeypatch.setattr(
-        "penpal.capabilities.builtin._watcher_health.get_state",
-        lambda _key: "",
-    )
+def test_watcher_health_capability_ok_when_component_is_missing(monkeypatch):
+    """A component that was not configured is not a failure."""
+    _runtime(monkeypatch, {})
     spec = WatcherHealthSpec(watcher_name="browser", capability_name="watcher_browser")
     cap = WatcherHealthCapability(spec)
     state = cap.monitor()
@@ -36,12 +39,8 @@ def test_watcher_health_capability_ok_when_no_runtime(monkeypatch):
 
 
 def test_watcher_health_capability_flags_gave_up(monkeypatch):
-    """When watcher.health.gave_up=True, capability is failing."""
-    runtime = {"watchers": {"browser": {"gave_up": True, "heartbeat_gave_up": False}}}
-    monkeypatch.setattr(
-        "penpal.capabilities.builtin._watcher_health.get_state",
-        lambda _key: json.dumps(runtime),
-    )
+    """The runtime record's gave_up component state is failing."""
+    _runtime(monkeypatch, {"browser": Component("gave_up")})
     spec = WatcherHealthSpec(watcher_name="browser", capability_name="watcher_browser")
     cap = WatcherHealthCapability(spec)
     state = cap.monitor()
@@ -50,47 +49,22 @@ def test_watcher_health_capability_flags_gave_up(monkeypatch):
 
 
 def test_watcher_health_capability_flags_heartbeat_dead(monkeypatch):
-    """heartbeat_gave_up triggers a separate error code."""
-    runtime = {"watchers": {"clipboard": {"gave_up": False, "heartbeat_gave_up": True}}}
-    monkeypatch.setattr(
-        "penpal.capabilities.builtin._watcher_health.get_state",
-        lambda _key: json.dumps(runtime),
-    )
+    """Heartbeat exhaustion uses the shared gave_up state."""
+    _runtime(monkeypatch, {"clipboard": Component("gave_up", "heartbeat timeout")})
     spec = WatcherHealthSpec(watcher_name="clipboard", capability_name="clipboard_watcher")
     cap = WatcherHealthCapability(spec)
     state = cap.monitor()
     assert not state.ok
-    assert state.code == "clipboard_heartbeat_gave_up"
+    assert state.code == "clipboard_watcher_gave_up"
 
 
-def test_watcher_health_capability_flags_silent_timeout(monkeypatch):
-    """A running watcher that has not emitted for too long is unhealthy."""
-    runtime = {
-        "watchers": {
-            "ax_text": {
-                "running": True,
-                "paused": False,
-                "crashes": 0,
-                "last_error": None,
-                "gave_up": False,
-                "heartbeat_gave_up": False,
-                "last_emit_age_sec": 1900.0,
-            }
-        }
-    }
-    monkeypatch.setattr(
-        "penpal.capabilities.builtin._watcher_health.get_state",
-        lambda _key: json.dumps(runtime),
-    )
-    spec = WatcherHealthSpec(
-        watcher_name="ax_text",
-        capability_name="ax_text_watcher",
-        silent_timeout_sec=1800.0,
-    )
+def test_watcher_event_silence_is_not_a_watcher_failure(monkeypatch):
+    """An idle source can be healthy when the core loop keeps progressing."""
+    _runtime(monkeypatch, {"ax_text": Component("idle")})
+    spec = WatcherHealthSpec(watcher_name="ax_text", capability_name="ax_text_watcher")
     cap = WatcherHealthCapability(spec)
     state = cap.monitor()
-    assert not state.ok
-    assert state.code == "ax_text_silent_timeout"
+    assert state.ok and state.code == "ok"
 
 
 def test_watcher_health_specs_include_browser_url() -> None:

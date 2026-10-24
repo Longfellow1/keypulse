@@ -165,7 +165,12 @@ def run(config: Optional[Config] = None):
 
     try:
         from penpal.permissions import trigger_required_prompts
-        prompt_results = trigger_required_prompts()
+        required_permission_keys = set()
+        if config.watchers.keyboard_chunk:
+            required_permission_keys.update({"input_monitoring", "accessibility"})
+        if config.watchers.ax_text:
+            required_permission_keys.add("accessibility")
+        prompt_results = trigger_required_prompts(required_permission_keys)
         logger.info("permission prompt results: %s", prompt_results)
     except Exception as exc:
         logger.warning("permission prompt trigger failed: %s", exc)
@@ -191,6 +196,8 @@ def run(config: Optional[Config] = None):
     from penpal.capture.manager import CaptureManager
 
     manager = CaptureManager(config)
+    manager.set_runtime_component("sources_scheduler", "running" if scheduler.enabled else "disabled")
+    scheduler.set_progress_callback(lambda: manager.report_progress("sources_scheduler"))
     manager.set_wake_handler(lambda: _on_mac_wake(registry, scheduler))
 
     def _shutdown(signum, frame):

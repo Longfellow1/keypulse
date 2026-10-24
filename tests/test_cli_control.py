@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -56,14 +54,9 @@ def test_start_uses_launchd_bootstrap_when_plist_exists(monkeypatch, tmp_path):
     assert "started via launchd" in result.output
 
 
-@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
-def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
+def test_status_plain_includes_runtime_state_and_watcher_component(monkeypatch, tmp_path):
     db_path = tmp_path / "penpal.db"
     db_path.write_text("db")
-
-    class FakeLock:
-        def get_pid(self):
-            return 4242
 
     cfg = type("Cfg", (), {"db_path_expanded": db_path, "watchers": type("Watchers", (), {
         "window": True,
@@ -77,32 +70,23 @@ def test_status_plain_includes_runtime_capture_metrics(monkeypatch, tmp_path):
 
     monkeypatch.setattr("penpal.cli.get_config", lambda: cfg)
     monkeypatch.setattr("penpal.cli.require_db", lambda cfg: None)
-    monkeypatch.setattr("penpal.cli.SingleInstanceLock", lambda: FakeLock())
-    monkeypatch.setattr("penpal.cli._launchd_label_loaded", lambda label: True)
+    from penpal.runtime import RuntimeState, RuntimeStatus
+    from penpal.runtime.record import Component
+    monkeypatch.setattr("penpal.cli.evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING, pid=4242, components={"ax_text": Component("running")}))
     monkeypatch.setattr("penpal.cli.get_state", lambda key: {
         "status": "running",
         "started_at": "2026-04-19T10:00:00+00:00",
         "last_flush": "2026-04-19T10:00:05+00:00",
     }.get(key))
-    monkeypatch.setattr("penpal.cli._load_capture_runtime_state", lambda: {
-        "pid": 4242,
-        "host_executable": "/usr/local/bin/python3",
-        "watchers": {
-            "ax_text": {"running": True},
-            "ocr": {"running": True},
-        },
-        "multi_source_counts": {
-            "ax_text": 3,
-            "ocr_text": 1,
-        },
-    })
+    monkeypatch.setattr("penpal.cli.disabled_sources", lambda: frozenset())
+    monkeypatch.setattr("penpal.sources.importer.progress_rows", lambda: [])
+    monkeypatch.setattr("penpal.sources.history_gate.historical_imports_allowed", lambda: True)
 
     result = CliRunner().invoke(main, ["status", "--plain"])
 
     assert result.exit_code == 0
+    assert "runtime_state=running" in result.output
     assert "runtime_ax_running=True" in result.output
-    assert "runtime_host=/usr/local/bin/python3" in result.output
-    assert "runtime_ocr_count=1" in result.output
 
 
 def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
@@ -111,12 +95,15 @@ def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
     monkeypatch.setattr("penpal.cli.get_config", lambda: cfg)
     monkeypatch.setattr("penpal.cli.get_config_path", lambda: tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text("x=1")
-    monkeypatch.setattr("penpal.cli._load_capture_runtime_state", lambda: {
-        "watchers": {
-            "ax_text": {"running": True},
-            "ocr": {"running": True},
-        }
-    })
+    from penpal.runtime import RuntimeState, RuntimeStatus
+    from penpal.runtime.record import Component
+    monkeypatch.setattr("penpal.cli.evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING, components={"ax_text": Component("running")}))
+    monkeypatch.setattr("penpal.cli._stale_moved_dev_venv_script", lambda: None)
+    monkeypatch.setattr("penpal.cli._legacy_mcp_config_findings", lambda: [])
+    monkeypatch.setattr("penpal.cli._launchd_label_loaded", lambda _label: False)
+    monkeypatch.setattr("penpal.health.capture_health.permission_report", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("penpal.sources.onboarding.source_problems", lambda _names: [])
+    monkeypatch.setattr("penpal.sources.registry.list_sources", lambda: [])
 
     result = CliRunner().invoke(main, ["doctor", "--plain"])
 

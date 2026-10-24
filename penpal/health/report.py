@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-HEALTH_JSON_PATH = Path("~/.penpal/health.json").expanduser()
+from penpal.utils.paths import get_health_report_path
+
+HEALTH_JSON_PATH = get_health_report_path()
 
 
 def write_health_report(path: Path, payload: dict[str, Any]) -> None:

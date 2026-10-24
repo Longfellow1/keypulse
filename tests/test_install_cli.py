@@ -166,7 +166,6 @@ def _prepare_main_doctor(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.Config, "load", lambda: SimpleNamespace(db_path_expanded=database, watchers=SimpleNamespace(keyboard_chunk=True)))
     monkeypatch.setattr(cli, "get_config_path", lambda: config)
     monkeypatch.setattr(cli, "_launchd_label_loaded", lambda _label: False)
-    monkeypatch.setattr(cli, "_load_capture_runtime_state", lambda: {})
     monkeypatch.setattr(capture_health, "permission_report", lambda *_args, **_kwargs: [])
     return home
 

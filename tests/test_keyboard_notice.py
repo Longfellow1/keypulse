@@ -87,7 +87,6 @@ def test_doctor_plain_shows_keyboard_on_and_off_with_command(install_env, monkey
     monkeypatch.setattr(capture_health, "permission_report", lambda *a, **k: [])
     monkeypatch.setattr(cli, "get_config", lambda: install_env)
     monkeypatch.setattr(cli, "get_config_path", lambda: tmp_path / "config.toml")
-    monkeypatch.setattr(cli, "_load_capture_runtime_state", lambda: None)
     (tmp_path / "config.toml").write_text("x=1")
     runner = CliRunner()
 

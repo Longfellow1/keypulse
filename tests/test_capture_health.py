@@ -4,22 +4,18 @@ Fakes only: temp DB and HOME, permission checks replaced by stubs (nothing here 
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from penpal import permissions
-from penpal.capabilities.base import HealthState
-from penpal.capabilities.store import save_states
 from penpal.config import Config
 from penpal.health import capture_health as ch
+from penpal.runtime import RuntimeState, RuntimeStatus
 from penpal.mcp import server
 from penpal.permissions import PermissionSpec, PermissionStatus
 from penpal.store.db import init_db
-from penpal.store.repository import set_state
 
 
 @pytest.fixture(autouse=True)
@@ -29,22 +25,13 @@ def _env(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
     init_db(tmp_path / "kp.db")
-    ch.reset_cache()
     yield
-    ch.reset_cache()
 
 
-def _heartbeat(age_sec=1, *, running=True, storage=None):
-    captured = datetime.now(timezone.utc) - timedelta(seconds=age_sec)
-    payload = {"captured_at": captured.isoformat(), "running": running, "watchers": {}}
-    if storage:
-        payload["storage"] = storage
-    set_state("capture_runtime", json.dumps(payload))
-    set_state("status", "running" if running else "stopped")
-
-
-def _ax_denied():
-    save_states({"accessibility_permission": HealthState(ok=False, code="ax_denied", last_checked=0.0)})
+def _runtime(monkeypatch, state=RuntimeState.RUNNING, *, issues=()):
+    status = RuntimeStatus(state, tuple(issues))
+    monkeypatch.setattr(ch, "evaluate", lambda **_kwargs: status)
+    return status
 
 
 def _cfg(**watchers):
@@ -58,14 +45,14 @@ def _cfg(**watchers):
 
 # ── MCP capture_health ──────────────────────────────────────────────────────────
 
-def test_healthy_has_no_field():
-    _heartbeat()
+def test_healthy_has_no_field(monkeypatch):
+    _runtime(monkeypatch)
     assert ch.compute_capture_health(_cfg()) is None
 
 
 def test_result_unchanged_when_healthy(monkeypatch):
     monkeypatch.setattr(server, "current_capture_health", ch.current_capture_health)
-    _heartbeat()
+    _runtime(monkeypatch)
     result = server._result({"status": "ok", "results": []})
     assert "capture_health" not in result.structuredContent
     assert result.structuredContent == {"status": "ok", "results": []}
@@ -73,56 +60,55 @@ def test_result_unchanged_when_healthy(monkeypatch):
 
 def test_daemon_stopped_gives_code_and_sentence(monkeypatch):
     monkeypatch.setattr(server, "current_capture_health", ch.current_capture_health)
-    _heartbeat(35 * 60, running=False)
+    _runtime(monkeypatch, RuntimeState.NOT_RUNNING)
     health = server._result({"status": "ok"}).structuredContent["capture_health"]
-    assert health["code"] == "daemon_not_running"
-    assert "35 min" in health["message"] and "penpal start" in health["message"]
+    assert health["code"] == "not_running"
+    assert "penpal start" in health["message"]
 
 
-def test_no_heartbeat_ever_means_daemon_not_running():
-    assert ch.compute_capture_health(_cfg())["code"] == "daemon_not_running"
+def test_no_runtime_record_means_daemon_not_running(monkeypatch):
+    _runtime(monkeypatch, RuntimeState.NOT_RUNNING)
+    assert ch.compute_capture_health(_cfg())["code"] == "not_running"
 
 
-def test_stale_heartbeat_while_marked_running():
-    _heartbeat(ch.HEARTBEAT_STALE_SEC + 60)
-    assert ch.compute_capture_health(_cfg())["code"] == "heartbeat_stale"
+def test_stale_core_loop_maps_to_hung(monkeypatch):
+    _runtime(monkeypatch, RuntimeState.HUNG)
+    assert ch.compute_capture_health(_cfg())["code"] == "hung"
 
 
-def test_fresh_heartbeat_below_threshold_is_healthy():
-    _heartbeat(ch.HEARTBEAT_STALE_SEC - 120)
+def test_fresh_core_loop_is_healthy(monkeypatch):
+    _runtime(monkeypatch)
     assert ch.compute_capture_health(_cfg()) is None
 
 
-def test_paused_gives_field():
-    _heartbeat()
-    set_state("status", "paused")
+def test_paused_gives_field(monkeypatch):
+    _runtime(monkeypatch, RuntimeState.PAUSED)
     health = ch.compute_capture_health(_cfg())
-    assert health["code"] == "capture_paused" and "penpal resume" in health["message"]
+    assert health["code"] == "paused" and "penpal resume" in health["message"]
 
 
-def test_disk_full_gives_field():
-    _heartbeat(storage={"status": "error", "reason": "disk_full", "dropped_events": 3})
+def test_disk_full_gives_component_issue(monkeypatch):
+    from penpal.runtime.evaluate import Issue
+    _runtime(monkeypatch, issues=(Issue("storage", "error", "磁盘已满", "disk is full", "penpal doctor"),))
     health = ch.compute_capture_health(_cfg())
-    assert health["code"] == "disk_full" and "disk is full" in health["message"]
+    assert health["code"] == "running" and "disk is full" in health["message"]
 
 
-def test_missing_permission_for_enabled_source_gives_field():
-    _heartbeat()
-    _ax_denied()
+def test_missing_permission_for_enabled_source_gives_field(monkeypatch):
+    from penpal.runtime.evaluate import Issue
+    _runtime(monkeypatch, issues=(Issue("permission.accessibility", "warning", "ax_text 缺少系统权限。", "permission missing", "penpal doctor"),))
     health = ch.compute_capture_health(_cfg(ax_text=True))
-    assert health["code"] == "permission_missing" and "ax_text" in health["message"]
+    assert health["code"] == "running" and "permission missing" in health["message"]
 
 
-def test_missing_permission_ignored_when_source_not_enabled():
-    _heartbeat()
-    _ax_denied()
-    assert ch.compute_capture_health(_cfg()) is None
+def test_component_permission_issue_surfaces_through_shared_evaluator(monkeypatch):
+    from penpal.runtime.evaluate import Issue
+    _runtime(monkeypatch, issues=(Issue("permission.accessibility", "warning", "缺少权限", "permission missing", "penpal doctor"),))
+    assert ch.compute_capture_health(_cfg()) is not None
 
 
-def test_missing_permission_ignored_when_source_switched_off():
-    _heartbeat()
-    _ax_denied()
-    set_state("disabled_sources", json.dumps(["ax_text"]))
+def test_running_without_component_issue_is_healthy(monkeypatch):
+    _runtime(monkeypatch)
     assert ch.compute_capture_health(_cfg(ax_text=True)) is None
 
 
@@ -131,13 +117,10 @@ def test_permission_denied_response_never_carries_field(monkeypatch):
     assert "capture_health" not in server._result({"status": "permission_denied"}).structuredContent
 
 
-def test_cached_for_30_seconds(monkeypatch):
+def test_mcp_adapter_evaluates_current_runtime_each_call(monkeypatch):
     calls = []
     monkeypatch.setattr(ch, "compute_capture_health", lambda: calls.append(1) or None)
     ch.current_capture_health()
-    ch.current_capture_health()
-    assert len(calls) == 1
-    ch.reset_cache()
     ch.current_capture_health()
     assert len(calls) == 2
 
@@ -196,11 +179,13 @@ def test_report_daemon_denial_overrides_local_grant(monkeypatch):
 
 def _run_doctor(monkeypatch, tmp_path):
     from penpal import cli
+    from penpal.runtime import RuntimeState, RuntimeStatus
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     cfg = _cfg(keyboard_chunk=True)
     monkeypatch.setattr(cli, "get_config", lambda: cfg)
+    monkeypatch.setattr(cli, "evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING))
     monkeypatch.setattr(cli, "get_config_path", lambda: tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text("x=1")
     return CliRunner().invoke(cli.main, ["doctor", "--plain"])

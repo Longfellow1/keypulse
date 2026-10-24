@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from penpal.utils.paths import get_apps_dir, get_launchd_agents_dir
+
 APP_NAME = "Penpal.app"
 BUNDLE_ID = "com.penpal.app"
 EXECUTABLE_NAME = "Penpal"
@@ -36,11 +38,11 @@ class AppResult:
 
 
 def default_apps_dir() -> Path:
-    return Path.home() / "Applications"
+    return get_apps_dir()
 
 
 def default_agents_dir() -> Path:
-    return Path.home() / "Library" / "LaunchAgents"
+    return get_launchd_agents_dir()
 
 
 def _run(cmd: list[str], **kwargs) -> "subprocess.CompletedProcess[str]":

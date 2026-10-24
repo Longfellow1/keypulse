@@ -43,7 +43,7 @@ class AccessibilityPermissionCapability(Capability):
             trusted = False
 
         if not trusted:
-            if capture_pipeline_healthy(["window", "ax_text"]) and watcher_has_recent_emit("ax_text", 1800.0):
+            if capture_pipeline_healthy(["window", "ax_text"]) and watcher_has_recent_emit("ax_text"):
                 return CheckResult(
                     ok=True,
                     code="ok",

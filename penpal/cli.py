@@ -40,12 +40,16 @@ from penpal.utils.paths import (
     get_pid_path,
     get_log_path,
     get_config_path,
+    get_launchd_agents_dir,
+    get_launchd_daemon_plist_path,
+    get_legacy_venv_dir,
 )
 from penpal.utils.env import get_env_compat
 from penpal.utils.paths import get_hud_pid_path
 from penpal.utils.atomic_io import atomic_write_text
 from penpal.utils.lock import SingleInstanceLock
 from penpal.utils.logging import setup_logging
+from penpal.runtime import RuntimeState, evaluate, launchd_label_loaded, state_message, state_text
 from penpal.app import start_daemon, daemonize, run
 from penpal.services.timeline import get_timeline_rows
 from penpal.services.stats import get_stats
@@ -127,11 +131,11 @@ def require_db(cfg: Config):
 
 
 def _launchd_daemon_plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / "com.penpal.daemon.plist"
+    return get_launchd_daemon_plist_path()
 
 
 def _launch_agents_dir() -> Path:
-    return Path.home() / "Library" / "LaunchAgents"
+    return get_launchd_agents_dir()
 
 
 def _install_logs_dir() -> Path:
@@ -159,11 +163,17 @@ def _keypulse_executable_path() -> Path:
 
 
 def _launchd_label_loaded(label: str) -> bool:
-    try:
-        result = subprocess.run(["launchctl", "list"], check=False, capture_output=True, text=True)
-    except Exception:
-        return False
-    return label in (result.stdout or "")
+    return launchd_label_loaded(label)
+
+
+def _runtime_status_line(runtime_status) -> str:
+    return f"{runtime_status.code} ({state_text(runtime_status.state)})"
+
+
+def _runtime_fix_command(runtime_status) -> str:
+    return runtime_status.fix_command or next(
+        (issue.fix_command for issue in runtime_status.issues if issue.fix_command), ""
+    )
 
 
 def _launchd_bootout(plist_path: Path) -> bool:
@@ -391,19 +401,6 @@ def _write_default_user_config(*, force: bool = False) -> str:
     return "updated" if existed else "created"
 
 
-def _load_capture_runtime_state() -> dict | None:
-    raw = get_state("capture_runtime")
-    if not raw:
-        return None
-    try:
-        value = json.loads(raw)
-    except Exception:
-        return None
-    return value if isinstance(value, dict) else None
-
-
-
-
 @click.group(
     help=T(
         "Penpal — 本地优先的个人活动记忆基础设施（采集 / 数据源同步 / 搜索 / HUD / 健康）。\n\n"
@@ -488,7 +485,7 @@ def _show_keyboard_notice_once() -> None:
 
 def _stale_moved_dev_venv_script() -> tuple[Path, str] | None:
     bin_dir = get_data_dir() / "venv" / "bin"
-    old_venv = Path.home() / ".keypulse" / "venv"
+    old_venv = get_legacy_venv_dir()
     for name in ("penpal", "keypulse"):
         script = bin_dir / name
         try:
@@ -569,6 +566,12 @@ def install_init(no_launchd, no_load, force_config, force_launchd, plain):
 def install_doctor(plain):
     """Install diagnostics."""
     checks: dict[str, tuple[bool, str]] = {}
+    runtime_status = evaluate()
+    runtime_fix = _runtime_fix_command(runtime_status)
+    runtime_detail = f"state={_runtime_status_line(runtime_status)}"
+    if runtime_fix:
+        runtime_detail += f"; fix=`{runtime_fix}`"
+    checks["runtime"] = (not runtime_status.failed, runtime_detail)
     try:
         executable = _keypulse_executable_path()
         checks["executable"] = (executable.exists(), str(executable))
@@ -582,7 +585,7 @@ def install_doctor(plain):
 
     for label in _LAUNCHD_LABELS:
         path = _launchd_plist_path(label)
-        loaded = _launchd_label_loaded(label)
+        loaded = runtime_status.managed if label == "com.penpal.daemon" else _launchd_label_loaded(label)
         checks[f"launchd.{label}"] = (path.exists() and loaded, f"path={path},loaded={loaded}")
     for label in _LEGACY_LAUNCHD_LABELS:
         path = _launchd_plist_path(label)
@@ -1041,22 +1044,19 @@ def status(plain):
     cfg = get_config()
     require_db(cfg)
 
-    lock = SingleInstanceLock()
-    pid = lock.get_pid()
-    is_running = pid is not None
-    supervised = _launchd_label_loaded("com.penpal.daemon")
-    status_val = get_state("status") or "unknown"
+    runtime_status = evaluate()
+    pid = runtime_status.pid
+    is_running = runtime_status.state.value not in {"not_installed", "not_running"}
+    supervised = runtime_status.managed
+    status_val = (
+        "paused" if runtime_status.state == RuntimeState.PAUSED
+        else "stopped" if runtime_status.state in {RuntimeState.NOT_INSTALLED, RuntimeState.NOT_RUNNING}
+        else "running"
+    )
     started_at = get_state("started_at") or "—"
     last_flush = get_state("last_flush") or "—"
-    runtime = _load_capture_runtime_state() or {}
-    runtime_counts = runtime.get("multi_source_counts") or {}
-    runtime_watchers = runtime.get("watchers") or {}
-    runtime_pid = runtime.get("pid") or "unknown"
-    runtime_host = runtime.get("host_executable") or "unknown"
-    ax_running = bool((runtime_watchers.get("ax_text") or {}).get("running"))
-    ocr_running = bool((runtime_watchers.get("ocr") or {}).get("running"))
-    ax_count = int(runtime_counts.get("ax_text") or 0)
-    ocr_count = int(runtime_counts.get("ocr_text") or 0)
+    components = runtime_status.components
+    ax_running = components.get("ax_text") is not None and components["ax_text"].state == "running"
 
     # DB size
     db_path = cfg.db_path_expanded
@@ -1081,7 +1081,7 @@ def status(plain):
         enabled.append("当前看到的正文")
     # OCR ("屏幕识别补充") is switched off in capture/manager.py, so it is never listed as enabled.
 
-    paused_now = is_capture_paused()
+    paused_now = runtime_status.state.value == "paused"
     disabled_now = sorted(disabled_sources())
     from penpal.sources import importer
 
@@ -1091,6 +1091,9 @@ def status(plain):
     history_open = historical_imports_allowed()
 
     if plain:
+        print(f"runtime_state={runtime_status.code}")
+        if runtime_status.issues:
+            print(f"runtime_message={state_message(runtime_status)}")
         print(f"running={is_running}")
         print(f"pid={pid or 'none'}")
         print(f"supervised_by_launchd={supervised}")
@@ -1110,11 +1113,9 @@ def status(plain):
         print(f"last_flush={last_flush}")
         print(f"enabled_watchers={','.join(enabled)}")
         print(f"runtime_ax_running={ax_running}")
-        print(f"runtime_ocr_running={ocr_running}")
-        print(f"runtime_pid={runtime_pid}")
-        print(f"runtime_host={runtime_host}")
-        print(f"runtime_ax_count={ax_count}")
-        print(f"runtime_ocr_count={ocr_count}")
+        runtime_fix = _runtime_fix_command(runtime_status)
+        if runtime_fix:
+            print(f"runtime_fix={runtime_fix}")
     else:
         status_label = {
             "running": "运行中",
@@ -1123,8 +1124,10 @@ def status(plain):
             "unknown": "未知",
         }.get(status_val, status_val)
         table = Table(title="采集状态", show_header=False, box=None)
-        table.add_row("服务状态", "[green]运行中[/green]" if is_running else "[red]未运行[/red]")
-        if is_running:
+        table.add_row("服务状态", _runtime_status_line(runtime_status))
+        if runtime_status.issues:
+            table.add_row("运行详情", state_message(runtime_status))
+        if pid is not None:
             table.add_row("进程 PID", str(pid))
         table.add_row("运行方式", "launchd 托管" if supervised else "手动启动")
         table.add_row("采集阶段", status_label)
@@ -1142,10 +1145,9 @@ def status(plain):
         table.add_row("键盘分块状态", "已启用" if getattr(cfg.watchers, "keyboard_chunk", False) else "未启用")
         table.add_row("正文采集状态", "已运行" if ax_running else "未见运行")
         table.add_row("屏幕识别状态", "已停用（OCR 已关闭）")
-        table.add_row("后台宿主 PID", str(runtime_pid))
-        table.add_row("后台宿主路径", str(runtime_host))
-        table.add_row("正文采集条数", str(ax_count))
-        table.add_row("屏幕识别条数", str(ocr_count))
+        runtime_fix = _runtime_fix_command(runtime_status)
+        if runtime_fix:
+            table.add_row("修复命令", runtime_fix)
         console.print(table)
 
 
@@ -1207,7 +1209,13 @@ def _legacy_mcp_config_findings(home: Path | None = None) -> list[str]:
 @click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def doctor(plain):
     """Run diagnostics."""
-    checks = {}
+    runtime_status = evaluate()
+    runtime_fix = _runtime_fix_command(runtime_status)
+    runtime_detail = f"state={_runtime_status_line(runtime_status)}"
+    if runtime_fix:
+        runtime_detail += f"; fix=`{runtime_fix}`"
+    checks = {"后台服务": not runtime_status.failed}
+    check_details = {"后台服务": runtime_detail}
     cfg = get_config()
     require_db(cfg)
 
@@ -1270,11 +1278,11 @@ def doctor(plain):
     # Config path exists
     config_path = get_config_path()
     checks["配置文件存在"] = config_path.exists()
-    runtime = _load_capture_runtime_state() or {}
-    runtime_watchers = runtime.get("watchers") or {}
-    if runtime_watchers:
-        checks["后台正文采集线程"] = bool((runtime_watchers.get("ax_text") or {}).get("running"))
-        checks["后台键盘分块线程"] = bool((runtime_watchers.get("keyboard_chunk") or {}).get("running"))
+    components = runtime_status.components
+    if "ax_text" in components:
+        checks["后台正文采集线程"] = components["ax_text"].state in {"running", "idle"}
+    if "keyboard_chunk" in components:
+        checks["后台键盘分块线程"] = components["keyboard_chunk"].state in {"running", "idle"}
     # OCR is switched off (watcher commented out in capture/manager.py). Shown for information only, never a failure.
     # Information only, never a failure: (table note, plain-output text). Keyboard capture is a user choice.
     keyboard_on = keyboard_capture_enabled(cfg.watchers.keyboard_chunk)
@@ -1301,7 +1309,8 @@ def doctor(plain):
     if plain:
         for check_name, passed in checks.items():
             status = "OK" if passed else "FAIL"
-            print(f"{check_name}: {status}")
+            detail = f" {check_details[check_name]}" if check_name in check_details else ""
+            print(f"{check_name}: {status}{detail}")
         for check_name, (_note, plain_text) in info_rows.items():
             print(f"{check_name}: {plain_text}")
         for row in unavailable_rows:
@@ -1321,9 +1330,10 @@ def doctor(plain):
         table = Table(title="系统健康检查", show_header=True, header_style="bold cyan")
         table.add_column("检查项")
         table.add_column("结果")
+        table.add_column("详情")
         for check_name, passed in checks.items():
             status = "[green]正常[/green]" if passed else "[red]未通过[/red]"
-            table.add_row(check_name, status)
+            table.add_row(check_name, status, check_details.get(check_name, ""))
         for check_name, (note, _plain_text) in info_rows.items():
             table.add_row(check_name, note)
         for row in unavailable_rows:

@@ -31,6 +31,7 @@
 - `penpal.runtime.evaluate(now) -> RuntimeStatus`，在调用方进程里运行，读取运行记录 + launchd 状态 + 已安装代码指纹。
 - 结论为封闭集合：`not_installed / not_running / starting / running / hung / outdated / paused`，外加组件问题列表（带严重度与修复命令）。
 - 所有阈值只在这里定义；doctor、status、install doctor、HUD、MCP、健康检查全部调用它。import-linter 合约禁止其他模块读取 PID 文件、launchctl 或运行记录。
+- macOS 睡眠恢复后，以 `max(core_loop.last_done_at, kern.waketime)` 计算进度停滞；唤醒后的 `STARTING_GRACE_SEC` 内允许核心循环恢复，仍无进度则从唤醒时间继续累计，超过 `HUNG_AFTER_SEC` 后才判为 `hung`。
 
 ### 2.3 一个控制入口
 - `penpal.runtime.control`：`restart()` = `launchctl kickstart -k`（job 已加载、plist 未变）；plist 改变或 job 已卸载时走 `bootout` → 有界等待 teardown → `bootstrap`（带重试，规避外部报告过的"bootout 后立即 bootstrap 失败、服务从 launchd 消失"）。

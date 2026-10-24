@@ -7,9 +7,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from penpal.health import capture_health as ch
 from penpal.hud.snapshot import AuditRow, HostInfo, PermIssue, Snapshot, SourceInfo
 from penpal.hud.viewmodel import UiState, Reveal, build_model, delete_options
+from penpal.runtime import RuntimeState, RuntimeStatus
+from penpal.runtime.evaluate import Issue
+from penpal.runtime.record import Component
 
 NOW = datetime(2026, 10, 24, 6, 0, tzinfo=timezone.utc)
 
@@ -54,6 +56,23 @@ def snap(**over) -> Snapshot:
         total_records=382000, db_bytes=1_500_000_000, disk_free_bytes=86 << 30,
         delete_sources=(("safari_history", 128),), delete_apps=(("Notes", 40),),
     )
+    health = over.pop("health", None)
+    if "runtime_status" not in over:
+        code = (health or {}).get("code")
+        states = {
+            "daemon_not_installed": RuntimeState.NOT_INSTALLED,
+            "daemon_not_running": RuntimeState.NOT_RUNNING,
+            "hung": RuntimeState.HUNG,
+            "outdated": RuntimeState.OUTDATED,
+            "paused": RuntimeState.PAUSED,
+        }
+        state = states.get(code, RuntimeState.PAUSED if over.get("paused") else RuntimeState.RUNNING)
+        components = {}
+        issues = ()
+        if code in {"disk_full", "storage_error"}:
+            components["storage"] = Component("storage_error", "disk_full" if code == "disk_full" else "io_error")
+            issues = (Issue("storage", "error", "磁盘空间已满" if code == "disk_full" else "采集存储发生错误", "disk is full" if code == "disk_full" else "Capture storage has an error.", label_zh="采集存储", label_en="Capture storage"),)
+        over["runtime_status"] = RuntimeStatus(state, issues, components)
     base.update(over)
     return Snapshot(**base)
 
@@ -75,7 +94,7 @@ def row_by_title(model, title):
 def test_overview_normal():
     m = build_model(snap(), UiState())
     assert m["title"] == "概览" and m["back"] is None and not m["dim"]
-    assert m["status"] == {"tone": "ok", "text": "正在记录", "sub": "一切正常 · 2 分钟前写入"}
+    assert m["status"] == {"code": "running", "tone": "ok", "text": "正在记录", "sub": "一切正常 · 2 分钟前写入"}
     assert m["pause"] == {"label": "暂停", "action": "capture.pause"}
     assert [t["label"] for t in m["tabs"]] == ["概览", "AI 访问", "隐私与删除"]
     assert all(t["badge"] is None for t in m["tabs"])
@@ -92,7 +111,7 @@ def test_overview_normal():
 def test_overview_source_needs_attention():
     srcs = _sources(safari_history={"unavailable_reason": "permission_denied", "last_ts": _ago(days=2)})
     m = build_model(snap(sources=srcs), UiState())
-    assert m["status"] == {"tone": "amber", "text": "正在记录", "sub": "1 个来源需要处理"}
+    assert m["status"] == {"code": "running", "tone": "amber", "text": "正在记录", "sub": "1 个问题需要处理"}
     assert next(t for t in m["tabs"] if t["id"] == "overview")["badge"] == "amber"
     todo = next(s for s in m["sections"] if s.get("header") == "需要处理")
     r = todo["rows"][0]
@@ -103,16 +122,16 @@ def test_overview_source_needs_attention():
 
 
 def test_overview_stopped_recording_daemon_and_disk():
-    m = build_model(snap(health={"code": ch.CODE_DAEMON_NOT_RUNNING, "message": "x"}), UiState())
-    assert m["status"]["tone"] == "red" and m["status"]["text"] == "已停止记录"
+    m = build_model(snap(health={"code": "daemon_not_running", "message": "x"}), UiState())
+    assert m["status"]["tone"] == "red" and m["status"]["text"] == "未运行"
     assert next(t for t in m["tabs"] if t["id"] == "overview")["badge"] == "red"
     groups = next(s for s in m["sections"] if s.get("header") == "数据来源")
     assert all(r["value"]["text"] == "已停止" and r["dot"] == "red" for r in groups["rows"])
 
 
 def test_overview_paused_hides_alerts_and_dims():
-    m = build_model(snap(paused=True, health={"code": ch.CODE_DISK_FULL, "message": "x"}), UiState())
-    assert m["status"] == {"tone": "grey", "text": "已暂停", "sub": "重启后仍保持暂停 · 不会补记"}
+    m = build_model(snap(paused=True, health={"code": "disk_full", "message": "x"}), UiState())
+    assert m["status"] == {"code": "paused", "tone": "grey", "text": "已暂停", "sub": "重启后仍保持暂停 · 不会补记"}
     assert m["pause"] == {"label": "继续记录", "action": "capture.resume"} and m["dim"]
     assert not any(s.get("header") == "需要处理" for s in m["sections"])
     assert all(t["badge"] is None for t in m["tabs"])
@@ -125,18 +144,18 @@ def _alert_rows(model):
 
 
 def test_at09_daemon_dead_offers_restart():
-    for code in (ch.CODE_DAEMON_NOT_RUNNING, ch.CODE_HEARTBEAT_STALE):
+    for code in ("daemon_not_running", "hung"):
         m = build_model(snap(health={"code": code, "message": "x"}), UiState())
         r = _alert_rows(m)[0]
         assert r["dot"] == "red" and r["action"] == "daemon.restart"
-        assert r["value"]["text"] == "重启"
-    assert _alert_rows(build_model(snap(health={"code": ch.CODE_DAEMON_NOT_RUNNING, "message": "x"}), UiState()))[0]["title"] == "后台记录进程停止了"
-    assert _alert_rows(build_model(snap(health={"code": ch.CODE_HEARTBEAT_STALE, "message": "x"}), UiState()))[0]["title"] == "后台记录进程没有响应"
+        assert r["value"]["text"] == "修复"
+    assert _alert_rows(build_model(snap(health={"code": "daemon_not_running", "message": "x"}), UiState()))[0]["title"] == "未运行"
+    assert _alert_rows(build_model(snap(health={"code": "hung", "message": "x"}), UiState()))[0]["title"] == "后台无响应"
 
 
 def test_at09_permission_revoked_names_permission_and_pane():
     issue = PermIssue("accessibility", "辅助功能（Accessibility）", ("ax_text", "keyboard_chunk"), ("/opt/py/Python.app",))
-    s = snap(perm_issues=(issue,), health={"code": ch.CODE_PERMISSION_MISSING, "message": "x"},
+    s = snap(perm_issues=(issue,), health={"code": "permission_missing", "message": "x"},
              sources=_sources(ax_text={"enabled": True, "missing_permissions": ("accessibility",)},
                               keyboard_chunk={"missing_permissions": ("accessibility",)}))
     m = build_model(s, UiState())
@@ -157,14 +176,13 @@ def test_at09_permission_revoked_names_permission_and_pane():
 
 
 def test_at09_storage_errors_disk_full_and_read_only():
-    full = build_model(snap(health={"code": ch.CODE_DISK_FULL, "message": "x"}, disk_free_bytes=0), UiState())
-    assert _alert_rows(full)[0]["title"] == "磁盘空间已满" and full["status"]["tone"] == "red"
-    ro = build_model(snap(health={"code": ch.CODE_STORAGE_ERROR, "message": "x"}), UiState())
-    r = _alert_rows(ro)[0]
-    assert r["title"] == "数据库无法写入" and "只读" in r["sub"] and r["dot"] == "red"
+    full = build_model(snap(health={"code": "disk_full", "message": "x"}, disk_free_bytes=0), UiState())
+    assert full["status"]["tone"] == "red"
+    ro = build_model(snap(health={"code": "storage_error", "message": "x"}), UiState())
+    assert _alert_rows(ro)[0]["title"] == "采集存储" and _alert_rows(ro)[0]["dot"] == "red"
     unreadable = build_model(snap(read_error=True), UiState())
     assert _alert_rows(unreadable)[0]["title"] == "无法读取数据库"
-    privacy = build_model(snap(health={"code": ch.CODE_DISK_FULL, "message": "x"}, disk_free_bytes=0), UiState(tab="privacy"))
+    privacy = build_model(snap(health={"code": "disk_full", "message": "x"}, disk_free_bytes=0), UiState(tab="privacy"))
     disk = row_by_title(privacy, "磁盘剩余")
     assert disk["value"]["text"] == "0 MB" and disk["value"]["tone"] == "red"
 
@@ -368,7 +386,7 @@ def test_toast_carries_an_id():
 
 def _every_model():
     s = snap()
-    bad = snap(health={"code": ch.CODE_DAEMON_NOT_RUNNING, "message": "x"}, paused=False)
+    bad = snap(health={"code": "daemon_not_running", "message": "x"}, paused=False)
     pages = [("overview", ""), ("overview", "group:live"), ("overview", "group:browser"), ("access", ""), ("access", "host:claude"),
              ("access", "host:new"), ("privacy", ""), ("privacy", "chat"), ("privacy", "exclude"), ("privacy", "delete")]
     for tab, page in pages:

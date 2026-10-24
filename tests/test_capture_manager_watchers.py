@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
-
 from penpal.capture.manager import CaptureManager
-from penpal.capture.normalizer import normalize_ax_text_event
 from penpal.capture.normalizer import normalize_keyboard_chunk_event
 from penpal.capture.normalizer import normalize_manual_event
 from penpal.config import Config
@@ -53,42 +50,48 @@ def test_manager_wires_browser_watcher_when_enabled():
     assert set(manager._watchers) == {"browser"}
 
 
-def test_manager_runtime_snapshot_tracks_multi_source_counts():
+def test_manager_core_progress_is_written_to_atomic_runtime_record(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+
+    from penpal import __version__
+    from penpal.runtime.record import Progress, RuntimeRecord, read_record
+
+    monkeypatch.setenv("HOME", str(tmp_path))
     manager = CaptureManager(Config())
     manager._watchers = {}
-
-    manager._record_runtime_event(
-        normalize_ax_text_event(
-            text="hello",
-            app_name="Notes",
-            window_title="Draft",
-            process_name="com.apple.Notes",
-        )
+    started_at = datetime.now(timezone.utc).isoformat()
+    manager._runtime_record = RuntimeRecord(
+        generation="test-generation", pid=123, process_start_time="test-start",
+        version=__version__, code_fingerprint="test-fingerprint", started_at=started_at,
+        written_at=started_at, progress={"core_loop": Progress(0, started_at)},
     )
 
-    snapshot = manager._runtime_snapshot()
+    manager.report_progress("core_loop")
+    manager._write_runtime_record(force=True)
 
-    assert snapshot["multi_source_counts"]["ax_text"] == 1
-    assert snapshot["multi_source_counts"]["ocr_text"] == 0
-    assert snapshot["last_seen"]["ax_text"]
-    assert snapshot["pid"] > 0
-    assert snapshot["host_executable"]
+    record = read_record()
+    assert record is not None and record.generation == "test-generation"
+    assert record.progress["core_loop"].seq == 1
+    assert record.components["storage"].state == "running"
 
 
-def test_manager_persist_runtime_state_writes_json_snapshot(monkeypatch):
+def test_runtime_component_does_not_persist_watcher_exception_text(monkeypatch):
     manager = CaptureManager(Config())
-    manager._watchers = {}
-    writes: list[tuple[str, str]] = []
+    manager._watchers["private_test"] = type("Watcher", (), {
+        "health": lambda self: {
+            "running": False, "paused": False, "gave_up": True,
+            "heartbeat_gave_up": False, "last_error": "RuntimeError: private window title",
+        },
+    })()
+    monkeypatch.setattr("penpal.capture.manager.disabled_sources", lambda: frozenset())
+    monkeypatch.setattr("penpal.capture.manager.is_capture_paused", lambda: False)
+    monkeypatch.setattr("penpal.capture.manager.get_state", lambda _key: "")
 
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda key, value: writes.append((key, value)))
+    component = manager._component_snapshot()["private_test"]
 
-    manager._persist_runtime_state(force=True)
-
-    assert writes
-    key, value = writes[-1]
-    assert key == "capture_runtime"
-    snapshot = json.loads(value)
-    assert snapshot["multi_source_counts"]["ax_text"] == 0
+    assert component.state == "gave_up"
+    assert component.detail == "crash_retries_exhausted"
+    assert "private window title" not in component.detail
 
 
 class _StubWindowSessionWatcher:

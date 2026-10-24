@@ -27,7 +27,6 @@ from penpal.capabilities.builtin.appkit_runtime import AppKitRuntimeCapability
 from penpal.capabilities.builtin.bundle_integrity import BundleIntegrityCapability
 from penpal.capabilities.builtin.browser_automation import BrowserAutomationCapability
 from penpal.capabilities.builtin.capture_storage import CaptureStorageCapability
-from penpal.capabilities.builtin.health_freshness import HealthFreshnessCapability
 from penpal.capabilities.builtin.pause_state import PauseStateCapability
 
 
@@ -39,7 +38,6 @@ _DEFAULT_CAPABILITY_FACTORIES: list[Callable[..., Capability]] = [
     AccessibilityPermissionCapability,
     BrowserAutomationCapability,
     CaptureStorageCapability,
-    HealthFreshnessCapability,
 ]
 
 

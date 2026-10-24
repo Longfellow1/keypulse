@@ -26,14 +26,15 @@ def test_aggregate_signal_prefers_highest_level() -> None:
 def test_aggregate_signal_prefers_recent_when_same_level() -> None:
     registry = get_default_registry()
     states = {
-        "llm_backend": _state(ok=False, code="llm_no_key", last_checked=10.0),
-        "health_freshness": _state(ok=False, code="health_stale", last_checked=20.0),
+        "older_unknown": _state(ok=False, code="older_warning", last_checked=10.0),
+        "newer_unknown": _state(ok=False, code="newer_warning", last_checked=20.0),
     }
 
     signal = registry.aggregate_signal(states)
 
     assert signal.level == "warn"
-    assert signal.label == "体检失联"
+    assert signal.label == "异常"
+    assert signal.hint == "newer_warning"
 
 
 def test_aggregate_signal_returns_ok_when_all_ok() -> None:
