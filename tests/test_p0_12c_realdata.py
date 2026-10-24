@@ -473,6 +473,7 @@ def test_v26_is_atomic_on_failure(tmp_path, monkeypatch):
     conn.close()
 
 
+@pytest.mark.slow
 def test_v26_is_fast_on_25k_rows(tmp_path):
     conn = _db_at_v25(tmp_path / "big.db")
     apps = ["Google Chrome", "Safari", "Notes", "Cursor", "Setup Assistant"]

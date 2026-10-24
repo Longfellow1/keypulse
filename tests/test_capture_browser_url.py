@@ -97,20 +97,11 @@ def test_browser_url_watcher_auto_discovers_supported_browsers():
     run.assert_called_once()
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Environment dependency: supported_browsers='auto' resolves to the http(s) handler apps installed on "
-        "this machine (LaunchServices). The test assumes 'ChatGPT Atlas' is installed; on a machine/CI runner "
-        "without it the watcher never calls osascript (call_count == 0). Fix by passing an explicit "
-        "supported_browsers=['ChatGPT Atlas'] in the test."
-    ),
-    strict=False,
-)
 def test_browser_url_watcher_disables_unsupported_dialect_without_marking_denied():
     watcher = BrowserUrlWatcher(
         queue.Queue(),
         poll_interval_sec=0.1,
-        supported_browsers="auto",
+        supported_browsers=["ChatGPT Atlas"],
         emit_on_url_change_only=True,
     )
     with (

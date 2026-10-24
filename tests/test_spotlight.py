@@ -224,6 +224,7 @@ def test_excludes_library_containers_paths(monkeypatch, tmp_path: Path) -> None:
     assert mdls_targets == [str(safe_path)]
 
 
+@pytest.mark.system_smoke
 def test_run_mdfind_smoke_real(tmp_path: Path) -> None:
     if platform.system() != "Darwin":
         pytest.skip("mdfind smoke test requires macOS")

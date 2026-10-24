@@ -149,6 +149,7 @@ def test_keyword_text_is_never_echoed(db) -> None:
     assert "zzzcanaryword" not in raw
 
 
+@pytest.mark.slow
 def test_keyword_check_on_5k_rows_is_fast(db) -> None:
     for i in range(5000):
         db.put("claude_code", "Work", f"2026-03-{1 + i % 28:02d}T09:00:00+00:00", f"synthetic note {i} filler text")

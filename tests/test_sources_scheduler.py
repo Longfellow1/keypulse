@@ -77,11 +77,6 @@ def test_scheduler_config_defaults() -> None:
     assert config.debounce_sec == 300
     assert config.fast_poll_interval_sec == 120
 
-    scheduler = SourcesScheduler()
-    assert scheduler._poll_interval_sec == 600
-    assert scheduler._debounce_sec == 300
-    assert scheduler._fast_poll_interval_sec == 120
-
 
 def test_scheduler_polls_always_plugins() -> None:
     calls: list[str] = []

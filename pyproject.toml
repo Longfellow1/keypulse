@@ -59,4 +59,7 @@ include = ["penpal*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]  # lets tests import the top-level evals/ harness
-markers = ["slow: opt-in performance benchmark (scripts/bench/perf_freshness.py); runs only with PENPAL_RUN_SLOW=1"]
+markers = [
+    "slow: opt-in performance benchmarks; set PENPAL_RUN_SLOW=1",
+    "system_smoke: opt-in tests that call real macOS system commands; set PENPAL_RUN_SYSTEM_SMOKE=1",
+]

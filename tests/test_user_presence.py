@@ -73,6 +73,7 @@ class TestIdleSeconds:
             assert result is None
 
     @pytest.mark.skipif(sys.platform != "darwin", reason="ioreg only on macOS")
+    @pytest.mark.system_smoke
     def test_idle_seconds_real_call(self):
         """On macOS, ioreg returns a float or None."""
         result = idle_seconds()

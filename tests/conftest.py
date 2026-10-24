@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +10,22 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+_OPT_IN_MARKERS = {
+    "slow": ("PENPAL_RUN_SLOW", "opt-in performance benchmark; set PENPAL_RUN_SLOW=1"),
+    "system_smoke": (
+        "PENPAL_RUN_SYSTEM_SMOKE",
+        "opt-in system smoke; set PENPAL_RUN_SYSTEM_SMOKE=1",
+    ),
+}
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        for marker, (env_var, reason) in _OPT_IN_MARKERS.items():
+            if marker in item.keywords and os.environ.get(env_var) != "1":
+                item.add_marker(pytest.mark.skip(reason=reason))
 
 
 @pytest.fixture(scope="session", autouse=True)

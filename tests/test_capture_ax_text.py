@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import queue
-import time
+import threading
+from types import SimpleNamespace
 
+from penpal.capture.watchers import ax_text as ax_text_module
 from penpal.capture.watchers.ax_text import AXTextWatcher
 from penpal.capture.watchers.ax_text import read_frontmost_ax_text
 
@@ -142,12 +144,22 @@ def test_read_frontmost_ax_text_skips_loginwindow():
     }
 
 
-def test_ax_text_watcher_throttles_ax_reads_on_tight_poll_interval():
+def test_ax_text_watcher_throttles_ax_reads_on_tight_poll_interval(monkeypatch):
     calls = 0
+    first_read = threading.Event()
+    sleep_called = threading.Event()
+    sleep_intervals = []
+    watcher = None
+
+    def fake_sleep(interval):
+        sleep_intervals.append(interval)
+        watcher._running.clear()
+        sleep_called.set()
 
     def _reader():
         nonlocal calls
         calls += 1
+        first_read.set()
         return {
             "text": "",
             "selected_text": None,
@@ -158,6 +170,11 @@ def test_ax_text_watcher_throttles_ax_reads_on_tight_poll_interval():
             "process_name": "com.apple.Notes",
         }
 
+    monkeypatch.setattr(
+        ax_text_module,
+        "time",
+        SimpleNamespace(monotonic=lambda: 100.0, sleep=fake_sleep),
+    )
     watcher = AXTextWatcher(
         queue.Queue(),
         poll_interval_sec=0.0,
@@ -166,8 +183,11 @@ def test_ax_text_watcher_throttles_ax_reads_on_tight_poll_interval():
         text_reader=_reader,
     )
     watcher.start()
-    time.sleep(0.1)
-    watcher.stop()
+    try:
+        assert first_read.wait(timeout=2), "watcher did not perform its first AX read"
+        assert sleep_called.wait(timeout=2), "watcher did not reach its throttle sleep"
+    finally:
+        watcher.stop()
 
-    # 100ms 内不应疯狂调用 AX API，至少受 1s 最小轮询间隔约束。
-    assert calls <= 2
+    assert calls == 1
+    assert sleep_intervals == [1.0]

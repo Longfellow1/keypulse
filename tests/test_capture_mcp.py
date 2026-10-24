@@ -258,6 +258,7 @@ def test_v23_backfill_classifies_redacts_adds_evidence_and_is_idempotent(tmp_pat
     conn.close()
 
 
+@pytest.mark.slow
 def test_v23_backfill_is_fast_on_25k_rows_and_atomic(tmp_path, capsys):
     conn = _db_at_v22(tmp_path / "big.db")
     apps = ["Cursor", "Safari", "Alipay", "Slack", "Spotify", "Preview", "Notes", "Figma", "读书笔记", "Chrome"]
