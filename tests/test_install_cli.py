@@ -6,6 +6,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+from penpal import cli
 from penpal.cli import main
 
 
@@ -267,3 +268,39 @@ def test_install_init_creates_runtime_without_overwriting_config(monkeypatch, tm
     assert (tmp_path / ".penpal" / "penpal.db").exists()
     assert config_path.read_text(encoding="utf-8") == "[app]\nretention_days = 99\n"
     assert "penpal doctor" in result.output
+
+
+def test_executable_path_keeps_homebrew_symlink_not_versioned_cellar(monkeypatch, tmp_path):
+    # `brew upgrade` deletes the old Cellar dir; launchd jobs must point at the stable bin/ symlink.
+    cellar = tmp_path / "Cellar" / "penpal" / "0.2.0" / "bin" / "penpal"
+    cellar.parent.mkdir(parents=True)
+    cellar.write_text("#!/bin/sh\n")
+    link = tmp_path / "bin" / "penpal"
+    link.parent.mkdir()
+    link.symlink_to(cellar)
+    monkeypatch.setenv("PENPAL_EXECUTABLE", str(link))
+
+    assert cli._keypulse_executable_path() == link
+
+
+def test_install_launchd_replaces_own_plist_pinned_to_cellar_without_force(monkeypatch, tmp_path):
+    executable = tmp_path / "bin" / "penpal"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+    launch_agents = tmp_path / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True)
+    stale = launch_agents / "com.penpal.daemon.plist"
+    stale.write_bytes(plistlib.dumps({
+        "Label": "com.penpal.daemon",
+        "ProgramArguments": ["/opt/homebrew/Cellar/penpal/0.2.0/libexec/bin/penpal", "serve"],
+    }))
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr("penpal.cli._keypulse_executable_path", lambda: executable)
+
+    result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
+
+    assert result.exit_code == 0, result.output
+    assert plistlib.loads(stale.read_bytes())["ProgramArguments"][0] == str(executable)
