@@ -111,7 +111,7 @@ def test_blacklisted_event_is_dropped_before_policy_and_persistence(monkeypatch)
         lambda _event: (_ for _ in ()).throw(AssertionError("policy should not run")),
     )
     monkeypatch.setattr(
-        "penpal.capture.manager.insert_raw_event",
+        "penpal.capture.manager_events.insert_raw_event",
         lambda raw_event: inserts.append(raw_event),
     )
 
@@ -136,11 +136,11 @@ def test_window_title_is_desensitized_before_persistence(monkeypatch):
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
     monkeypatch.setattr(
-        "penpal.capture.manager.insert_raw_event",
+        "penpal.capture.manager_events.insert_raw_event",
         lambda raw_event: captured.append(raw_event) or 1,
     )
-    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager_events.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(event)
 
@@ -162,14 +162,14 @@ def test_terminal_ax_text_is_dropped_and_marked(monkeypatch):
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
     monkeypatch.setattr(
-        "penpal.capture.manager.insert_raw_event",
+        "penpal.capture.manager_events.insert_raw_event",
         lambda raw_event: captured.append(raw_event) or 1,
     )
     monkeypatch.setattr(
-        "penpal.capture.manager.insert_search_doc",
+        "penpal.capture.manager_events.insert_search_doc",
         lambda _doc: (_ for _ in ()).throw(AssertionError("search doc should not be inserted")),
     )
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager_events.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(event)
 
@@ -201,7 +201,7 @@ def test_browser_url_denylist_drops_matching_host_before_persistence(monkeypatch
         lambda _event: (_ for _ in ()).throw(AssertionError("aggregator should not run")),
     )
     monkeypatch.setattr(
-        "penpal.capture.manager.insert_raw_event",
+        "penpal.capture.manager_events.insert_raw_event",
         lambda raw_event: inserts.append(raw_event),
     )
 
@@ -224,11 +224,11 @@ def test_browser_url_denylist_ignores_invalid_url_and_persists_event(monkeypatch
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
     monkeypatch.setattr(
-        "penpal.capture.manager.insert_raw_event",
+        "penpal.capture.manager_events.insert_raw_event",
         lambda raw_event: captured.append(raw_event) or 1,
     )
-    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager_events.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(
         normalize_browser_tab_event(
@@ -260,11 +260,11 @@ def test_metadata_json_parse_failure_is_preserved(monkeypatch):
     monkeypatch.setattr(manager._aggregator, "process", lambda _event: None)
     monkeypatch.setattr(manager._policy, "apply", lambda raw_event: raw_event)
     monkeypatch.setattr(
-        "penpal.capture.manager.insert_raw_event",
+        "penpal.capture.manager_events.insert_raw_event",
         lambda raw_event: captured.append(raw_event) or 1,
     )
-    monkeypatch.setattr("penpal.capture.manager.insert_search_doc", lambda _doc: 1)
-    monkeypatch.setattr("penpal.capture.manager.set_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("penpal.capture.manager_events.insert_search_doc", lambda _doc: 1)
+    monkeypatch.setattr("penpal.capture.manager_events.set_state", lambda *_args, **_kwargs: None)
 
     manager._process_event(event)
 

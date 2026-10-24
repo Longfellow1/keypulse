@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import penpal.capture.manager as manager_module
+import penpal.capture.manager_lifecycle as manager_lifecycle
 from penpal import app, permissions
 from penpal.capabilities.base import HealthState
 from penpal.capture.base import BaseWatcher
@@ -119,7 +119,7 @@ def test_heartbeat_wait_sees_a_clock_jump_and_calls_handle_wake(monkeypatch):
                 self.now += 3600.0
 
     clock = _Clock()
-    monkeypatch.setattr(manager_module, "time", clock)
+    monkeypatch.setattr(manager_lifecycle, "time", clock)
     manager = CaptureManager(Config())
     manager._running.set()
     wakes: list[int] = []

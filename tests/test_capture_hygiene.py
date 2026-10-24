@@ -277,7 +277,7 @@ def test_blacklist_app_names_and_bundle_ids():
 
 
 def test_url_deny_hosts_apply_to_browser_url():
-    from penpal.capture.manager import _should_drop_browser_event
+    from penpal.capture.manager_events import _should_drop_browser_event
 
     ev = normalize_browser_url_event("https://www.bilibili.com/v", "t", "Google Chrome")
     assert _should_drop_browser_event(ev, ["bilibili.com"]) is True

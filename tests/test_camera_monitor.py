@@ -138,7 +138,7 @@ def test_manager_camera_monitor_wiring_pauses_and_resumes_watchers(monkeypatch):
     ax_text = MagicMock()
     ocr = MagicMock()
     manager._watchers = {"ax_text": ax_text, "ocr": ocr}
-    monkeypatch.setattr("penpal.capture.manager.CameraMonitor", _FakeCameraMonitor)
+    monkeypatch.setattr("penpal.capture.manager_lifecycle.CameraMonitor", _FakeCameraMonitor)
 
     manager._start_camera_monitor()
 

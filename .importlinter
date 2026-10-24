@@ -81,4 +81,5 @@ ignore_imports =
     penpal.runtime.evaluate -> penpal.runtime.record
     penpal.runtime.evaluate -> penpal.runtime.launchd
     penpal.capture.manager -> penpal.runtime.record
-    penpal.capture.manager -> penpal.runtime.launchd
+    penpal.capture.manager_runtime -> penpal.runtime.record
+    penpal.capture.manager_runtime -> penpal.runtime.launchd
