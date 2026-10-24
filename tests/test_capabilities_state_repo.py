@@ -50,7 +50,6 @@ def test_supervisor_does_not_write_health_json(tmp_path, monkeypatch) -> None:
         out_path = tmp_path / "health.json"
         # Redirect every consumer of HEALTH_JSON_PATH so the test stays sandboxed
         monkeypatch.setattr("penpal.health.report.HEALTH_JSON_PATH", out_path)
-        monkeypatch.setattr("penpal.hud.health.HEALTH_JSON_PATH", out_path)
         monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
 
         from penpal.app import _run_capability_self_check
@@ -163,36 +162,6 @@ def test_registry_monitor_isolates_failing_capability() -> None:
     assert states["boom"].code == "capability_error"
     assert "intentional crash" in (states["boom"].detail or "")
     assert states["good"].ok is True
-
-
-def test_hud_summary_prefers_state_repo_over_health_json(tmp_path, monkeypatch) -> None:
-    """When state repo holds capability data, HUD must use it without
-    consulting health.json. Tested by writing conflicting data to both and
-    asserting the state-repo value wins."""
-    _init_test_db(tmp_path)
-    try:
-        # state repo: ax_denied probe hint
-        save_states({
-            "accessibility_permission": HealthState(
-                ok=False, code="ax_denied", last_checked=time.time(), detail="denied",
-            ),
-        })
-
-        # health.json: paint a stale "all ok" picture - it must NOT win.
-        out_path = tmp_path / "health.json"
-        out_path.write_text(json.dumps({"capabilities": {}}))
-        monkeypatch.setattr("penpal.hud.health.HEALTH_JSON_PATH", out_path)
-
-        from penpal.hud.summary import determine_service_status
-
-        level, label, hint, action = determine_service_status(
-            capture_status="running",
-        )
-        assert level == "warn"
-        assert "辅助功能" in (hint or "") or "ax" in (hint or "").lower()
-        assert action.startswith("open://")
-    finally:
-        close()
 
 
 def test_ax_denied_forces_ax_dependent_watcher_facts_false(tmp_path) -> None:

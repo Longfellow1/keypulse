@@ -1,136 +1,111 @@
+"""HUD AppKit shell: it only routes page messages to the controller and draws the model it gets back.
+
+No window, status item or WebView is created: the ObjC objects are built bare and given fakes.
+"""
 from __future__ import annotations
 
-import importlib
-import sys
+import json
 import types
 
 import pytest
 
+pytest.importorskip("AppKit")
+pytest.importorskip("WebKit")
 
-class _FakeAlert:
-    messages: list[str] = []
+from Foundation import NSDictionary  # noqa: E402
 
-    @classmethod
-    def alloc(cls):
-        return cls()
+from penpal.hud import app as hud_app  # noqa: E402
 
-    def init(self):
-        return self
-
-    def setMessageText_(self, value):
-        self.message_text = value
-        self.messages.append(value)
-
-    def setInformativeText_(self, value):
-        self.informative_text = value
-
-    def addButtonWithTitle_(self, value):
-        pass
-
-    def runModal(self):
-        return 1
+MODEL = {"title": "概览", "tabs": [{"id": "overview", "badge": "amber"}], "status": {}, "sections": []}
 
 
-class _FakePopover:
+class _Controller:
     def __init__(self):
-        self.close_count = 0
+        self.calls = []
+        self.closed = 0
 
-    def performClose_(self, value):
-        self.close_count += 1
+    def dispatch(self, action, args=None):
+        self.calls.append((action, args))
+        return {**MODEL, "title": f"after {action}"}
+
+    def model(self, fresh=False):
+        self.calls.append(("model", fresh))
+        return MODEL
+
+    def popover_closed(self):
+        self.closed += 1
 
 
-class _FakeNSApp:
-    terminated: list[object] = []
+class _WebView:
+    def __init__(self):
+        self.scripts = []
 
-    @classmethod
-    def terminate_(cls, value):
-        cls.terminated.append(value)
+    def evaluateJavaScript_completionHandler_(self, script, handler):
+        self.scripts.append(script)
 
 
 @pytest.fixture()
-def hud_app(monkeypatch):
-    appkit = types.SimpleNamespace(
-        NSObject=object,
-        NSAlert=_FakeAlert,
-        NSAlertFirstButtonReturn=1,
-        NSApp=_FakeNSApp,
-        NSStatusBar=types.SimpleNamespace(systemStatusBar=lambda: None),
-        NSVariableStatusItemLength=0,
-        NSPopover=types.SimpleNamespace(alloc=lambda: None),
-        NSPopoverBehaviorTransient=0,
-        NSViewController=types.SimpleNamespace(alloc=lambda: None),
-        NSTextField=types.SimpleNamespace(alloc=lambda: None),
-        NSImage=types.SimpleNamespace(),
-        NSImageOnly=0,
-        NSApplication=types.SimpleNamespace(sharedApplication=lambda: None),
-        NSApplicationActivationPolicyAccessory=0,
-        NSWorkspace=types.SimpleNamespace(sharedWorkspace=lambda: None),
-        NSViewWidthSizable=1,
-        NSViewHeightSizable=2,
-        NSMakeRect=lambda *args: args,
-        NSMakeSize=lambda *args: args,
-    )
-    objc = types.SimpleNamespace(
-        IBAction=lambda func: func,
-        selector=lambda func, signature=None: func,
-        super=super,
-    )
-    foundation = types.SimpleNamespace(NSTimer=object, NSURL=object)
-    webkit = types.SimpleNamespace(
-        WKNavigationActionPolicyAllow=1,
-        WKNavigationActionPolicyCancel=0,
-        WKWebView=object,
-        WKWebViewConfiguration=object,
-    )
-
-    monkeypatch.setitem(sys.modules, "AppKit", appkit)
-    monkeypatch.setitem(sys.modules, "objc", objc)
-    monkeypatch.setitem(sys.modules, "Foundation", foundation)
-    monkeypatch.setitem(sys.modules, "WebKit", webkit)
-    sys.modules.pop("penpal.hud.app", None)
-
-    _FakeAlert.messages = []
-    _FakeNSApp.terminated = []
-    module = importlib.import_module("penpal.hud.app")
-    yield module
-    sys.modules.pop("penpal.hud.app", None)
+def shell():
+    app = hud_app.PenpalHUDApp.alloc().init()
+    app.controller, app.webview, app.status_item = _Controller(), _WebView(), None
+    return app
 
 
-def test_toggle_pause_keeps_popover_open(hud_app, monkeypatch):
-    writes = []
-    app = hud_app.PenpalHUDApp()
-    app.capture_status = "running"
-    app.popover = _FakePopover()
-    app.refresh = lambda: writes.append(("refresh", None))
-
-    monkeypatch.setattr(hud_app, "set_state", lambda key, value: writes.append((key, value)))
-
-    app.togglePause_(None)
-
-    assert ("status", "paused") in writes
-    assert ("refresh", None) in writes
-    assert app.popover.close_count == 0
+def _rendered(shell):
+    script = shell.webview.scripts[-1]
+    assert script.startswith("window.render(") and script.endswith(");")
+    return json.loads(script[len("window.render("):-2])
 
 
-def test_restart_daemon_starts_self_heal_thread(hud_app, monkeypatch, tmp_path):
-    runs = []
-    app = hud_app.PenpalHUDApp()
-    app.popover = _FakePopover()
+def test_page_message_goes_to_the_controller_and_the_model_is_drawn(shell):
+    shell.handle_message({"action": "capture.pause", "args": {}})
+    assert shell.controller.calls == [("capture.pause", {})]
+    assert _rendered(shell)["title"] == "after capture.pause"
 
-    class _FakeThread:
-        def __init__(self, target=None, **kwargs):
-            self._target = target
 
-        def start(self):
-            if self._target is not None:
-                self._target()
+def test_ready_message_pushes_the_current_model_without_an_action(shell):
+    shell.handle_message({"action": "ui.ready"})
+    assert shell.controller.calls == [("model", False)] and _rendered(shell)["title"] == "概览"
 
-    monkeypatch.setattr(hud_app.threading, "Thread", _FakeThread)
-    monkeypatch.setitem(sys.modules, "penpal.health.self_heal", types.SimpleNamespace(run_self_heal=lambda **kwargs: runs.append(kwargs)))
 
-    app.restartDaemon_(None)
+def test_junk_messages_are_ignored(shell):
+    shell.handle_message("nope")
+    shell.handle_message(None)
+    assert shell.controller.calls == [] and shell.webview.scripts == []
 
-    assert _FakeAlert.messages[0] == "启动一键自愈？"
-    assert app.popover.close_count == 1
-    assert runs and runs[0]["source"] == "hud"
-    assert runs[0]["dry_run"] is False
+
+def test_script_is_safe_to_embed(shell):
+    shell.controller.model = lambda fresh=False: {**MODEL, "title": "</script><b>"}
+    shell.handle_message({"action": "ui.ready"})
+    assert "</script><b>" not in shell.webview.scripts[-1]
+
+
+def test_message_body_from_javascript_becomes_plain_python():
+    body = NSDictionary.dictionaryWithDictionary_({"action": "source.toggle", "args": {"name": "clipboard", "enable": False}})
+    plain = hud_app._plain(body)
+    assert plain == {"action": "source.toggle", "args": {"name": "clipboard", "enable": False}}
+    assert type(plain) is dict and type(plain["args"]) is dict and plain["args"]["enable"] is False
+
+
+def test_closing_the_popover_tells_the_controller_to_forget_transient_state(shell):
+    shell.popoverDidClose_(None)
+    assert shell.controller.closed == 1
+
+
+def test_message_handler_forwards_to_the_shell():
+    seen = []
+    handler = hud_app.MessageHandler.alloc().initWithShell_(types.SimpleNamespace(handle_message=seen.append))
+    handler.userContentController_didReceiveScriptMessage_(None, types.SimpleNamespace(body=lambda: {"action": "nav.back"}))
+    assert seen == [{"action": "nav.back"}]
+
+
+def test_navigation_is_limited_to_the_loaded_page(shell):
+    decisions = []
+
+    def action(url):
+        return types.SimpleNamespace(request=lambda: types.SimpleNamespace(URL=lambda: url))
+
+    for scheme, expected in [("about", hud_app.WKNavigationActionPolicyAllow), ("https", hud_app.WKNavigationActionPolicyCancel),
+                             ("file", hud_app.WKNavigationActionPolicyCancel)]:
+        shell.webView_decidePolicyForNavigationAction_decisionHandler_(None, action(types.SimpleNamespace(scheme=lambda s=scheme: s)), decisions.append)
+        assert decisions[-1] == expected

@@ -1,114 +1,198 @@
+"""Thin AppKit shell for the HUD: a menu bar icon, a 360x600 popover hosting the WebView, and message routing.
+
+All state and actions live in ``HudController`` (pure Python, same core functions as the CLI); all drawing
+lives in ``render.py``. This file only connects them to AppKit, so it holds no business logic.
+The daemon keeps every macOS permission; this process needs none.
+"""
 from __future__ import annotations
 
 import json
 import os
 import signal
-import subprocess
-import sys
 import threading
 import time
-from pathlib import Path
+
 import AppKit
 import objc
-from Foundation import NSTimer, NSURL
-from WebKit import WKNavigationActionPolicyAllow, WKNavigationActionPolicyCancel, WKWebView, WKWebViewConfiguration
+from Foundation import NSObject, NSTimer
+from WebKit import (
+    WKNavigationActionPolicyAllow,
+    WKNavigationActionPolicyCancel,
+    WKUserContentController,
+    WKWebView,
+    WKWebViewConfiguration,
+)
 
-# 内部模块依赖 (保持原样)
-from penpal.capture.normalizer import normalize_manual_event
 from penpal.capabilities.store import load_states as load_capability_states
 from penpal.config import Config
 from penpal.hud.approval_window import ApprovalWindowController, safe_pending_candidate_count
-from penpal.hud.health import HEALTH_JSON_PATH, health_status_emoji, read_health
-from penpal.hud.monitor_html import build_monitor_data, build_monitor_html
-from penpal.hud.state import read_hud_state, set_pending_count, set_today_focus
-from penpal.hud.state_reset import _reset_transient_error_state
-from penpal.hud.summary import build_hud_snapshot
-from penpal.store.db import init_db
-from penpal.store.repository import get_state, insert_raw_event, set_state
+from penpal.hud.controller import HudController
+from penpal.hud.render import HUD_HEIGHT, HUD_WIDTH, build_html
+from penpal.store.repository import get_state, set_state
+
+REFRESH_SEC = 15.0
+MESSAGE_HANDLER_NAME = "penpal"
+BADGE_COLORS = {"red": (0.77, 0.28, 0.23), "amber": (0.78, 0.54, 0.16)}
 
 
-HUD_CONTENT_WIDTH = 365.0
-HUD_CONTENT_HEIGHT_FALLBACK = 440.0  # used until WebView reports actual content height
-HUD_CONTENT_HEIGHT_MIN = 200.0
-HUD_CONTENT_HEIGHT_MAX = 900.0
-DAEMON_LAUNCHD_LABEL = "com.penpal.daemon"
-HUD_LAUNCHD_LABEL = "com.penpal.hud"
+def _copy_to_pasteboard(text: str) -> None:
+    board = AppKit.NSPasteboard.generalPasteboard()
+    board.clearContents()
+    board.setString_forType_(text, AppKit.NSPasteboardTypeString)
 
 
-def _hud_launchd_plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / f"{HUD_LAUNCHD_LABEL}.plist"
+def _plain(value):
+    """NSDictionary / NSArray / NSString coming from JS -> plain Python containers."""
+    if isinstance(value, dict) or hasattr(value, "keys"):
+        return {str(k): _plain(value[k]) for k in value.keys()}
+    if isinstance(value, (list, tuple)) or hasattr(value, "objectAtIndex_"):
+        return [_plain(v) for v in value]
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    return str(value)
 
 
-def _restart_hud_process() -> None:
-    if _hud_launchd_plist_path().exists():
-        target = f"gui/{os.getuid()}/{HUD_LAUNCHD_LABEL}"
-        subprocess.Popen(
-            ["launchctl", "kickstart", "-k", target],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return
+class MessageHandler(NSObject):
+    """WKScriptMessageHandler: forwards every tap from the page to the shell."""
 
-    subprocess.Popen(
-        [sys.argv[0], "hud"],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    AppKit.NSApp.terminate_(None)
-
-
-class PenpalHUDApp(AppKit.NSObject):
-    def initWithConfig_(self, cfg: Config):
-        self = objc.super(PenpalHUDApp, self).init()
-        if self is None: return None
-        self.cfg = cfg
-        self.health = read_health()
-        self.capture_status = str(get_state("status") or "running")
-        self.pending_count = int(read_hud_state().pending_count)
-        self.pending_count_error: str | None = None
-        self.approval_window = None
-        self._pending_count_last_sync = 0.0
-        self.snapshot = build_hud_snapshot(
-            cfg,
-            date_str="today",
-            capture_status=self.capture_status,
-        )
-
-        # 1. 状态栏 Item
-        self.status_item = AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(AppKit.NSVariableStatusItemLength)
-        self._install_status_icon()
-        self.status_item.button().setTarget_(self)
-        self.status_item.button().setAction_(objc.selector(self.togglePopover_, signature=b"v@:@"))
-        if hasattr(self.status_item.button(), "sendActionOn_"):
-            events = 0
-            events |= int(getattr(AppKit, "NSEventMaskLeftMouseUp", 0))
-            events |= int(getattr(AppKit, "NSEventMaskRightMouseUp", 0))
-            if events:
-                self.status_item.button().sendActionOn_(events)
-        self._setup_status_menu()
-        self._refresh_approval_menu_item()
-        self._maybe_prompt_browser_automation_guide()
-        
-        # 2. Popover 初始化
-        self.popover = AppKit.NSPopover.alloc().init()
-        self.popover.setBehavior_(AppKit.NSPopoverBehaviorTransient)
-        self.popover_vc = AppKit.NSViewController.alloc().init()
-        self.popover.setContentViewController_(self.popover_vc)
-        self.popover_vc.setView_(self._build_full_home_view())
-        self.refresh_status()
-        
+    def initWithShell_(self, shell):
+        self = objc.super(MessageHandler, self).init()
+        if self is None:
+            return None
+        self.shell = shell
         return self
 
+    def userContentController_didReceiveScriptMessage_(self, _controller, message):
+        self.shell.handle_message(_plain(message.body()))
+
+
+class PenpalHUDApp(NSObject):
+    def initWithConfig_(self, cfg: Config):
+        self = objc.super(PenpalHUDApp, self).init()
+        if self is None:
+            return None
+        self.cfg = cfg
+        self.controller = HudController(Config.load, copy_to_clipboard=_copy_to_pasteboard)
+        self.pending_count = 0
+        self.pending_count_error = None
+        self.approval_window = None
+        self._pending_count_last_sync = 0.0
+        self._message_handler = MessageHandler.alloc().initWithShell_(self)
+
+        self.status_item = AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(AppKit.NSVariableStatusItemLength)
+        self._install_status_icon()
+        button = self.status_item.button()
+        button.setTarget_(self)
+        button.setAction_(objc.selector(self.togglePopover_, signature=b"v@:@"))
+        if hasattr(button, "sendActionOn_"):
+            events = int(getattr(AppKit, "NSEventMaskLeftMouseUp", 0)) | int(getattr(AppKit, "NSEventMaskRightMouseUp", 0))
+            if events:
+                button.sendActionOn_(events)
+        self._setup_status_menu()
+        self._maybe_prompt_browser_automation_guide()
+
+        self.popover = AppKit.NSPopover.alloc().init()
+        self.popover.setBehavior_(AppKit.NSPopoverBehaviorTransient)
+        self.popover.setDelegate_(self)
+        self.popover_vc = AppKit.NSViewController.alloc().init()
+        self.popover.setContentViewController_(self.popover_vc)
+        self.popover.setContentSize_(AppKit.NSMakeSize(HUD_WIDTH, HUD_HEIGHT))
+        self.popover_vc.setView_(self._build_webview())
+        self._push_model(fresh=True)
+        return self
+
+    # ── WebView ─────────────────────────────────────────────────────────────
+
+    @objc.python_method
+    def _build_webview(self):
+        config = WKWebViewConfiguration.alloc().init()
+        content = WKUserContentController.alloc().init()
+        content.addScriptMessageHandler_name_(self._message_handler, MESSAGE_HANDLER_NAME)
+        config.setUserContentController_(content)
+        frame = AppKit.NSMakeRect(0.0, 0.0, HUD_WIDTH, HUD_HEIGHT)
+        webview = WKWebView.alloc().initWithFrame_configuration_(frame, config)
+        webview.setNavigationDelegate_(self)
+        if hasattr(webview, "setValue_forKey_"):
+            webview.setValue_forKey_(False, "drawsBackground")
+        webview.loadHTMLString_baseURL_(build_html(), None)
+        self.webview = webview
+        return webview
+
+    def webView_decidePolicyForNavigationAction_decisionHandler_(self, _webview, action, decision_handler):
+        # The page is loaded once from a string; it never needs to navigate anywhere.
+        url = action.request().URL()
+        scheme = str(url.scheme() or "").lower() if url is not None else ""
+        decision_handler(WKNavigationActionPolicyAllow if scheme in ("", "about") else WKNavigationActionPolicyCancel)
+
+    @objc.python_method
+    def handle_message(self, body) -> None:
+        """One tap from the page: route it to the controller and draw the model it returns."""
+        if not isinstance(body, dict):
+            return
+        action = body.get("action")
+        if action == "ui.ready":
+            self._push_model()
+            return
+        self._push(self.controller.dispatch(action, body.get("args")))
+
+    @objc.python_method
+    def _push_model(self, fresh: bool = False) -> None:
+        self._push(self.controller.model(fresh=fresh))
+
+    @objc.python_method
+    def _push(self, model: dict) -> None:
+        self._set_badge(model["tabs"][0].get("badge"))
+        webview = getattr(self, "webview", None)
+        if webview is None:
+            return
+        script = f"window.render({json.dumps(model, ensure_ascii=False).replace('</', '<\\/')});"
+        try:
+            webview.evaluateJavaScript_completionHandler_(script, None)
+        except Exception:
+            pass  # the first full page load renders the initial model via ui.ready
+
+    # ── status item ─────────────────────────────────────────────────────────
+
+    @objc.python_method
+    def _install_status_icon(self) -> None:
+        button = self.status_item.button()
+        button.setTitle_("")
+        image = None
+        if hasattr(AppKit.NSImage, "imageWithSystemSymbolName_accessibilityDescription_"):
+            image = AppKit.NSImage.imageWithSystemSymbolName_accessibilityDescription_("square.and.pencil", "Penpal")
+        if image is None:
+            image = AppKit.NSImage.imageNamed_("NSActionTemplate")
+        if image is not None:
+            image.setTemplate_(True)
+            button.setImage_(image)
+            button.setImagePosition_(AppKit.NSImageLeft)
+
+    @objc.python_method
+    def _set_badge(self, tone) -> None:
+        """A small coloured dot next to the icon when something needs attention (same tone as the Overview tab)."""
+        button = self.status_item.button() if getattr(self, "status_item", None) is not None else None
+        if button is None:
+            return
+        try:
+            if tone in BADGE_COLORS:
+                r, g, b = BADGE_COLORS[tone]
+                color = AppKit.NSColor.colorWithSRGBRed_green_blue_alpha_(r, g, b, 1.0)
+                attrs = {AppKit.NSForegroundColorAttributeName: color}
+                button.setAttributedTitle_(AppKit.NSAttributedString.alloc().initWithString_attributes_(" ●", attrs))
+            else:
+                button.setTitle_("")
+        except Exception:
+            pass
+
+    @objc.python_method
     def _maybe_prompt_browser_automation_guide(self) -> None:
         if str(get_state("browser_automation_guide_shown") or "").strip() == "1":
             return
-        states = load_capability_states()
-        state = states.get("browser_automation")
+        state = load_capability_states().get("browser_automation")
         if state is None or state.ok or state.code != "browser_automation_denied":
             return
-
         alert = AppKit.NSAlert.alloc().init()
         alert.setMessageText_("请开启浏览器自动化权限")
         alert.setInformativeText_(
@@ -117,211 +201,6 @@ class PenpalHUDApp(AppKit.NSObject):
         alert.addButtonWithTitle_("知道了")
         alert.runModal()
         set_state("browser_automation_guide_shown", "1")
-
-    def _install_status_icon(self) -> None:
-        """状态栏 icon：本本 + 笔（SF Symbol，模板图标，自动适配深浅色）。"""
-        button = self.status_item.button()
-        button.setTitle_("")
-        image = None
-        if hasattr(AppKit.NSImage, "imageWithSystemSymbolName_accessibilityDescription_"):
-            image = AppKit.NSImage.imageWithSystemSymbolName_accessibilityDescription_(
-                "square.and.pencil", "Penpal"
-            )
-        if image is None:
-            image = AppKit.NSImage.imageNamed_("NSActionTemplate")
-        if image is not None:
-            image.setTemplate_(True)
-            button.setImage_(image)
-            button.setImagePosition_(AppKit.NSImageOnly)
-
-    def _health_label(self) -> str:
-        if not isinstance(self.health, dict):
-            return "Health: Unknown"
-        if health_status_emoji(self.health) == "🟢":
-            return "Health: OK"
-        alerts = [str(item).strip() for item in list(self.health.get("alerts") or []) if str(item).strip()]
-        return f"Health: Alert ({len(alerts)})"
-
-    def _health_message(self) -> tuple[str, str]:
-        if not isinstance(self.health, dict):
-            return (
-                "Health: Unknown",
-                f"{HEALTH_JSON_PATH} has not been written yet. M10.2 healthcheck may still be missing or stale.",
-            )
-        alerts = [str(item).strip() for item in list(self.health.get("alerts") or []) if str(item).strip()]
-        if not alerts:
-            alerts = ["No alert details were provided."]
-        return ("Health: Alert", "\n".join(f"• {item}" for item in alerts))
-
-    def refresh_status(self):
-        self.health = read_health()
-        self.capture_status = str(get_state("status") or "running")
-        now = time.monotonic()
-        if now - float(getattr(self, "_pending_count_last_sync", 0.0)) >= 60.0:
-            pending_count, pending_error = safe_pending_candidate_count()
-            self.pending_count_error = pending_error
-            if pending_count is not None:
-                self.pending_count = int(pending_count)
-                set_pending_count(self.pending_count)
-            self._pending_count_last_sync = now
-        self._refresh_approval_menu_item()
-
-    def _refresh_content(self):
-        self.snapshot = build_hud_snapshot(
-            self.cfg,
-            date_str="today",
-            capture_status=self.capture_status,
-        )
-        self._update_webview_data()
-        if self.popover.isShown():
-            self._measure_and_resize()
-
-    # --- 核心 UI 模块 ---
-
-    def _content_size(self):
-        height = getattr(self, "_measured_height", None) or HUD_CONTENT_HEIGHT_FALLBACK
-        return AppKit.NSMakeSize(HUD_CONTENT_WIDTH, float(height))
-
-    def _build_full_home_view(self):
-        if hasattr(self, "webview") and self.webview is not None:
-            return self.webview
-        height = getattr(self, "_measured_height", None) or HUD_CONTENT_HEIGHT_FALLBACK
-        frame = AppKit.NSMakeRect(0.0, 0.0, HUD_CONTENT_WIDTH, float(height))
-        config = WKWebViewConfiguration.alloc().init()
-        webview = WKWebView.alloc().initWithFrame_configuration_(frame, config)
-        webview.setNavigationDelegate_(self)
-        webview.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
-        if hasattr(webview, "setDrawsBackground_"):
-            webview.setDrawsBackground_(False)
-        # Hide WKWebView's own scrollers — we resize the popover to fit content.
-        try:
-            scroll_view = webview.scrollView() if hasattr(webview, "scrollView") else None
-            if scroll_view is not None:
-                scroll_view.setHasVerticalScroller_(False)
-                scroll_view.setHasHorizontalScroller_(False)
-        except Exception:
-            pass
-        html = build_monitor_html(
-            self.snapshot,
-            capture_status=self.capture_status,
-        )
-        webview.loadHTMLString_baseURL_(html, None)
-        self.webview = webview
-        return webview
-
-    def _update_webview_data(self) -> None:
-        if not hasattr(self, "webview") or self.webview is None:
-            return
-        data = build_monitor_data(
-            self.snapshot,
-            capture_status=self.capture_status,
-        )
-        script = f"window.updateHud({json.dumps(data, ensure_ascii=False)});"
-        try:
-            self.webview.evaluateJavaScript_completionHandler_(script, None)
-        except Exception:
-            # WebView may not be ready yet; first full page load will apply initial data.
-            pass
-
-    def webView_didFinishNavigation_(self, webview, _navigation):
-        # First measurement after the HTML has rendered.
-        self._measure_and_resize()
-
-    def _measure_and_resize(self) -> None:
-        if not hasattr(self, "webview") or self.webview is None:
-            return
-        def _on_result(value, _err):
-            if value is None:
-                return
-            try:
-                height = float(value)
-            except (TypeError, ValueError):
-                return
-            height = max(HUD_CONTENT_HEIGHT_MIN, min(height, HUD_CONTENT_HEIGHT_MAX))
-            current = getattr(self, "_measured_height", None)
-            if current is not None and abs(current - height) < 1.0:
-                return
-            self._measured_height = height
-            if self.popover.isShown():
-                size = self._content_size()
-                self.popover_vc.setPreferredContentSize_(size)
-                self.popover.setContentSize_(size)
-        try:
-            self.webview.evaluateJavaScript_completionHandler_(
-                "Math.ceil(document.documentElement.scrollHeight)",
-                _on_result,
-            )
-        except Exception:
-            pass
-
-    def _handle_keypulse_action(self, action: str, params: dict[str, str] | None = None):
-        params = params or {}
-        if action == "save-thought":
-            self.saveThought_(None)
-        elif action in {"set-intent", "edit-today-focus"}:
-            self.setFocus_(None)
-        elif action == "save-today-focus":
-            self._save_today_focus(params.get("v", ""))
-        elif action == "toggle-pause":
-            self.togglePause_(None)
-        elif action == "restart-daemon":
-            self.restartDaemon_(None)
-        elif action == "show-health":
-            self.showHealth_(None)
-        elif action == "open-url":
-            url_str = params.get("u", "")
-            if url_str:
-                self._open_external_url(url_str)
-        elif action == "quit":
-            self.confirmQuit_(None)
-        elif action == "close-popover":
-            if self.popover.isShown():
-                self.popover.performClose_(None)
-        elif action == "resize":
-            try:
-                height = float(params.get("h", "0"))
-            except ValueError:
-                return
-            if height <= 0:
-                return
-            height = max(HUD_CONTENT_HEIGHT_MIN, min(height, HUD_CONTENT_HEIGHT_MAX))
-            self._measured_height = height
-            if self.popover.isShown():
-                size = self._content_size()
-                self.popover_vc.setPreferredContentSize_(size)
-                self.popover.setContentSize_(size)
-
-    def webView_decidePolicyForNavigationAction_decisionHandler_(self, _webview, navigation_action, decision_handler):
-        url = navigation_action.request().URL()
-        if url is not None and str(url.scheme()).lower() == "penpal":
-            host = str(url.host() or "")
-            path = str(url.path() or "")
-            if host == "action":
-                action = path.lstrip("/")
-                params = self._parse_query(url)
-                self._handle_keypulse_action(action, params)
-            decision_handler(WKNavigationActionPolicyCancel)
-            return
-        decision_handler(WKNavigationActionPolicyAllow)
-
-    @staticmethod
-    def _parse_query(url) -> dict[str, str]:
-        from urllib.parse import parse_qsl
-        query = str(url.query() or "")
-        return dict(parse_qsl(query, keep_blank_values=True))
-
-    @staticmethod
-    def _open_external_url(url_str: str) -> bool:
-        ns_url = NSURL.URLWithString_(url_str)
-        if ns_url is None:
-            return False
-        return bool(AppKit.NSWorkspace.sharedWorkspace().openURL_(ns_url))
-
-    def _save_today_focus(self, value: str):
-        set_today_focus(value)
-        self.refresh()
-
-    # --- Actions (保持逻辑，优化交互) ---
 
     @objc.IBAction
     def togglePopover_(self, sender):
@@ -332,63 +211,88 @@ class PenpalHUDApp(AppKit.NSObject):
             return
         if self.popover.isShown():
             self.popover.performClose_(None)
-        else:
-            self.refresh()
-            view = self._build_full_home_view()
-            self.popover_vc.setView_(view)
-            self.popover.setContentSize_(self._content_size())
-            self.popover.showRelativeToRect_ofView_preferredEdge_(sender.bounds(), sender, 1)
-
-    def refresh(self):
-        self.refresh_status()
-        self._refresh_content()
-
-    @objc.IBAction
-    def showHealth_(self, _sender):
-        if health_status_emoji(self.health) == "🟢":
             return
-        message, informative_text = self._health_message()
-        alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_(message)
-        alert.setInformativeText_(informative_text)
-        alert.addButtonWithTitle_("OK")
-        alert.runModal()
+        self._push_model(fresh=True)
+        self.popover.showRelativeToRect_ofView_preferredEdge_(sender.bounds(), sender, 1)
+
+    def popoverDidClose_(self, _notification):
+        self.controller.popover_closed()  # forgets a just-shown secret
+        self._push_model()
+
+    def pollSignals_(self, _timer):
+        self._sync_pending_count()
+        if self.popover.isShown():
+            self._push_model(fresh=True)
+        else:
+            self._set_badge(self.controller.model(fresh=True)["tabs"][0].get("badge"))
+
+    # ── right-click menu (candidate approval, self-heal, quit) ───────────────
+
+    @objc.python_method
+    def _setup_status_menu(self) -> None:
+        self.status_menu = AppKit.NSMenu.alloc().init()
+        self.approval_menu_item = self._menu_item("候选审批", self.openApprovalWindow_)
+        self.status_menu.addItem_(self.approval_menu_item)
+        self.status_menu.addItem_(AppKit.NSMenuItem.separatorItem())
+        self.status_menu.addItem_(self._menu_item("启动一键自愈", self.restartDaemon_))
+        self.status_menu.addItem_(self._menu_item("退出 HUD", self.confirmQuit_))
+
+    @objc.python_method
+    def _menu_item(self, title, handler):
+        item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, objc.selector(handler, signature=b"v@:@"), "")
+        item.setTarget_(self)
+        return item
+
+    @objc.python_method
+    def _sync_pending_count(self) -> None:
+        now = time.monotonic()
+        if now - self._pending_count_last_sync < 60.0:
+            return
+        count, error = safe_pending_candidate_count()
+        self.pending_count_error = error
+        if count is not None:
+            self.pending_count = int(count)
+        self._pending_count_last_sync = now
+        self._refresh_approval_menu_item()
+
+    @objc.python_method
+    def _refresh_approval_menu_item(self) -> None:
+        item = getattr(self, "approval_menu_item", None)
+        if item is None:
+            return
+        if self.pending_count_error:
+            item.setTitle_("候选审批 (?)")
+            item.setEnabled_(True)
+            return
+        count = max(int(self.pending_count), 0)
+        item.setTitle_(f"候选审批 ({count})" if count else "候选审批")
+        item.setEnabled_(count > 0)
+
+    @objc.python_method
+    def _is_secondary_click(self) -> bool:
+        if not hasattr(AppKit.NSApp, "currentEvent"):
+            return False
+        event = AppKit.NSApp.currentEvent()
+        if event is None or not hasattr(event, "type"):
+            return False
+        return int(event.type()) in {int(getattr(AppKit, "NSEventTypeRightMouseUp", -1)), int(getattr(AppKit, "NSEventTypeRightMouseDown", -2))}
 
     @objc.IBAction
-    def saveThought_(self, _sender):
-        self.popover.performClose_(None)
-        alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("💡 记录想法")
-        field = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, 240, 24))
-        alert.setAccessoryView_(field)
-        alert.addButtonWithTitle_("保存")
-        alert.addButtonWithTitle_("取消")
-        if alert.runModal() == AppKit.NSAlertFirstButtonReturn:
-            if field.stringValue():
-                init_db(self.cfg.db_path_expanded)
-                insert_raw_event(normalize_manual_event(text=field.stringValue()))
-                self.refresh()
-
-    @objc.IBAction
-    def setFocus_(self, _sender):
-        self.popover.performClose_(None)
-        alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("✦ 今日重要的事儿")
-        alert.setInformativeText_("写下今天最想完成的一件事")
-        field = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, 280, 24))
-        field.setStringValue_(self.snapshot.today_focus or "")
-        alert.setAccessoryView_(field)
-        alert.addButtonWithTitle_("保存")
-        alert.addButtonWithTitle_("取消")
-        if alert.runModal() == AppKit.NSAlertFirstButtonReturn:
-            set_today_focus(field.stringValue())
-            self.refresh()
-
-    @objc.IBAction
-    def togglePause_(self, _sender):
-        new_status = "running" if self.capture_status == "paused" else "paused"
-        set_state("status", new_status)
-        self.refresh()
+    def openApprovalWindow_(self, _sender):
+        if self.pending_count_error:
+            self._pending_count_last_sync = 0.0
+            self._sync_pending_count()
+            if self.pending_count_error:
+                alert = AppKit.NSAlert.alloc().init()
+                alert.setMessageText_("候选审批读取失败")
+                alert.setInformativeText_(self.pending_count_error)
+                alert.addButtonWithTitle_("OK")
+                alert.runModal()
+                return
+        if self.approval_window is None:
+            self.approval_window = ApprovalWindowController.alloc().initWithStore_(None)
+        self.approval_window.showWindow_(None)
+        self._pending_count_last_sync = 0.0
 
     @objc.IBAction
     def restartDaemon_(self, _sender):
@@ -400,21 +304,13 @@ class PenpalHUDApp(AppKit.NSObject):
         alert.addButtonWithTitle_("取消")
         if alert.runModal() != AppKit.NSAlertFirstButtonReturn:
             return
-        cfg = getattr(self, "cfg", None)
-        if cfg is not None:
-            _reset_transient_error_state(cfg)
 
         def _run_heal() -> None:
             from penpal.health.self_heal import run_self_heal
 
             run_self_heal(dry_run=False, source="hud")
 
-        thread = threading.Thread(target=_run_heal, daemon=True, name="hud-self-heal")
-        thread.start()
-
-    @objc.IBAction
-    def terminate_(self, _sender):
-        AppKit.NSApp.terminate_(None)
+        threading.Thread(target=_run_heal, daemon=True, name="hud-self-heal").start()
 
     @objc.IBAction
     def confirmQuit_(self, _sender):
@@ -427,109 +323,25 @@ class PenpalHUDApp(AppKit.NSObject):
         if alert.runModal() == AppKit.NSAlertFirstButtonReturn:
             AppKit.NSApp.terminate_(None)
 
-    def _setup_status_menu(self) -> None:
-        self.status_menu = AppKit.NSMenu.alloc().init()
-
-        self.approval_menu_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "候选审批",
-            objc.selector(self.openApprovalWindow_, signature=b"v@:@"),
-            "",
-        )
-        self.approval_menu_item.setTarget_(self)
-        self.status_menu.addItem_(self.approval_menu_item)
-
-        self.status_menu.addItem_(AppKit.NSMenuItem.separatorItem())
-
-        restart_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "启动一键自愈",
-            objc.selector(self.restartDaemon_, signature=b"v@:@"),
-            "",
-        )
-        restart_item.setTarget_(self)
-        self.status_menu.addItem_(restart_item)
-
-        quit_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "退出 HUD",
-            objc.selector(self.confirmQuit_, signature=b"v@:@"),
-            "",
-        )
-        quit_item.setTarget_(self)
-        self.status_menu.addItem_(quit_item)
-
-    def _refresh_approval_menu_item(self) -> None:
-        item = getattr(self, "approval_menu_item", None)
-        if item is None:
-            return
-        if self.pending_count_error:
-            item.setTitle_("候选审批 (?)")
-            item.setEnabled_(True)
-            return
-        count = max(int(getattr(self, "pending_count", 0)), 0)
-        if count <= 0:
-            item.setTitle_("候选审批")
-            item.setEnabled_(False)
-            return
-        item.setTitle_(f"候选审批 ({count})")
-        item.setEnabled_(True)
-
-    def _is_secondary_click(self) -> bool:
-        if not hasattr(AppKit.NSApp, "currentEvent"):
-            return False
-        event = AppKit.NSApp.currentEvent()
-        if event is None or not hasattr(event, "type"):
-            return False
-        event_type = int(event.type())
-        right_up = int(getattr(AppKit, "NSEventTypeRightMouseUp", -1))
-        right_down = int(getattr(AppKit, "NSEventTypeRightMouseDown", -2))
-        return event_type in {right_up, right_down}
-
-    def _show_approval_error(self, error_message: str) -> None:
-        alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("候选审批读取失败")
-        alert.setInformativeText_(error_message)
-        alert.addButtonWithTitle_("OK")
-        alert.runModal()
-
-    @objc.IBAction
-    def openApprovalWindow_(self, _sender):
-        if self.pending_count_error:
-            self._pending_count_last_sync = 0.0
-            self.refresh_status()
-            if self.pending_count_error:
-                self._show_approval_error(self.pending_count_error)
-                return
-        if self.approval_window is None:
-            self.approval_window = ApprovalWindowController.alloc().initWithStore_(None)
-        self.approval_window.showWindow_(None)
-        self._pending_count_last_sync = 0.0
-        self.refresh_status()
-
-    def pollSignals_(self, _timer):
-        self.refresh_status()
-        self._refresh_content()
-
-# --- 启动器 (彻底解决 Ctrl+C 不响应问题) ---
 
 def run_hud(cfg: Config | None = None) -> None:
     config = cfg or Config.load()
     app = AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
-    
+
     delegate = PenpalHUDApp.alloc().initWithConfig_(config)
     app.setDelegate_(delegate)
 
-    # 信号强力桥接：终端按下 Ctrl+C 时强制杀掉进程并返回控制台
     def _force_shutdown(sig, frame):
         print("\n[Penpal] 接收到退出信号，清理并关闭...")
         AppKit.NSApp.terminate_(None)
-        os._exit(0) # 暴力退出 Python 环境，确保终端状态返回
+        os._exit(0)  # make sure the terminal gets control back after Ctrl+C
 
     signal.signal(signal.SIGINT, _force_shutdown)
     signal.signal(signal.SIGTERM, _force_shutdown)
 
     NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-        10.0, delegate, objc.selector(delegate.pollSignals_, signature=b"v@:@"), None, True
+        REFRESH_SEC, delegate, objc.selector(delegate.pollSignals_, signature=b"v@:@"), None, True
     )
-
-    print("✅ Penpal HUD 启动。状态、指标、模式一键直达。")
+    print("Penpal HUD 已启动。")
     app.run()
