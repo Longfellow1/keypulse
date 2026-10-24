@@ -100,6 +100,8 @@ Read-only. Whatever is returned enters that AI's conversation and may be sent to
 
 Data stays on your machine in `~/.penpal/`. No cloud, no telemetry. Nothing is deleted automatically; deletion is your call, and it removes the original text, index, source and related query records together.
 
+A checkable, line-by-line privacy boundary with code and test references: [docs/privacy.en.md](docs/privacy.en.md)
+
 ## Day-to-day control
 
 | Task | Command |
