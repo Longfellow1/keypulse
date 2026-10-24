@@ -5,6 +5,8 @@ import signal
 from click.testing import CliRunner
 
 from penpal.cli import main
+from penpal.runtime import RuntimeState, RuntimeStatus
+from penpal.runtime.evaluate import HudStatus, Issue
 
 
 def test_hud_invokes_hud_runner_by_default(monkeypatch, tmp_path):
@@ -92,25 +94,15 @@ def test_hud_stop_terminates_running_instance(monkeypatch, tmp_path):
 
 
 def test_hud_status_reports_running_instance(monkeypatch, tmp_path):
-    pid_path = tmp_path / "hud.pid"
-
-    class FakeLock:
-        def __init__(self):
-            self.pid_path = pid_path
-
-        def is_running(self):
-            return True
-
-        def get_pid(self):
-            return 4242
-
-    monkeypatch.setattr("penpal.cli.app._hud_lock", FakeLock)
+    status = HudStatus(4242, "g", True, True, True, "2026-10-25T12:00:00+00:00", "2026-10-25T12:00:01+00:00", 1.0)
+    monkeypatch.setattr("penpal.cli.app.evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING, hud=status))
 
     result = CliRunner().invoke(main, ["hud", "status", "--plain"])
 
     assert result.exit_code == 0
     assert "running=True" in result.output
     assert "pid=4242" in result.output
+    assert "status=running" in result.output and "status_item_visible=True" in result.output
 
 
 def test_hud_stop_falls_back_to_legacy_process_lookup(monkeypatch, tmp_path):
@@ -131,14 +123,18 @@ def test_hud_stop_falls_back_to_legacy_process_lookup(monkeypatch, tmp_path):
     assert (5151, signal.SIGTERM) in calls
 
 
-def test_hud_status_reports_legacy_process_when_pid_file_missing(monkeypatch, tmp_path):
-    pid_path = tmp_path / "hud.pid"
-
-    monkeypatch.setattr("penpal.cli.app.get_hud_pid_path", lambda: pid_path)
-    monkeypatch.setattr("penpal.cli.app._find_legacy_hud_pid", lambda: 5151)
+def test_hud_status_does_not_report_normal_when_status_item_is_hidden(monkeypatch):
+    status = HudStatus(5151, "g", True, True, False, None, "2026-10-25T12:00:00+00:00", 1.0)
+    issue = Issue("hud", "error", "菜单栏图标被系统隐藏：系统设置 → 菜单栏 → 打开 Penpal。", "hidden")
+    monkeypatch.setattr(
+        "penpal.cli.app.evaluate",
+        lambda: RuntimeStatus(RuntimeState.RUNNING, issues=(issue,), hud=status),
+    )
 
     result = CliRunner().invoke(main, ["hud", "status", "--plain"])
 
     assert result.exit_code == 0
     assert "running=True" in result.output
-    assert "pid=5151" in result.output
+    assert "status=issue" in result.output
+    assert "status_item_visible=False" in result.output
+    assert "菜单栏图标被系统隐藏" in result.output

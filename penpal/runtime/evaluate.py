@@ -19,6 +19,7 @@ from penpal.foundation.runtime_identity import (
     loaded_package_version,
     make_identity,
 )
+from penpal.foundation.hud_record import HudRecord, read_hud_record
 from penpal.foundation.runtime_launchd import is_installed, probe_daemon, probe_label, process_start_time
 from penpal.foundation.runtime_record import RECORD_WRITE_INTERVAL_SEC, Component, RuntimeRecord, read_record
 from penpal.i18n import T
@@ -27,6 +28,7 @@ from penpal.store.migrations import SCHEMA_VERSION
 
 HUNG_AFTER_SEC = RECORD_WRITE_INTERVAL_SEC * 3
 STARTING_GRACE_SEC = RECORD_WRITE_INTERVAL_SEC * 3
+HUD_MAIN_THREAD_STALE_SEC = 45.0
 WATCHER_PERMISSION_EVIDENCE_SEC = 30 * 60
 CORE_LOOP_NAME = "core_loop"
 
@@ -122,6 +124,7 @@ class RuntimeStatus:
     pid: int | None = None
     generation: str | None = None
     managed: bool = False
+    hud: "HudStatus | None" = None
 
     @property
     def code(self) -> str:
@@ -134,6 +137,18 @@ class RuntimeStatus:
     @property
     def failed(self) -> bool:
         return self.state in _FAILED_STATES
+
+
+@dataclass(frozen=True)
+class HudStatus:
+    pid: int
+    generation: str
+    alive: bool
+    status_item_created: bool
+    status_item_visible: bool | None
+    last_model_built_at: str | None
+    last_main_thread_tick_at: str | None
+    main_thread_tick_age_sec: float | None
 
 
 def state_text(state: RuntimeState | str, *, language: str | None = None) -> str:
@@ -271,6 +286,66 @@ def _state_issue(state: RuntimeState) -> Issue | None:
     return Issue("daemon", severity, text[2], text[3], text[4], "后台服务", "Background service")
 
 
+def _hud_status(
+    record: HudRecord | None,
+    *,
+    now: datetime,
+    last_wake: datetime | None = None,
+    process_start_reader: Callable[[int], str | None],
+) -> tuple[HudStatus | None, tuple[Issue, ...]]:
+    if record is None:
+        return None, ()
+    current_start = process_start_reader(record.pid)
+    alive = current_start is not None and current_start == record.process_start_time
+    # Sleep suspends the HUD too; count staleness from the later of the last tick and the last wake.
+    age = _last_progress_age(record.last_main_thread_tick_at, last_wake, now)
+    status = HudStatus(
+        pid=record.pid,
+        generation=record.generation,
+        alive=alive,
+        status_item_created=record.status_item_created,
+        status_item_visible=record.status_item_visible,
+        last_model_built_at=record.last_model_built_at,
+        last_main_thread_tick_at=record.last_main_thread_tick_at,
+        main_thread_tick_age_sec=age,
+    )
+    issues: list[Issue] = []
+    if alive and record.status_item_created and record.status_item_visible is False:
+        issues.append(Issue(
+            "hud", "error",
+            "菜单栏图标被系统隐藏：系统设置 → 菜单栏 → 打开 Penpal。",
+            "The menu bar item is hidden. Open System Settings → Menu Bar and enable Penpal.",
+            label_zh="菜单栏 HUD", label_en="Menu bar HUD",
+        ))
+    # Unknown visibility is not reported: macOS 26 exposes no API for the System Settings toggle, so a
+    # standing "could not confirm" warning would fire for nearly every user. R7 covers it by hand.
+    if alive and age is not None and age > HUD_MAIN_THREAD_STALE_SEC:
+        issues.append(Issue(
+            "hud", "error",
+            "HUD 无响应：主线程超过 45 秒没有响应。可运行 `penpal hud stop` 后从 Finder 重新打开 Penpal.app。",
+            "HUD is not responding: its main thread has not responded for over 45 seconds. Run `penpal hud stop`, then reopen Penpal.app from Finder.",
+            "penpal hud stop", "菜单栏 HUD", "Menu bar HUD",
+        ))
+    return status, tuple(issues)
+
+
+def _attach_hud(
+    status: RuntimeStatus,
+    hud_status: HudStatus | None,
+    hud_issues: tuple[Issue, ...],
+) -> RuntimeStatus:
+    return RuntimeStatus(
+        state=status.state,
+        issues=status.issues + hud_issues,
+        components=status.components,
+        progress=status.progress,
+        pid=status.pid,
+        generation=status.generation,
+        managed=status.managed,
+        hud=hud_status,
+    )
+
+
 _COMPONENT_LABELS: dict[str, tuple[str, str]] = {
     "storage": ("采集存储", "Capture storage"),
     "permission.accessibility": ("辅助功能权限", "Accessibility permission"),
@@ -314,6 +389,7 @@ def evaluate(
     identity_reader: Callable[[], RuntimeIdentity] = current_identity,
     paused_reader: Callable[[], bool] = _paused,
     wake_time_reader: Callable[[], datetime | None] = _read_last_system_wake_time,
+    hud_record_reader: Callable[[], HudRecord | None] = read_hud_record,
 ) -> RuntimeStatus:
     """Evaluate installed code and daemon progress; idle event streams are healthy."""
     now = now or datetime.now(timezone.utc)
@@ -328,14 +404,17 @@ def evaluate(
         )
     last_wake = _normalise_datetime(wake_time_reader())
     record = record_reader()
+    hud_status, hud_issues = _hud_status(
+        hud_record_reader(), now=now, last_wake=last_wake, process_start_reader=process_start_time,
+    )
     if identity.schema_is_newer_than_code:
         state = RuntimeState.OUTDATED
         issue = _state_issue(state)
-        return RuntimeStatus(
+        return _attach_hud(RuntimeStatus(
             state, (issue,) if issue else (),
             pid=record.pid if record else None,
             generation=record.generation if record else None,
-        )
+        ), hud_status, hud_issues)
     launchd = launchd_probe()
     loaded = bool(launchd.get("loaded"))
     launchd_pid = launchd.get("pid")
@@ -344,25 +423,25 @@ def evaluate(
         if not isinstance(launchd_pid, int):
             state = RuntimeState.NOT_RUNNING
             issue = _state_issue(state)
-            return RuntimeStatus(state, (issue,) if issue else (), managed=loaded)
+            return _attach_hud(RuntimeStatus(state, (issue,) if issue else (), managed=loaded), hud_status, hud_issues)
         launchd_start = process_start_time(launchd_pid)
         if not launchd_start:
             state = RuntimeState.NOT_RUNNING
             issue = _state_issue(state)
-            return RuntimeStatus(state, (issue,) if issue else (), pid=launchd_pid, managed=loaded)
+            return _attach_hud(RuntimeStatus(state, (issue,) if issue else (), pid=launchd_pid, managed=loaded), hud_status, hud_issues)
         if record is None or launchd_pid != record.pid or launchd_start != record.process_start_time:
-            return _unrecorded_process_status(launchd_pid, launchd_start, now)
+            return _attach_hud(_unrecorded_process_status(launchd_pid, launchd_start, now), hud_status, hud_issues)
     elif record is None:
         state = RuntimeState.NOT_INSTALLED if not is_installed() else RuntimeState.NOT_RUNNING
         issue = _state_issue(state)
-        return RuntimeStatus(state, (issue,) if issue else (), managed=loaded)
+        return _attach_hud(RuntimeStatus(state, (issue,) if issue else (), managed=loaded), hud_status, hud_issues)
 
     if not loaded:
         current_start = process_start_time(record.pid)
         if not current_start or current_start != record.process_start_time:
             state = RuntimeState.NOT_RUNNING
             issue = _state_issue(state)
-            return RuntimeStatus(state, (issue,) if issue else (), pid=record.pid, generation=record.generation, managed=loaded)
+            return _attach_hud(RuntimeStatus(state, (issue,) if issue else (), pid=record.pid, generation=record.generation, managed=loaded), hud_status, hud_issues)
 
     if record.code_fingerprint != identity.code_fingerprint or record.version != identity.package_version:
         state = RuntimeState.OUTDATED
@@ -381,6 +460,6 @@ def evaluate(
             state = RuntimeState.RUNNING
 
     issues = tuple(filter(None, (_state_issue(state),))) + _component_issues(record.components)
-    return RuntimeStatus(
+    return _attach_hud(RuntimeStatus(
         state, issues, record.components, record.progress, record.pid, record.generation, loaded,
-    )
+    ), hud_status, hud_issues)

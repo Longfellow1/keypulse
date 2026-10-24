@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -47,9 +48,11 @@ def test_page_has_the_fixed_regions_and_no_external_resources():
 @needs_node
 def test_renders_overview_and_posts_taps(tmp_path):
     m = build_model(snap(), UiState())
+    m["model_built_at"] = datetime.now(timezone.utc).isoformat()
     out = _run(tmp_path, [{"model": m}, {"click": "实时采集"}, {"click": "AI 访问"}, {"click": "暂停"}])
     shown = out[0]
     assert shown["title"] == "概览" and "正在记录" in shown["status"] and "暂停" in shown["status"]
+    assert shown["updated"].startswith("数据更新于 ") and shown["updated"].endswith(" 秒前")
     assert [t["text"] for t in shown["tabs"]] == ["概览", "AI 访问", "隐私与删除"] and shown["tabs"][0]["current"]
     assert any("实时采集" in r["text"] and "3 开 · 1 关" in r["text"] for r in shown["rows"])
     assert "1,284" in shown["scroll"] and "新增记录" in shown["scroll"]

@@ -2,6 +2,7 @@
 
 from penpal.runtime.evaluate import (
     Issue,
+    HudStatus,
     RuntimeState,
     RuntimeStatus,
     evaluate,
@@ -13,7 +14,7 @@ from penpal.runtime.evaluate import (
 from penpal.runtime.control import ControlResult, restart, start, stop
 
 __all__ = [
-    "Issue", "RuntimeState", "RuntimeStatus", "evaluate", "launchd_label_loaded",
+    "Issue", "HudStatus", "RuntimeState", "RuntimeStatus", "evaluate", "launchd_label_loaded",
     "state_message", "state_text", "watcher_recently_emitted",
     "ControlResult", "start", "stop", "restart",
 ]

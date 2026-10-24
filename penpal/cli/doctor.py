@@ -73,10 +73,24 @@ def doctor(plain):
     runtime_status = evaluate()
     runtime_fix = _runtime_fix_command(runtime_status)
     runtime_detail = f"state={_runtime_status_line(runtime_status)}"
+    if runtime_status.issues:
+        from penpal.runtime import state_message
+
+        runtime_detail += f"; detail={state_message(runtime_status)}"
     if runtime_fix:
         runtime_detail += f"; fix=`{runtime_fix}`"
     checks = {"后台服务": not runtime_status.failed}
     check_details = {"后台服务": runtime_detail}
+    hud_issues = [issue for issue in runtime_status.issues if issue.component == "hud"]
+    if runtime_status.hud is not None and runtime_status.hud.alive:
+        visible = runtime_status.hud.status_item_visible
+        # The evaluator alone decides pass/fail; unknown visibility is informational (macOS hides the toggle).
+        checks["菜单栏 HUD"] = not hud_issues
+        check_details["菜单栏 HUD"] = (
+            hud_issues[0].message_zh if hud_issues else
+            "主线程有响应；状态栏图标可见" if visible is True else
+            "主线程有响应；若菜单栏看不到图标，请在系统设置 → 菜单栏打开 Penpal"
+        )
     cfg = get_config()
     require_db(cfg)
 

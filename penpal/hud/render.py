@@ -26,9 +26,11 @@ button{font-family:inherit;cursor:pointer}
 #st-text{font-size:14px;font-weight:600}
 #st-sub{font-size:11px;color:var(--sub)}
 #pause{height:30px;padding:0 12px;border-radius:8px;border:1px solid #D6D6D1;background:var(--card);font-size:12px;font-weight:600;color:var(--text)}
-#titlebar{height:40px;flex-shrink:0;padding:0 8px;display:flex;align-items:center;position:relative}
+#titlebar{height:54px;flex-shrink:0;padding:0 8px;display:flex;flex-direction:column;align-items:stretch}
+.title-row{height:33px;flex-shrink:0;display:flex;align-items:center;position:relative}
 #back{height:32px;padding:0 6px;border:0;background:transparent;font-size:13px;color:var(--blue);display:flex;align-items:center;gap:2px;position:relative;z-index:1}
 #title{position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;pointer-events:none}
+#model-updated{height:14px;text-align:center;font-size:10px;line-height:14px;color:var(--sub);font-variant-numeric:tabular-nums}
 #scroll{flex:1;min-height:0;overflow-y:auto;padding:0 12px 14px;display:flex;flex-direction:column;gap:14px}
 #scroll.dim{opacity:.5}
 .sec{display:flex;flex-direction:column;gap:5px}
@@ -77,7 +79,13 @@ _JS = r"""
   var TEXT={amber:'var(--amber-text)',red:'var(--red-text)',blue:'var(--blue)'};
   var NS='http://www.w3.org/2000/svg';
   var $=function(id){return document.getElementById(id)};
-  var lastToast=null, lastView='', toastTimer=null;
+  var lastToast=null, lastView='', toastTimer=null, modelBuiltAt=null;
+
+  function updateAge(){
+    var label=$('model-updated');if(!label)return;
+    var ts=modelBuiltAt?Date.parse(modelBuiltAt):NaN;
+    label.textContent=Number.isFinite(ts)?'数据更新于 '+Math.max(0,Math.floor((Date.now()-ts)/1000))+' 秒前':'数据更新尚未完成';
+  }
 
   function post(action,args){
     var msg={action:action,args:args||{}};
@@ -138,12 +146,16 @@ _JS = r"""
     var g=el('div','grow');var t1=el('span',null,bar.text);t1.id='st-text';var t2=el('span',null,bar.sub);t2.id='st-sub';g.appendChild(t1);g.appendChild(t2);sb.appendChild(g);
     var pb=el('button',null,m.pause.label);pb.id='pause';pb.type='button';pb.addEventListener('click',function(){post(m.pause.action)});sb.appendChild(pb);
 
+    modelBuiltAt=m.model_built_at||null;
     var tb=$('titlebar');tb.textContent='';
+    var tr=el('div','title-row');
     if(m.back){
       var bk=el('button',null);bk.id='back';bk.type='button';bk.appendChild(svg(12,12,'M8 2L4 6l4 4','#2F6FDB',1.6));bk.appendChild(document.createTextNode(m.back.label));
-      bk.addEventListener('click',function(){post(m.back.action)});tb.appendChild(bk);
+      bk.addEventListener('click',function(){post(m.back.action)});tr.appendChild(bk);
     }
-    tb.appendChild(el('div',null,m.title)).id='title';
+    tr.appendChild(el('div',null,m.title)).id='title';
+    tb.appendChild(tr);
+    var age=el('div',null);age.id='model-updated';age.setAttribute('aria-live','polite');tb.appendChild(age);updateAge();
 
     var sc=$('scroll');var key=m.view.tab+'|'+m.view.page;var keep=(key===lastView)?sc.scrollTop:0;lastView=key;
     sc.textContent='';sc.className=m.dim?'dim':'';
@@ -172,6 +184,7 @@ _JS = r"""
   };
   $('dlg-cancel').addEventListener('click',function(){post('confirm.cancel')});
   $('dlg-ok').addEventListener('click',function(){post('confirm.ok')});
+  setInterval(updateAge,1000);
   window.addEventListener('load',function(){post('ui.ready')});
 })();
 """

@@ -77,6 +77,21 @@ penpal stop
 penpal status   # running=no
 ```
 
+### R7: menu-bar HUD identity and visibility (owner manual check)
+
+Run this once on the owner’s Mac after installing the app. Do not launch the bundle executable from Terminal:
+
+1. Run `penpal app install`.
+2. In Finder, open `~/Applications/Penpal.app` (or the custom `--dir` location).
+3. Open System Settings → Menu Bar. On macOS 26, confirm **Allow in the Menu Bar → Penpal** is enabled; the menu-bar icon should be visible. On macOS 15, confirm the icon is visible in the menu bar.
+4. Confirm the app is listed as **Penpal**, not **Python**, in the menu-bar app list where the OS provides that list.
+5. Run `penpal doctor` and `penpal hud status`; the HUD row should report a recent main-thread tick and a visible status item.
+6. If `penpal app install` reports the clang/libpython fallback, the entry may be named **Python**. Install the app from the Penpal environment that has clang and libpython, then repeat from Finder.
+
+To remove old entries, quit any old HUD with `penpal hud stop`, then move the old `/Applications/KeyPulse.app` to Trash in Finder. On macOS 26, if an obsolete **Python** entry remains under System Settings → Menu Bar → Allow in the Menu Bar, turn it off only after confirming it belongs to the old Penpal launcher. Do not remove a Python entry used by another app.
+
+Visibility is best-effort in `hud.json`: `NSStatusItem.isVisible()` plus the status button window’s `occlusionState` when available. macOS 26 does not expose the System Settings allow/deny switch through a public API, and `isVisible()` may remain true when that switch is off. The manual check is therefore the R7 authority.
+
 ### R4: in-place upgrade with three MCP hosts
 
 Run this checklist once each in Claude Code, Codex, and Cursor on the owner’s Mac. Keep the same host session and conversation open during the upgrade. Use a distinctive keyword from an existing, authorized Penpal record so the query has a known result.

@@ -15,15 +15,25 @@ class Node {
 }
 const byId = {};
 function make(tag) { return new Node(tag); }
+function findId(node, id) {
+  if (node.id === id) return node;
+  for (const child of node.children) { const found = findId(child, id); if (found) return found; }
+  return null;
+}
 const doc = {
   createElement: make, createElementNS: (ns, tag) => make(tag), createTextNode: t => { const n = make('#text'); n._text = t; return n; },
-  getElementById: id => byId[id] || (byId[id] = Object.assign(make('div'), { id })),
+  getElementById: id => {
+    if (byId[id]) return byId[id];
+    for (const node of Object.values(byId)) { const found = findId(node, id); if (found) return found; }
+    return (byId[id] = Object.assign(make('div'), { id }));
+  },
   addEventListener() {},
 };
 const posted = [];
 const win = { addEventListener() {}, __post: m => posted.push(m) };
 global.document = doc; global.window = win;
 global.setTimeout = () => 0; global.clearTimeout = () => {};
+global.setInterval = () => 0;
 
 const html = fs.readFileSync(process.argv[2], 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -45,7 +55,8 @@ for (const step of JSON.parse(fs.readFileSync(process.argv[3], 'utf8'))) {
     win.render(step.model);
     const rows = []; walk(byId.scroll, n => { if (/(^| )r( |$)/.test(n.className)) rows.push({ text: n.textContent, role: n.attrs.role || null, checked: n.attrs['aria-checked'] || null, clickable: !!n.listeners.click }); });
     const tabs = []; walk(byId.tabs, n => { if (n.tag === 'button') tabs.push({ text: n.textContent, current: n.attrs['aria-current'] === 'page' }); });
-    out.push({ status: byId.statusbar.textContent, title: byId.titlebar.textContent, rows, tabs, scroll: byId.scroll.textContent,
+    out.push({ status: byId.statusbar.textContent, title: byId.titlebar.children[0].textContent,
+      updated: doc.getElementById('model-updated').textContent, rows, tabs, scroll: byId.scroll.textContent,
       pre: (() => { let t = null; walk(byId.scroll, n => { if (n.className === 'code') t = n.textContent; }); return t; })(),
       dialog: byId.veil.style.display === 'flex' ? byId['dlg-title'].textContent + '|' + byId['dlg-body'].textContent : null,
       toast: byId.toast.style.display === 'block' ? byId.toast.textContent : null, dim: byId.scroll.className });

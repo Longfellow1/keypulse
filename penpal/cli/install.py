@@ -256,6 +256,16 @@ def install_doctor(plain):
     if runtime_fix:
         runtime_detail += f"; fix=`{runtime_fix}`"
     checks["runtime"] = (not runtime_status.failed, runtime_detail)
+    hud_issue = next((issue for issue in runtime_status.issues if issue.component == "hud"), None)
+    if runtime_status.hud is not None and runtime_status.hud.alive:
+        visible = runtime_status.hud.status_item_visible
+        checks["hud"] = (
+            hud_issue is None and visible is True,
+            hud_issue.message_zh if hud_issue else "主线程有响应；" + ("状态栏图标可见" if visible is True else "状态栏图标可见性未知"),
+        )
+    hud_issue = next((issue for issue in runtime_status.issues if issue.component == "hud"), None)
+    if runtime_status.hud is not None and runtime_status.hud.alive:
+        checks["hud"] = (hud_issue is None, hud_issue.message_zh if hud_issue else "主线程有响应")
     try:
         executable = _penpal_executable_path()
         checks["executable"] = (executable.exists(), str(executable))

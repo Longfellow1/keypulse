@@ -11,6 +11,7 @@ from penpal.utils.paths import get_hud_lock_path, get_hud_pid_path
 from penpal.utils.lock import SingleInstanceLock
 from penpal.hud import run_hud
 from penpal.i18n import T
+from penpal.runtime import evaluate
 from . import main
 from ._shared import PLAIN_HELP, console, err_console, get_config, require_db
 from .install import _penpal_executable_path
@@ -97,20 +98,49 @@ def _stop_hud():
     console.print("[yellow]Stop signal sent (HUD may still be shutting down).[/yellow]")
 
 def _show_hud_status(plain: bool = False):
-    lock = _hud_lock()
-    pid = lock.get_pid() or _find_legacy_hud_pid()
-    is_running = lock.is_running() or pid is not None
+    runtime = evaluate()
+    hud = runtime.hud
+    is_running = bool(hud and hud.alive)
+    pid = hud.pid if hud else None
+    issue = next((item for item in runtime.issues if item.component == "hud"), None)
+    if not is_running:
+        status = "not_running"
+    elif issue is not None:
+        status = "issue"
+    elif hud.status_item_visible is None:
+        status = "visibility_unknown"
+    else:
+        status = "running"
 
     if plain:
         print(f"running={is_running}")
         print(f"pid={pid or 'none'}")
-        print(f"pid_path={lock.pid_path}")
+        print(f"status={status}")
+        if hud is not None:
+            print(f"status_item_created={hud.status_item_created}")
+            print(f"status_item_visible={'unknown' if hud.status_item_visible is None else hud.status_item_visible}")
+            print(f"main_thread_tick_age_sec={hud.main_thread_tick_age_sec if hud.main_thread_tick_age_sec is not None else 'unknown'}")
+        if issue:
+            print(f"message={issue.message_zh}")
         return
 
     table = Table(show_header=False, box=None)
-    table.add_row("HUD 状态", "[green]运行中[/green]" if is_running else "[yellow]未运行[/yellow]")
+    status_text = {
+        "running": "[green]运行中[/green]",
+        "issue": "[red]存在问题[/red]",
+        "visibility_unknown": "[yellow]可见性未知[/yellow]",
+        "not_running": "[yellow]未运行[/yellow]",
+    }[status]
+    table.add_row("HUD 状态", status_text)
     table.add_row("PID", str(pid or "—"))
-    table.add_row("PID 文件", str(lock.pid_path))
+    if hud is not None:
+        table.add_row("状态栏图标已创建", "是" if hud.status_item_created else "否")
+        visible = "未知" if hud.status_item_visible is None else "可见" if hud.status_item_visible else "不可见"
+        table.add_row("状态栏图标可见性", visible)
+        if hud.main_thread_tick_age_sec is not None:
+            table.add_row("主线程最近响应", f"{hud.main_thread_tick_age_sec:.0f} 秒前")
+    if issue:
+        table.add_row("详情", issue.message_zh)
     console.print(table)
 
 @main.group(invoke_without_command=True, help=T("管理 macOS 菜单栏 HUD。", "Manage the macOS status bar HUD."))
@@ -151,8 +181,8 @@ def _app_dir_option(func):
     return click.option("--dir", "apps_dir", type=click.Path(path_type=Path), default=None,
                         help=T("安装目录（默认 ~/Applications）", "Install directory (default ~/Applications)"))(func)
 
-@app_group.command("install", help=T("安装 Penpal.app（只启动已安装的 `penpal hud`，自身不需要系统权限）。",
-                                     "Install Penpal.app (only launches the installed `penpal hud`; needs no system permission itself)."))
+@app_group.command("install", help=T("安装 Penpal.app（原生启动已安装环境里的 HUD；自身不需要系统权限）。",
+                                     "Install Penpal.app (a native launcher runs the HUD from the installed environment; it needs no system permission itself)."))
 @click.option("--login", is_flag=True, default=False, help=T("登录时自动启动（注册 com.penpal.hud 启动项）", "Start at login (registers the com.penpal.hud launch agent)"))
 @_app_dir_option
 def app_install(login, apps_dir, agents_dir):
