@@ -9,6 +9,7 @@ import sys
 import click
 
 from penpal.config import Config
+from penpal.mcp.auth import CLIENT_ENV, TOKEN_ENV
 from penpal.store.db import init_db
 
 HOSTS = ("claude", "codex", "cursor", "generic")
@@ -67,6 +68,29 @@ def _host_config_lines(host: str, exe: str, token: str, client_id: str) -> list[
     return ["Generic MCP client (JSON snippet):\n", json_block]
 
 
+def grant_output_lines(client_id: str, scope: str, token: str, host: str, exe: str) -> list[str]:
+    """What `penpal mcp grant` prints after creating a grant (shared with the HUD, which shows it once)."""
+    lines = [f"Granted client '{client_id}' ({scope}). Token (shown once, only its hash is stored):\n", f"  {token}\n"]
+    lines.extend(_host_config_lines(host, exe, token, client_id))
+    lines.append("\nBoth values are required; a call without the matching client id is denied.")
+    lines.append(EGRESS_NOTICE)
+    lines.append("Keep the config file readable by your user only. Revoke with: penpal mcp revoke " + client_id)
+    return lines
+
+
+def rotate_output_lines(client_id: str, token: str, exe: str) -> list[str]:
+    """What `penpal mcp rotate` prints (shared with the HUD, which shows it once)."""
+    server = {"command": exe, "args": ["mcp", "serve"], "env": {TOKEN_ENV: token, CLIENT_ENV: client_id}}
+    return [
+        f"Rotated token for '{client_id}'. The previous token is now invalid. New token (shown once):\n",
+        f"  {token}\n",
+        "Claude Code (CLI):\n",
+        f"  claude mcp add penpal -e {TOKEN_ENV}={token} -e {CLIENT_ENV}={client_id} -- {shlex.quote(exe)} mcp serve\n",
+        ".mcp.json / claude_desktop_config.json snippet:\n",
+        json.dumps({"mcpServers": {"penpal": server}}, indent=2),
+    ]
+
+
 @mcp_group.command("serve", help="Run the MCP server over stdio (env PENPAL_TOKEN + PENPAL_CLIENT).")
 def serve_command() -> None:
     from penpal.mcp import tools
@@ -107,15 +131,9 @@ def grant_command(client_id: str, buckets: str, sources: str | None, operations:
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    exe = _keypulse_executable()
     scope = f"buckets={buckets}, sources={sources or 'all in buckets'}, operations={operations}"
-    click.echo(f"Granted client '{client_id}' ({scope}). Token (shown once, only its hash is stored):\n")
-    click.echo(f"  {token}\n")
-    for line in _host_config_lines(host, exe, token, client_id):
+    for line in grant_output_lines(client_id, scope, token, host, _keypulse_executable()):
         click.echo(line)
-    click.echo("\nBoth values are required; a call without the matching client id is denied.")
-    click.echo(EGRESS_NOTICE)
-    click.echo("Keep the config file readable by your user only. Revoke with: penpal mcp revoke " + client_id)
 
 
 @mcp_group.command("revoke", help="Revoke all active tokens of a client.")
@@ -150,18 +168,8 @@ def rotate_command(client_id: str) -> None:
         token = rotate_grant(client_id)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    exe = shutil.which("penpal") or "penpal"
-    click.echo(f"Rotated token for '{client_id}'. The previous token is now invalid. New token (shown once):\n")
-    click.echo(f"  {token}\n")
-    click.echo("Claude Code (CLI):\n")
-    click.echo(f"  claude mcp add penpal -e {TOKEN_ENV}={token} -e {CLIENT_ENV}={client_id} -- {shlex.quote(exe)} mcp serve\n")
-    click.echo(".mcp.json / claude_desktop_config.json snippet:\n")
-    snippet = {
-        "mcpServers": {
-            "penpal": {"command": exe, "args": ["mcp", "serve"], "env": {TOKEN_ENV: token, CLIENT_ENV: client_id}}
-        }
-    }
-    click.echo(json.dumps(snippet, indent=2))
+    for line in rotate_output_lines(client_id, token, shutil.which("penpal") or "penpal"):
+        click.echo(line)
 
 
 @mcp_group.command("audit", help="Show recent MCP calls (allowed and denied). Never contains queries or tokens.")

@@ -310,3 +310,22 @@ def write_chat_apps_opt_in(path: Path, keys: list[str]) -> None:
         raise ValueError("could not update privacy.chat_apps_opt_in in " + str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(new, encoding="utf-8")
+
+
+def set_chat_app_opt_in(name: str, allowed: bool, *, path: Path | None = None) -> tuple[str, list[str]]:
+    """Allow / deny one chat app (``penpal privacy chat-apps allow|deny``, and the HUD switch).
+
+    Returns the canonical key and the new opt-in list. Raises ValueError for an unknown app name.
+    The daemon reads the list at start, so a running daemon needs a restart to pick the change up.
+    """
+    from penpal.capture.chat_apps import normalize_opt_ins
+    from penpal.utils.paths import get_config_path
+
+    key = normalize_opt_ins([name])[0]
+    current = list(Config.load().privacy.chat_apps_opt_in)
+    if allowed and key not in current:
+        current.append(key)
+    elif not allowed:
+        current = [k for k in current if k != key]
+    write_chat_apps_opt_in(path or get_config_path(), current)
+    return key, current
