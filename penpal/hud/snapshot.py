@@ -244,7 +244,7 @@ def collect_snapshot(cfg, *, now: Optional[datetime] = None) -> Snapshot:
         (p.get("scope_type") or "", p.get("scope_value") or "")
         for p in _safe("policies", get_all_policies, [])
         if p.get("mode") == "deny"
-    )
+    ) + tuple(("domain", host) for host in cfg.privacy.url_deny_hosts)
     try:
         disk_free = shutil.disk_usage(db_path.parent if db_path.parent.exists() else os.path.expanduser("~")).free
     except OSError:
