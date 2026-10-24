@@ -353,3 +353,15 @@ def test_first_import_has_no_lower_bound_by_default(home, claude_plugin, monkeyp
     assert result.exit_code == 0, result.output
     assert onboarding.FIRST_IMPORT_LOOKBACK_DAYS is None
     assert seen == [onboarding.IMPORT_SINCE_FLOOR]
+
+
+def test_batched_import_drops_user_excluded_domains(home, monkeypatch):
+    # #26 (B6) applies to the first-use importer too: a history row on a user-excluded domain is never stored.
+    (home / ".penpal" / "config.toml").write_text('[privacy]\nurl_deny_hosts = ["example.org"]\n', encoding="utf-8")
+    safari = _write_safari(home, keyword="quokkadenied")  # its only row is https://example.org/doc
+    monkeypatch.setattr(registry, "_PLUGINS", {"safari_history": safari})
+    since, until = _window()
+
+    importer.import_source("safari_history", since=since, until=until, batch_size=2)
+
+    assert _count("safari_history") == 0

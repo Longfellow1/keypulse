@@ -77,7 +77,7 @@ def import_source(
     result = ImportResult(source=name, status=STATE_RUNNING, resumed=resumed)
     cleaning_config = load_cleaning_config()
     deny_hosts = Config.load().privacy.url_deny_hosts
-    stream = _accepted_events(plugin, since, until, cleaning_config)
+    stream = _accepted_events(plugin, since, until, cleaning_config, deny_hosts)
     _save_progress(result, STATE_RUNNING)
 
     try:
@@ -143,7 +143,7 @@ def _probe(plugin: DataSource) -> Availability:
 
 
 def _accepted_events(
-    plugin: DataSource, since: datetime, until: datetime, cleaning_config
+    plugin: DataSource, since: datetime, until: datetime, cleaning_config, deny_hosts: list[str]
 ) -> Iterator[SemanticEvent]:
     # Pulled lazily: islice stops this generator right after the last accepted event of a batch, so a
     # live cursor is never ahead of the events that were handed to storage.
