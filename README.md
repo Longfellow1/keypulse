@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
-[![Tests](https://img.shields.io/badge/tests-1000%2B%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1100%2B%20passing-brightgreen.svg)](tests/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ---
@@ -86,7 +86,8 @@ penpal app uninstall        # 移除 App 和启动项，不影响后台服务与
 
 **会记录**（每个来源都能单独关）：
 
-- 实时采集：前台窗口切换、剪贴板、当前网页地址、键盘文字片段
+- 实时采集：前台窗口切换、剪贴板、键盘文字片段
+- 当前网页地址：代码默认关闭；`penpal install init` 生成的 `~/.penpal/config.toml` 在 `[watchers]` 下写了 `browser_url = true`，所以按安装步骤走会开启，删掉该文件或改成 `false` 则不采。开启后后台服务需要浏览器自动化权限
 - 导入：Chrome / Safari 历史、Claude Code 与 Codex 会话、终端命令历史、Git 提交、Spotlight
 
 **不会记录或默认排除**：
@@ -115,12 +116,12 @@ penpal app uninstall        # 移除 App 和启动项，不影响后台服务与
 ## 现在做到哪
 
 - **召回准确率**：作者在本机真实数据上建了 50 题评测集，其中约三分之一只给部分线索。由独立模型作答、自动判分，三轮平均答对 46.7 题（93%），越权返回 0 次。评测集含个人数据，不公开。
-- **已可用**：采集、导入、脱敏、分类授权、搜索、出处、删除、暂停与来源开关、无界面故障提醒。
+- **已可用**：采集、导入、首次使用引导、脱敏、分类授权、排除名单、搜索、出处、删除、暂停与来源开关、无界面故障提醒；可选的菜单栏 App（`penpal app install`）。
 - **还没做到**：
   - 键盘片段目前只可靠覆盖英文，中文输入法上屏文字的采集还在试验。
   - 只支持 macOS。
   - AI 只能读，不能写回长期记忆。
-  - 桌面 App 目前只有 HUD 一个界面；日报、周报等依赖界面的功能是后续计划。
+  - 桌面 App 目前只有菜单栏 HUD 一个界面，采用 ad-hoc 签名（无开发者证书）；日报、周报等依赖界面的功能是后续计划。
 
 ## 许可
 
