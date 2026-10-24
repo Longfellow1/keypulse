@@ -96,6 +96,21 @@ def test_snapshot_flags_storage_error_and_lost_permission(hud, env):
     assert any(r["title"].startswith("缺少「辅助功能」") for r in _tab_rows(model))
 
 
+def test_read_only_database_file_shows_the_storage_error_entry(hud, env):
+    now = datetime.now(timezone.utc)
+    set_state("status", "running")
+    set_state("capture_runtime", json.dumps({"captured_at": now.isoformat(), "running": True, "watchers": {}}))
+    db = env.db_path_expanded
+    db.chmod(0o444)
+    try:
+        model = hud.model(fresh=True)
+    finally:
+        db.chmod(0o644)
+    assert hud.snapshot().health["code"] == ch.CODE_STORAGE_ERROR
+    assert model["status"]["tone"] == "red"
+    assert any(r["title"] == "数据库无法写入" for r in _tab_rows(model))
+
+
 def test_unreadable_database_does_not_crash_the_hud(hud, env, monkeypatch):
     monkeypatch.setattr("penpal.services.activity.source_activity", lambda since: (_ for _ in ()).throw(RuntimeError("db")))
     model = hud.model(fresh=True)
