@@ -87,7 +87,7 @@ penpal app uninstall        # 移除 App 和启动项，不影响后台服务与
 **会记录**（每个来源都能单独关）：
 
 - 实时采集：前台窗口切换、剪贴板、键盘文字片段
-- 当前网页地址：代码默认关闭；`penpal install init` 生成的 `~/.penpal/config.toml` 在 `[watchers]` 下写了 `browser_url = true`，所以按安装步骤走会开启，删掉该文件或改成 `false` 则不采。开启后后台服务需要浏览器自动化权限
+- 当前网页地址：标准安装默认开启，需要给后台服务浏览器自动化权限；不想采的话，在 `~/.penpal/config.toml` 的 `[watchers]` 里设 `browser_url = false`
 - 导入：Chrome / Safari 历史、Claude Code 与 Codex 会话、终端命令历史、Git 提交、Spotlight
 
 **不会记录或默认排除**：

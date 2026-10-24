@@ -87,7 +87,7 @@ Read-only. Whatever is returned enters that AI's conversation and may be sent to
 **Recorded** (each source can be turned off individually):
 
 - Live capture: foreground window switches, clipboard, keyboard text snippets
-- Current web page URL: off by default in code, but the `~/.penpal/config.toml` written by `penpal install init` sets `browser_url = true` under `[watchers]`, so the standard install turns it on; delete that file or set it to `false` to stop. When on, the background service needs browser automation permission
+- Current web page URL: on in the standard install; the background service needs browser automation permission. To stop it, set `browser_url = false` under `[watchers]` in `~/.penpal/config.toml`
 - Imports: Chrome / Safari history, Claude Code and Codex sessions, shell history, Git commits, Spotlight
 
 **Not recorded, or excluded by default:**
