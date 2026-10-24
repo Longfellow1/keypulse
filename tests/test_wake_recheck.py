@@ -262,6 +262,7 @@ def test_wake_rescan_plus_reimport_adds_no_duplicate_rows():
         list_sources_fn=lambda: [_Src("fake_source")],
         read_all_fn=fake_read_all,
         event_source_factory=lambda: None,
+        history_allowed_fn=lambda: True,  # this test is about wake re-scan, not the onboarding gate (#32)
     )
     scheduler.start()
     try:

@@ -448,6 +448,23 @@ def _echo_launchd_results(results: list[tuple[str, Path, str, bool]], *, plain: 
             console.print(f"[green]{label}[/green] {status_text} ({load_text}) -> {path}")
 
 
+def _format_import_progress(record: dict) -> str:
+    """One line for `penpal status` from the last import record (issue #32)."""
+    state = record.get("state")
+    batches = int(record.get("batches") or 0)
+    events = int(record.get("events") or 0)
+    resumed = "；上次中断后从游标续传" if record.get("resumed") else ""
+    if state == "done":
+        return f"已完成：{batches} 批，{events} 条{resumed}"
+    if state == "interrupted":
+        return f"已中断：已入库 {batches} 批（本次 {events} 条）；重新运行将从游标续传{resumed}"
+    if state == "failed":
+        return f"写入失败：已入库 {batches} 批；重新运行将从游标续传{resumed}"
+    if state == "running":
+        return f"进行中：已入库 {batches} 批（若长时间不更新，说明已中断，重新运行即可续传）{resumed}"
+    return str(state or "未知")
+
+
 def _show_keyboard_notice_once() -> None:
     """Print the keyboard capture risk notice the first time install/onboarding runs (issue #29)."""
     if not notice_pending():
@@ -507,6 +524,9 @@ def install_init(no_launchd, no_load, force_config, force_launchd, plain):
         launchd_results = _install_launchd_jobs(load=not no_load, force=force_launchd)
 
     _show_keyboard_notice_once()
+    from penpal.sources.history_gate import historical_imports_allowed
+
+    history_waiting = not historical_imports_allowed()
     if plain:
         print(f"data_dir={data_dir}")
         print(f"logs_dir={logs_dir}")
@@ -514,6 +534,8 @@ def install_init(no_launchd, no_load, force_config, force_launchd, plain):
         print(f"db_path={cfg.db_path_expanded}")
         for label, path, status_text, loaded in launchd_results:
             print(f"launchd.{label}={status_text},path={path},loaded={loaded}")
+        if history_waiting:
+            print("next=penpal install onboard")
         return
 
     console.print("[green]Penpal runtime initialized.[/green]")
@@ -525,6 +547,8 @@ def install_init(no_launchd, no_load, force_config, force_launchd, plain):
         _echo_launchd_results(launchd_results)
     console.print("")
     console.print("Next steps:")
+    if history_waiting:
+        console.print("  penpal install onboard   # 选择要导入的历史来源（之前不读取历史）")
     console.print("  penpal doctor")
 
 
@@ -596,15 +620,24 @@ def _remove_keypulse_path(path: Path) -> bool:
 @install_group.command(
     "onboard",
     help=T(
-        "首次安装/重打包后引导授予 macOS 权限（辅助功能 / 输入监控）。",
-        "Guide the user through granting macOS permissions after first install or repack.",
+        "首次使用引导：数据边界、逐个确认来源、来源所需权限、首次导入，再引导授予 macOS 权限（辅助功能 / 输入监控）。",
+        "First-use guide: data boundary, one-by-one source choice, source permissions, first import, then macOS permission grants.",
     ),
 )
 @click.option("--non-interactive", is_flag=True, default=False, help="Skip interactive prompts (for CI / automation)")
-def install_onboard(non_interactive: bool):
-    """Drive the user through TCC permission grants."""
+@click.option(
+    "--sources",
+    "sources_opt",
+    default=None,
+    help="Non-interactive choice: comma-separated source names (e.g. claude_code), or 'all' for every source found",
+)
+@click.option("--yes", "yes_all", is_flag=True, default=False, help="Enable every source found, no prompts (implies --non-interactive)")
+def install_onboard(non_interactive: bool, sources_opt: str | None, yes_all: bool):
+    """First-use guide: data boundary, source choice, source permissions, first import, then TCC grants."""
     if sys.platform != "darwin":
         raise click.ClickException("install onboard is macOS-only.")
+    if yes_all:
+        non_interactive = True
 
     from penpal.permissions import (
         PERMISSION_SPECS,
@@ -612,8 +645,21 @@ def install_onboard(non_interactive: bool):
         open_settings_pane,
     )
 
-    console.print("[bold]Penpal 权限引导[/bold]\n")
+    console.print("[bold]Penpal 首次使用引导[/bold]\n")
     _show_keyboard_notice_once()
+    from penpal.sources import onboarding
+
+    for line in onboarding.BOUNDARY_LINES:
+        console.print(f"· {line}", markup=False)
+    console.print("")
+
+    chosen = _onboard_choose_sources(
+        non_interactive=non_interactive, sources_opt=sources_opt, yes_all=yes_all
+    )
+    chosen_names = sorted(chosen or [])
+    _onboard_source_permissions(chosen_names, non_interactive=non_interactive)
+
+    console.print("[bold]Penpal 权限引导[/bold]\n")
     console.print(
         "重新打包后 macOS 会撤销以下权限，需要重新授权。"
         "我会按顺序检查每一项，缺失时打开系统设置对应面板。\n"
@@ -655,6 +701,11 @@ def install_onboard(non_interactive: bool):
                 f"点击「➕」选择 /Applications/Penpal.app[/yellow]"
             )
 
+    if chosen_names:
+        _onboard_first_import(chosen_names)
+    else:
+        console.print("来源：未启用任何来源，之后可用 `penpal source enable NAME` 打开。\n")
+
     console.print("\n[bold]权限引导完成，正在重启 daemon 让 TCC 缓存刷新...[/bold]")
     try:
         subprocess.run(
@@ -666,6 +717,106 @@ def install_onboard(non_interactive: bool):
     except Exception as exc:
         console.print(f"[yellow]daemon 重启失败：{exc}[/yellow]")
         console.print("  请手动执行：launchctl kickstart -k gui/$(id -u)/com.penpal.daemon")
+
+
+def _onboard_choose_sources(*, non_interactive: bool, sources_opt: str | None, yes_all: bool) -> list[str] | None:
+    """Ask about each source found, one by one (or take the scripted choice). Returns the chosen names, or None
+    when a non-interactive run gave no choice, in which case the switches are left as they are."""
+    from penpal.sources import onboarding
+    from penpal.store.db import init_db
+
+    init_db(Config.load().db_path_expanded)
+    if sources_opt is None and not yes_all and non_interactive:
+        console.print("来源：未指定（非交互模式请加 --sources claude_code，或 --sources all）。开关保持不变。\n")
+        return None
+
+    offers = onboarding.offered_sources()
+    offered_names = [offer.name for offer in offers]
+    if sources_opt is not None and not yes_all:
+        requested = [part.strip() for part in sources_opt.split(",") if part.strip()]
+        if requested == ["all"]:
+            chosen = list(offered_names)
+        else:
+            unknown = sorted(set(requested) - onboarding.choosable_names())
+            if unknown:
+                raise click.ClickException(f"unknown source: {', '.join(unknown)} (see `penpal source list`)")
+            chosen = requested
+    elif yes_all:
+        chosen = list(offered_names)
+    else:
+        if offers:
+            console.print("来源：逐个确认。默认不启用，只有你回答 y 的来源才会被读取。\n")
+        chosen = []
+        for offer in offers:
+            label = f"  启用 {offer.name}（{offer.description}；{onboarding.describe_instances(offer)}）？"
+            if click.confirm(label, default=False):
+                chosen.append(offer.name)
+        console.print("")
+
+    applied = onboarding.apply_choice(chosen)
+    on = [name for name, enabled in applied.items() if enabled]
+    off = [name for name, enabled in applied.items() if not enabled]
+    console.print(f"来源已确认：启用 {', '.join(on) or '无'}；关闭 {', '.join(off) or '无'}。\n", markup=False)
+    return on
+
+
+def _onboard_source_permissions(chosen: list[str], *, non_interactive: bool) -> None:
+    """Show the macOS permission each chosen source needs, wait for the user to return, then re-check the sources
+    with the same availability probe `penpal doctor` uses."""
+    from penpal.sources import onboarding
+
+    pairs = onboarding.permissions_for(chosen)
+    if not pairs:
+        return
+    console.print("[bold]已启用来源需要的系统权限[/bold]", markup=True)
+    shown: set[str] = set()
+    for name, key in pairs:
+        console.print(f"  {name} 需要：{onboarding.PERMISSION_LABELS[key]}", markup=False)
+        if key not in shown:
+            shown.add(key)
+            console.print(f"  打开设置：open \"{onboarding.PERMISSION_PANES[key]}\"", markup=False)
+    if not non_interactive:
+        click.confirm("  在系统设置里完成授权后回车继续 →", default=True, show_default=False)
+    _echo_source_recheck(chosen)
+    console.print("")
+
+
+def _echo_source_recheck(chosen: list[str]) -> None:
+    from penpal.sources import onboarding
+    from penpal.sources.registry import list_sources
+
+    by_name = {plugin.name: plugin for plugin in list_sources()}
+    for name in chosen:
+        state = onboarding.check_source(name, by_name)
+        if state.available:
+            console.print(f"  [green]✓[/green] {name}: 可读取", markup=True)
+        else:
+            console.print(f"  [red]✗[/red] {name}: {state.reason}", markup=False)
+            console.print(f"    修复：{onboarding.fix_hint(name, state.reason or '')}", markup=False)
+
+
+def _onboard_first_import(chosen: list[str]) -> None:
+    """First import of the chosen sources, in batches; a failure leaves the saved cursor for the next run."""
+    from datetime import datetime, timezone
+
+    from penpal.sources import importer, onboarding
+
+    now = datetime.now(timezone.utc)
+    since = onboarding.first_import_since(now)
+    console.print("[bold]首次导入[/bold]")
+    for name in chosen:
+        console.print(f"  {name} …", markup=False)
+
+        def _batch_done(result, _name=name):
+            console.print(f"    第 {result.batches} 批已入库（本次 {result.events} 条）", markup=False)
+
+        try:
+            result = importer.import_source(name, since=since, until=now, on_batch=_batch_done)
+        except Exception as exc:
+            console.print(f"    [yellow]导入中断：{exc}。重新运行即可从已保存的游标续传。[/yellow]", markup=False)
+            continue
+        console.print(f"    {onboarding.format_import_result(result)}", markup=False)
+    console.print("")
 
 
 @install_group.command("uninstall", help="Uninstall launchd jobs and optionally remove runtime/data.")
@@ -920,6 +1071,12 @@ def status(plain):
 
     paused_now = is_capture_paused()
     disabled_now = sorted(disabled_sources())
+    from penpal.sources import importer
+
+    import_rows = importer.progress_rows()
+    from penpal.sources.history_gate import WAITING_TEXT, historical_imports_allowed
+
+    history_open = historical_imports_allowed()
 
     if plain:
         print(f"running={is_running}")
@@ -928,6 +1085,13 @@ def status(plain):
         print(f"status={status_val}")
         print(f"paused={paused_now}")
         print(f"disabled_sources={','.join(disabled_now)}")
+        for source_name, record in import_rows:
+            print(
+                f"import.{source_name}={record.get('state')},batches={record.get('batches', 0)},"
+                f"events={record.get('events', 0)},resumed={bool(record.get('resumed'))},"
+                f"updated_at={record.get('updated_at', '')}"
+            )
+        print(f"history_imports={'enabled' if history_open else 'waiting_onboarding'}")
         print(f"started_at={started_at}")
         print(f"db_path={db_path}")
         print(f"db_size_mb={db_size_mb:.2f}")
@@ -954,6 +1118,10 @@ def status(plain):
         table.add_row("采集阶段", status_label)
         table.add_row("全局暂停", "[yellow]是[/yellow]" if paused_now else "否")
         table.add_row("已关闭的数据源", "、".join(disabled_now) if disabled_now else "无")
+        if not history_open:
+            table.add_row("历史导入", WAITING_TEXT)
+        for source_name, record in import_rows:
+            table.add_row(f"数据导入（{source_name}）", _format_import_progress(record))
         table.add_row("启动时间", started_at)
         table.add_row("数据库路径", str(db_path))
         table.add_row("数据库大小", f"{db_size_mb:.2f} MB")
@@ -1098,6 +1266,8 @@ def doctor(plain):
     # OCR is switched off (watcher commented out in capture/manager.py). Shown for information only, never a failure.
     # Information only, never a failure: (table note, plain-output text). Keyboard capture is a user choice.
     keyboard_on = keyboard_capture_enabled(cfg.watchers.keyboard_chunk)
+    from penpal.sources.history_gate import WAITING_TEXT, historical_imports_allowed
+
     info_rows = {
         "屏幕识别（OCR）": ("已停用（OCR 已关闭）", "DISABLED (OCR off)"),
         f"键盘文本片段（{KEYBOARD_SOURCE}）": (
@@ -1106,10 +1276,15 @@ def doctor(plain):
              else f"OFF; to turn on again: {ENABLE_COMMAND}"),
         ),
     }
-    # Sources that cannot be read right now are a status, not a failure (issue #22).
-    from penpal.sources.registry import unavailable_sources
+    if not historical_imports_allowed():
+        info_rows["历史导入"] = (WAITING_TEXT, "WAITING: run penpal install onboard")
+    # Sources that cannot be read right now are a status, not a failure (issue #22). Checked for every source
+    # that is switched on, with the fix path (issue #32); a source that was never found is not a fault.
+    from penpal.sources.onboarding import source_problems
+    from penpal.sources.registry import list_sources
 
-    unavailable_rows = unavailable_sources()
+    enabled_now = [plugin.name for plugin in list_sources() if plugin.name not in disabled_sources()]
+    unavailable_rows = source_problems(enabled_now)
 
     if plain:
         for check_name, passed in checks.items():
@@ -1118,7 +1293,9 @@ def doctor(plain):
         for check_name, (_note, plain_text) in info_rows.items():
             print(f"{check_name}: {plain_text}")
         for row in unavailable_rows:
-            print(f"source {row['source']}: UNAVAILABLE reason={row['reason']}")
+            print(f"source {row['source']}: UNAVAILABLE reason={row['reason']}; fix: {row['fix']}")
+            if row["pane"]:
+                print(f"source {row['source']}: open \"{row['pane']}\"")
         if stale_venv:
             print(
                 f"venv_entry={stale_venv[0]} points to {stale_venv[1]}; "
@@ -1138,7 +1315,7 @@ def doctor(plain):
         for check_name, (note, _plain_text) in info_rows.items():
             table.add_row(check_name, note)
         for row in unavailable_rows:
-            table.add_row(f"数据源 {row['source']}", f"不可用（{row['reason']}）")
+            table.add_row(f"数据源 {row['source']}", f"不可用（{row['reason']}）；{row['fix']}")
         console.print(table)
         if stale_venv:
             console.print(
