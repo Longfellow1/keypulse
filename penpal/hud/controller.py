@@ -180,7 +180,7 @@ class HudController:
         except ValueError:
             self._say("不认识这个聊天 App")
             return False
-        self._say(("已放行 " if allow else "已取消放行 ") + key + "，重启后台后生效")
+        self._say(("已放行 " if allow else "已取消放行 ") + key + "，约 1 分钟内生效")
         return True
 
     # AI access

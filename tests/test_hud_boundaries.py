@@ -69,7 +69,7 @@ def test_old_daily_report_panels_are_gone():
     for name in REMOVED_PANELS:
         assert importlib.util.find_spec(f"penpal.hud.{name}") is None, f"penpal.hud.{name} should be removed"
     shipped = {p.stem for p in HUD_DIR.glob("*.py")}
-    assert shipped == {"__init__", "app", "approval_window", "controller", "render", "snapshot", "viewmodel"}
+    assert shipped == {"__init__", "app", "approval_window", "controller", "reload", "render", "snapshot", "viewmodel"}
 
 
 def test_hud_text_has_no_daily_report_panels():

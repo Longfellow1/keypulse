@@ -77,17 +77,14 @@ source_modules =
 forbidden_modules =
     penpal.foundation.runtime_record
     penpal.foundation.runtime_launchd
-    penpal.foundation.runtime_identity
 allow_indirect_imports = True
 ignore_imports =
     # D36: runtime evaluator owns evidence reads; daemon manager is the sole evidence writer.
     penpal.runtime.evaluate -> penpal.foundation.runtime_record
     penpal.runtime.evaluate -> penpal.foundation.runtime_launchd
-    penpal.runtime.evaluate -> penpal.foundation.runtime_identity
     penpal.runtime.control -> penpal.foundation.runtime_launchd
     penpal.capture.manager_runtime -> penpal.foundation.runtime_record
     penpal.capture.manager_runtime -> penpal.foundation.runtime_launchd
-    penpal.capture.manager_runtime -> penpal.foundation.runtime_identity
 
 [importlinter:contract:layers]
 name = Penpal module layers

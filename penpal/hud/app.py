@@ -7,6 +7,7 @@ The daemon keeps every macOS permission; this process needs none.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import threading
@@ -28,6 +29,8 @@ from penpal.config import Config
 from penpal.hud.approval_window import ApprovalWindowController, safe_pending_candidate_count
 from penpal.hud.controller import HudController
 from penpal.hud.render import HUD_HEIGHT, HUD_WIDTH, build_html
+from penpal.hud.reload import HUDReloader
+from penpal.runtime.evaluate import current_identity, loaded_identity
 from penpal.store.repository import get_state, set_state
 
 REFRESH_SEC = 15.0
@@ -74,6 +77,8 @@ class PenpalHUDApp(NSObject):
         if self is None:
             return None
         self.cfg = cfg
+        self._hud_reloader = HUDReloader(loaded_identity(cfg), lambda: current_identity(cfg))
+        self._reload_scheduled = False
         self.controller = HudController(Config.load, copy_to_clipboard=_copy_to_pasteboard)
         self.pending_count = 0
         self.pending_count_error = None
@@ -221,11 +226,27 @@ class PenpalHUDApp(NSObject):
         self._push_model()
 
     def pollSignals_(self, _timer):
+        if not self._reload_scheduled:
+            try:
+                if self._hud_reloader.check():
+                    self._reload_scheduled = True
+                    self.performSelector_withObject_afterDelay_(
+                        objc.selector(self.reloadAfterTimer_, signature=b"v@:@"), None, 0.0
+                    )
+                    return
+            except (OSError, RuntimeError, ValueError) as exc:
+                logging.getLogger(__name__).warning(
+                    "HUD runtime identity check failed: %s", type(exc).__name__
+                )
         self._sync_pending_count()
         if self.popover.isShown():
             self._push_model(fresh=True)
         else:
             self._set_badge(self.controller.model(fresh=True)["tabs"][0].get("badge"))
+
+    def reloadAfterTimer_(self, _sender):
+        """Replace the process on the next run-loop turn, after the timer callback has returned."""
+        self._hud_reloader.exec()
 
     # ── right-click menu (candidate approval, daemon restart, quit) ─────────
 

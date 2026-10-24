@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import plistlib
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -162,6 +163,59 @@ def _write_daemon_plist(monkeypatch, executable: Path) -> Path:
     payload = launchd_jobs(executable)["com.penpal.daemon"]
     path.write_bytes(plistlib.dumps(payload, sort_keys=False))
     return path
+
+
+@pytest.mark.parametrize("change", ["code", "config"])
+def test_daemon_identity_change_flushes_and_exits_for_launchd_reload(tmp_path, change):
+    home = tmp_path / "home"
+    executable = tmp_path / "bin" / "penpal"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("", encoding="utf-8")
+    env = _environment(home, executable)
+    env["PENPAL_TEST_IDENTITY_INTERVAL_SEC"] = "0.2"
+    fingerprint_root = tmp_path / "installed" / "penpal"
+    shutil.copytree(ROOT / "penpal", fingerprint_root)
+    env["PENPAL_TEST_FINGERPRINT_ROOT"] = str(fingerprint_root)
+
+    process = subprocess.Popen(
+        [sys.executable, "-c", "from penpal.cli import main; main()", "serve"],
+        cwd=tmp_path,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        record_path = home / ".penpal" / "run" / "daemon.json"
+        assert _wait_for(lambda: record_path.exists(), timeout=10), "daemon did not write its start record"
+        if change == "code":
+            (fingerprint_root / "upgrade_marker.py").write_text("UPGRADE = 1\n", encoding="utf-8")
+        else:
+            config_path = home / ".penpal" / "config.toml"
+            config = config_path.read_text(encoding="utf-8")
+            config_path.write_text(config.replace("flush_interval_sec = 1", "flush_interval_sec = 2"), encoding="utf-8")
+        assert process.wait(timeout=10) == 75
+        assert _wait_for(lambda: (home / ".penpal" / "run" / "daemon.json").stat().st_size > 0)
+    finally:
+        if process.poll() is None:
+            process.send_signal(signal.SIGTERM)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        if process.stderr:
+            process.stderr.close()
+
+
+def test_daemon_plist_restarts_only_unsuccessful_exits(monkeypatch, tmp_path):
+    executable = tmp_path / "opt" / "penpal" / "bin" / "penpal"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("", encoding="utf-8")
+    payload = launchd_jobs(executable)["com.penpal.daemon"]
+
+    assert payload["ProgramArguments"] == [str(executable), "serve"]
+    assert payload["KeepAlive"] == {"SuccessfulExit": False}
 
 
 def _fake_restart(harness: _ProcessHarness, calls: list[list[str]]):

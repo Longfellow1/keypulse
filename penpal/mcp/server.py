@@ -189,5 +189,7 @@ def build_server(
     return server
 
 
-def serve_stdio() -> None:
-    build_server().run(transport="stdio")
+def serve_stdio(*, parent_pid: int | None = None) -> None:
+    from penpal.mcp.transport import serve_stdio as run_stdio
+
+    run_stdio(build_server(), parent_pid=parent_pid)

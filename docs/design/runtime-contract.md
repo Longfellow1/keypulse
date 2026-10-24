@@ -28,7 +28,7 @@
 - HUD 写自己的 `~/.penpal/run/hud.json`：generation、代码指纹、主线程最近响应时间、status item 是否已创建、系统是否允许显示（尽力而为）。
 
 ### 2.2 一个评估函数（唯一结论来源）
-- `penpal.runtime.evaluate(now) -> RuntimeStatus`，在调用方进程里运行，读取运行记录 + launchd 状态 + 已安装代码指纹。
+- `penpal.runtime.evaluate(now) -> RuntimeStatus`，在调用方进程里运行，读取运行记录、launchd 状态和当前安装 identity；运行记录及 launchd 证据仍只允许由 evaluator / control 读取。
 - 结论为封闭集合：`not_installed / not_running / starting / running / hung / outdated / paused`，外加组件问题列表（带严重度与修复命令）。
 - 所有阈值只在这里定义；doctor、status、install doctor、HUD、MCP、健康检查全部调用它。import-linter 合约禁止其他模块读取 PID 文件、launchctl 或运行记录。
 - macOS 睡眠恢复后，以 `max(core_loop.last_done_at, kern.waketime)` 计算进度停滞；唤醒后的 `STARTING_GRACE_SEC` 内允许核心循环恢复，仍无进度则从唤醒时间继续累计，超过 `HUNG_AFTER_SEC` 后才判为 `hung`。
@@ -47,6 +47,11 @@
 - 数据库结构版本纳入身份：旧代码发现库结构比自己新，按 `outdated` 处理。
 - 配置纳入身份：`config.toml` 的指纹变化时，后台服务同样自我换新，配置改动（如 `block-site`）无需用户手动重启；CLI 提示改为"约 1 分钟内生效"。
 - `mcp serve` 在 stdin 关闭或父进程退出时立即退出，不留孤儿进程。
+- identity 由代码指纹、包版本、`config.toml` 内容哈希、数据库记录的结构版本组成；结构版本高于当前代码支持值时，评估统一为 `outdated`，存储入口拒绝继续写入。
+- daemon 在约 60 秒检查一次 identity；变更后停止调度、完成并持久化当前 flush，以退出码 75 交还给 launchd。plist 使用 `KeepAlive = { SuccessfulExit = false }`，让该退出码重启、正常停止不重启。
+- daemon 运行记录升为 v2，持久化配置指纹和数据库结构版本；v1 记录只为 PR1 到 PR3 的升级读取一次，缺少的两项只跳过对应比较。
+- MCP transport 在请求响应已 flush 后检查 identity。exec 前把 initialize 参数和旧工具清单摘要放进短命环境变量；新进程向自己的 SDK read stream 注入 synthetic initialize / initialized，并过滤 synthetic initialize response。工具清单变化时，在续接后发送 `notifications/tools/list_changed`。
+- MCP handoff 对齐 SDK 1.30.x：该版 `FastMCP.run_stdio_async` 也是把 stdio streams 交给低层 server；自定义 transport 复用该低层入口并自行包裹 streams。由于 FastMCP 没有公开的自定义 stdio stream 参数，依赖范围固定在 1.30.x，并由真实子进程 handoff 测试守住。
 
 ### 2.5 开发隔离守卫
 - `tests/conftest.py` 全局（session 级、autouse）把 HOME 指向临时目录；任何测试解析出真实家目录下的 Penpal 路径即失败。

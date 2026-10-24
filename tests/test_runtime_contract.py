@@ -15,8 +15,10 @@ from types import SimpleNamespace
 import pytest
 
 from penpal import __version__
+from penpal.foundation.runtime_identity import RuntimeIdentity
 from penpal.runtime import RuntimeState, RuntimeStatus, evaluate, state_text
 from penpal.foundation.runtime_record import Component, Progress, RuntimeRecord, read_record, write_record
+from penpal.store.migrations import SCHEMA_VERSION
 
 EVALUATOR = importlib.import_module("penpal.runtime.evaluate")
 
@@ -52,16 +54,17 @@ def temporary_home(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "record_kind,launchd_state,progress,fingerprint,paused",
+    "record_kind,launchd_state,progress,fingerprint,paused,schema_state",
     list(itertools.product(
         ("present", "absent", "corrupt"),
         ("loaded", "unloaded", "pid_mismatch"),
         ("fresh", "stale"),
         ("same", "different"),
         (False, True),
+        ("supported", "newer"),
     )),
 )
-def test_r1_state_matrix(monkeypatch, record_kind, launchd_state, progress, fingerprint, paused, tmp_path):
+def test_r1_state_matrix(monkeypatch, record_kind, launchd_state, progress, fingerprint, paused, schema_state, tmp_path):
     record = None
     if record_kind == "present":
         record = make_record(
@@ -72,16 +75,26 @@ def test_r1_state_matrix(monkeypatch, record_kind, launchd_state, progress, fing
     launchd_pid = PID + 1 if launchd_state == "pid_mismatch" else PID if loaded else None
     monkeypatch.setattr(EVALUATOR, "is_installed", lambda: True)
     monkeypatch.setattr(EVALUATOR, "process_start_time", lambda _pid: START)
+    identity = RuntimeIdentity(
+        code_fingerprint=FINGERPRINT,
+        package_version=__version__,
+        config_fingerprint="config-hash",
+        database_schema_version=SCHEMA_VERSION + (1 if schema_state == "newer" else 0),
+        supported_schema_version=SCHEMA_VERSION,
+    )
 
     result = evaluate(
         now=NOW,
         record_reader=lambda: record,
         launchd_probe=lambda: {"loaded": loaded, "pid": launchd_pid, "last_exit": None},
         installed_fingerprint=lambda: FINGERPRINT,
+        identity_reader=lambda: identity,
         paused_reader=lambda: paused,
     )
 
-    if record is None:
+    if schema_state == "newer":
+        expected = RuntimeState.OUTDATED
+    elif record is None:
         expected = RuntimeState.HUNG if loaded else RuntimeState.NOT_RUNNING
     elif launchd_state == "pid_mismatch":
         expected = RuntimeState.HUNG

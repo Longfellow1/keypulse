@@ -77,6 +77,16 @@ penpal stop
 penpal status   # running=no
 ```
 
+### R4: in-place upgrade with three MCP hosts
+
+Run this checklist once each in Claude Code, Codex, and Cursor on the owner’s Mac. Keep the same host session and conversation open during the upgrade. Use a distinctive keyword from an existing, authorized Penpal record so the query has a known result.
+
+1. Open a session in the host and confirm Penpal is connected.
+2. Ask: `Use Penpal to search my recent history for <known distinctive keyword>.` Confirm that the expected record is returned.
+3. In a separate terminal, upgrade the installed package with `brew upgrade penpal`, or run `make reload` from this repository for a development install. Wait for the command to finish.
+4. In the original host session, ask the same query again without reconnecting or opening a new conversation. It should return the expected record; the host should not report a broken stdio connection or require a new initialize handshake.
+5. Repeat steps 1–4 in the other two hosts. After all three hosts are fully closed, run `pgrep -fl "penpal mcp serve"`. It should print no processes. While a host is open, only its active Penpal server should appear; closing that host should remove its process.
+
 ---
 
 ## 4. Data Capture — Manual Verification

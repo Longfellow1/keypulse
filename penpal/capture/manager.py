@@ -41,6 +41,7 @@ class CaptureManager:
         self._heartbeat_thread: Optional[threading.Thread] = None
         self._camera_monitor: Optional[CameraMonitor] = None
         self._runtime_record: RuntimeRecord | None = None
+        self._runtime_identity = None
         self._runtime_progress: dict[str, Progress] = {}
         self._runtime_components: dict[str, Component] = {}
         self._runtime_record_lock = threading.RLock()

@@ -436,12 +436,12 @@ def page_chat(snap: Snapshot) -> list[dict]:
     rows = [row(label, switch=allowed, action="chat.toggle", args={"name": key, "allow": not allowed})
             for key, label, allowed in snap.chat_apps]
     return [lst(rows, footer="默认都不记录。打开后，这个 App 的内容进入「私密」分类，只有授权了「私密」的 AI 能查到。"
-                             "更改在重启后台后生效。")]
+                             "更改约 1 分钟内生效。")]
 
 
 def page_exclude(snap: Snapshot) -> list[dict]:
     rows = [row(value or "（空）", sub=SCOPE_TYPE_TEXT.get(kind, kind)) for kind, value in snap.exclusions]
-    footer = "这里的内容一律不记录。网站域名用 penpal privacy block-site / unblock-site 管理；对 daemon 重新加载配置后的新事件生效。其他策略用 penpal rules add / disable。"
+    footer = "这里的内容一律不记录。网站域名用 penpal privacy block-site / unblock-site 管理；新事件约 1 分钟内按新配置处理。其他策略用 penpal rules add / disable。"
     return [lst(rows, footer=footer)] if rows else [lst([row("还没有规则")], footer=footer)]
 
 

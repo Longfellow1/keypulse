@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
 from datetime import datetime, timezone
 
 from penpal import __version__
+from penpal.config import config_fingerprint
 from penpal.capture.capture_control import disabled_sources, is_capture_paused
 from penpal.foundation.runtime_record import RECORD_WRITE_INTERVAL_SEC
-from penpal.foundation.runtime_identity import code_fingerprint
+from penpal.foundation.runtime_identity import code_fingerprint, make_identity
 from penpal.foundation.runtime_launchd import process_start_time
 from penpal.foundation.runtime_record import (
     Component,
@@ -22,6 +24,8 @@ from penpal.foundation.runtime_record import (
 )
 from penpal.store.models import RawEvent
 from penpal.store.repository import get_state
+from penpal.store.db import DatabaseSchemaTooNewError, read_schema_version
+from penpal.store.migrations import SCHEMA_VERSION
 
 
 def _record_runtime_event(manager, event: RawEvent) -> None:
@@ -105,6 +109,8 @@ def _component_snapshot(manager) -> dict[str, Component]:
                 components[f"permission.{name}"] = Component("missing_permission")
     except (TypeError, ValueError):
         pass
+    except DatabaseSchemaTooNewError:
+        logging.getLogger(__name__).warning("runtime permission snapshot skipped for a newer database schema")
     return components
 
 
@@ -125,10 +131,13 @@ def _write_runtime_record(manager, force: bool = False) -> None:
             process_start_time=previous.process_start_time,
             version=previous.version,
             code_fingerprint=previous.code_fingerprint,
+            config_fingerprint=previous.config_fingerprint,
+            database_schema_version=previous.database_schema_version,
             started_at=previous.started_at,
             written_at=utc_now(),
             progress=dict(manager._runtime_progress),
             components=manager._component_snapshot(),
+            record_format_version=previous.record_format_version,
         )
         write_record(record)
         manager._runtime_record = record
@@ -137,12 +146,22 @@ def _write_runtime_record(manager, force: bool = False) -> None:
 
 def initialize_runtime_record(manager, started_at: str) -> None:
     manager._runtime_progress["core_loop"] = Progress(0, started_at)
+    identity = manager._runtime_identity or make_identity(
+        code_fingerprint=code_fingerprint(),
+        package_version=__version__,
+        config_fingerprint=config_fingerprint(),
+        database_schema_version=read_schema_version(manager.config.db_path_expanded),
+        supported_schema_version=SCHEMA_VERSION,
+    )
+    manager._runtime_identity = identity
     manager._runtime_record = RuntimeRecord(
         generation=str(uuid.uuid4()),
         pid=os.getpid(),
         process_start_time=process_start_time(os.getpid()) or "unknown",
         version=__version__,
-        code_fingerprint=code_fingerprint(),
+        code_fingerprint=identity.code_fingerprint,
+        config_fingerprint=identity.config_fingerprint,
+        database_schema_version=identity.database_schema_version or 0,
         started_at=started_at,
         written_at=started_at,
         progress=dict(manager._runtime_progress),

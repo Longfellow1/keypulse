@@ -42,7 +42,7 @@ def launchd_jobs(executable: Path | None = None) -> dict[str, dict[str, Any]]:
             "Label": "com.penpal.daemon",
             "ProgramArguments": [str(executable), "serve"],
             "RunAtLoad": True,
-            "KeepAlive": True,
+            "KeepAlive": {"SuccessfulExit": False},
             "ThrottleInterval": 10,
             "StandardOutPath": str(logs / "daemon.log"),
             "StandardErrorPath": str(logs / "daemon.err"),
