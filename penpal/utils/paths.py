@@ -3,20 +3,14 @@ from __future__ import annotations
 import errno
 import os
 import pwd
-import re
 import subprocess
 import sys
-import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
-
-from penpal.utils.atomic_io import atomic_write_text
 
 MIGRATION_MARKER = "MIGRATED_TO_PENPAL"
 LEGACY_DATA_DIRNAME = ".keypulse"
 CONFIG_BACKUP_NAME = "config.toml.bak-pre-penpal"
-# `key = "value"` string lines in config.toml (value kept verbatim; trailing text such as a comment is kept).
-_CONFIG_STRING_LINE_RE = re.compile(r'^(\s*[A-Za-z_][\w.-]*\s*=\s*)"([^"\\]*)"(.*)$')
 
 
 class DataDirMigrationError(RuntimeError):
@@ -262,47 +256,6 @@ def resolve_legacy_data_path(value: str, home: Path | None = None) -> str:
     return value
 
 
-def rewrite_legacy_config_paths(data_dir: Path, home: Path | None = None) -> bool:
-    """Rewrite string values in ``data_dir/config.toml`` that point into ``~/.keypulse`` to ``~/.penpal``.
-
-    Idempotent: a config without legacy paths is left alone. The first rewrite keeps the original text in
-    ``config.toml.bak-pre-penpal``, which is never overwritten. Returns True only when this call changed the file.
-    """
-    data_dir = _guard_penpal_path(data_dir)
-    config = _guard_penpal_path(data_dir / "config.toml")
-    try:
-        if config.is_symlink() or not config.is_file():
-            return False
-        original = config.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return False
-    if LEGACY_DATA_DIRNAME not in original:
-        return False
-
-    changed = False
-    lines: list[str] = []
-    for line in original.splitlines(keepends=True):
-        body = line.rstrip("\r\n")
-        eol = line[len(body):]
-        match = _CONFIG_STRING_LINE_RE.match(body)
-        if match:
-            new_value = resolve_legacy_data_path(match.group(2), home)
-            if new_value != match.group(2):
-                body = f'{match.group(1)}"{new_value}"{match.group(3)}'
-                changed = True
-        lines.append(body + eol)
-    if not changed:
-        return False
-
-    rewritten = "".join(lines)
-    tomllib.loads(rewritten)  # never write a config that no longer parses
-    backup = _guard_penpal_path(data_dir / CONFIG_BACKUP_NAME)
-    if not backup.exists():
-        atomic_write_text(backup, original)
-    atomic_write_text(config, rewritten)
-    return True
-
-
 def get_data_dir() -> Path:
     d = _guard_penpal_path(Path.home() / ".penpal")
     moved = migrate_legacy_data_dir()
@@ -314,10 +267,17 @@ def get_data_dir() -> Path:
             file=sys.stderr,
         )
     try:
+        from penpal.config import rewrite_legacy_config_paths
+
         rewrite_legacy_config_paths(d)
     except Exception as exc:
         print(f"Warning: could not update legacy paths in {d / 'config.toml'} ({exc}); continuing.", file=sys.stderr)
     return _guard_penpal_path(d)
+
+
+def get_codex_home() -> Path:
+    """Return the current user's Codex data directory."""
+    return Path.home() / ".codex"
 
 
 def get_db_path() -> Path:

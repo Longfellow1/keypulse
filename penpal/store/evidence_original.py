@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from penpal.privacy.desensitizer import desensitize
+from penpal.foundation.desensitizer import desensitize
 from penpal.store.evidence import split_browser_locator
 
 TEXT_SUFFIXES = frozenset({".txt", ".md", ".markdown"})
@@ -66,9 +66,7 @@ def _iso(ts: datetime) -> str:
     return ts.astimezone(timezone.utc).isoformat()
 
 
-def _browser_original(source: str, locator: str) -> Optional[dict[str, Any]]:
-    from penpal.sources.cleaning.file_whitelist import is_blocked_sqlite
-
+def _browser_original(source: str, locator: str, *, is_blocked_sqlite) -> Optional[dict[str, Any]]:
     parsed = split_browser_locator(locator)
     if parsed is None or source not in ("chrome_history", "safari_history"):
         return None
@@ -96,9 +94,7 @@ def _browser_original(source: str, locator: str) -> Optional[dict[str, Any]]:
     }
 
 
-def _file_original(locator: str) -> Optional[dict[str, Any]]:
-    from penpal.sources.cleaning.path_filter import is_excluded_path
-
+def _file_original(locator: str, *, is_excluded_path) -> Optional[dict[str, Any]]:
     path = Path(locator)
     try:
         st = path.stat()
@@ -123,13 +119,20 @@ def _file_original(locator: str) -> Optional[dict[str, Any]]:
     return out
 
 
-def read_original(source: str, locator: str) -> Optional[dict[str, Any]]:
+def read_original(
+    source: str,
+    locator: str,
+    *,
+    is_blocked_sqlite,
+    is_excluded_path,
+) -> Optional[dict[str, Any]]:
     """The original behind an evidence row, or None if it cannot be read any more. Only called for
-    sources in ORIGINAL_SOURCES."""
+    sources in ORIGINAL_SOURCES. Source-specific privacy filters are injected by the caller so the
+    store layer does not depend on source policy modules."""
     if source in ("chrome_history", "safari_history"):
-        return _browser_original(source, locator)
+        return _browser_original(source, locator, is_blocked_sqlite=is_blocked_sqlite)
     if source == "spotlight":
-        return _file_original(locator)
+        return _file_original(locator, is_excluded_path=is_excluded_path)
     return None
 
 

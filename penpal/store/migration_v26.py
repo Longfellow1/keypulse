@@ -27,7 +27,8 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 
-from penpal.capture.hygiene import is_placeholder_text, is_system_overlay
+from penpal.foundation.capture_rules import is_placeholder_text, is_system_overlay
+from penpal.foundation.transcript_noise import clean_message_part
 from penpal.store.buckets import (
     CAPTURE_SOURCES,
     BrowserUrlTimeline,
@@ -131,9 +132,6 @@ def _scrub_overlay_apps(conn: sqlite3.Connection) -> None:
 
 
 def _scrub_ai_transcript_noise(conn: sqlite3.Connection) -> None:
-    # Imported here: penpal.sources pulls in the registry, which imports the store at module load.
-    from penpal.sources.cleaning.noise import clean_message_part
-
     for rows in _batches(
         conn,
         "SELECT id, content_text FROM raw_events "

@@ -152,7 +152,16 @@ def test_chrome_round_trip_locked_db_and_missing(db):
     locker = sqlite3.connect(hdb, isolation_level=None)
     locker.execute("BEGIN EXCLUSIVE")
     try:
-        assert evidence_original.read_original("chrome_history", row["locator"])["title"] == "Synthetic Page"
+        from penpal.foundation.sqlite_rules import is_blocked_sqlite
+        from penpal.sources.cleaning.path_filter import is_excluded_path
+
+        original = evidence_original.read_original(
+            "chrome_history",
+            row["locator"],
+            is_blocked_sqlite=is_blocked_sqlite,
+            is_excluded_path=is_excluded_path,
+        )
+        assert original["title"] == "Synthetic Page"
     finally:
         locker.execute("ROLLBACK")
         locker.close()
@@ -274,7 +283,7 @@ def test_knowledgec_not_resolvable(db):
 
 
 def test_approved_sqlite_not_resolvable(db):
-    from penpal.sources.approval import ApprovalStore
+    from penpal.foundation.approval_store import ApprovalStore
     from penpal.sources.discoverers import CandidateSource
 
     adb = db / "app.db"

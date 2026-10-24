@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator
 
 from penpal.sources.discoverers import CandidateSource
-from penpal.sources.cleaning.file_whitelist import is_blocked_sqlite
+from penpal.foundation.sqlite_rules import is_blocked_sqlite
 from penpal.sources.cleaning.path_filter import is_excluded_path
 from penpal.sources.types import ContentShape, classify_fields, confidence_from_categories
 

@@ -15,7 +15,7 @@ from penpal.capture.capture_control import (
 )
 from penpal.capture.keyboard_notice import KEYBOARD_SOURCE, keyboard_capture_enabled, switch_hint
 from penpal.config import Config
-from penpal.sources.approval import ApprovalRecord, ApprovalStore
+from penpal.foundation.approval_store import ApprovalRecord, ApprovalStore
 from penpal.sources.discoverers import CandidateSource, discover_all_candidates
 from penpal.sources.importer import DEFAULT_BATCH_SIZE
 from penpal.sources.registry import discover_all, get_source, list_sources, read_all, source_availability

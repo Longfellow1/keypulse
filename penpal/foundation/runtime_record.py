@@ -10,6 +10,16 @@ from typing import Any
 
 from penpal.utils.paths import get_daemon_record_path
 
+
+def _interval_from_env() -> float:
+    try:
+        return max(0.05, float(os.getenv("PENPAL_RUNTIME_RECORD_INTERVAL_SEC", "10")))
+    except ValueError:
+        return 10.0
+
+
+RECORD_WRITE_INTERVAL_SEC = _interval_from_env()
+
 COMPONENT_STATES = frozenset({
     "running", "idle", "gave_up", "missing_permission", "storage_error", "disabled",
 })

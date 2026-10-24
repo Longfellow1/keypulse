@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover - optional runtime dependency
 
     objc = _ObjCShim()
 
-from penpal.sources.approval import ApprovalStore
+from penpal.foundation.approval_store import ApprovalStore
 from penpal.sources.discoverers import CandidateSource, discover_all_candidates
 from penpal.sources.registry import discover_all
 

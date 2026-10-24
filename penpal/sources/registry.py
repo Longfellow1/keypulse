@@ -21,7 +21,7 @@ from penpal.sources.plugins.spotlight import SpotlightSource
 from penpal.sources.plugins.wechat import WechatSource
 from penpal.sources.plugins.zsh_history import ZshHistorySource
 from penpal.capture.capture_control import source_writes_allowed
-from penpal.capture.hygiene import host_matches_denylist
+from penpal.foundation.capture_hygiene import host_matches_denylist
 from penpal.config import Config
 from penpal.sources.sink import persist_semantic_event
 from penpal.sources.types import DataSource, DataSourceInstance, SemanticEvent

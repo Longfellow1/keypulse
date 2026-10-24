@@ -22,6 +22,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from penpal.foundation.approval_store import ApprovalStore
+from penpal.foundation.source_roots import approved_markdown_vault_roots
+
 LOGGER = logging.getLogger(__name__)
 _BATCH = 2000
 _SOURCE = "markdown_vault"
@@ -61,9 +64,6 @@ def _rel_path(meta: dict, raw_ref: object, vault: str) -> object:
 
 
 def migrate_v30(conn: sqlite3.Connection) -> dict[str, tuple[int, int]]:
-    # Imported here: penpal.sources imports the store, so a module-level import is circular.
-    from penpal.sources.plugins.markdown_vault import vault_roots_by_name
-
     now = datetime.now(timezone.utc).isoformat()
     roots: Optional[dict[str, Path]] = None  # discovered lazily, once per run
     created = skipped = 0
@@ -83,7 +83,15 @@ def migrate_v30(conn: sqlite3.Connection) -> dict[str, tuple[int, int]]:
             meta = _meta(meta_json)
             vault = meta.get("vault_name")
             if roots is None and isinstance(vault, str):
-                roots = vault_roots_by_name()
+                found: dict[str, list[Path]] = {}
+                try:
+                    approved = ApprovalStore().list_approved()
+                except Exception:
+                    approved = []
+                for root in approved_markdown_vault_roots(approved):
+                    if root.exists() and root.is_dir():
+                        found.setdefault(root.name or "vault", []).append(root)
+                roots = {name: paths[0] for name, paths in found.items() if len(paths) == 1}
             root = (roots or {}).get(vault) if isinstance(vault, str) else None
             rel = _rel_path(meta, meta.get("raw_ref"), vault if isinstance(vault, str) else "")
             locator = _file_locator(root, rel) if root is not None else None

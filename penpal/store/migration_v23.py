@@ -21,7 +21,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-from penpal.privacy.desensitizer import redact_secrets
+from penpal.foundation.desensitizer import redact_secrets
 from penpal.store.app_categories import DEFAULT_APP_BUCKET
 from penpal.store.buckets import CAPTURE_SOURCES, load_bucket_rules, resolve_bucket
 from penpal.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, PENPAL_LOCATOR_PREFIX

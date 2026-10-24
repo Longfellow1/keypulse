@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from penpal.sources.approval import ApprovalStore
+from penpal.foundation.source_roots import approved_markdown_vault_roots
+from penpal.foundation.approval_store import ApprovalStore
 from penpal.sources.availability import (
     AVAILABLE, FILE_MISSING, NOT_FOUND, PERMISSION_DENIED, Availability, unavailable,
 )
@@ -169,25 +170,9 @@ class MarkdownVaultSource(DataSource):
             approved = self._approval_store.list_approved()
         except Exception:
             return []
-
-        roots: list[Path] = []
-        seen: set[str] = set()
-        for record in approved:
-            if record.metadata.get("discoverer") != "markdown_vault":
-                continue
-            shape = str(record.metadata.get("shape") or "").strip()
-            if shape and shape != ContentShape.DOCUMENT_FILE.value:
-                continue
-            raw_path = str(record.metadata.get("path") or "").strip()
-            if not raw_path:
-                continue
-            path = Path(raw_path).expanduser().resolve(strict=False)
-            key = str(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            roots.append(path)
-        return roots
+        return approved_markdown_vault_roots(
+            approved, document_shape=ContentShape.DOCUMENT_FILE.value
+        )
 
 
 def vault_roots_by_name(source: MarkdownVaultSource | None = None) -> dict[str, Path]:

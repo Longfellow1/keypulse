@@ -278,7 +278,7 @@ def classify_capture_app(
 ) -> str:
     """Capture-stream bucket from the app alone: config overrides > opted-in chat app (Private) > preset
     table > Personal."""
-    from penpal.capture.chat_apps import PRIVATE_BUCKET, chat_app_key
+    from penpal.foundation.chat_apps import PRIVATE_BUCKET, chat_app_key
     from penpal.store.app_categories import DEFAULT_APP_BUCKET, classify_app
 
     merged = _config_app_overrides() if app_overrides is None else app_overrides

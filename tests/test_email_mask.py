@@ -7,7 +7,7 @@ import json
 import pytest
 
 from penpal.mcp import auth, tools
-from penpal.privacy.desensitizer import desensitize, desensitize_json_value, mask_emails
+from penpal.foundation.desensitizer import desensitize, desensitize_json_value, mask_emails
 from penpal.store import feedback
 from penpal.store.db import close, init_db
 from penpal.store.models import RawEvent

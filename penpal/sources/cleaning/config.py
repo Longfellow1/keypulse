@@ -6,8 +6,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from penpal.utils.paths import get_data_dir
 from penpal.utils.logging import get_logger
+import penpal.config as config_io
 
 
 LOGGER = get_logger("sources.cleaning.config")
@@ -76,18 +76,13 @@ class CleaningConfigError(RuntimeError):
 
 def load_cleaning_config() -> CleaningConfig:
     defaults = CleaningConfig()
-    path = get_data_dir() / "cleaning.toml"
+    path = config_io.get_data_dir() / "cleaning.toml"
     try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return defaults
+        parsed = config_io.read_cleaning_config(path)
     except OSError as exc:
         _raise_cleaning_config_error(path, "无法读取", exc)
     except UnicodeDecodeError as exc:
         _raise_cleaning_config_error(path, "编码无效", exc)
-
-    try:
-        parsed = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         _raise_cleaning_config_error(path, "TOML 格式无效", exc)
 

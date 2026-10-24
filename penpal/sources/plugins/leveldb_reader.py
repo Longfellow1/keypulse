@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from penpal.privacy.desensitizer import desensitize, desensitize_json_value
-from penpal.sources.approval import ApprovalStore
+from penpal.foundation.desensitizer import desensitize, desensitize_json_value
+from penpal.foundation.approval_store import ApprovalStore
 from penpal.sources.cleaning.path_filter import is_excluded_path
 from penpal.sources.types import ContentShape, DataSource, DataSourceInstance, SemanticEvent
 

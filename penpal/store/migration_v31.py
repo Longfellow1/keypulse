@@ -4,8 +4,8 @@ Rows ingested from ``~/.codex/history.jsonl`` before the locator fix have raw_re
 (N = 1-based line in that file) and no sources locator. Migration v28 needs an absolute sources
 locator for them, so it left them without evidence.
 
-This pass uses the history file path the plugin reads today (``default_codex_home()``, the same
-path logic CodexCliSource uses). New history ingest writes the same locator string and line.
+This pass uses the history file path shared by CodexCliSource and ``penpal.utils.paths``. New history
+ingest writes the same locator string and line.
 
   * A row gets evidence only when it has no evidence yet, no absolute sources locator, a well-formed
     N >= 1, and the history file exists now. Otherwise nothing is written for it.
@@ -22,6 +22,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from penpal.utils.paths import get_codex_home
+
 LOGGER = logging.getLogger(__name__)
 _BATCH = 2000
 _SOURCE = "codex_cli"
@@ -37,10 +39,7 @@ def _line_number(raw_ref: str) -> int | None:
 
 
 def migrate_v31(conn: sqlite3.Connection) -> dict[str, tuple[int, int]]:
-    # Imported here: penpal.sources imports the store, so a module-level import is circular.
-    from penpal.sources.plugins.codex_cli import default_codex_home
-
-    history = (default_codex_home() / "history.jsonl").expanduser()
+    history = (get_codex_home() / "history.jsonl").expanduser()
     if not history.is_file():
         LOGGER.info("migration v31 codex history evidence backfill: %s not found, nothing written", history)
         return {}

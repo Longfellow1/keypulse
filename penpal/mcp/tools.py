@@ -6,11 +6,13 @@ from typing import Any, Optional
 
 from penpal.mcp import audit
 from penpal.mcp.auth import Grant, check_access
-from penpal.privacy import desensitizer
+from penpal.foundation.desensitizer import mask_emails, redact_secrets
 from penpal.search.engine import (
     TIMELINE_DEFAULT_LIMIT, TIMELINE_MAX_LIMIT, keyword_in_scope, normalize_keywords, parse_time_bound, scoped_evidence,
     search_events, source_coverage, timeline_events,
 )
+from penpal.foundation.sqlite_rules import is_blocked_sqlite
+from penpal.sources.cleaning.path_filter import is_excluded_path
 from penpal.sources.registry import unavailable_sources
 from penpal.store import feedback
 from penpal.store.db import get_conn
@@ -77,8 +79,8 @@ def configure(*, mask_emails: bool) -> None:
 
 
 def _redact_text(text: str) -> str:
-    text = desensitizer.redact_secrets(text)
-    return desensitizer.mask_emails(text) if _mask_emails_at_query else text
+    text = redact_secrets(text)
+    return mask_emails(text) if _mask_emails_at_query else text
 
 
 def _redact_fields(node: Any) -> Any:
@@ -397,7 +399,12 @@ def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
         return {"status": "not_resolvable", "message": reason, "evidence": evidence}
     original = None
     if available and row["source"] in ORIGINAL_SOURCES:
-        original = read_original(row["source"], row["locator"])
+        original = read_original(
+            row["source"],
+            row["locator"],
+            is_blocked_sqlite=is_blocked_sqlite,
+            is_excluded_path=is_excluded_path,
+        )
         if original is None:  # the file / visit row is gone although the file path still exists
             available = evidence["available"] = False
             _store_unavailable(row["evidence_id"])

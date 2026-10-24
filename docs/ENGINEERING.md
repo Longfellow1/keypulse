@@ -18,10 +18,10 @@
 
 ## 2. 模块地图与依赖方向
 ```
-入口层   cli.py · hud/ · app_bundle.py · mcp/server（stdio）
-服务层   services/（purge、activity…）· health/（doctor 与健康检查的呈现）· runtime/（D36：状态与控制）
-领域层   capture/（实时采集）· sources/（历史来源插件）· privacy/ · search/ · mcp/tools
-基础层   store/（SQLite 唯一入口）· config.py · utils/（paths 唯一路径来源）· i18n.py
+入口层   cli.py · feedback_cli.py · hud/ · app_bundle.py · app.py · mcp/cli.py · mcp/server（stdio）
+服务层   services/（purge、activity…）· health/（doctor 与健康检查的呈现）· capabilities/（能力探测与状态汇总）· runtime/（D36：状态与控制）
+领域层   capture/（实时采集）· sources/（历史来源插件）· privacy/ · search/ · permissions.py · observability/ · mcp/tools、auth、audit
+基础层   store/（SQLite 唯一入口）· foundation/（跨领域共享规则与低层文件原语）· config.py · utils/（paths 唯一路径来源）· i18n.py
 ```
 - 依赖只能从上往下；`lint-imports` 合约强制执行，新增分层规则要同步写进 `.importlinter`。
 - pyobjc（AppKit / Quartz / WebKit…）只允许出现在 capture、hud、启动层。
@@ -48,7 +48,7 @@ Penpal 有多个常驻进程：后台服务（launchd）、健康检查 job、HU
 - 注释只写"为什么"。
 - 错误要具体：抛出或记录能定位问题的信息；不得 `except Exception: pass`；吞异常只允许在"一个读取失败不能拖垮整个界面"这类边界，并且要记日志。
 - 用户可见文案用 `T(中文, 英文)` 双语；命令和输出以中文为主。
-- 新代码不出现 `keypulse` 命名；遗留名字只允许出现在迁移模块里（`utils/paths` 的迁移函数），并登记删除版本。
+- 新代码不出现 `keypulse` 命名；遗留名字只允许出现在迁移模块里（路径迁移在 `utils/paths.py`，配置文本迁移在 `config.py`），并登记删除版本。
 - Python ≥3.11：不用 3.12+ 语法；CI 有 3.11 编译导入检查。
 - 新依赖要写理由，优先标准库。
 
@@ -73,7 +73,7 @@ Penpal 有多个常驻进程：后台服务（launchd）、健康检查 job、HU
 - 过渡兼容代码登记在这里，到期删除：
   | 内容 | 位置 | 删除版本 |
   |---|---|---|
-  | KeyPulse → Penpal 数据目录、配置路径、launchd label 迁移 | `penpal/utils/paths.py`、安装器 | 0.5.0 |
+  | KeyPulse → Penpal 数据目录、路径解析、launchd label 迁移 | `penpal/utils/paths.py`、安装器；配置文本路径改写在 `penpal/config.py` | 0.5.0 |
 | MCP 参数 `include_keypulse_echoes` 的弃用别名（替代为 `include_penpal_echoes`） | `penpal/mcp/server.py` | 0.5.0 |
 | 历史 metadata `via_keypulse` 回声标记读取兼容 | `penpal/search/engine.py` | 0.5.0 |
 | `keypulse` console-script 迁移 shim | `pyproject.toml`（`penpal.cli:legacy_main`） | 0.5.0 |

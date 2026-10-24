@@ -21,7 +21,7 @@ from penpal.health import capture_health as ch
 from penpal.health import self_heal
 from penpal.runtime import RuntimeState, RuntimeStatus
 from penpal.runtime.evaluate import Issue
-from penpal.runtime.record import Component
+from penpal.foundation.runtime_record import Component
 from penpal.hud.controller import HudController
 from penpal.mcp import auth
 from penpal.services import purge

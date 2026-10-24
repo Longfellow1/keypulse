@@ -71,7 +71,7 @@ def test_status_plain_includes_runtime_state_and_watcher_component(monkeypatch, 
     monkeypatch.setattr("penpal.cli.get_config", lambda: cfg)
     monkeypatch.setattr("penpal.cli.require_db", lambda cfg: None)
     from penpal.runtime import RuntimeState, RuntimeStatus
-    from penpal.runtime.record import Component
+    from penpal.foundation.runtime_record import Component
     monkeypatch.setattr("penpal.cli.evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING, pid=4242, components={"ax_text": Component("running")}))
     monkeypatch.setattr("penpal.cli.get_state", lambda key: {
         "status": "running",
@@ -96,7 +96,7 @@ def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
     monkeypatch.setattr("penpal.cli.get_config_path", lambda: tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text("x=1")
     from penpal.runtime import RuntimeState, RuntimeStatus
-    from penpal.runtime.record import Component
+    from penpal.foundation.runtime_record import Component
     monkeypatch.setattr("penpal.cli.evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING, components={"ax_text": Component("running")}))
     monkeypatch.setattr("penpal.cli._stale_moved_dev_venv_script", lambda: None)
     monkeypatch.setattr("penpal.cli._legacy_mcp_config_findings", lambda: [])

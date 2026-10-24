@@ -193,7 +193,7 @@ def _write_vault(root: Path, events: list[FxEvent]) -> Path:
 
 def build_plugins(root: Path) -> dict[str, object]:
     """Write all fixtures under ``root`` and return ready-to-register plugin instances."""
-    from penpal.sources.approval import ApprovalStore
+    from penpal.foundation.approval_store import ApprovalStore
     from penpal.sources.plugins.chrome_history import ChromeHistorySource
     from penpal.sources.plugins.claude_code import ClaudeCodeSource
     from penpal.sources.plugins.codex_cli import CodexCliSource

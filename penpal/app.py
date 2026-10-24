@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Callable, Any
 
-from penpal.capabilities.base import HealthState
+from penpal.capabilities.capture_facts import CAPTURE_FACT_CAPS as _CAPTURE_FACT_CAPS
 from penpal.capabilities.registry import CapabilityRegistry, get_default_registry
 from penpal.capabilities.store import save_states as save_capability_states
 from penpal.capture.browser_automation_state import clear_browser_automation_denied_browsers_on_startup
@@ -18,24 +18,18 @@ from penpal.utils.lock import SingleInstanceLock
 from penpal.utils.logging import setup_logging, get_logger
 from penpal.store.db import init_db
 from penpal.sources.scheduler import SourcesScheduler
+from penpal.services.capability_monitor import (
+    _apply_ax_denied_fact_overrides,
+    run_capability_self_check as _run_capability_self_check,
+)
 
 logger = get_logger("app")
-_CAPTURE_FACT_CAPS = {
-    "clipboard_watcher",
-    "ax_text_watcher",
-    "window_watcher",
-    "browser_watcher",
-}
 _CAPTURE_PROBE_CAPS = {
     "accessibility_permission",
     "browser_automation",
     "appkit_runtime",
 }
 _COMPAT_CAPTURE_CAPS = _CAPTURE_FACT_CAPS
-_AX_DEPENDENT_FACT_CAPS = {
-    "ax_text_watcher",
-    "keyboard_chunk_watcher",
-}
 
 
 def daemonize(pid_path: Path):
@@ -68,52 +62,6 @@ def daemonize(pid_path: Path):
     os.close(devnull)
 
     # PID is written by the lock layer inside run().
-
-
-def _run_capability_self_check(registry: CapabilityRegistry) -> None:
-    """Probe all capabilities and persist results to the state repo.
-
-    The state repo is the runtime source of truth for capability health.
-    health.json is written by the healthcheck CLI on its own cadence and
-    embeds a snapshot of capability state at that time.
-    """
-    from penpal.store.repository import set_state
-
-    states = registry.monitor_all()
-    states = _apply_ax_denied_fact_overrides(states)
-    save_capability_states(states)
-
-    # Record what this process sees for its own permissions, so `penpal doctor` can report the
-    # background service instead of the terminal it runs in. Never let this break the self-check.
-    try:
-        from penpal.health.capture_health import record_daemon_permissions
-
-        record_daemon_permissions()
-    except Exception as exc:
-        logger.warning(f"daemon permission self-report failed: {exc}")
-
-    capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS)
-    set_state("capture_error_code", "" if capture_failure is None else capture_failure.state.code)
-
-
-def _apply_ax_denied_fact_overrides(states: dict[str, HealthState]) -> dict[str, HealthState]:
-    """Force AX-dependent watcher facts false when accessibility is denied."""
-    accessibility_state = states.get("accessibility_permission")
-    if accessibility_state is None or accessibility_state.ok or accessibility_state.code != "ax_denied":
-        return states
-
-    now = time.time()
-    overridden = dict(states)
-    for capability_name in _AX_DEPENDENT_FACT_CAPS:
-        if capability_name not in overridden:
-            continue
-        overridden[capability_name] = HealthState(
-            ok=False,
-            code="ax_denied",
-            last_checked=now,
-            detail="forced by accessibility_permission=ax_denied",
-        )
-    return overridden
 
 
 def _on_mac_wake(registry: CapabilityRegistry, scheduler: SourcesScheduler) -> None:

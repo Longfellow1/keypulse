@@ -11,7 +11,7 @@ from penpal.capture import manager_runtime
 from penpal.capture.camera_monitor import CameraMonitor
 from penpal.capture.capture_control import disabled_sources, is_capture_paused
 from penpal.capture.wake import LAST_WAKE_STATE_KEY, detect_wake
-from penpal.runtime.record import utc_now
+from penpal.foundation.runtime_record import utc_now
 from penpal.store.db import init_db
 from penpal.store.repository import get_state, seed_policies_from_config, set_state
 from penpal.utils.logging import get_logger

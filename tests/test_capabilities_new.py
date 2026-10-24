@@ -8,8 +8,6 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
-
 from penpal.capabilities.builtin._watcher_health import (
     WATCHER_HEALTH_SPECS,
     WatcherHealthCapability,
@@ -17,7 +15,7 @@ from penpal.capabilities.builtin._watcher_health import (
 )
 from penpal.capabilities.builtin.screen_recording_permission import ScreenRecordingPermissionCapability
 from penpal.runtime import RuntimeState, RuntimeStatus
-from penpal.runtime.record import Component
+from penpal.foundation.runtime_record import Component
 
 
 def _runtime(monkeypatch, components):
@@ -72,17 +70,6 @@ def test_watcher_health_specs_include_browser_url() -> None:
     browser_url = by_name.get("browser_url")
     assert browser_url is not None
     assert browser_url.capability_name == "browser_url_watcher"
-
-
-@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
-def test_watcher_health_specs_cover_real_watchers():
-    """The manifest must include every watcher we ship heartbeat for."""
-    watcher_names = {spec.watcher_name for spec in WATCHER_HEALTH_SPECS}
-    # All watchers with HEARTBEAT_TIMEOUT_SEC set
-    expected = {"clipboard", "browser", "window", "ax_text", "ocr"}
-    assert expected.issubset(watcher_names), (
-        f"manifest missing: {expected - watcher_names}"
-    )
 
 
 # ---- ScreenRecordingPermissionCapability ---------------------------------------

@@ -6,7 +6,8 @@ from typing import Any
 
 from penpal.capabilities.registry import get_default_registry
 from penpal.capabilities.store import load_states, load_states_raw
-from penpal.config import Config
+from penpal.capabilities.capture_facts import CAPTURE_FACT_CAPS
+from penpal.config import Config, read_config
 from penpal.health.alerts import ProductAlert
 from penpal.health.product_delivery import evaluate_delivery_health
 from penpal.health.report import HEALTH_JSON_PATH, write_health_report
@@ -22,11 +23,7 @@ def _utc_now() -> datetime:
 
 
 def _load_config_from_path(path: Path) -> Config:
-    import tomllib
-
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
-    return Config.model_validate(data)
+    return read_config(path)
 
 
 def _load_config(config_path: str | None) -> tuple[Config, bool]:
@@ -204,10 +201,8 @@ def _capabilities_snapshot() -> tuple[dict[str, Any], str]:
     except Exception:
         return {}, ""
 
-    from penpal.app import _CAPTURE_FACT_CAPS
-
     registry = get_default_registry()
-    capture_failure = registry.select_failure(states, names=_CAPTURE_FACT_CAPS) if states else None
+    capture_failure = registry.select_failure(states, names=CAPTURE_FACT_CAPS) if states else None
     capture_code = "" if capture_failure is None else capture_failure.state.code
 
     return capabilities_raw, capture_code

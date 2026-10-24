@@ -5,11 +5,20 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from penpal.sources.discoverers import CandidateSource
 from penpal.utils.env import get_env_compat
 from penpal.utils.paths import get_data_dir
+
+
+class _CandidateSource(Protocol):
+    discoverer: str
+    path: str
+    app_hint: str
+    schema_signature: str
+    shape: str
+    hint_tables: list[str]
+    hint_fields: list[str]
 
 
 @dataclass
@@ -32,7 +41,7 @@ class ApprovalStore:
             return
         self.path = get_data_dir() / "sources-approval.json"
 
-    def candidate_id(self, candidate: CandidateSource) -> str:
+    def candidate_id(self, candidate: _CandidateSource) -> str:
         raw = f"{candidate.discoverer}:{candidate.path}".encode("utf-8")
         return hashlib.sha1(raw).hexdigest()[:12]
 
@@ -45,7 +54,7 @@ class ApprovalStore:
             return "rejected"
         return "unknown"
 
-    def approve(self, candidate: CandidateSource, *, note: str = "") -> ApprovalRecord:
+    def approve(self, candidate: _CandidateSource, *, note: str = "") -> ApprovalRecord:
         payload = self._load_payload()
         candidate_key = self.candidate_id(candidate)
         now = datetime.now(timezone.utc)
@@ -72,7 +81,7 @@ class ApprovalStore:
             note=note,
         )
 
-    def reject(self, candidate: CandidateSource, *, reason: str = "user_choice") -> ApprovalRecord:
+    def reject(self, candidate: _CandidateSource, *, reason: str = "user_choice") -> ApprovalRecord:
         payload = self._load_payload()
         candidate_key = self.candidate_id(candidate)
         now = datetime.now(timezone.utc)

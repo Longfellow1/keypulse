@@ -146,7 +146,7 @@ def collect_snapshot(cfg, *, now: Optional[datetime] = None) -> Snapshot:
     """Read the whole HUD state. Never raises: an unreadable part falls back to an empty value, and an
     unreadable database sets ``read_error`` (shown as a storage error)."""
     from penpal.capture.capture_control import CAPTURE_SOURCES, disabled_sources
-    from penpal.capture.chat_apps import CHAT_APPS
+    from penpal.foundation.chat_apps import CHAT_APPS
     from penpal.capture.keyboard_notice import KEYBOARD_SOURCE, keyboard_capture_enabled
     from penpal.health import capture_health
     from penpal.mcp import audit, auth

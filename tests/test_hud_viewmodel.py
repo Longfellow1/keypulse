@@ -11,7 +11,7 @@ from penpal.hud.snapshot import AuditRow, HostInfo, PermIssue, Snapshot, SourceI
 from penpal.hud.viewmodel import UiState, Reveal, build_model, delete_options
 from penpal.runtime import RuntimeState, RuntimeStatus
 from penpal.runtime.evaluate import Issue
-from penpal.runtime.record import Component
+from penpal.foundation.runtime_record import Component
 
 NOW = datetime(2026, 10, 24, 6, 0, tzinfo=timezone.utc)
 

@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from penpal.app import _run_capability_self_check
 from penpal.capabilities.registry import get_default_registry
 from penpal.capabilities.store import load_states_raw
+from penpal.services.capability_monitor import run_capability_self_check
 from penpal.store.db import get_conn
 from penpal.store.repository import get_state, set_state
 from penpal.utils.atomic_io import atomic_write_text
@@ -130,7 +130,7 @@ def step_refresh_capabilities(*, dry_run: bool) -> StepResult:
     if dry_run:
         return StepResult("step2_capabilities", True, "dry-run: 跳过权限刷新")
     registry = get_default_registry()
-    _run_capability_self_check(registry)
+    run_capability_self_check(registry)
     payload = load_states_raw()
     rendered = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     atomic_write_text(_CAPABILITY_STATUS_PATH, rendered, encoding="utf-8")

@@ -1,7 +1,7 @@
 from penpal.sources.cleaning.config import CleaningConfig, load_cleaning_config
 from penpal.sources.cleaning.content_quality import is_low_signal_event
 from penpal.sources.cleaning.dedup import dedup_events
-from penpal.sources.cleaning.file_whitelist import is_blocked_sqlite
+from penpal.foundation.sqlite_rules import is_blocked_sqlite
 from penpal.sources.cleaning.path_filter import is_excluded_path
 
 __all__ = [

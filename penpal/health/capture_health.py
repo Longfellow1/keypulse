@@ -24,6 +24,11 @@ from typing import Any, Mapping, Optional
 from penpal import permissions
 from penpal.permissions import PermissionStatus
 from penpal.runtime import RuntimeState, evaluate, state_message
+from penpal.services.capability_monitor import (
+    DAEMON_PERMISSIONS_KEY,
+    DAEMON_PERMISSION_MAX_AGE_SEC,
+    record_daemon_permissions,
+)
 
 # Watcher (= source) -> macOS permissions it needs. keyboard_chunk also depends on AX
 # (see app._AX_DEPENDENT_FACT_CAPS). OCR is off (watcher commented out in capture/manager.py), so it
@@ -32,11 +37,6 @@ SOURCE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "keyboard_chunk": ("input_monitoring", "accessibility"),
     "ax_text": ("accessibility",),
 }
-
-# The daemon records its own permission state (app_state key below) on startup and on every
-# capability self-check tick (60 s). Older than this, doctor assumes the daemon is not running.
-DAEMON_PERMISSIONS_KEY = "daemon_permissions"
-DAEMON_PERMISSION_MAX_AGE_SEC = 150.0
 
 # ── shared permission readers ───────────────────────────────────────────────────
 def _daemon_denied_permissions() -> set[str]:
@@ -110,30 +110,6 @@ def executables_to_grant(host_executable: Optional[str] = None) -> list[str]:
 
 
 # ── daemon self-report (written by the daemon, read by doctor) ─────────────────
-
-def record_daemon_permissions() -> dict[str, Any]:
-    """Daemon side: check each capture permission from inside the daemon process and persist the result.
-
-    Read-only (``check`` only, never ``request``), so it cannot raise a prompt. The daemon runs under
-    launchd with its own TCC identity; doctor runs in the user's terminal and cannot see that identity.
-    """
-    from penpal.store.repository import set_state
-
-    results: dict[str, str] = {}
-    for spec in permissions.PERMISSION_SPECS:
-        try:
-            results[spec.key] = spec.check().value
-        except Exception:
-            results[spec.key] = PermissionStatus.UNAVAILABLE.value
-    snapshot = {
-        "checked_at": datetime.now(timezone.utc).isoformat(),
-        "pid": os.getpid(),
-        "host_executable": os.path.realpath(sys.executable),
-        "permissions": results,
-    }
-    set_state(DAEMON_PERMISSIONS_KEY, json.dumps(snapshot, ensure_ascii=False))
-    return snapshot
-
 
 def daemon_permission_snapshot(now: Optional[datetime] = None) -> Optional[dict[str, Any]]:
     """Doctor side: the daemon's last self-reported permission state with ``age_sec`` added.

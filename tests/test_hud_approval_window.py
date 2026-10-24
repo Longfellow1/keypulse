@@ -8,7 +8,7 @@ from penpal.hud.approval_window import (
     list_pending_candidates,
     safe_pending_candidate_count,
 )
-from penpal.sources.approval import ApprovalStore
+from penpal.foundation.approval_store import ApprovalStore
 from penpal.sources.discoverers import CandidateSource
 
 

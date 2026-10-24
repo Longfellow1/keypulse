@@ -16,7 +16,7 @@ import json
 import sqlite3
 from urllib.parse import urlsplit
 
-from penpal.capture.hygiene import (
+from penpal.foundation.capture_hygiene import (
     DROP,
     METADATA_ONLY,
     capture_gate,

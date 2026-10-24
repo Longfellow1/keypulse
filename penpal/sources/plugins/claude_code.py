@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from penpal.foundation.transcript_noise import clean_message_part
 from penpal.sources.cleaning.noise import (
     advance_echo,
-    clean_message_part,
     is_penpal_call,
     resolve_server_names,
 )

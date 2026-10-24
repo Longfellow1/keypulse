@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from penpal.capture.fusion import CaptureFusionEngine
-from penpal.capture.hygiene import DROP, METADATA_ONLY, capture_gate
+from penpal.foundation.capture_hygiene import DROP, METADATA_ONLY, capture_gate
 from penpal.capture.manager import CaptureManager
 from penpal.capture.normalizer import (
     normalize_ax_text_event,
@@ -22,8 +22,8 @@ from penpal.capture.normalizer import (
 from penpal.capture.watchers import keyboard_native
 from penpal.capture.watchers.keyboard_chunk import KeyboardChunkBuffer
 from penpal.config import Config
-from penpal.privacy.desensitizer import desensitize
-from penpal.privacy.detectors import luhn_valid, valid_id_card
+from penpal.foundation.desensitizer import desensitize
+from penpal.foundation.detectors import luhn_valid, valid_id_card
 from penpal.store import buckets
 from penpal.store.db import close, get_conn, init_db
 from penpal.store.migration_v24 import migrate_v24

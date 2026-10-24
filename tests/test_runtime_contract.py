@@ -16,7 +16,7 @@ import pytest
 
 from penpal import __version__
 from penpal.runtime import RuntimeState, RuntimeStatus, evaluate, state_text
-from penpal.runtime.record import Component, Progress, RuntimeRecord, read_record, write_record
+from penpal.foundation.runtime_record import Component, Progress, RuntimeRecord, read_record, write_record
 
 EVALUATOR = importlib.import_module("penpal.runtime.evaluate")
 
@@ -310,7 +310,7 @@ def test_quiet_but_healthy_progress_is_running_for_thirty_simulated_minutes(monk
 
 
 def test_launchd_probe_parses_output_with_injected_runner(monkeypatch):
-    from penpal.runtime import launchd
+    from penpal.foundation import runtime_launchd as launchd
 
     monkeypatch.delenv("PENPAL_RUNTIME_DISABLE_LAUNCHD_PROBE", raising=False)
     monkeypatch.setattr(launchd.os, "uname", lambda: SimpleNamespace(sysname="Darwin"))
@@ -468,7 +468,7 @@ enabled = false
                 break
             time.sleep(0.1)
         assert record is not None
-        from penpal.runtime.launchd import process_start_time
+        from penpal.foundation.runtime_launchd import process_start_time
         assert record.process_start_time == process_start_time(record.pid), (record.process_start_time, process_start_time(record.pid))
         assert evaluate().state is RuntimeState.RUNNING
 

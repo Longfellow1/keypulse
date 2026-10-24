@@ -28,7 +28,7 @@ from penpal.capture.ax_spike import (
     run_spike,
     utf16_to_index,
 )
-from penpal.capture.hygiene import DEFAULT_TITLE_DENY_PATTERNS
+from penpal.foundation.capture_hygiene import DEFAULT_TITLE_DENY_PATTERNS
 from penpal.config import Config
 
 
