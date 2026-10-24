@@ -67,8 +67,13 @@ def test_codex_prints_toml_block_with_absolute_path_and_alternative_command(home
 
 def test_cursor_prints_mcp_json_for_cursor_config(home) -> None:
     out, token = _grant("cursor", "--host", "cursor")
-    assert "~/.cursor/mcp.json" in out
-    server = _json_block(out)["mcpServers"]["penpal"]
+    assert "~/.cursor/mcp.json" in out and ".cursor/mcp.json" in out
+    doc = _json_block(out)
+    # Cursor format: top level is exactly {"mcpServers": {<name>: {...}}} with a stdio entry.
+    assert set(doc) == {"mcpServers"} and list(doc["mcpServers"]) == ["penpal"]
+    server = doc["mcpServers"]["penpal"]
+    assert set(server) == {"type", "command", "args", "env"}
+    assert server["type"] == "stdio"
     assert server["args"] == ["mcp", "serve"]
     assert os.path.isabs(server["command"])
     assert server["env"] == {"PENPAL_TOKEN": token, "PENPAL_CLIENT": "cursor"}

@@ -55,6 +55,14 @@ penpal mcp grant claude --buckets Work,Personal
 
 然后在 Claude Code 里正常提问，比如"我昨天下午在研究什么"。
 
+### 已验证的 Host
+
+| Host | 版本 | 说明 |
+|---|---|---|
+| Claude Code | 2.1.303（`claude --version`） | 打印出的配置已用 MCP 协议层测试（模拟客户端）启动验证 |
+| Codex CLI | codex-cli 0.162.1（`codex --version`） | 同上 |
+| Cursor | 未检测到 `cursor` 命令 | 配置格式已按官方文档校验，未在真机验证 |
+
 ## AI 能用的工具
 
 | 工具 | 做什么 |
