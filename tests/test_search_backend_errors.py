@@ -53,6 +53,8 @@ def test_cli_search_reports_database_failure_without_query_or_sqlite_details(mon
     result = CliRunner().invoke(cli.main, ["search", "sensitive query"])
 
     assert result.exit_code != 0
-    assert "搜索失败" in result.output
+    from penpal.i18n import T
+
+    assert T("搜索失败", "Search failed") in result.output
     assert "sensitive query" not in result.output
     assert "internal sqlite detail" not in result.output
