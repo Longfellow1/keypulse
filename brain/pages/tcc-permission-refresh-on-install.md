@@ -4,7 +4,7 @@ title: Reinstall and onboarding must kick the daemon to refresh TCC
 category: decision
 status: active
 created: "2026-10-10T10:26:13"
-updated: "2026-10-10T10:26:13"
+updated: "2026-10-24T23:56:02"
 ---
 
 <!-- compiled_truth -->
@@ -30,3 +30,9 @@ After onboarding, the daemon is kicked so the TCC cache refreshes. Re-signing ch
   summary: captured from project history
   source: "commits b37417f (2026-05-25), 802bf63 (2026-06-01); Makefile onboard/post-onboard-kick"
   affects: [tcc-permission-refresh-on-install]
+
+- time: 2026-10-24T23:56:02
+  kind: decision
+  summary: "D36: the daemon kick after reinstall/onboarding now goes through the single runtime control path (penpal.runtime.control restart)."
+  source: docs/design/runtime-contract.md
+  affects: [runtime-contract]

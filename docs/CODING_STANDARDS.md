@@ -21,6 +21,12 @@
 - 每个行为修改配一个测试；修 bug 时先确认测试在旧代码上失败（mutation check）。
 - 提交前：`python -m pytest -q` 全绿（本地可 deselect 已知环境问题 `tests/test_multi_host_mcp.py`，CI 必须全绿）+ `lint-imports`。
 
+## 跨进程约定（D36）
+- 运行状态只由 `penpal.runtime` 的评估函数产生；其他模块不得自行读取 pid 文件、launchctl 或运行时状态键。
+- 启动 / 停止 / 重启只走 `penpal.runtime` 的控制入口（launchd）。
+- 改动跨进程约定（状态记录、权限判定、数据库结构、MCP 协议）时，PR 写明影响的约定与出口，并补 Eval PRD §3.7 的矩阵 / 场景用例。
+- 修真实环境报告的问题：先写一条会失败的场景用例，再修。
+
 ## Git
 - 从最新 `origin/main` 开分支，一个 PR 一件事；不 `git add -A`，不提交 `.codex-rules.md`、`.venv`、日志。
 - 提交信息用 conventional 前缀（`fix:`/`feat:`/`docs:`/`chore:`），结尾加 `Co-Authored-By` 行。

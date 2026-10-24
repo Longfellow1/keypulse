@@ -1,6 +1,6 @@
 # Brain Index
 
-_Auto-generated. Last updated 2026-10-24T15:29:12.023Z._
+_Auto-generated. Last updated 2026-10-24T15:56:02.993Z._
 
 - [anchors-json-is-ssot](pages/anchors-json-is-ssot.md) — category: decision | ## Decision
 - [beat-vs-emit-separation](pages/beat-vs-emit-separation.md) — category: decision | ## Decision
@@ -32,6 +32,7 @@ _Auto-generated. Last updated 2026-10-24T15:29:12.023Z._
 - [py2app-preflight-smoke-test](pages/py2app-preflight-smoke-test.md) — category: decision | ## Decision
 - [refactor-in-place-with-legacy-tag](pages/refactor-in-place-with-legacy-tag.md) — category: decision | tags: [refactor, repo, legacy] | ## Decision
 - [retention-keep-forever](pages/retention-keep-forever.md) — category: decision | tags: [retention, data-lifecycle, privacy] | Decision (user, 2026-10-13): KeyPulse does not delete anything automatically. All sources, including raw streams such as keyboard chunks, ar
+- [runtime-contract](pages/runtime-contract.md) — category: decision | tags: [runtime, health, hud, doctor, launchd, mcp] | Decision (D36, 2026-10-24, owner accepted all recommendations after a deep-fix audit of 80+ liveness/HUD/doctor commits since 2026-04):
 - [session-handoff-2026-10-10](pages/session-handoff-2026-10-10.md) — category: project | tags: [handoff, state, refactor] | ## Repo state
 - [skill-layer](pages/skill-layer.md) — category: project | ## Goal
 - [tcc-permission-refresh-on-install](pages/tcc-permission-refresh-on-install.md) — category: decision | ## Decision
