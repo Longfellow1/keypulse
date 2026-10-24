@@ -74,6 +74,7 @@ Penpal 有多个常驻进程：后台服务（launchd）、健康检查 job、HU
   | 内容 | 位置 | 删除版本 |
   |---|---|---|
   | KeyPulse → Penpal 数据目录、路径解析、launchd label 迁移 | `penpal/utils/paths.py`、安装器；配置文本路径改写在 `penpal/config.py` | 0.5.0 |
+| `keypulse.log` 的一次性迁移到 `penpal.log`（不再回退读取旧名） | `penpal/utils/paths.py` | 0.5.0 |
 | MCP 参数 `include_keypulse_echoes` 的弃用别名（替代为 `include_penpal_echoes`） | `penpal/mcp/server.py` | 0.5.0 |
 | PR1 daemon runtime record v1 的读取兼容（缺少 config / schema identity 字段） | `penpal/foundation/runtime_record.py` | 0.5.0 |
 | 历史 metadata `via_keypulse` 回声标记读取兼容 | `penpal/search/engine.py` | 0.5.0 |

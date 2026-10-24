@@ -65,6 +65,14 @@ penpal app uninstall        # 移除 App 和启动项，不影响后台服务与
 
 安装后从 Finder 打开 Penpal.app。macOS 26 可在「系统设置 → 菜单栏 → 允许在菜单栏中」开启 Penpal；若图标缺失，先看 `penpal doctor` 和 `penpal hud status`。macOS 对菜单栏项目可见性的公开探测有限；从系统设置关闭项目时，HUD 不一定能自动识别。
 
+### 从 KeyPulse 升级
+
+升级后运行 `penpal doctor`。`遗留文件` 部分会以 WARN 列出旧版 KeyPulse.app、旧 PID/日志、旧 launchd plist 和迁移后留下的 `~/.keypulse` 目录，并给出建议命令。doctor 只报告，不会移动或删除 App；确认旧 App 后，可手动运行它列出的 `mv … ~/.Trash/` 命令，或在 Finder 中移到废纸篓。
+
+运行 `penpal maintenance clean-legacy` 只会删除 `~/.penpal` 内的旧 `keypulse*.pid` 和 `keypulse*.log` 普通文件，不会处理 App、launchd plist 或 `~/.keypulse`。清理后再次运行 `penpal doctor`；仍需处理的项目会继续列出。旧 `keypulse.log` 仅在 `penpal.log` 不存在时迁移一次；两者都存在时保留旧文件并由 doctor 报告。
+
+daemon 单独写入轮转的 `penpal.log`（5 MiB，最多 3 个备份）。launchd 的 daemon/healthcheck stdout 与 stderr 文件限制为 1 MiB，并在运行期间按原文件截断超限内容。
+
 ### 已验证的 Host
 
 | Host | 版本 | 说明 |

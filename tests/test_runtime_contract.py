@@ -452,8 +452,6 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     monkeypatch.setattr(doctor_cli, "get_config_path", lambda: config_path)
     monkeypatch.setattr(doctor_cli, "_stale_moved_dev_venv_script", lambda: None)
     monkeypatch.setattr(doctor_cli, "_legacy_mcp_config_findings", lambda: [])
-    monkeypatch.setattr(doctor_cli, "_launchd_label_loaded", lambda _label: False)
-    monkeypatch.setattr(doctor_cli, "_launchd_plist_path", lambda label: tmp_path / f"{label}.plist")
     monkeypatch.setattr(capture_health, "permission_report", lambda *_args, **_kwargs: [])
     from penpal.sources import onboarding, registry
     monkeypatch.setattr(onboarding, "source_problems", lambda _names: [])

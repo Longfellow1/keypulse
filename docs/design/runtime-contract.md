@@ -65,8 +65,8 @@
 - 可见性是 best-effort。HUD 读取 `NSStatusItem.isVisible()`；若 status item button 有 `window`，再检查 `window.occlusionState` 的 visible 位。macOS 15 可用这两个公开 AppKit 信号，但它们只能描述 status item / 窗口当前状态。macOS 26 的 System Settings「Allow in the Menu Bar」开关没有公开读取 API；Apple DTS 确认系统关闭该项时 `isVisible` 仍可能为 true。因此这些信号不能证明 Tahoe 系统开关已开启；未知时提示手动检查，不伪报为已确认隐藏。验收必须从 Finder / Launch Services 启动，不能只跑可执行文件。
 - 可由公开信号确认已创建但不可见时，evaluator 报告并引导到"系统设置 → 菜单栏 → Penpal"；主线程 tick 超过 45 秒且进程启动时间仍匹配时，报告 HUD 无响应。
 
-## 4. 删除清单（不包装、直接删）
-PID 文件作存活依据（含 `keypulse*.pid` 兼容读取）；self-heal 的扫描 PID 杀进程与"5 分钟内必须有事件"判据；无人读取的 `alerts.json`、`capability_status.json`；`HealthFreshnessCapability`；`install.sh` 中从未调用的 `reload_launchd_plist` 与 `--dev` 自写 plist 分支（统一走 `penpal install init`）；`penpal start` 的手动 fork 守护模式；健康检查里已停用的自愈分支与 streak；`keypulse.log` 命名（改为 `penpal.log` 并轮转）。
+## 4. 删除清单（PR 1–5 已完成）
+PID 文件作存活依据（含 `keypulse*.pid` 兼容读取）；self-heal 的扫描 PID 杀进程与"5 分钟内必须有事件"判据；无人读取的 `alerts.json`、`capability_status.json`；`HealthFreshnessCapability`；`install.sh` 中从未调用的 `reload_launchd_plist` 与 `--dev` 自写 plist 分支（统一走 `penpal install init`）；`penpal start` 的手动 fork 守护模式；健康检查里已停用的自愈分支与 streak；`keypulse.log` fallback 读取（首次解析时仅在 `penpal.log` 不存在时迁移一次，之后只读写 `penpal.log` 并轮转）。
 
 ## 5. 实施顺序（5 个 PR，各自可验证）
 
@@ -78,6 +78,8 @@ PID 文件作存活依据（含 `keypulse*.pid` 兼容读取）；self-heal 的�
 | 2 | 控制入口 + `penpal restart` + 安装路径统一 + 看门狗（预算 / 冷却）+ flock + 删除 self-heal 旧逻辑与手动 fork | R2、R3 |
 | 3 | 代码 / 配置 / 结构身份 + 后台服务 / HUD / MCP 自我换新 + MCP 孤儿退出 | R4（含三宿主实测） |
 | 4 | HUD 后台取数 + HUD 运行记录 + 原生启动程序 + 菜单栏可见性 | R6、R7 |
-| 5 | 日志改名与轮转 + doctor 报告遗留物（旧 App、旧日志、旧 PID 文件）+ 文档 | 回归 |
+| 5 | 日志改名与轮转 + launchd 输出日志限额 + doctor 报告遗留物（旧 App、旧日志、旧 PID 文件、旧 plist、旧数据目录）+ 限定清理命令 + 文档 | 回归；✅ 完成 |
+
+PR 5 日志约定：应用日志由 daemon 单进程写入 `penpal.log`，使用 5 MiB 上限和 3 个备份；CLI、HUD、MCP 不打开该文件 handler，避免跨进程轮转竞争。launchd 的四个 stdout/stderr 文件上限为 1 MiB，daemon 启动时及每 30 秒检查，healthcheck 启动时也检查；超限时原 inode 截断（copy-truncate），launchd 已打开的文件描述符继续指向同一个文件。
 
 测试策略：状态机与 launchd 交互用假 `launchctl` 快速测（CI 的 macOS runner 没有登录 GUI 会话，LaunchAgent 不可靠）；真进程场景在临时 HOME 里直接起 `penpal serve`（不经 launchd），用 `SIGSTOP` / `SIGKILL` / 改指纹模拟；R4 三宿主与 R7 菜单栏在真机手测。

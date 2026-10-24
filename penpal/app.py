@@ -13,6 +13,7 @@ from penpal.capabilities.registry import CapabilityRegistry, get_default_registr
 from penpal.capabilities.store import save_states as save_capability_states
 from penpal.capture.browser_automation_state import clear_browser_automation_denied_browsers_on_startup
 from penpal.config import Config
+from penpal.foundation.runtime_logs import LAUNCHD_LOG_CHECK_INTERVAL_SEC, cap_launchd_output_logs
 from penpal.foundation.runtime_identity import IdentityWatcher, RELOAD_EXIT_CODE
 from penpal.i18n import T
 from penpal.utils.lock import SingleInstanceLock
@@ -77,6 +78,8 @@ def run(config: Optional[Config] = None, *, config_path: str | Path | None = Non
 
     setup_logging(config.log_path_expanded)
     logger.info("Penpal daemon starting")
+    for path, exc in cap_launchd_output_logs():
+        logger.warning("could not cap launchd output log %s: %s", path.name, type(exc).__name__)
 
     lock = SingleInstanceLock(get_daemon_lock_path(), get_pid_path())
     if not lock.acquire():
@@ -161,8 +164,14 @@ def run(config: Optional[Config] = None, *, config_path: str | Path | None = Non
             manager._runtime_identity,
             lambda: current_identity(config, config_path=config_path),
         )
+        next_log_cap = time.monotonic() + LAUNCHD_LOG_CHECK_INTERVAL_SEC
 
         while True:
+            now_monotonic = time.monotonic()
+            if now_monotonic >= next_log_cap:
+                for path, exc in cap_launchd_output_logs():
+                    logger.warning("could not cap launchd output log %s: %s", path.name, type(exc).__name__)
+                next_log_cap = now_monotonic + LAUNCHD_LOG_CHECK_INTERVAL_SEC
             try:
                 identity_changed = identity_watcher.check()
             except (OSError, RuntimeError, ValueError) as exc:

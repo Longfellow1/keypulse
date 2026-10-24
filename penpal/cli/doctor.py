@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -7,15 +8,15 @@ from typing import Any
 import click
 from rich.table import Table
 from penpal.config import read_toml
-from penpal.utils.paths import get_config_path
+from penpal.utils.paths import get_apps_dir, get_config_path, get_data_dir, get_launchd_agents_dir
 from penpal.runtime import evaluate
 from penpal.capture.capture_control import disabled_sources
 from penpal.capture.keyboard_notice import DISABLE_COMMAND, ENABLE_COMMAND, KEYBOARD_SOURCE, keyboard_capture_enabled, switch_hint
 from penpal.i18n import T
 from . import main
+from .legacy import find_legacy_artifacts
 from ._shared import PLAIN_HELP, _runtime_fix_command, _runtime_status_line, console, get_config, require_db
-from penpal.runtime.control import LEGACY_LAUNCHD_LABELS
-from .install import _launchd_label_loaded, _launchd_plist_path, _stale_moved_dev_venv_script
+from .install import _stale_moved_dev_venv_script
 
 
 def _is_legacy_mcp_command(command: Any) -> bool:
@@ -66,9 +67,17 @@ def _legacy_mcp_config_findings(home: Path | None = None) -> list[str]:
 
     return findings
 
+
+def _doctor_apps_dirs(home: Path) -> tuple[Path, ...]:
+    # Test/probe isolation must never enumerate the host's /Applications.
+    if os.environ.get("PENPAL_ISOLATED") == "1":
+        return (home / "Applications",)
+    return (Path("/Applications"), get_apps_dir())
+
 @main.command(help=T("检查系统配置、权限与依赖。", "Check system configuration, permissions, and dependencies."))
 @click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
-def doctor(plain):
+@click.option("--json", "json_output", is_flag=True, default=False, help=T("输出 JSON", "Emit JSON"))
+def doctor(plain, json_output):
     """Run diagnostics."""
     runtime_status = evaluate()
     runtime_fix = _runtime_fix_command(runtime_status)
@@ -98,13 +107,13 @@ def doctor(plain):
     if stale_venv:
         checks["开发 venv 入口仍指向旧目录"] = False
 
-    legacy_services = []
-    for label in LEGACY_LAUNCHD_LABELS:
-        path = _launchd_plist_path(label)
-        loaded = _launchd_label_loaded(label)
-        if path.exists() or loaded:
-            legacy_services.append((label, path, loaded))
-    checks["旧 launchd 服务已清理"] = not legacy_services
+    home = Path.home()
+    legacy_artifacts = find_legacy_artifacts(
+        home=home,
+        apps_dirs=_doctor_apps_dirs(home),
+        agents_dir=get_launchd_agents_dir(),
+        data_dir=get_data_dir(),
+    )
 
     legacy_mcp_configs = _legacy_mcp_config_findings()
     checks["MCP host 配置已迁移为 penpal"] = not legacy_mcp_configs
@@ -181,7 +190,34 @@ def doctor(plain):
     enabled_now = [plugin.name for plugin in list_sources() if plugin.name not in disabled_sources()]
     unavailable_rows = source_problems(enabled_now)
 
-    if plain:
+    if json_output:
+        payload = {
+            "checks": {
+                name: {
+                    "status": "ok" if passed else "fail",
+                    "detail": check_details.get(name, ""),
+                }
+                for name, passed in checks.items()
+            },
+            "info": {
+                name: {"text": note, "plain": plain_text}
+                for name, (note, plain_text) in info_rows.items()
+            },
+            "unavailable_sources": unavailable_rows,
+            "legacy_artifacts": legacy_artifacts,
+            "missing_permissions": [
+                {
+                    "label": finding.label,
+                    "sources": list(finding.sources),
+                    "executables": list(finding.executables),
+                    "settings_pane": finding.settings_pane,
+                }
+                for finding in perm_findings
+                if not finding.granted
+            ],
+        }
+        click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+    elif plain:
         for check_name, passed in checks.items():
             status = "OK" if passed else "FAIL"
             detail = f" {check_details[check_name]}" if check_name in check_details else ""
@@ -197,10 +233,14 @@ def doctor(plain):
                 f"venv_entry={stale_venv[0]} points to {stale_venv[1]}; "
                 "run `bash install.sh --dev` to rebuild the developer venv"
             )
-        for label, path, loaded in legacy_services:
-            print(f"legacy_launchd={label},path={path},loaded={loaded}; run `penpal install launchd` to replace it")
         for finding in legacy_mcp_configs:
             print(f"legacy_mcp_config={finding}; change the MCP server name and command to `penpal`")
+        if legacy_artifacts:
+            print(f"{T('遗留文件', 'Legacy files')}: WARN")
+            for item in legacy_artifacts:
+                print(f"  {item['kind']}: {item['path']}")
+                print(f"    {T('原因', 'Why')}: {item['why']}")
+                print(f"    {T('建议', 'Suggested fix')}: {item['fix_command']}")
     else:
         table = Table(title="系统健康检查", show_header=True, header_style="bold cyan")
         table.add_column("检查项")
@@ -220,19 +260,27 @@ def doctor(plain):
                 "run `bash install.sh --dev` to rebuild the developer venv",
                 markup=False,
             )
-        for label, path, loaded in legacy_services:
-            console.print(
-                f"Old launchd service remains: {label}, plist={path}, loaded={loaded}; "
-                "run `penpal install launchd` to replace it",
-                markup=False,
-            )
         for finding in legacy_mcp_configs:
             console.print(
                 f"Legacy MCP config remains: {finding}; change the MCP server name and command to `penpal`",
                 markup=False,
             )
+        if legacy_artifacts:
+            table = Table(title=T("遗留文件", "Legacy files"), show_header=True, header_style="bold yellow")
+            table.add_column(T("级别", "Level"))
+            table.add_column(T("类型", "Kind"))
+            table.add_column(T("路径", "Path"))
+            table.add_column(T("原因 / 建议", "Why / Suggested fix"))
+            for item in legacy_artifacts:
+                table.add_row(
+                    "WARN",
+                    item["kind"],
+                    item["path"],
+                    f"{item['why']}\n{item['fix_command']}",
+                )
+            console.print(table)
     missing = [f for f in perm_findings if not f.granted]
-    for finding in missing:
+    for finding in (() if json_output else missing):
         if finding.checked_by == "daemon":
             header = f"后台服务缺少权限：{finding.label}（{', '.join(finding.sources)} 需要）。请在系统设置里授予下面的程序："
         else:

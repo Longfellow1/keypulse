@@ -77,7 +77,6 @@ def test_doctor_plain_includes_runtime_watcher_checks(monkeypatch, tmp_path):
     monkeypatch.setattr("penpal.cli.doctor.evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING, components={"ax_text": Component("running")}))
     monkeypatch.setattr("penpal.cli.doctor._stale_moved_dev_venv_script", lambda: None)
     monkeypatch.setattr("penpal.cli.doctor._legacy_mcp_config_findings", lambda: [])
-    monkeypatch.setattr("penpal.cli.doctor._launchd_label_loaded", lambda _label: False)
     monkeypatch.setattr("penpal.health.capture_health.permission_report", lambda *_args, **_kwargs: [])
     monkeypatch.setattr("penpal.sources.onboarding.source_problems", lambda _names: [])
     monkeypatch.setattr("penpal.sources.registry.list_sources", lambda: [])
