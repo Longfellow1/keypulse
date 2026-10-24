@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![macOS](https://img.shields.io/badge/macOS-12+-lightgrey.svg)](https://www.apple.com/macos/)
-[![Tests](https://img.shields.io/badge/tests-1000%2B%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1100%2B%20passing-brightgreen.svg)](tests/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ---
@@ -86,7 +86,8 @@ Read-only. Whatever is returned enters that AI's conversation and may be sent to
 
 **Recorded** (each source can be turned off individually):
 
-- Live capture: foreground window switches, clipboard, current web page URL, keyboard text snippets
+- Live capture: foreground window switches, clipboard, keyboard text snippets
+- Current web page URL: on in the standard install; the background service needs browser automation permission. To stop it, set `browser_url = false` under `[watchers]` in `~/.penpal/config.toml`
 - Imports: Chrome / Safari history, Claude Code and Codex sessions, shell history, Git commits, Spotlight
 
 **Not recorded, or excluded by default:**
@@ -115,12 +116,12 @@ Full reference: `penpal --help`.
 ## Where it stands
 
 - **Recall accuracy**: the author built a 50-question eval on real data from their own Mac; about a third of the questions give only partial clues. Answered by an independent model and graded automatically, it averaged 46.7 correct over three runs (93%), with 0 out-of-scope returns. The eval set contains personal data and is not published.
-- **Works today**: capture, import, redaction, per-category grants, search, sources, deletion, pause and source toggles, failure alerts without a UI.
+- **Works today**: capture, import, first-use onboarding, redaction, per-category grants, exclusion list, search, sources, deletion, pause and source toggles, failure alerts without a UI; plus an optional menu-bar app (`penpal app install`).
 - **Not there yet**:
   - Keyboard snippets are reliable only for English; capturing committed text from Chinese input methods is still experimental.
   - macOS only.
   - AIs can read but cannot write back to long-term memory.
-  - The desktop app is the HUD only for now; features that need a UI, such as daily and weekly reports, come later.
+  - The desktop app is the menu-bar HUD only for now, and is ad-hoc signed (no developer certificate); features that need a UI, such as daily and weekly reports, come later.
 
 ## License
 
