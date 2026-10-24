@@ -45,11 +45,14 @@ def text(value, marked=None, supported=True, title="Note") -> TextRead:
 class FakeAdapter:
     """Each poll is one (FocusRead, TextRead or None) step. read_text() returns that step's TextRead."""
 
-    def __init__(self, steps=(), *, trusted=True, codes=None):
+    def __init__(self, steps=(), *, trusted=True, codes=None, resolved_app_name=None):
         self.steps = list(steps)
         self.trusted = trusted
         self.codes = {"AXManualAccessibility": 0} if codes is None else codes
+        self.resolved_app_name = resolved_app_name
         self.text_calls = 0
+        self.focused_calls = 0
+        self.enable_calls = 0
 
     def is_trusted(self):
         return self.trusted
@@ -57,10 +60,15 @@ class FakeAdapter:
     def find_app_pid(self, app_name):
         return 4242
 
+    def app_name_for_pid(self, pid):
+        return self.resolved_app_name
+
     def enable_accessibility(self, pid, app_name):
+        self.enable_calls += 1
         return dict(self.codes)
 
     def read_focused(self, pid):
+        self.focused_calls += 1
         if not self.steps:
             self._pending = None
             return FocusRead(ok=False, reason=R_NO_FOCUS)
@@ -305,6 +313,65 @@ def test_terminal_app_is_dropped_when_configured():
     assert result.text is None and result.reason == "terminal_app"
 
 
+def test_excluded_current_browser_page_is_denied_by_shared_gate():
+    gate = default_gate(url_deny_hosts=["example.test"])
+
+    result = gate("Please review this plan", "Google Chrome", "Notes", "https://sub.example.test/path")
+
+    assert result.text is None
+    assert result.reason == "denied_domain"
+
+
+def test_spike_does_not_read_ax_when_browser_url_is_unknown():
+    adapter = FakeAdapter([(field(), text("hello"))])
+    clock = FakeClock()
+    out = []
+
+    stats = run_spike(
+        adapter,
+        pid=1,
+        app="Google Chrome",
+        seconds=1,
+        poll_interval_sec=1,
+        gate=default_gate(),
+        sink=out.append,
+        page_url_provider=lambda: None,
+        require_page_url=True,
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    assert adapter.focused_calls == 0
+    assert adapter.text_calls == 0
+    assert stats.reads_failed == {"page_url_unknown": 1}
+    assert out == []
+
+
+def test_spike_gates_each_delta_against_the_current_browser_url():
+    steps = [(field(), text("")), (field(), text("Please review this plan"))]
+    adapter = FakeAdapter(steps)
+    clock = FakeClock()
+    out = []
+    page_urls = iter(("https://allowed.example.test", "https://sub.example.test/private"))
+
+    stats = run_spike(
+        adapter,
+        pid=1,
+        app="Google Chrome",
+        seconds=2,
+        poll_interval_sec=1,
+        gate=default_gate(url_deny_hosts=["example.test"]),
+        sink=out.append,
+        page_url_provider=lambda: next(page_urls),
+        require_page_url=True,
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    assert deltas(out) == []
+    assert stats.deltas_gated == {"denied_domain": 1}
+
+
 # --- permission and output path (run_ax_text_spike) -------------------------------------------------
 
 def test_missing_permission_returns_nonzero_with_chinese_instruction(tmp_path):
@@ -384,7 +451,10 @@ def test_output_file_is_0600_and_not_overwritten(tmp_path):
     assert again == 2  # O_EXCL refuses to overwrite the existing file
 
 
-def test_chrome_gets_enhanced_ui_attempt_and_manual_flag_recorded(tmp_path):
+def test_chrome_gets_enhanced_ui_attempt_and_manual_flag_recorded(tmp_path, monkeypatch):
+    from penpal.capture.watchers.browser_url import BrowserUrlWatcher
+
+    monkeypatch.setattr(BrowserUrlWatcher, "read_browser_tab", lambda self, name: ("https://docs.example.test", "Docs"))
     adapter = FakeAdapter(
         [],
         codes={"AXManualAccessibility": -25205, "AXEnhancedUserInterface": 0},
@@ -405,6 +475,56 @@ def test_chrome_gets_enhanced_ui_attempt_and_manual_flag_recorded(tmp_path):
     summary = __import__("json").loads(out.read_text(encoding="utf-8").splitlines()[-1])
     assert summary["manual_accessibility_set"] is False
     assert any("AXEnhancedUserInterface" in m for m in messages)
+
+
+def test_browser_spike_refuses_before_sampling_if_current_url_is_unknown(tmp_path, monkeypatch):
+    from penpal.capture.watchers.browser_url import BrowserUrlWatcher
+
+    monkeypatch.setattr(BrowserUrlWatcher, "read_browser_tab", lambda self, name: None, raising=False)
+    adapter = FakeAdapter([(field(), text("should not be read"))])
+    messages = []
+    out = tmp_path / "chrome.jsonl"
+
+    code = run_ax_text_spike(
+        app_name="Google Chrome",
+        seconds=1,
+        out=str(out),
+        adapter=adapter,
+        cfg_loader=Config,
+        echo=messages.append,
+        clock=FakeClock(),
+        sleep=FakeClock().sleep,
+    )
+
+    assert code == 2
+    assert any("无法确认当前浏览器页面 URL" in message for message in messages)
+    assert adapter.enable_calls == 0
+    assert adapter.focused_calls == 0
+    assert adapter.text_calls == 0
+    assert not out.exists()
+
+
+def test_browser_bundle_id_is_resolved_before_url_requirement(tmp_path, monkeypatch):
+    from penpal.capture.watchers.browser_url import BrowserUrlWatcher
+
+    monkeypatch.setattr(BrowserUrlWatcher, "read_browser_tab", lambda self, name: None)
+    adapter = FakeAdapter(resolved_app_name="Google Chrome")
+    messages = []
+
+    code = run_ax_text_spike(
+        app_name="com.google.Chrome",
+        seconds=1,
+        out=str(tmp_path / "chrome.jsonl"),
+        adapter=adapter,
+        cfg_loader=Config,
+        echo=messages.append,
+        clock=FakeClock(),
+        sleep=FakeClock().sleep,
+    )
+
+    assert code == 2
+    assert any("无法确认当前浏览器页面 URL" in message for message in messages)
+    assert adapter.enable_calls == 0
 
 
 def test_cli_permission_missing_exits_nonzero(tmp_path, monkeypatch):

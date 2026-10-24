@@ -4,6 +4,7 @@ import os
 import locale as _locale
 import plistlib
 import re
+import sqlite3
 import shutil
 import sys
 import time
@@ -1810,7 +1811,10 @@ def search_cmd(query, app, since, source, limit, plain):
     require_db(cfg)
 
     backend = resolve_search_backend()
-    results = backend.search(query, app_name=app, since=since, source=source, limit=limit)
+    try:
+        results = backend.search(query, app_name=app, since=since, source=source, limit=limit)
+    except sqlite3.Error as exc:
+        raise click.ClickException(T("搜索失败：数据库查询出错。", "Search failed: database query error.")) from exc
 
     if plain:
         for result in results:

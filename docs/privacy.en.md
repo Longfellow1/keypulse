@@ -59,7 +59,7 @@ Limits you should know:
 - After allowing, that app's data goes into the **Private** bucket (`store/buckets.py`), readable only by AIs granted Private; your own bucket rules take precedence over this default. Content dropped before you allowed the app is not recovered.
 - Tests: `tests/test_chat_app_scope.py` (`test_opted_in_chat_app_is_private_and_hidden_from_work_personal_hosts`), `tests/test_issue26_capture_chain.py` (AT20).
 
-Also: the code contains a WeChat message import source (`penpal/sources/plugins/wechat.py`), but it is probe-only today. Its `read` returns nothing, so it reads no WeChat data, and it needs a separate `penpal source wechat authorize`.
+Also: the WeChat message source (`penpal/sources/plugins/wechat.py`) currently performs local probing only; message reading is not implemented. It does not read or import WeChat messages, create Daily reports, or call a cloud LLM. `penpal source wechat authorize` only writes a local authorization marker. Tests: `tests/test_sources_wechat.py::test_wechat_source_discover_and_read_probe_only`, `tests/test_wechat_consent.py`.
 
 ## 4. Excluding apps and domains yourself
 

@@ -120,10 +120,7 @@ class BrowserUrlWatcher(BaseWatcher):
         browser_name = _get_frontmost_app_name()
         if not browser_name or browser_name not in self._supported_browsers:
             return None
-        if browser_name in self._disabled_browsers:
-            return None
-
-        payload = self._read_browser_tab(browser_name)
+        payload = self.read_browser_tab(browser_name)
         if payload is None:
             return None
 
@@ -137,6 +134,20 @@ class BrowserUrlWatcher(BaseWatcher):
             title=title or None,
             browser_name=browser_name,
         )
+
+    def resolve_browser_name(self, browser_name: str) -> str | None:
+        """Return the configured spelling for a browser name, case-insensitively."""
+        target = str(browser_name or "").strip().casefold()
+        if not target:
+            return None
+        return next((name for name in self._supported_browsers if name.casefold() == target), None)
+
+    def read_browser_tab(self, browser_name: str) -> tuple[str, str] | None:
+        """Read a configured browser's current tab without depending on which app is frontmost."""
+        resolved = self.resolve_browser_name(browser_name)
+        if resolved is None or resolved in self._disabled_browsers:
+            return None
+        return self._read_browser_tab(resolved)
 
     def _read_browser_tab(self, browser_name: str) -> tuple[str, str] | None:
         script = _build_applescript(browser_name)

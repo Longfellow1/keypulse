@@ -202,8 +202,8 @@ def test_wechat_authorize_requires_explicit_yes(monkeypatch, tmp_path: Path) -> 
 
     accepted = CliRunner().invoke(sources_group, ["wechat", "authorize"], input="yes\n")
     assert accepted.exit_code == 0
-    assert "你即将授权 Penpal 接入你的微信本地消息" in accepted.output
-    assert "输入 \"yes\" 继续，其它取消：" in accepted.output
+    assert "你即将写入本机的微信来源授权标记" in accepted.output
+    assert "输入 \"yes\" 保存本机授权标记，其它取消：" in accepted.output
     assert "✅ 微信红区已授权" in accepted.output
     assert is_authorized() is True
 

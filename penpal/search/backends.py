@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import sqlite3
 from typing import Optional, Protocol
 
 from penpal.search.query_builder import build_fts_query
 from penpal.store.db import get_conn
+from penpal.utils.logging import get_logger
+
+
+LOGGER = get_logger("search.backends")
 
 
 def _parse_since(since_str: Optional[str]) -> Optional[str]:
@@ -49,7 +54,6 @@ class FtsSearchBackend:
         fts_query = build_fts_query(query)
         since_ts = _parse_since(since)
 
-        conn = get_conn()
         params = [fts_query]
         extra_where = ""
 
@@ -75,10 +79,12 @@ class FtsSearchBackend:
             LIMIT ?
         """
         try:
+            conn = get_conn()
             rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
-        except Exception:
-            return []
+        except sqlite3.Error as exc:
+            LOGGER.error("FTS search failed (%s)", type(exc).__name__)
+            raise
 
 
 def resolve_search_backend(name: str | None = None) -> SearchBackend:
