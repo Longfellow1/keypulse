@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import pytest
 from click.testing import CliRunner
 
-import penpal.cli as cli_module
+import penpal.cli.data as cli_module
 from penpal.capture.normalizer import (
     normalize_clipboard_event,
     normalize_keyboard_chunk_event,

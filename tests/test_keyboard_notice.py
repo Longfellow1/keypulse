@@ -11,6 +11,8 @@ import pytest
 from click.testing import CliRunner
 
 from penpal import cli
+from penpal.cli import doctor as doctor_cli
+from penpal.cli import install as install_cli
 from penpal.capture import keyboard_notice
 from penpal.capture.capture_control import set_source_enabled
 from penpal.config import Config
@@ -35,11 +37,11 @@ def cfg(tmp_path):
 @pytest.fixture
 def install_env(monkeypatch, tmp_path, cfg):
     """Keep `install init` / `install onboard` inside tmp_path."""
-    monkeypatch.setattr(cli, "get_data_dir", lambda: tmp_path / "data")
-    monkeypatch.setattr(cli, "_install_logs_dir", lambda: tmp_path / "logs")
-    monkeypatch.setattr(cli, "_write_default_user_config", lambda force=False: "skipped")
-    monkeypatch.setattr(cli.Config, "load", classmethod(lambda cls: cfg))
-    monkeypatch.setattr(cli, "_install_launchd_jobs", lambda **kwargs: [])
+    monkeypatch.setattr(install_cli, "get_data_dir", lambda: tmp_path / "data")
+    monkeypatch.setattr(install_cli, "_install_logs_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(install_cli, "_write_default_user_config", lambda force=False: "skipped")
+    monkeypatch.setattr(install_cli.Config, "load", classmethod(lambda cls: cfg))
+    monkeypatch.setattr(install_cli, "_install_launchd_jobs", lambda **kwargs: [])
     return cfg
 
 
@@ -70,7 +72,7 @@ def test_onboard_shows_notice_only_if_init_did_not(install_env, monkeypatch):
     runner = CliRunner()
     notice = keyboard_notice.notice_text()
     monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(install_cli.subprocess, "run", lambda *a, **k: None)
     monkeypatch.setattr("penpal.permissions.PERMISSION_SPECS", ())
 
     onboard = runner.invoke(cli.main, ["install", "onboard", "--non-interactive"])
@@ -85,8 +87,8 @@ def test_doctor_plain_shows_keyboard_on_and_off_with_command(install_env, monkey
     from penpal.health import capture_health
 
     monkeypatch.setattr(capture_health, "permission_report", lambda *a, **k: [])
-    monkeypatch.setattr(cli, "get_config", lambda: install_env)
-    monkeypatch.setattr(cli, "get_config_path", lambda: tmp_path / "config.toml")
+    monkeypatch.setattr(doctor_cli, "get_config", lambda: install_env)
+    monkeypatch.setattr(doctor_cli, "get_config_path", lambda: tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text("x=1")
     runner = CliRunner()
 

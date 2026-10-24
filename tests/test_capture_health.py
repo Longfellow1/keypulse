@@ -179,14 +179,15 @@ def test_report_daemon_denial_overrides_local_grant(monkeypatch):
 
 def _run_doctor(monkeypatch, tmp_path):
     from penpal import cli
+    from penpal.cli import doctor as doctor_cli
     from penpal.runtime import RuntimeState, RuntimeStatus
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     cfg = _cfg(keyboard_chunk=True)
-    monkeypatch.setattr(cli, "get_config", lambda: cfg)
-    monkeypatch.setattr(cli, "evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING))
-    monkeypatch.setattr(cli, "get_config_path", lambda: tmp_path / "config.toml")
+    monkeypatch.setattr(doctor_cli, "get_config", lambda: cfg)
+    monkeypatch.setattr(doctor_cli, "evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING))
+    monkeypatch.setattr(doctor_cli, "get_config_path", lambda: tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text("x=1")
     return CliRunner().invoke(cli.main, ["doctor", "--plain"])
 

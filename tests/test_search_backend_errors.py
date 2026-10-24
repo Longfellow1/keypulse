@@ -41,14 +41,15 @@ def test_mcp_search_returns_existing_error_shape_for_sqlite_failure(monkeypatch)
 
 def test_cli_search_reports_database_failure_without_query_or_sqlite_details(monkeypatch) -> None:
     import penpal.cli as cli
+    from penpal.cli import search as search_cli
 
     class BrokenBackend:
         def search(self, *_args, **_kwargs):
             raise sqlite3.OperationalError("internal sqlite detail")
 
-    monkeypatch.setattr(cli, "get_config", lambda: object())
-    monkeypatch.setattr(cli, "require_db", lambda _cfg: None)
-    monkeypatch.setattr(cli, "resolve_search_backend", lambda: BrokenBackend())
+    monkeypatch.setattr(search_cli, "get_config", lambda: object())
+    monkeypatch.setattr(search_cli, "require_db", lambda _cfg: None)
+    monkeypatch.setattr(search_cli, "resolve_search_backend", lambda: BrokenBackend())
 
     result = CliRunner().invoke(cli.main, ["search", "sensitive query"])
 

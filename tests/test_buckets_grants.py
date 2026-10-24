@@ -116,9 +116,10 @@ def test_reapply_buckets_after_rule_change(db) -> None:
 
 def test_rules_cli_adds_bucket_rule(db, monkeypatch) -> None:
     from penpal import cli
+    from penpal.cli import privacy as privacy_cli
 
-    monkeypatch.setattr(cli, "get_config", lambda: Config())
-    monkeypatch.setattr(cli, "require_db", lambda cfg: None)
+    monkeypatch.setattr(privacy_cli, "get_config", lambda: Config())
+    monkeypatch.setattr(privacy_cli, "require_db", lambda cfg: None)
     runner = CliRunner()
     ok = runner.invoke(cli.main, ["rules", "add", "--scope-type", "app", "--scope-value", "Chase", "--bucket", "financial"])
     assert ok.exit_code == 0, ok.output

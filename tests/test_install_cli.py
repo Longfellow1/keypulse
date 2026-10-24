@@ -6,7 +6,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from penpal import cli
+from penpal.cli import install as cli
 from penpal.cli import main
 
 
@@ -59,7 +59,7 @@ def test_install_launchd_writes_plists_with_absolute_keypulse_path(monkeypatch, 
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
 
     result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
 
@@ -100,8 +100,8 @@ def test_install_launchd_removes_legacy_obsidian_plists(monkeypatch, tmp_path):
     booted_out: list[Path] = []
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli._keypulse_executable_path", lambda: executable)
-    monkeypatch.setattr("penpal.cli._launchd_bootout", lambda path: booted_out.append(path) or True)
+    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._launchd_bootout", lambda path: booted_out.append(path) or True)
 
     result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
 
@@ -113,7 +113,7 @@ def test_install_launchd_removes_legacy_obsidian_plists(monkeypatch, tmp_path):
 def test_install_doctor_reports_old_launchd_and_stale_moved_venv(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    from penpal import cli
+    from penpal.cli import install as cli
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -152,7 +152,7 @@ def test_install_doctor_reports_old_launchd_and_stale_moved_venv(monkeypatch, tm
 def _prepare_main_doctor(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    from penpal import cli
+    from penpal.cli import install as cli
     from penpal.health import capture_health
 
     home = tmp_path / "home"
@@ -238,7 +238,7 @@ def test_install_launchd_preserves_custom_plist_without_force(monkeypatch, tmp_p
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
 
     result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
 
@@ -258,7 +258,7 @@ def test_install_init_creates_runtime_without_overwriting_config(monkeypatch, tm
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
 
     result = CliRunner().invoke(main, ["install", "init", "--no-launchd"])
 
@@ -297,7 +297,7 @@ def test_install_launchd_replaces_own_plist_pinned_to_cellar_without_force(monke
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
 
     result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
 
