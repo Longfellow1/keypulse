@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import resource
 import time
@@ -34,6 +35,7 @@ R_SECURE = "secure_text_field"
 R_ROLE = "role_not_text_input"
 R_VALUE = "value_unsupported"
 R_READ = "read_error"
+R_PAGE_URL_UNKNOWN = "page_url_unknown"
 
 # Roles that can hold user-typed text. AXComboBox / AXSearchField are included because search
 # boxes are common in the target apps. Anything else (AXWebArea, AXGroup, ...) is skipped.
@@ -162,6 +164,8 @@ class AXSpikeAdapter(Protocol):
 
     def find_app_pid(self, app_name: str) -> int | None: ...
 
+    def app_name_for_pid(self, pid: int) -> str | None: ...
+
     def enable_accessibility(self, pid: int, app_name: str) -> dict[str, int]:
         """Set AXManualAccessibility (and AXEnhancedUserInterface for Chrome). Returns AXError codes, 0 = success."""
         ...
@@ -179,7 +183,7 @@ class GateResult:
     reason: str | None
 
 
-GateFn = Callable[[str, str | None, str | None], GateResult]
+GateFn = Callable[..., GateResult]
 
 
 def make_hygiene_gate(
@@ -190,10 +194,16 @@ def make_hygiene_gate(
     drop_terminal_text: bool,
     max_text_length: int,
     title_deny_patterns,
+    url_deny_hosts=(),
 ) -> GateFn:
     """Same order as CaptureManager: terminal rule, capture_gate (ax_text rules), then desensitize + truncate."""
 
-    def gate(delta: str, app_name: str | None, window_title: str | None) -> GateResult:
+    def gate(
+        delta: str,
+        app_name: str | None,
+        window_title: str | None,
+        page_url: str | None = None,
+    ) -> GateResult:
         if drop_terminal_text and is_terminal_app(app_name):
             return GateResult(None, "terminal_app")
         verdict = capture_gate(
@@ -203,6 +213,8 @@ def make_hygiene_gate(
             window_title=window_title,
             content_text=delta,
             title_deny_patterns=title_deny_patterns,
+            page_url=page_url,
+            url_deny_hosts=url_deny_hosts,
         )
         if verdict is not None:
             # Both DROP and METADATA_ONLY mean no content is written. The daemon would null the text too.
@@ -272,6 +284,7 @@ def _handle_read(
     stats: SpikeStats,
     sink: Callable[[dict[str, Any]], None],
     latency_ms: float,
+    page_url: str | None,
 ) -> None:
     if not read.ok:
         stats.reads_failed[read.reason or R_READ] += 1
@@ -297,7 +310,7 @@ def _handle_read(
     if not delta:
         return
 
-    gated = gate(delta, app, text_read.window_title)
+    gated = gate(delta, app, text_read.window_title, page_url)
     if gated.text is None:
         stats.deltas_gated[gated.reason or "unknown"] += 1
         return
@@ -322,6 +335,8 @@ def run_spike(
     poll_interval_sec: float,
     gate: GateFn,
     sink: Callable[[dict[str, Any]], None],
+    page_url_provider: Callable[[], str | None] | None = None,
+    require_page_url: bool = False,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> SpikeStats:
@@ -332,12 +347,16 @@ def run_spike(
         while clock() < deadline:
             started = clock()
             stats.polls += 1
-            read = adapter.read_focused(pid)
-            latency_ms = (clock() - started) * 1000.0
-            _handle_read(
-                adapter, read, app=app, tracker=tracker, gate=gate,
-                stats=stats, sink=sink, latency_ms=latency_ms,
-            )
+            page_url = page_url_provider() if page_url_provider is not None else None
+            if require_page_url and not page_url:
+                stats.reads_failed[R_PAGE_URL_UNKNOWN] += 1
+            else:
+                read = adapter.read_focused(pid)
+                latency_ms = (clock() - started) * 1000.0
+                _handle_read(
+                    adapter, read, app=app, tracker=tracker, gate=gate,
+                    stats=stats, sink=sink, latency_ms=latency_ms, page_url=page_url,
+                )
             remaining = poll_interval_sec - (clock() - started)
             if remaining > 0:
                 sleep(remaining)
@@ -381,6 +400,21 @@ def _cpu_seconds() -> float:
     return usage.ru_utime + usage.ru_stime
 
 
+def _configured_browser_name(app_name: str, cfg: Any) -> str | None:
+    candidates: list[str] = []
+    for browser_config in (getattr(cfg, "browser", None), getattr(cfg, "browser_history", None)):
+        values = getattr(browser_config, "supported_browsers", None) or getattr(browser_config, "browsers", None)
+        if isinstance(values, (list, tuple)):
+            candidates.extend(str(value) for value in values)
+
+    url_browsers = getattr(getattr(cfg, "browser_url", None), "supported_browsers", None)
+    if isinstance(url_browsers, (list, tuple)):
+        candidates.extend(str(value) for value in url_browsers)
+
+    target = app_name.strip().casefold()
+    return next((name for name in candidates if name.strip().casefold() == target), None)
+
+
 # --- CLI entry (called from penpal.cli) ---------------------------------------------------------
 
 def run_ax_text_spike(
@@ -416,6 +450,23 @@ def run_ax_text_spike(
         echo(f"未找到正在运行的应用：{app_name}。请先打开它，并把输入框聚焦。")
         return 1
 
+    app_name_for_pid = getattr(adapter, "app_name_for_pid", None)
+    resolved_app_name = app_name_for_pid(pid) if callable(app_name_for_pid) else None
+    browser_name = _configured_browser_name(resolved_app_name or app_name, cfg)
+    page_url_provider: Callable[[], str | None] | None = None
+    if browser_name is not None:
+        from penpal.capture.watchers.browser_url import BrowserUrlWatcher
+
+        browser_url_watcher = BrowserUrlWatcher(queue.Queue(), supported_browsers=[browser_name])
+
+        def page_url_provider() -> str | None:
+            current = browser_url_watcher.read_browser_tab(browser_name)
+            return current[0] if current is not None else None
+
+        if not page_url_provider():
+            echo("无法确认当前浏览器页面 URL，已拒绝采样。请确认当前标签页可读取。")
+            return 2
+
     # 5. Electron / Chrome accessibility switches.
     codes = adapter.enable_accessibility(pid, app_name)
     manual_set = codes.get("AXManualAccessibility") == 0
@@ -435,6 +486,7 @@ def run_ax_text_spike(
         drop_terminal_text=cfg.privacy.drop_terminal_text,
         max_text_length=cfg.clipboard.max_text_length,
         title_deny_patterns=cfg.privacy.title_deny_patterns,
+        url_deny_hosts=cfg.privacy.url_deny_hosts,
     )
 
     def sink(record: dict[str, Any]) -> None:
@@ -453,6 +505,8 @@ def run_ax_text_spike(
             poll_interval_sec=cfg.ax_text.poll_interval_sec,
             gate=gate,
             sink=sink,
+            page_url_provider=page_url_provider,
+            require_page_url=browser_name is not None,
             clock=clock,
             sleep=sleep,
         )

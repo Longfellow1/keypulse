@@ -66,6 +66,15 @@ class PyObjCAXAdapter:
             fallback = fallback if fallback is not None else pid
         return fallback
 
+    def app_name_for_pid(self, pid: int) -> str | None:
+        import AppKit
+
+        for app in AppKit.NSWorkspace.sharedWorkspace().runningApplications():
+            if int(app.processIdentifier()) != pid:
+                continue
+            return app.localizedName() or app.bundleIdentifier() or None
+        return None
+
     def enable_accessibility(self, pid: int, app_name: str) -> dict[str, int]:
         import ApplicationServices as ax
 

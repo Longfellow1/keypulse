@@ -59,7 +59,7 @@
 - 放行后该 App 的数据归入 **Private** 分类（`store/buckets.py`），只有授权了 Private 的 AI 查得到；你自己写的分类规则优先于这个默认。放行前已经丢弃的内容不会补回。
 - 测试：`tests/test_chat_app_scope.py`（`test_opted_in_chat_app_is_private_and_hidden_from_work_personal_hosts`）、`tests/test_issue26_capture_chain.py`（AT20）。
 
-另：代码里有一个微信消息导入来源（`penpal/sources/plugins/wechat.py`），但它目前只做探测，`read` 返回空，不读任何微信数据；且需要单独执行 `penpal source wechat authorize`。
+另：代码里有一个微信消息来源（`penpal/sources/plugins/wechat.py`），目前只在本机探测，消息读取尚未实现，不读取或导入微信消息、不生成 Daily 报告，也不调用云端 LLM。`penpal source wechat authorize` 只会写入本机授权标记。测试：`tests/test_sources_wechat.py::test_wechat_source_discover_and_read_probe_only`、`tests/test_wechat_consent.py`。
 
 ## 4. 你自己排除 App 和域名
 

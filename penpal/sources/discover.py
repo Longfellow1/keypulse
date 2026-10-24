@@ -182,19 +182,14 @@ def list_rejected_command() -> None:
 
 _WECHAT_AUTH_RELATIVE_PATH = Path(".penpal") / "wechat-authorized"
 _WECHAT_AUTHORIZE_WARNING = """
-⚠️  你即将授权 Penpal 接入你的微信本地消息（红区数据）。
+⚠️  你即将写入本机的微信来源授权标记。
 
-红区数据特征：
-  - 含他人发言、私人对话、群消息
-  - 一旦接入，Penpal 会把这些消息纳入 Daily 报告聚合
-  - 数据全部在本机处理（不上云），但 LLM 渲染时会发送摘要给配置的模型
-    （当前：cloud-first profile，会调用豆包/OpenAI 等云端 API）
+当前微信来源仅做本机探测，消息读取尚未实现：
+  - 不会读取或导入微信消息
+  - 不会生成 Daily 报告
+  - 不会调用云端 LLM，也不会向云端发送微信内容
 
-请确认：
-  [a] 你接受 LLM 服务商可能看到你的微信消息摘要
-  [b] 你愿意为数据完整性负责（不能"只读自己单侧"，红区是 all-or-nothing）
-
-输入 "yes" 继续，其它取消：
+输入 "yes" 保存本机授权标记，其它取消：
 """.strip("\n")
 
 
@@ -322,6 +317,7 @@ def sync_command(source_name: str | None, lookback_hours: int) -> None:
 def import_command(source_name: str | None, days: int | None, batch_size: int) -> None:
     """Import enabled sources in batches. After an interruption, rerunning resumes from the saved cursor (#32)."""
     from penpal.capture.capture_control import source_writes_allowed
+    from penpal.sources.cleaning.config import CleaningConfigError
     from penpal.sources import importer
     from penpal.sources.onboarding import EXCLUDED_FROM_CHOICE, first_import_since, format_import_result
 
@@ -337,7 +333,10 @@ def import_command(source_name: str | None, days: int | None, batch_size: int) -
         if not source_writes_allowed(name):
             click.echo(f"{name}\toff")
             continue
-        result = importer.import_source(name, since=first_import_since(now, days), until=now, batch_size=batch_size)
+        try:
+            result = importer.import_source(name, since=first_import_since(now, days), until=now, batch_size=batch_size)
+        except CleaningConfigError as exc:
+            raise click.ClickException(str(exc)) from exc
         click.echo(f"{name}\t{format_import_result(result)}")
 
 
