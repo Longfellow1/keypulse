@@ -23,10 +23,12 @@ from penpal.capture.capture_control import (
 from penpal.capture.fusion import CaptureFusionEngine
 from penpal.capture.hygiene import (
     METADATA_ONLY,
+    PAGE_SCOPED_STREAMS,
     capture_gate,
     is_blacklisted_app,
     is_system_overlay,
     is_terminal_app,
+    host_matches_denylist as _host_matches_denylist,
     strip_url_query,
 )
 from penpal.capture.policy import PolicyEngine
@@ -152,19 +154,6 @@ def _browser_host_from_metadata(metadata_json: str | None) -> str | None:
     return host.lower()
 
 
-def _host_matches_denylist(host: str, deny_hosts: list[str]) -> bool:
-    normalized_host = host.lower().strip()
-    if not normalized_host:
-        return False
-    for deny_host in deny_hosts:
-        candidate = str(deny_host or "").strip().lower()
-        if not candidate:
-            continue
-        if normalized_host == candidate or normalized_host.endswith(f".{candidate}"):
-            return True
-    return False
-
-
 def _should_drop_browser_event(event: RawEvent, deny_hosts: list[str]) -> bool:
     if event.source not in ("browser", "browser_url"):
         return False
@@ -217,6 +206,9 @@ class CaptureManager:
         self._source_last_event_at: dict[str, str] = {}
         # D27: gate hits by "source:reason" (counts only, never content)
         self._gate_hits: dict[str, int] = {}
+        # #26 / D27: last URL each browser app showed (app name -> URL), fed by the browser URL and tab
+        # watchers. Keyboard, AX and clipboard text from that browser is checked against url_deny_hosts.
+        self._browser_pages: dict[str, str] = {}
         # Disabled sources whose watchers we have already paused (#28).
         self._disabled_applied: frozenset[str] = frozenset()
         # Storage state: None = writing normally; "disk_full" = writes paused until the next probe.
@@ -617,6 +609,25 @@ class CaptureManager:
             app_names=privacy.blacklist_app_names,
         )
 
+    def _note_browser_page(self, event: RawEvent) -> None:
+        """Remember the page a browser app is showing. Called before any drop, so the URL of an excluded
+        domain is recorded too (its own event is dropped, but the text typed after it must be checked).
+
+        The URL watcher emits only when the frontmost browser's URL changes, and it polls every few seconds,
+        so a value can lag a tab switch by about one poll interval. A browser with no URL seen yet is
+        unknown and is not blocked.
+        """
+        if event.source not in ("browser", "browser_url"):
+            return
+        url = _event_url(event)
+        app = (event.app_name or "").strip().casefold()
+        if url and app:
+            self._browser_pages[app] = url
+
+    def _current_page_url(self, event: RawEvent) -> str | None:
+        app = (event.app_name or "").strip().casefold()
+        return self._browser_pages.get(app) if app else None
+
     def _count_gate_hit(self, event: RawEvent, reason: str) -> None:
         key = f"{event.source}:{reason}"
         self._gate_hits[key] = self._gate_hits.get(key, 0) + 1
@@ -633,6 +644,7 @@ class CaptureManager:
             return
         event.speaker = _derive_speaker(event)
 
+        self._note_browser_page(event)
         if self._is_blacklisted(event):
             logger.debug(
                 f"Event blacklisted: {event.process_name or event.app_name} ({event.source}/{event.event_type})"
@@ -656,6 +668,8 @@ class CaptureManager:
             content_text=event.content_text,
             url=_event_url(event),
             title_deny_patterns=self.config.privacy.title_deny_patterns,
+            page_url=self._current_page_url(event) if event.source in PAGE_SCOPED_STREAMS else None,
+            url_deny_hosts=self.config.privacy.url_deny_hosts,
         )
         if verdict is not None:
             self._count_gate_hit(event, verdict.reason)
