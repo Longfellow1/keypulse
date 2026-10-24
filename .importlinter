@@ -70,21 +70,26 @@ forbidden_modules =
 allow_indirect_imports = True
 
 [importlinter:contract:runtime-evidence-boundary]
-name = Only the runtime evaluator and daemon writer may read runtime evidence
+name = Runtime evidence access stays with the evaluator and process writers
 type = forbidden
 source_modules =
     penpal
 forbidden_modules =
     penpal.foundation.runtime_record
     penpal.foundation.runtime_launchd
+    penpal.foundation.hud_record
 allow_indirect_imports = True
 ignore_imports =
     # D36: runtime evaluator owns evidence reads; daemon manager is the sole evidence writer.
     penpal.runtime.evaluate -> penpal.foundation.runtime_record
     penpal.runtime.evaluate -> penpal.foundation.runtime_launchd
+    penpal.runtime.evaluate -> penpal.foundation.hud_record
     penpal.runtime.control -> penpal.foundation.runtime_launchd
     penpal.capture.manager_runtime -> penpal.foundation.runtime_record
     penpal.capture.manager_runtime -> penpal.foundation.runtime_launchd
+    # The HUD writer records only its own kernel start timestamp and writes hud.json.
+    penpal.hud.app -> penpal.foundation.runtime_launchd
+    penpal.hud.app -> penpal.foundation.hud_record
 
 [importlinter:contract:layers]
 name = Penpal module layers

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from penpal.foundation.runtime_identity import RuntimeIdentity
-from penpal.hud.reload import HUDReloader
+from penpal.hud.reload import HUDReloader, hud_exec_command
 
 
 def test_hud_identity_change_execs_original_command_with_injected_exec():
@@ -26,3 +26,10 @@ def test_hud_identity_change_execs_original_command_with_injected_exec():
     reloader.exec()
 
     assert calls == [("/stable/penpal", ["/stable/penpal", "hud"])]
+
+
+def test_native_bundle_reload_execs_penpal_binary_with_original_app_arguments():
+    launcher = "/Applications/Penpal.app/Contents/MacOS/Penpal"
+    executable, argv = hud_exec_command(launcher, ["/venv/bin/penpal", "hud", "--debug"])
+    assert executable == launcher
+    assert argv == [launcher, "--debug"]

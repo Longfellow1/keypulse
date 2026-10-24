@@ -6,16 +6,18 @@ The daemon keeps every macOS permission; this process needs none.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import signal
+import sys
 import threading
 import time
+import uuid
 
 import AppKit
 import objc
 from Foundation import NSObject, NSTimer
+from PyObjCTools import AppHelper
 from WebKit import (
     WKNavigationActionPolicyAllow,
     WKNavigationActionPolicyCancel,
@@ -27,9 +29,11 @@ from WebKit import (
 from penpal.capabilities.store import load_states as load_capability_states
 from penpal.config import Config
 from penpal.hud.approval_window import ApprovalWindowController, safe_pending_candidate_count
-from penpal.hud.controller import HudController
+from penpal.hud.controller import HudController, HudModelWorker
 from penpal.hud.render import HUD_HEIGHT, HUD_WIDTH, build_html
-from penpal.hud.reload import HUDReloader
+from penpal.hud.reload import HUDReloader, hud_exec_command
+from penpal.foundation.hud_record import HudRecordStore
+from penpal.foundation.runtime_launchd import process_start_time
 from penpal.runtime.evaluate import current_identity, loaded_identity
 from penpal.store.repository import get_state, set_state
 
@@ -77,9 +81,13 @@ class PenpalHUDApp(NSObject):
         if self is None:
             return None
         self.cfg = cfg
-        self._hud_reloader = HUDReloader(loaded_identity(cfg), lambda: current_identity(cfg))
         self._reload_scheduled = False
-        self.controller = HudController(Config.load, copy_to_clipboard=_copy_to_pasteboard)
+        self._hud_reloader = None
+        self._controller_prepared = False
+        self.controller = HudController(
+            Config.load,
+            copy_to_clipboard=lambda text: AppHelper.callAfter(_copy_to_pasteboard, text),
+        )
         self.pending_count = 0
         self.pending_count_error = None
         self.approval_window = None
@@ -87,6 +95,9 @@ class PenpalHUDApp(NSObject):
         self._message_handler = MessageHandler.alloc().initWithShell_(self)
 
         self.status_item = AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(AppKit.NSVariableStatusItemLength)
+        self._record_store = HudRecordStore(
+            pid=os.getpid(), generation=uuid.uuid4().hex, status_item_created=self.status_item is not None,
+        )
         self._install_status_icon()
         button = self.status_item.button()
         button.setTarget_(self)
@@ -96,7 +107,6 @@ class PenpalHUDApp(NSObject):
             if events:
                 button.sendActionOn_(events)
         self._setup_status_menu()
-        self._maybe_prompt_browser_automation_guide()
 
         self.popover = AppKit.NSPopover.alloc().init()
         self.popover.setBehavior_(AppKit.NSPopoverBehaviorTransient)
@@ -105,7 +115,17 @@ class PenpalHUDApp(NSObject):
         self.popover.setContentViewController_(self.popover_vc)
         self.popover.setContentSize_(AppKit.NSMakeSize(HUD_WIDTH, HUD_HEIGHT))
         self.popover_vc.setView_(self._build_webview())
-        self._push_model(fresh=True)
+        self._worker = HudModelWorker(
+            self.controller,
+            main_dispatcher=AppHelper.callAfter,
+            apply_script=self._apply_model_script,
+            before_model=self._prepare_runtime_and_check_reload,
+            model_built=self._record_store.model_built,
+        )
+        self._record_main_thread_tick()
+        self._worker.refresh(fresh=True)
+        self._worker.submit(self._read_browser_automation_guide, self._show_browser_automation_guide)
+        self._worker.submit(self._read_pending_count, self._apply_pending_count)
         return self
 
     # ── WebView ─────────────────────────────────────────────────────────────
@@ -133,31 +153,92 @@ class PenpalHUDApp(NSObject):
 
     @objc.python_method
     def handle_message(self, body) -> None:
-        """One tap from the page: route it to the controller and draw the model it returns."""
+        """Queue page actions for the model worker; message delivery stays on AppKit's main thread."""
         if not isinstance(body, dict):
             return
         action = body.get("action")
         if action == "ui.ready":
             self._push_model()
             return
-        self._push(self.controller.dispatch(action, body.get("args")))
+        self._worker.dispatch(action, body.get("args"))
 
     @objc.python_method
     def _push_model(self, fresh: bool = False) -> None:
-        self._push(self.controller.model(fresh=fresh))
+        self._worker.refresh(fresh=fresh)
 
     @objc.python_method
-    def _push(self, model: dict) -> None:
-        self._set_badge(model["tabs"][0].get("badge"))
+    def _apply_model_script(self, script: str, badge) -> None:
+        """Apply a finished model only on the main thread."""
+        self._set_badge(badge)
         webview = getattr(self, "webview", None)
         if webview is None:
             return
-        payload = json.dumps(model, ensure_ascii=False).replace('</', '<\\/')
-        script = f"window.render({payload});"
         try:
             webview.evaluateJavaScript_completionHandler_(script, None)
         except Exception:
             pass  # the first full page load renders the initial model via ui.ready
+
+    @objc.python_method
+    def _status_item_visibility(self):
+        """Return the best public AppKit visibility signal available for this status item."""
+        item = getattr(self, "status_item", None)
+        if item is None:
+            return False
+        try:
+            visible = item.isVisible()
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if not visible:
+            return False
+        try:
+            button = item.button()
+            window = button.window() if button is not None else None
+            if window is not None and hasattr(window, "occlusionState"):
+                state = int(window.occlusionState())
+                visible_mask = int(getattr(AppKit, "NSWindowOcclusionStateVisible", 1))
+                return bool(state & visible_mask)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        return bool(visible)
+
+    @objc.python_method
+    def _record_main_thread_tick(self) -> None:
+        try:
+            self._record_store.main_thread_tick(self._status_item_visibility())
+        except OSError as exc:
+            logging.getLogger(__name__).warning("HUD runtime record write failed: %s", type(exc).__name__)
+
+    @objc.python_method
+    def _prepare_runtime_and_check_reload(self) -> bool:
+        """Called by the worker, including identity hashing and the process-start probe."""
+        if not self._controller_prepared:
+            identity = loaded_identity(self.cfg)
+            started = process_start_time(os.getpid())
+            if started:
+                try:
+                    self._record_store.initialize(started, identity)
+                except OSError as exc:
+                    logging.getLogger(__name__).warning("HUD runtime record write failed: %s", type(exc).__name__)
+            launcher = os.environ.get("PENPAL_HUD_NATIVE_LAUNCHER")
+            launcher = os.path.realpath(launcher) if launcher else None
+            executable, arguments = hud_exec_command(launcher, sys.argv)
+            self._hud_reloader = HUDReloader(
+                identity, lambda: current_identity(self.cfg), executable=executable, argv=arguments,
+            )
+            self._controller_prepared = True
+        if self._hud_reloader is not None and self._hud_reloader.check():
+            AppHelper.callAfter(self._schedule_reload)
+            return True
+        return False
+
+    @objc.python_method
+    def _schedule_reload(self) -> None:
+        if self._reload_scheduled:
+            return
+        self._reload_scheduled = True
+        self.performSelector_withObject_afterDelay_(
+            objc.selector(self.reloadAfterTimer_, signature=b"v@:@"), None, 0.0
+        )
 
     # ── status item ─────────────────────────────────────────────────────────
 
@@ -193,11 +274,17 @@ class PenpalHUDApp(NSObject):
             pass
 
     @objc.python_method
-    def _maybe_prompt_browser_automation_guide(self) -> None:
+    def _read_browser_automation_guide(self) -> bool:
         if str(get_state("browser_automation_guide_shown") or "").strip() == "1":
-            return
+            return False
         state = load_capability_states().get("browser_automation")
         if state is None or state.ok or state.code != "browser_automation_denied":
+            return False
+        return True
+
+    @objc.python_method
+    def _show_browser_automation_guide(self, should_show: bool) -> None:
+        if not should_show:
             return
         alert = AppKit.NSAlert.alloc().init()
         alert.setMessageText_("请开启浏览器自动化权限")
@@ -206,7 +293,7 @@ class PenpalHUDApp(NSObject):
         )
         alert.addButtonWithTitle_("知道了")
         alert.runModal()
-        set_state("browser_automation_guide_shown", "1")
+        self._worker.submit(lambda: set_state("browser_automation_guide_shown", "1"))
 
     @objc.IBAction
     def togglePopover_(self, sender):
@@ -222,27 +309,12 @@ class PenpalHUDApp(NSObject):
         self.popover.showRelativeToRect_ofView_preferredEdge_(sender.bounds(), sender, 1)
 
     def popoverDidClose_(self, _notification):
-        self.controller.popover_closed()  # forgets a just-shown secret
-        self._push_model()
+        self._worker.submit(self.controller.popover_closed, rebuild=True)
 
     def pollSignals_(self, _timer):
-        if not self._reload_scheduled:
-            try:
-                if self._hud_reloader.check():
-                    self._reload_scheduled = True
-                    self.performSelector_withObject_afterDelay_(
-                        objc.selector(self.reloadAfterTimer_, signature=b"v@:@"), None, 0.0
-                    )
-                    return
-            except (OSError, RuntimeError, ValueError) as exc:
-                logging.getLogger(__name__).warning(
-                    "HUD runtime identity check failed: %s", type(exc).__name__
-                )
+        self._record_main_thread_tick()
         self._sync_pending_count()
-        if self.popover.isShown():
-            self._push_model(fresh=True)
-        else:
-            self._set_badge(self.controller.model(fresh=True)["tabs"][0].get("badge"))
+        self._worker.refresh(fresh=True)
 
     def reloadAfterTimer_(self, _sender):
         """Replace the process on the next run-loop turn, after the timer callback has returned."""
@@ -270,11 +342,19 @@ class PenpalHUDApp(NSObject):
         now = time.monotonic()
         if now - self._pending_count_last_sync < 60.0:
             return
-        count, error = safe_pending_candidate_count()
+        self._pending_count_last_sync = now
+        self._worker.submit(self._read_pending_count, self._apply_pending_count)
+
+    @objc.python_method
+    def _read_pending_count(self):
+        return safe_pending_candidate_count()
+
+    @objc.python_method
+    def _apply_pending_count(self, result) -> None:
+        count, error = result
         self.pending_count_error = error
         if count is not None:
             self.pending_count = int(count)
-        self._pending_count_last_sync = now
         self._refresh_approval_menu_item()
 
     @objc.python_method
@@ -302,15 +382,29 @@ class PenpalHUDApp(NSObject):
     @objc.IBAction
     def openApprovalWindow_(self, _sender):
         if self.pending_count_error:
-            self._pending_count_last_sync = 0.0
-            self._sync_pending_count()
-            if self.pending_count_error:
-                alert = AppKit.NSAlert.alloc().init()
-                alert.setMessageText_("候选审批读取失败")
-                alert.setInformativeText_(self.pending_count_error)
-                alert.addButtonWithTitle_("OK")
-                alert.runModal()
-                return
+            self._queue_pending_count_for_approval()
+            return
+        self._show_approval_window()
+
+    @objc.python_method
+    def _queue_pending_count_for_approval(self) -> None:
+        self._pending_count_last_sync = time.monotonic()
+        self._worker.submit(self._read_pending_count, self._after_pending_count_for_approval)
+
+    @objc.python_method
+    def _after_pending_count_for_approval(self, result) -> None:
+        self._apply_pending_count(result)
+        if self.pending_count_error:
+            alert = AppKit.NSAlert.alloc().init()
+            alert.setMessageText_("候选审批读取失败")
+            alert.setInformativeText_(self.pending_count_error)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
+        self._show_approval_window()
+
+    @objc.python_method
+    def _show_approval_window(self) -> None:
         if self.approval_window is None:
             self.approval_window = ApprovalWindowController.alloc().initWithStore_(None)
         self.approval_window.showWindow_(None)

@@ -308,6 +308,19 @@ flowchart LR
 | R6 | 前台不假死 | HUD 读取层注入 5 秒延迟 | 主线程响应 < 100 ms，界面显示"数据更新于 X 秒前" |
 | R7 | 菜单栏可见 | HUD 启动后自检图标是否真的显示 | 不可见时如实上报，`hud status` 不得显示"正常" |
 
+R1 HUD 一致性补充矩阵（无记录代表可选 HUD 未安装，不产生 HUD 问题）：
+
+| HUD 记录 | 进程启动时间匹配 | status item / 主线程证据 | `evaluate()` | doctor / status / HUD / MCP / 健康检查 |
+|---|---:|---|---|---|
+| 不存在 | — | — | 不产生 HUD issue | 不显示 HUD 问题 |
+| 存在 | 是 | 已创建、可见信号为 true，tick ≤ 45 秒 | HUD 响应 | 正常显示 HUD 状态 |
+| 存在 | 是 | 已创建、可见信号为 false | `hud` issue：菜单栏图标被隐藏并给出设置路径 | 全部复用同一 issue；doctor 与 `penpal hud status` 不得报正常 |
+| 存在 | 是 | 已创建、可见信号未知 | `hud` issue：提示负责人手动检查系统设置 | 全部复用同一 issue；不得将未知标成已确认可见 |
+| 存在 | 是 | tick > 45 秒 | `hud` issue：HUD 无响应 | 全部复用同一 issue；doctor 与 `penpal hud status` 不得报正常 |
+| 存在 | 否 | 任意 | 视为 HUD 进程已退出，不把旧记录判成卡死 | 不显示活 HUD 问题 |
+
+可见信号限制：macOS 26 的 System Settings 可以关闭第三方 status item，但当前公开 API 无法读取该设置，且 `NSStatusItem.isVisible` 可能仍为 true。此情况下矩阵中的 false 状态无法由应用确认；R7 必须由负责人手动确认 System Settings 与菜单栏中的实际图标。
+
 R1–R6 进 CI；R7 依赖真实桌面，发版前手测一次。
 
 #### 3.7.3 架构变更评测规则（适用于所有模块）

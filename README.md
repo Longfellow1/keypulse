@@ -38,7 +38,7 @@ AI 自己能读本机文件，只给已有文件建个索引，没必要单独�
 | 安装 | 见下方快速开始 | 先装好 CLI，再 `penpal app install`（加 `--login` 开机自启） |
 | 核心能力 | 装好就能在 AI 里用全部核心能力 | 不多不少，同一套核心换一种用法 |
 
-App 能做的事，CLI 都能做。App 自己不需要任何系统权限：它只是启动 `penpal hud` 的入口，采集所需的权限仍由后台服务持有。只装 CLI 也不会"坏了没人知道"：采集停了、磁盘满了、权限丢了，AI 下次查询时会在结果里收到提醒并转告你。
+App 能做的事，CLI 都能做。`penpal app install` 会编译一个原生启动器，在 Penpal 安装环境的进程里运行 HUD；系统菜单栏应显示 **Penpal**。如果本机缺少 clang 或 libpython，会退回脚本启动器并提示菜单栏可能显示 **Python**。App 自己不需要任何系统权限，采集所需的权限仍由后台服务持有。首次安装后从 Finder 打开 `~/Applications/Penpal.app`，并在系统设置的「菜单栏」里确认 Penpal 可见；CLI 仍可通过 doctor/status 检查 HUD 状态。
 
 ## 快速开始
 
@@ -59,9 +59,11 @@ penpal mcp grant claude --buckets Work,Personal
 想要菜单栏界面（可选）：
 
 ```bash
-penpal app install          # 在 ~/Applications 生成 Penpal.app；加 --login 开机自启
+penpal app install          # 编译原生启动器并在 ~/Applications 生成 Penpal.app；加 --login 开机自启
 penpal app uninstall        # 移除 App 和启动项，不影响后台服务与数据
 ```
+
+安装后从 Finder 打开 Penpal.app。macOS 26 可在「系统设置 → 菜单栏 → 允许在菜单栏中」开启 Penpal；若图标缺失，先看 `penpal doctor` 和 `penpal hud status`。macOS 对菜单栏项目可见性的公开探测有限；从系统设置关闭项目时，HUD 不一定能自动识别。
 
 ### 已验证的 Host
 

@@ -265,6 +265,10 @@ def get_daemon_record_path() -> Path:
     return _guard_penpal_path(get_run_dir() / "daemon.json")
 
 
+def get_hud_record_path() -> Path:
+    return _guard_penpal_path(get_run_dir() / "hud.json")
+
+
 def get_launchd_daemon_plist_path() -> Path:
     return _guard_penpal_path(get_launchd_plist_path("com.penpal.daemon"))
 

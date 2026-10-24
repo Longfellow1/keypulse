@@ -1,17 +1,22 @@
 """Optional desktop App install (D33): `penpal app install` / `penpal app uninstall`.
 
-The App is a thin launcher bundle, not a second copy of Penpal: its only executable execs the installed
-`penpal hud`. So the CLI stays the one source of truth, the daemon keeps every macOS permission (TCC),
-and the bundle declares none (no NS*UsageDescription keys): it needs no permission of its own.
+The bundle contains a small native executable that embeds the installed Penpal environment's Python and
+runs `python -m penpal hud`. If clang or libpython is unavailable, it falls back to the legacy script
+launcher. The daemon keeps every macOS permission (TCC), and the bundle declares none.
 
 Every location is a parameter (apps dir, LaunchAgents dir, subprocess runner) so tests run entirely in tmp dirs.
 """
 from __future__ import annotations
 
+import json
 import plistlib
+import re
 import shlex
 import shutil
 import subprocess
+import sys
+import sysconfig
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -76,6 +81,112 @@ def launch_script(executable: Path) -> str:
     return f"#!/bin/sh\nexec {shlex.quote(str(executable))} hud\n"
 
 
+def _config_values() -> dict[str, str | None]:
+    names = (
+        "INCLUDEPY", "LIBDIR", "LIBPL", "LDLIBRARY", "PYTHONFRAMEWORK",
+        "PYTHONFRAMEWORKPREFIX", "PYTHONFRAMEWORKDIR", "py_version_short", "LINKFORSHARED",
+        "LIBS", "SYSLIBS",
+    )
+    values = {name: sysconfig.get_config_var(name) for name in names}
+    values["INCLUDE"] = sysconfig.get_path("include")
+    values["PLATINCLUDE"] = sysconfig.get_path("platinclude")
+    return values
+
+
+def _libpython_path(config: dict[str, str | None]) -> Path | None:
+    candidates: list[Path] = []
+    framework = config.get("PYTHONFRAMEWORK")
+    framework_prefix = config.get("PYTHONFRAMEWORKPREFIX")
+    framework_dir = config.get("PYTHONFRAMEWORKDIR") or (f"{framework}.framework" if framework else None)
+    version = config.get("py_version_short")
+    if framework and framework_prefix and framework_dir and version:
+        candidates.append(Path(framework_prefix) / framework_dir / "Versions" / version / framework)
+    library = config.get("LDLIBRARY")
+    if library:
+        for key in ("LIBDIR", "LIBPL"):
+            if config.get(key):
+                candidates.append(Path(config[key]) / library)
+    for value in shlex.split(config.get("LINKFORSHARED") or ""):
+        path = Path(value)
+        if path.is_absolute():
+            candidates.append(path)
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+_CELLAR_RE = re.compile(r"^(?P<prefix>.*)/Cellar/(?P<name>[^/]+)/[^/]+/(?P<rest>.+)$")
+
+
+def stable_install_path(path: Path) -> Path:
+    """Map a versioned Homebrew Cellar path to its `opt` link, which survives `brew upgrade`."""
+    match = _CELLAR_RE.match(str(path))
+    if not match:
+        return path
+    stable = Path(match["prefix"]) / "opt" / match["name"] / match["rest"]
+    return stable if stable.exists() else path
+
+
+def build_native_launcher(
+    output: Path,
+    *,
+    python_executable: Path | None = None,
+    fallback_executable: Path | None = None,
+    compiler_path: str | None = None,
+    config: dict[str, str | None] | None = None,
+    compiler_runner: Callable[..., "subprocess.CompletedProcess[str]"] | None = None,
+) -> tuple[bool, str]:
+    """Compile the in-process Python launcher in a temporary directory, then copy it to *output*."""
+    compiler = compiler_path if compiler_path is not None else shutil.which("clang")
+    if not compiler:
+        return False, "clang is unavailable"
+    values = config or _config_values()
+    include = values.get("INCLUDEPY") or values.get("INCLUDE")
+    if not include or not Path(include).is_dir():
+        return False, "Python headers are unavailable"
+    library_path = _libpython_path(values)
+    if library_path is None:
+        return False, "libpython was not found from Python sysconfig"
+    source = Path(__file__).parent / "hud" / "launcher" / "main.c"
+    if not source.is_file():
+        return False, "native launcher source is missing from the Penpal package"
+    link_args = (
+        shlex.split(values.get("LINKFORSHARED") or "")
+        + shlex.split(values.get("LIBS") or "")
+        + shlex.split(values.get("SYSLIBS") or "")
+    )
+    if str(library_path) not in link_args:
+        link_args.append(str(library_path))
+    library_root = values.get("PYTHONFRAMEWORKPREFIX") if values.get("PYTHONFRAMEWORK") else str(library_path.parent)
+    if library_root:
+        link_args.append(f"-Wl,-rpath,{library_root}")
+    run_compiler = compiler_runner or subprocess.run
+    try:
+        with tempfile.TemporaryDirectory(prefix="penpal-hud-launcher-") as temp:
+            temporary = Path(temp)
+            header = temporary / "launcher_config.h"
+            interpreter = str(stable_install_path(python_executable or Path(sys.executable)))
+            fallback = str(fallback_executable or shutil.which("penpal") or "penpal")
+            header.write_text(
+                f"#define PENPAL_PYTHON_EXECUTABLE {json.dumps(interpreter)}\n"
+                f"#define PENPAL_FALLBACK_EXECUTABLE {json.dumps(fallback)}\n",
+                encoding="utf-8",
+            )
+            binary = temporary / "Penpal"
+            command = [
+                compiler, f"-I{include}", "-I" + str(values.get("PLATINCLUDE") or include),
+                f"-I{temporary}", str(source), "-o", str(binary), *link_args,
+            ]
+            result = run_compiler(command, check=False, capture_output=True, text=True)
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "clang failed").strip().splitlines()
+                return False, detail[-1][:200] if detail else "clang failed"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(binary, output)
+            output.chmod(0o755)
+    except OSError as exc:
+        return False, f"native launcher build failed ({type(exc).__name__})"
+    return True, ""
+
+
 def hud_agent_plist(bundle: Path) -> dict:
     return {
         "Label": HUD_LABEL,
@@ -95,6 +206,9 @@ def install_app(
     agents_dir: Optional[Path] = None,
     login: bool = False,
     run: Optional[Runner] = None,
+    clang_path: str | None = None,
+    codesign_available: bool | None = None,
+    compiler_runner: Callable[..., "subprocess.CompletedProcess[str]"] | None = None,
 ) -> AppResult:
     """Build `<apps_dir>/Penpal.app`, ad-hoc sign it, and (with ``login``) register the HUD launch agent."""
     run = run or _run
@@ -109,16 +223,35 @@ def install_app(
     macos = bundle / "Contents" / "MacOS"
     macos.mkdir(parents=True)
     (bundle / "Contents" / "Info.plist").write_bytes(plistlib.dumps(info_plist(version)))
-    script = macos / EXECUTABLE_NAME
-    script.write_text(launch_script(executable), encoding="utf-8")
-    script.chmod(0o755)
+    launcher = macos / EXECUTABLE_NAME
+    native, reason = build_native_launcher(
+        launcher,
+        python_executable=Path(sys.executable),
+        fallback_executable=executable,
+        compiler_path=clang_path,
+        compiler_runner=compiler_runner,
+    )
+    if native:
+        result.actions.append("built native Python launcher")
+    else:
+        launcher.write_text(launch_script(executable), encoding="utf-8")
+        launcher.chmod(0o755)
+        result.actions.append("built script launcher")
+        result.actions.append(
+            f"未构建原生启动器（{reason}），菜单栏项目会显示为 Python / "
+            f"Native launcher unavailable ({reason}); the menu bar item may appear as Python."
+        )
     result.actions.append(f"built {bundle}")
 
-    signed = run(["codesign", "--force", "-s", "-", str(bundle)])
-    if signed.returncode != 0:
-        shutil.rmtree(bundle, ignore_errors=True)
-        raise AppBundleError("codesign failed; the app was not installed. " + (signed.stderr or "").strip()[:200])
-    result.actions.append("signed ad hoc")
+    has_codesign = shutil.which("codesign") is not None if codesign_available is None else codesign_available
+    if has_codesign:
+        signed = run(["codesign", "-s", "-", "--force", str(bundle)])
+        if signed.returncode != 0:
+            shutil.rmtree(bundle, ignore_errors=True)
+            raise AppBundleError("codesign failed; the app was not installed. " + (signed.stderr or "").strip()[:200])
+        result.actions.append("signed ad hoc")
+    else:
+        result.actions.append("codesign unavailable; bundle is unsigned")
 
     if login:
         agents = agents_dir or default_agents_dir()

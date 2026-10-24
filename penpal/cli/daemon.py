@@ -121,6 +121,15 @@ def status(plain):
         print(f"runtime_state={runtime_status.code}")
         if runtime_status.issues:
             print(f"runtime_message={state_message(runtime_status)}")
+        if runtime_status.hud is not None:
+            hud = runtime_status.hud
+            hud_issue = next((issue for issue in runtime_status.issues if issue.component == "hud"), None)
+            print(f"hud_running={hud.alive}")
+            print(f"hud_status_item_created={hud.status_item_created}")
+            print(f"hud_status_item_visible={'unknown' if hud.status_item_visible is None else hud.status_item_visible}")
+            print(f"hud_main_thread_tick_age_sec={hud.main_thread_tick_age_sec if hud.main_thread_tick_age_sec is not None else 'unknown'}")
+            if hud_issue:
+                print(f"hud_message={hud_issue.message_zh}")
         print(f"running={is_running}")
         print(f"pid={pid or 'none'}")
         print(f"supervised_by_launchd={supervised}")
@@ -154,6 +163,16 @@ def status(plain):
         table.add_row("服务状态", _runtime_status_line(runtime_status))
         if runtime_status.issues:
             table.add_row("运行详情", state_message(runtime_status))
+        if runtime_status.hud is not None:
+            hud = runtime_status.hud
+            hud_issue = next((issue for issue in runtime_status.issues if issue.component == "hud"), None)
+            table.add_row("菜单栏 HUD", "运行中" if hud.alive and not hud_issue else "存在问题")
+            table.add_row(
+                "HUD 图标可见性",
+                "未知" if hud.status_item_visible is None else "可见" if hud.status_item_visible else "不可见",
+            )
+            if hud_issue:
+                table.add_row("HUD 详情", hud_issue.message_zh)
         if pid is not None:
             table.add_row("进程 PID", str(pid))
         table.add_row("运行方式", "launchd 托管" if supervised else "手动启动")

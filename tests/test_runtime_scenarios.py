@@ -111,7 +111,8 @@ class _ProcessHarness:
                     process.stderr.close()
 
 
-def _wait_for(predicate, *, timeout: float = 8.0):
+# A cap, not a sleep: passing runs return as soon as the condition holds; cold CI runners need the headroom.
+def _wait_for(predicate, *, timeout: float = 30.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = predicate()
@@ -187,7 +188,7 @@ def test_daemon_identity_change_flushes_and_exits_for_launchd_reload(tmp_path, c
     )
     try:
         record_path = home / ".penpal" / "run" / "daemon.json"
-        assert _wait_for(lambda: record_path.exists(), timeout=10), "daemon did not write its start record"
+        assert _wait_for(lambda: record_path.exists(), timeout=30), "daemon did not write its start record"
         if change == "code":
             (fingerprint_root / "upgrade_marker.py").write_text("UPGRADE = 1\n", encoding="utf-8")
         else:

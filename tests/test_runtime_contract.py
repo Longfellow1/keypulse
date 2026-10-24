@@ -16,6 +16,7 @@ import pytest
 
 from penpal import __version__
 from penpal.foundation.runtime_identity import RuntimeIdentity
+from penpal.foundation.hud_record import HudRecord
 from penpal.runtime import RuntimeState, RuntimeStatus, evaluate, state_text
 from penpal.foundation.runtime_record import Component, Progress, RuntimeRecord, read_record, write_record
 from penpal.store.migrations import SCHEMA_VERSION
@@ -171,6 +172,59 @@ def test_wake_time_is_the_core_progress_staleness_anchor(
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize("hud_state", ["absent", "visible", "hidden", "unknown", "stale", "woke", "dead"])
+def test_r1_hud_state_matrix_is_shared_by_status_and_doctor(monkeypatch, temporary_home, tmp_path, hud_state):
+    tick = NOW - timedelta(seconds=46 if hud_state in {"stale", "woke", "dead"} else 5)
+    record = None if hud_state == "absent" else HudRecord(
+        pid=PID + 10,
+        process_start_time=START,
+        generation="hud-generation",
+        identity=RuntimeIdentity(FINGERPRINT, __version__, "config-hash", SCHEMA_VERSION, SCHEMA_VERSION),
+        last_model_built_at=(NOW - timedelta(seconds=60)).isoformat(),
+        last_main_thread_tick_at=tick.isoformat(),
+        status_item_created=True,
+        status_item_visible=None if hud_state == "unknown" else hud_state not in {"hidden", "dead"},
+    )
+    monkeypatch.setattr(EVALUATOR, "is_installed", lambda: True)
+    monkeypatch.setattr(
+        EVALUATOR,
+        "process_start_time",
+        lambda pid: None if hud_state == "dead" and pid == PID + 10 else START,
+    )
+    identity = RuntimeIdentity(FINGERPRINT, __version__, "config-hash", SCHEMA_VERSION, SCHEMA_VERSION)
+    runtime = evaluate(
+        now=NOW,
+        record_reader=lambda: make_record(),
+        launchd_probe=lambda: {"loaded": False, "pid": None, "last_exit": None},
+        installed_fingerprint=lambda: FINGERPRINT,
+        identity_reader=lambda: identity,
+        paused_reader=lambda: False,
+        # "woke": the tick is old only because the Mac slept; the system woke 5 s ago.
+        wake_time_reader=lambda: NOW - timedelta(seconds=5) if hud_state == "woke" else None,
+        hud_record_reader=lambda: record,
+    )
+
+    expected = {
+        "absent": None,
+        "visible": None,
+        "hidden": "菜单栏图标被系统隐藏",
+        "unknown": None,  # macOS exposes no API for the Menu Bar toggle; a standing warning would be noise
+        "stale": "HUD 无响应",
+        "woke": None,
+        "dead": None,
+    }[hud_state]
+    hud_issues = [issue for issue in runtime.issues if issue.component == "hud"]
+    if expected is None:
+        assert hud_issues == []
+    else:
+        assert len(hud_issues) == 1 and expected in hud_issues[0].message_zh
+    if hud_state == "dead":
+        assert runtime.hud is not None and runtime.hud.alive is False
+    elif hud_state != "absent":
+        assert runtime.hud is not None and runtime.hud.alive is True
+    _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path)
+
+
 def test_system_wake_time_reader_uses_macos_sysctl(monkeypatch):
     class Timeval(ctypes.Structure):
         _fields_ = [("tv_sec", ctypes.c_long), ("tv_usec", ctypes.c_int)]
@@ -241,6 +295,7 @@ def test_isolated_path_guard_covers_penpal_path_getters(monkeypatch, tmp_path):
         paths.get_health_report_path,
         paths.get_daemon_lock_path,
         paths.get_hud_lock_path,
+        paths.get_hud_record_path,
         paths.get_apps_dir,
         paths.get_legacy_venv_dir,
         paths.get_ax_spike_dir,
@@ -262,6 +317,7 @@ def test_isolated_path_guard_allows_fake_real_home_nested_in_temp_home(monkeypat
     monkeypatch.setattr(paths.pwd, "getpwuid", lambda _uid: SimpleNamespace(pw_dir=str(real_home)))
     monkeypatch.setattr(paths.Path, "home", lambda: real_home)
     assert paths.get_run_dir() == real_home / ".penpal" / "run"
+    assert paths.get_hud_record_path() == real_home / ".penpal" / "run" / "hud.json"
 
 
 def test_path_guard_is_inactive_without_isolated_environment(monkeypatch, tmp_path):
@@ -385,6 +441,11 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     status_result = CliRunner().invoke(cli.main, ["status", "--plain"])
     assert status_result.exit_code == 0, status_result.output
     assert f"runtime_state={runtime.code}" in status_result.output
+    if runtime.hud is not None:
+        assert f"hud_running={runtime.hud.alive}" in status_result.output
+        hud_issue = next((issue for issue in runtime.issues if issue.component == "hud"), None)
+        if hud_issue:
+            assert f"hud_message={hud_issue.message_zh}" in status_result.output
 
     config_path = tmp_path / "config.toml"
     config_path.write_text("", encoding="utf-8")
@@ -401,6 +462,9 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     assert doctor_result.output.splitlines(), repr(doctor_result.exception)
     assert doctor_result.output.splitlines()[0].startswith("后台服务:")
     assert f"state={runtime.code}" in doctor_result.output.splitlines()[0]
+    if runtime.hud is not None and runtime.hud.alive:
+        hud_line = next(line for line in doctor_result.output.splitlines() if line.startswith("菜单栏 HUD:"))
+        assert ("FAIL" if any(issue.component == "hud" for issue in runtime.issues) else "OK") in hud_line
 
     executable = tmp_path / "bin" / "penpal"
     executable.parent.mkdir(exist_ok=True)
@@ -413,6 +477,9 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: Config()))
     install_result = CliRunner().invoke(cli.main, ["install", "doctor", "--plain"])
     assert f"runtime={'OK' if not runtime.failed else 'FAIL'} state={runtime.code}" in install_result.output
+    if runtime.hud is not None and runtime.hud.alive:
+        hud_expected = "FAIL" if any(issue.component == "hud" for issue in runtime.issues) else "OK"
+        assert f"hud={hud_expected}" in install_result.output
 
     line = cli_shared._runtime_status_line(daemon_cli.evaluate())
     assert runtime.code in line
@@ -420,7 +487,10 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     assert bar["code"] == runtime.code
     from penpal.runtime import RuntimeState
     if runtime.state is RuntimeState.RUNNING:
-        assert capture_health.compute_capture_health() is None
+        if runtime.issues:
+            assert capture_health.compute_capture_health()["code"] == runtime.code
+        else:
+            assert capture_health.compute_capture_health() is None
     else:
         assert capture_health.compute_capture_health()["code"] == runtime.code
 

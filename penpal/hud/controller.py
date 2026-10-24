@@ -16,6 +16,7 @@ never written to disk, the model of any later page, or the log.
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import replace
@@ -33,6 +34,101 @@ SECRET_PAGES = ("reveal",)
 
 def _spawn(fn: Callable[[], Any]) -> None:
     threading.Thread(target=fn, daemon=True, name="hud-action").start()
+
+
+class HudModelWorker:
+    """Run model reads and actions on one worker; dispatch only rendered results to the UI thread."""
+
+    def __init__(
+        self,
+        controller: "HudController",
+        *,
+        main_dispatcher: Callable[[Callable[[], None]], None],
+        apply_script: Callable[[str, Optional[str]], None],
+        before_model: Optional[Callable[[], bool]] = None,
+        model_built: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        self.controller = controller
+        self.main_dispatcher = main_dispatcher
+        self.apply_script = apply_script
+        self.before_model = before_model
+        self.model_built = model_built
+        self._condition = threading.Condition()
+        self._refresh_requested = False
+        self._fresh = False
+        self._actions: list[tuple[str, dict]] = []
+        self._tasks: list[tuple[Callable[[], Any], Optional[Callable[[Any], None]], bool]] = []
+        self._thread = threading.Thread(target=self._run, daemon=True, name="penpal-hud-model")
+        self._thread.start()
+
+    def refresh(self, *, fresh: bool = False) -> None:
+        with self._condition:
+            self._refresh_requested = True
+            self._fresh = self._fresh or fresh
+            self._condition.notify()
+
+    def dispatch(self, action: str, args: Optional[dict] = None) -> None:
+        with self._condition:
+            self._actions.append((action, args if isinstance(args, dict) else {}))
+            self._condition.notify()
+
+    def submit(
+        self,
+        task: Callable[[], Any],
+        callback: Optional[Callable[[Any], None]] = None,
+        *,
+        rebuild: bool = False,
+    ) -> None:
+        with self._condition:
+            self._tasks.append((task, callback, rebuild))
+            self._condition.notify()
+
+    def _run(self) -> None:
+        while True:
+            with self._condition:
+                while not (self._refresh_requested or self._actions or self._tasks):
+                    self._condition.wait()
+                refresh = self._refresh_requested
+                fresh = self._fresh
+                actions, self._actions = self._actions, []
+                tasks, self._tasks = self._tasks, []
+                self._refresh_requested = False
+                self._fresh = False
+
+            try:
+                if self.before_model is not None and self.before_model():
+                    continue
+                for task, callback, rebuild in tasks:
+                    try:
+                        result = task()
+                    except Exception as exc:
+                        LOGGER.warning("hud background task failed: %s", type(exc).__name__)
+                        continue
+                    if callback is not None:
+                        try:
+                            self.main_dispatcher(lambda result=result, callback=callback: callback(result))
+                        except Exception as exc:
+                            LOGGER.warning("hud main-thread dispatch failed: %s", type(exc).__name__)
+                    refresh = refresh or rebuild
+                model = None
+                for action, args in actions:
+                    model = self.controller.dispatch(action, args)
+                if model is None and (refresh or actions):
+                    model = self.controller.model(fresh=fresh)
+                if model is not None:
+                    built_at = datetime.now(timezone.utc).isoformat()
+                    model["model_built_at"] = built_at
+                    if self.model_built is not None:
+                        try:
+                            self.model_built(built_at)
+                        except OSError as exc:
+                            LOGGER.warning("hud runtime record write failed: %s", type(exc).__name__)
+                    payload = json.dumps(model, ensure_ascii=False).replace("</", "<\\/")
+                    script = f"window.render({payload});"
+                    badge = model["tabs"][0].get("badge") if model.get("tabs") else None
+                    self.main_dispatcher(lambda script=script, badge=badge: self.apply_script(script, badge))
+            except Exception as exc:  # one slow or broken reader must not take down the AppKit run loop
+                LOGGER.warning("hud model refresh failed: %s", type(exc).__name__)
 
 
 class HudController:

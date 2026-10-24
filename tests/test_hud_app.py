@@ -36,6 +36,22 @@ class _Controller:
         self.closed += 1
 
 
+class _Worker:
+    def __init__(self):
+        self.refreshes = []
+        self.actions = []
+        self.tasks = []
+
+    def refresh(self, *, fresh=False):
+        self.refreshes.append(fresh)
+
+    def dispatch(self, action, args=None):
+        self.actions.append((action, args))
+
+    def submit(self, task, callback=None, *, rebuild=False):
+        self.tasks.append((task, callback, rebuild))
+
+
 class _WebView:
     def __init__(self):
         self.scripts = []
@@ -47,7 +63,7 @@ class _WebView:
 @pytest.fixture()
 def shell():
     app = hud_app.PenpalHUDApp.alloc().init()
-    app.controller, app.webview, app.status_item = _Controller(), _WebView(), None
+    app.controller, app.webview, app.status_item, app._worker = _Controller(), _WebView(), None, _Worker()
     return app
 
 
@@ -57,15 +73,14 @@ def _rendered(shell):
     return json.loads(script[len("window.render("):-2])
 
 
-def test_page_message_goes_to_the_controller_and_the_model_is_drawn(shell):
+def test_page_message_is_queued_for_the_worker(shell):
     shell.handle_message({"action": "capture.pause", "args": {}})
-    assert shell.controller.calls == [("capture.pause", {})]
-    assert _rendered(shell)["title"] == "after capture.pause"
+    assert shell._worker.actions == [("capture.pause", {})]
 
 
 def test_ready_message_pushes_the_current_model_without_an_action(shell):
     shell.handle_message({"action": "ui.ready"})
-    assert shell.controller.calls == [("model", False)] and _rendered(shell)["title"] == "概览"
+    assert shell._worker.refreshes == [False]
 
 
 def test_junk_messages_are_ignored(shell):
@@ -75,8 +90,7 @@ def test_junk_messages_are_ignored(shell):
 
 
 def test_script_is_safe_to_embed(shell):
-    shell.controller.model = lambda fresh=False: {**MODEL, "title": "</script><b>"}
-    shell.handle_message({"action": "ui.ready"})
+    shell._apply_model_script('window.render({"title":"<\\/script><b>"});', None)
     assert "</script><b>" not in shell.webview.scripts[-1]
 
 
@@ -89,7 +103,8 @@ def test_message_body_from_javascript_becomes_plain_python():
 
 def test_closing_the_popover_tells_the_controller_to_forget_transient_state(shell):
     shell.popoverDidClose_(None)
-    assert shell.controller.closed == 1
+    task, callback, rebuild = shell._worker.tasks[-1]
+    assert task == shell.controller.popover_closed and callback is None and rebuild
 
 
 def test_message_handler_forwards_to_the_shell():

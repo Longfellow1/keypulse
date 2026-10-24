@@ -38,7 +38,7 @@ An AI can already read local files, so indexing files that already exist is not 
 | Install | See Quick start below | Install the CLI first, then `penpal app install` (add `--login` to start at login) |
 | Core capability | Everything works in your AI once installed | Same core, different interface |
 
-Anything the app can do, the CLI can do. The app needs no system permission of its own: it only launches `penpal hud`, and the permissions capture needs stay with the background service. A CLI-only install doesn't fail silently either: if capture stops, the disk fills up or a permission is lost, the AI receives a warning in its next query result and tells you.
+Anything the app can do, the CLI can do. `penpal app install` compiles a native launcher that runs the HUD inside the installed Penpal environment, so the menu-bar identity should be **Penpal**. If clang or libpython is unavailable, it falls back to a script launcher and warns that the item may appear as **Python**. The app itself needs no system permission; capture permissions stay with the background service. After installing, open `~/Applications/Penpal.app` from Finder and confirm it is allowed and visible in Menu Bar settings. The CLI can still check HUD health through doctor and status.
 
 ## Quick start
 
@@ -59,9 +59,11 @@ Then ask Claude Code as usual, for example "What was I researching yesterday aft
 Want the menu-bar interface (optional)?
 
 ```bash
-penpal app install          # builds Penpal.app in ~/Applications; add --login to start at login
+penpal app install          # compiles the native launcher and builds Penpal.app in ~/Applications; add --login to start at login
 penpal app uninstall        # removes the app and its login item; the daemon and your data are untouched
 ```
+
+Open Penpal.app from Finder after installation. On macOS 26, enable Penpal under System Settings → Menu Bar → Allow in the Menu Bar. If the icon is missing, check `penpal doctor` and `penpal hud status`. Public macOS APIs cannot always detect when System Settings suppresses a status item, so confirm the icon in the menu bar itself.
 
 ### Verified hosts
 

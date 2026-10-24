@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [runtime, health, hud, doctor, launchd, mcp]
 created: "2026-10-24T23:46:07"
-updated: "2026-10-25T03:49:13"
+updated: "2026-10-25T04:24:57"
 ---
 
 <!-- compiled_truth -->
@@ -51,4 +51,10 @@ Decision (D36, 2026-10-24, owner accepted all recommendations after a deep-fix a
   kind: decision
   summary: "PR3 self-reload settled: identity = code fingerprint + package version + config.toml hash + DB schema version; schema newer than code → OUTDATED and the store refuses writes. Daemon exits 75 on identity change and launchd relaunches it (KeepAlive SuccessfulExit=false); HUD execv from its timer; MCP serve execs only between requests, replaying the saved initialize params into the new process and filtering the synthetic response, sends tools/list_changed when the tool list differs, and exits on stdin EOF or parent death. Depends on MCP SDK low-level stdio API → pinned mcp>=1.30,<1.31; bumping the SDK requires re-running the handoff tests and the 3-host manual check."
   source: D36 PR3 review 2026-10-25
+  affects: [runtime-contract]
+
+- time: 2026-10-25T04:24:57
+  kind: decision
+  summary: "PR4 settled: HUD builds its model on one background worker, main thread only applies results; HUD writes run/hud.json and evaluate() owns HUD issues (doctor never judges on its own). Menu-bar visibility: report only a confirmed hidden item; unknown visibility is NOT an issue, because macOS 26 has no API for the System Settings → Menu Bar toggle (isVisible may stay true) — covered by manual check R7. HUD tick staleness is anchored at last wake like the daemon. Penpal.app's executable is a native stub embedding libpython (so the menu-bar entry is 'Penpal', not 'Python'); it bakes the Homebrew opt path (not the versioned Cellar path) and falls back to exec the penpal command when its Python is gone after an upgrade."
+  source: D36 PR4 review 2026-10-25
   affects: [runtime-contract]
