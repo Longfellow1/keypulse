@@ -279,6 +279,22 @@ ls -lh ~/.penpal/penpal.db
 # Size should be reasonable (< 5 MB for a day of use)
 ```
 
+## 14. Automated Tests and Opt-in Checks
+
+The default pytest run uses synthetic fixtures and injected system probes. Performance benchmarks and
+tests that call real macOS system commands are skipped unless explicitly enabled:
+
+```bash
+# Large synthetic migration and search timing checks
+PENPAL_RUN_SLOW=1 python -m pytest -q -m slow
+
+# Real Spotlight (mdimport / mdfind) and ioreg smoke checks on macOS
+PENPAL_RUN_SYSTEM_SMOKE=1 python -m pytest -q -m system_smoke
+```
+
+The system smoke checks use temporary Spotlight files. The ioreg smoke check reads the current
+machine's idle-time value and should only be run as an intentional local check.
+
 ---
 
 ## Known Limitations (MVP)

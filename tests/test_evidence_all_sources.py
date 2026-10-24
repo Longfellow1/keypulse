@@ -458,6 +458,7 @@ def test_v28_backfilled_row_resolves_through_get_evidence(db):
     assert ev["original"]["text"].startswith("# Old doc")
 
 
+@pytest.mark.slow
 def test_v28_runtime_on_25k_rows(db):
     conn = get_conn()
     kinds = [("zsh_history", "zsh:line:%d", {}), ("chrome_history", "chrome:visit:%d", {"profile": "Default"}),

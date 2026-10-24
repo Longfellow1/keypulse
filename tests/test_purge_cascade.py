@@ -259,6 +259,30 @@ def test_get_evidence_for_deleted_id_is_not_found(seeded):
     assert "evidence" not in after
 
 
+def test_get_timeline_hides_deleted_events_but_keeps_other_apps(seeded):
+    token = _grant()
+
+    before = tools.get_timeline(
+        token, "2026-03-02", "2026-03-02", sources=["keyboard_chunk"], client=CLIENT
+    )
+    assert before["status"] == "ok"
+    before_ids = {row["id"] for row in before["results"]}
+    deleted_id = f"evt_{seeded['notes_kb']}"
+    retained_id = f"evt_{seeded['cursor']}"
+    assert deleted_id in before_ids
+    assert retained_id in before_ids
+
+    purge_raw_events(app_name="Notes")
+
+    after = tools.get_timeline(
+        token, "2026-03-02", "2026-03-02", sources=["keyboard_chunk"], client=CLIENT
+    )
+    assert after["status"] == "ok"
+    after_ids = {row["id"] for row in after["results"]}
+    assert deleted_id not in after_ids
+    assert retained_id in after_ids
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────────────────────
 @pytest.fixture
 def cli_db(seeded, tmp_path, monkeypatch):

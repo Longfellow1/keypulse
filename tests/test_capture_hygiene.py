@@ -371,6 +371,7 @@ def test_v24_scrubs_existing_rows_transactionally_and_idempotently(tmp_path):
     conn.close()
 
 
+@pytest.mark.slow
 def test_v24_is_fast_on_25k_rows(tmp_path):
     conn = _db_at_v23(tmp_path / "big.db")
     apps = ["Cursor", "Safari", "Terminal", "Notes", "微信", "Figma", "Preview", "Chrome", "Warp", "Slack"]
