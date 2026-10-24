@@ -42,9 +42,9 @@ def _isolated_home(tmp_path, monkeypatch):
 
 # ── coverage list: UPDATE THIS (and the batteries) when the MCP surface changes ──────────────
 G1_COVERED_TOOLS = {
-    "search_context": {"keywords", "time_range", "sources", "limit", "include_keypulse_echoes"},
+    "search_context": {"keywords", "time_range", "sources", "limit", "include_penpal_echoes", "include_keypulse_echoes"},
     "get_evidence": {"evidence_id"},
-    "get_timeline": {"start", "end", "sources", "limit", "cursor", "include_keypulse_echoes"},
+    "get_timeline": {"start", "end", "sources", "limit", "cursor", "include_penpal_echoes", "include_keypulse_echoes"},
     # M2-3: its G1 tests (unseen / other-bucket ids, differential) live in tests/test_feedback.py
     "rate_result": {"result_id", "verdict", "note", "query"},
 }
@@ -200,8 +200,8 @@ def _adversarial_queries() -> list[dict]:
     qs.append({"keywords": [1, None]})
     # D27: the echo switch only widens visibility inside the grant, never beyond it
     for q in list(qs[::9]):
-        qs.append({**q, "include_keypulse_echoes": True})
-    qs.append({"keywords": [SHARED_WORD], "include_keypulse_echoes": "yes"})
+        qs.append({**q, "include_penpal_echoes": True})
+    qs.append({"keywords": [SHARED_WORD], "include_penpal_echoes": "yes"})
     return qs
 
 
@@ -228,7 +228,7 @@ def _keywords_of(q: dict) -> list:
 
 def _run(token, q: dict) -> dict:
     return search(token, _keywords_of(q), q.get("time_range"), q.get("sources"), q.get("limit", 10),
-                  q.get("include_keypulse_echoes", False))
+                  q.get("include_penpal_echoes", False))
 
 
 # ── 1. canary scan ───────────────────────────────────────────────────────────────────────────
@@ -311,7 +311,7 @@ def _timeline_battery(with_id_cursors: bool = True) -> list[dict]:
         {"start": "2026-03-02T10:00:00+00:00", "end": "2026-03-02T10:00:00+00:00"},
         {"start": "2026-03-04", "end": "2026-03-06"}, {"start": "2026-03-02", "end": "2026-03-01"},
         {"start": None, "end": None}, {"start": 1, "end": 2}, dict(wide, limit="x"), dict(wide, sources="chrome_history"),
-        dict(wide, include_keypulse_echoes=True), dict(wide, include_keypulse_echoes="yes"),
+        dict(wide, include_penpal_echoes=True), dict(wide, include_penpal_echoes="yes"),
     ]
     for c in CANARIES:
         qs += [dict(wide, sources=[c]), {"start": c, "end": "2999-12-31"}, {"start": "1970-01-01", "end": c},

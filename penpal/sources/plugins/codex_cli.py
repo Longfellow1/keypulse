@@ -34,7 +34,7 @@ from penpal.sources.plugins.claude_code import _parse_iso8601, _parse_json_line
 from penpal.sources.cleaning.noise import (
     advance_echo,
     clean_message_part,
-    is_keypulse_call,
+    is_penpal_call,
     resolve_server_names,
 )
 from penpal.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInstance, SemanticEvent
@@ -189,7 +189,7 @@ class CodexCliSource(DataSource):
                 if is_call:
                     call = payload if payload is not None else row
                     if call.get("type") in _CALL_TYPES:
-                        if is_keypulse_call(call, names):
+                        if is_penpal_call(call, names):
                             echo = True
                             state["echo"] = True
                         continue

@@ -99,6 +99,11 @@ def build_server(
     in the Host config; over stdio it is self-declared, not proven (see penpal.mcp.auth)."""
     server = FastMCP("penpal", instructions=INSTRUCTIONS)
 
+    def include_echoes(canonical: Any, legacy_alias: Any) -> Any:
+        # Keep the old MCP property at this boundary for one release, without surfacing a warning
+        # in tool output. Once removed, tools/search only know the Penpal name.
+        return canonical if legacy_alias is False else legacy_alias
+
     # Parameters are typed `Any` on purpose: the schema shown to the Host is pinned with
     # json_schema_extra, but type validation happens in tools.search_context so a wrongly typed
     # argument produces our fixed `invalid_argument` text instead of pydantic's error, which
@@ -115,12 +120,17 @@ def build_server(
             "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}],
             "description": 'Optional source names, e.g. ["zsh_history"].'})] = None,
         limit: Annotated[Any, Field(json_schema_extra={"type": "integer", "description": "Max results, 1-100."})] = 10,
-        include_keypulse_echoes: Annotated[Any, Field(json_schema_extra={
+        include_penpal_echoes: Annotated[Any, Field(json_schema_extra={
             "type": "boolean",
             "description": "Default false. true also returns assistant replies that merely restate Penpal's own earlier results."})] = False,
+        include_keypulse_echoes: Annotated[Any, Field(json_schema_extra={
+            "type": "boolean",
+            "deprecated": True,
+            "description": "Deprecated alias; use include_penpal_echoes. Accepted until version 0.5.0."})] = False,
     ) -> CallToolResult:
         payload = tools.search_context(
-            token_provider(), keywords, time_range, sources, limit, include_keypulse_echoes, client=client_provider()
+            token_provider(), keywords, time_range, sources, limit,
+            include_echoes(include_penpal_echoes, include_keypulse_echoes), client=client_provider()
         )
         return _result(payload)
 
@@ -145,12 +155,17 @@ def build_server(
         cursor: Annotated[Any, Field(json_schema_extra={
             "anyOf": [{"type": "string"}, {"type": "null"}],
             "description": "next_cursor from the previous page."})] = None,
-        include_keypulse_echoes: Annotated[Any, Field(json_schema_extra={
+        include_penpal_echoes: Annotated[Any, Field(json_schema_extra={
             "type": "boolean",
             "description": "Default false. true also returns assistant replies that merely restate Penpal's own earlier results."})] = False,
+        include_keypulse_echoes: Annotated[Any, Field(json_schema_extra={
+            "type": "boolean",
+            "deprecated": True,
+            "description": "Deprecated alias; use include_penpal_echoes. Accepted until version 0.5.0."})] = False,
     ) -> CallToolResult:
         payload = tools.get_timeline(
-            token_provider(), start, end, sources, limit, cursor, include_keypulse_echoes, client=client_provider())
+            token_provider(), start, end, sources, limit, cursor,
+            include_echoes(include_penpal_echoes, include_keypulse_echoes), client=client_provider())
         return _result(payload)
 
     @server.tool(description=RATE_DESCRIPTION)

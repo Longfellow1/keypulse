@@ -20,9 +20,9 @@ PENPAL_LOCATOR_PREFIX = "penpal://event/"
 LEGACY_LOCATOR_PREFIX = "keypulse://event/"
 
 
-def keypulse_locator(event_id: int) -> str:
+def penpal_locator(event_id: int) -> str:
     return f"{PENPAL_LOCATOR_PREFIX}{event_id}"
 
 
-def is_keypulse_locator(locator: str | None) -> bool:
+def is_penpal_locator(locator: str | None) -> bool:
     return bool(locator) and locator.startswith((PENPAL_LOCATOR_PREFIX, LEGACY_LOCATOR_PREFIX))

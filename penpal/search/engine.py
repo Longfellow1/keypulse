@@ -257,7 +257,7 @@ def _scope_clauses(
     sources: Optional[list[str]],
     buckets: Optional[list[str]],
     event_type: "str | Iterable[str] | None",
-    include_keypulse_echoes: bool,
+    include_penpal_echoes: bool,
 ) -> Optional[tuple[list[str], list]]:
     """WHERE clauses for the scope (event type, time bounds, sources, buckets, echo filter), or None
     when the scope is empty and nothing can match. Shared by search_events and keyword_in_scope."""
@@ -283,7 +283,7 @@ def _scope_clauses(
             return None
         where.append("e.bucket IN (%s)" % ",".join("?" * len(buckets)))
         params.extend(buckets)
-    if not include_keypulse_echoes:
+    if not include_penpal_echoes:
         where.append(_NOT_ECHO_SQL)
     where.append(_NOT_SUPERSEDED_SQL)
     return where, params
@@ -297,7 +297,7 @@ def keyword_in_scope(
     sources: Optional[list[str]] = None,
     buckets: Optional[list[str]] = None,
     event_type: "str | Iterable[str] | None" = "semantic_event",
-    include_keypulse_echoes: bool = False,
+    include_penpal_echoes: bool = False,
 ) -> bool:
     """True when ANY row inside the scope matches this one keyword (same predicate and same scope
     filters as search_events). One EXISTS / LIMIT 1 query: it does not look at the 500-row candidate
@@ -307,7 +307,7 @@ def keyword_in_scope(
         return False
     scope = _scope_clauses(
         since_ts=parse_time_bound(since), until_ts=parse_time_bound(until, end_of_day=True), sources=sources,
-        buckets=buckets, event_type=event_type, include_keypulse_echoes=include_keypulse_echoes)
+        buckets=buckets, event_type=event_type, include_penpal_echoes=include_penpal_echoes)
     if scope is None:
         return False
     scope_where, scope_params = scope
@@ -325,7 +325,7 @@ def search_events(
     buckets: Optional[list[str]] = None,
     event_type: "str | Iterable[str] | None" = "semantic_event",
     limit: int = 20,
-    include_keypulse_echoes: bool = False,
+    include_penpal_echoes: bool = False,
 ) -> list[dict]:
     """Keyword search over raw_events: OR across keywords, ranked by how many distinct keywords a
     document matches (coverage), then a per-document score, then the source's semantic_weight,
@@ -350,7 +350,7 @@ def search_events(
         return []
     scope = _scope_clauses(
         since_ts=parse_time_bound(since), until_ts=parse_time_bound(until, end_of_day=True), sources=sources,
-        buckets=buckets, event_type=event_type, include_keypulse_echoes=include_keypulse_echoes)
+        buckets=buckets, event_type=event_type, include_penpal_echoes=include_penpal_echoes)
     if scope is None:
         return []
     match_sql, params = _match_clause(terms)
@@ -485,7 +485,7 @@ def timeline_events(
     after: Optional[tuple[str, int]] = None,
     event_type: "str | Iterable[str]" = "semantic_event",
     limit: int = TIMELINE_DEFAULT_LIMIT,
-    include_keypulse_echoes: bool = False,
+    include_penpal_echoes: bool = False,
 ) -> tuple[list[dict], bool]:
     """Events in real occurred_at order (ascending, id as tiebreak), scope applied in the WHERE
     clause before LIMIT. `after` is a (occurred_at, id) keyset cursor. Returns (rows, has_more);
@@ -496,7 +496,7 @@ def timeline_events(
         return [], False
     where = ["e.event_type IN (%s)" % ",".join("?" * len(types)), "e.bucket IN (%s)" % ",".join("?" * len(buckets))]
     params: list = [*types, *buckets]
-    if not include_keypulse_echoes:
+    if not include_penpal_echoes:
         where.append(_NOT_ECHO_SQL)
     where.append(_NOT_SUPERSEDED_SQL)
     if sources is not None:
@@ -577,7 +577,7 @@ def source_coverage(
     since: Optional[str],
     until: Optional[str],
     event_type: "str | Iterable[str]" = "semantic_event",
-    include_keypulse_echoes: bool = False,
+    include_penpal_echoes: bool = False,
 ) -> list[dict]:
     """Per-source data span inside the scope: one grouped query, same WHERE scope rules as search
     (buckets / sources / event types / echo filter). The time range does NOT narrow the span; it only
@@ -592,7 +592,7 @@ def source_coverage(
     if sources is not None:
         where.append("e.source IN (%s)" % ",".join("?" * len(sources)))
         where_params.extend(sources)
-    if not include_keypulse_echoes:
+    if not include_penpal_echoes:
         where.append(_NOT_ECHO_SQL)
     rows = get_conn().execute(
         f"""

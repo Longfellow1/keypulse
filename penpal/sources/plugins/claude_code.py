@@ -9,7 +9,7 @@ from typing import Any, Iterator
 from penpal.sources.cleaning.noise import (
     advance_echo,
     clean_message_part,
-    is_keypulse_call,
+    is_penpal_call,
     resolve_server_names,
 )
 from penpal.sources.types import MAX_INTENT_CHARS, DataSource, DataSourceInstance, SemanticEvent
@@ -259,7 +259,7 @@ def _echo_state(row: dict[str, Any], role: str, has_text: bool, echo: bool, name
         content = message.get("content") if isinstance(message, dict) else None
         if isinstance(content, list):
             calls = any(
-                isinstance(p, dict) and p.get("type") == "tool_use" and is_keypulse_call(p, names) for p in content
+                isinstance(p, dict) and p.get("type") == "tool_use" and is_penpal_call(p, names) for p in content
             )
     return advance_echo(echo, role, has_text, calls)
 
