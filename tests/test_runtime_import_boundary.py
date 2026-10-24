@@ -17,9 +17,13 @@ PR2_LIVENESS_ALLOWLIST = {
 
 def test_runtime_evidence_has_no_duplicate_readers() -> None:
     violations: list[str] = []
+    evidence_implementations = {
+        "penpal/foundation/runtime_record.py",
+        "penpal/foundation/runtime_launchd.py",
+    }
     for path in (ROOT / "penpal").rglob("*.py"):
         relative = path.relative_to(ROOT).as_posix()
-        if relative.startswith("penpal/runtime/"):
+        if relative.startswith("penpal/runtime/") or relative in evidence_implementations:
             continue
         source = path.read_text(encoding="utf-8")
         if re.search(r"(?:read_text|read_bytes|json\.load|open)\s*\([^\n]*daemon\.json", source):

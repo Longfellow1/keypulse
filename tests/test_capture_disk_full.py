@@ -17,9 +17,9 @@ from penpal.config import Config
 from penpal.store import buckets
 from penpal.store.db import close, get_conn, init_db
 from penpal import __version__
-from penpal.runtime.identity import code_fingerprint
-from penpal.runtime.launchd import process_start_time
-from penpal.runtime.record import Progress, RuntimeRecord, read_record
+from penpal.foundation.runtime_identity import code_fingerprint
+from penpal.foundation.runtime_launchd import process_start_time
+from penpal.foundation.runtime_record import Progress, RuntimeRecord, read_record
 
 FULL = sqlite3.OperationalError("database or disk is full")
 

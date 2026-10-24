@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 import time
 from pathlib import Path
 
@@ -40,26 +38,6 @@ def _init_test_db(tmp_path: Path) -> None:
 
 def _state(ok: bool, code: str, detail: str | None = None) -> HealthState:
     return HealthState(ok=ok, code=code, last_checked=time.time(), detail=detail)
-
-
-@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
-def test_capture_fact_caps_contains_only_watcher_class() -> None:
-    from penpal.app import _CAPTURE_FACT_CAPS
-
-    probe_caps = {
-        "accessibility_permission",
-        "screen_recording_permission",
-        "appkit_runtime",
-    }
-
-    assert probe_caps.isdisjoint(_CAPTURE_FACT_CAPS)
-    assert _CAPTURE_FACT_CAPS == {
-        "clipboard_watcher",
-        "ax_text_watcher",
-        "window_watcher",
-        "browser_watcher",
-        "ocr_watcher",
-    }
 
 
 def test_ax_denied_forces_capture_error_code_for_ax_dependent_watchers(tmp_path) -> None:

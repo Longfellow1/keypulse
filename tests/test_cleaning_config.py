@@ -7,17 +7,18 @@ from types import SimpleNamespace
 
 import pytest
 
+from penpal import config as penpal_config
 from penpal.sources.cleaning import config
 
 
 def test_missing_cleaning_config_uses_defaults(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(config, "get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(penpal_config, "get_data_dir", lambda: tmp_path)
 
     assert config.load_cleaning_config() == config.CleaningConfig()
 
 
 def test_invalid_toml_stops_loading_and_logs_only_error_type(monkeypatch, tmp_path, caplog) -> None:
-    monkeypatch.setattr(config, "get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(penpal_config, "get_data_dir", lambda: tmp_path)
     (tmp_path / "cleaning.toml").write_text("[broken", encoding="utf-8")
 
     with caplog.at_level(logging.ERROR, logger="penpal.sources.cleaning.config"):
@@ -29,13 +30,13 @@ def test_invalid_toml_stops_loading_and_logs_only_error_type(monkeypatch, tmp_pa
 
 
 def test_cleaning_config_read_error_stops_loading_and_logs(monkeypatch, tmp_path, caplog) -> None:
-    monkeypatch.setattr(config, "get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(penpal_config, "get_data_dir", lambda: tmp_path)
     (tmp_path / "cleaning.toml").touch()
 
-    def deny_read(self: Path, *args, **kwargs):
+    def deny_open(self: Path, *args, **kwargs):
         raise PermissionError("private file detail")
 
-    monkeypatch.setattr(Path, "read_text", deny_read)
+    monkeypatch.setattr(Path, "open", deny_open)
     with caplog.at_level(logging.ERROR, logger="penpal.sources.cleaning.config"):
         with pytest.raises(RuntimeError, match="cleaning.toml.*停止导入"):
             config.load_cleaning_config()
@@ -45,13 +46,13 @@ def test_cleaning_config_read_error_stops_loading_and_logs(monkeypatch, tmp_path
 
 
 def test_unexpected_cleaning_config_error_is_not_caught(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(config, "get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(penpal_config, "get_data_dir", lambda: tmp_path)
     (tmp_path / "cleaning.toml").touch()
 
     def unexpected(self: Path, *args, **kwargs):
         raise RuntimeError("unexpected")
 
-    monkeypatch.setattr(Path, "read_text", unexpected)
+    monkeypatch.setattr(Path, "open", unexpected)
 
     with pytest.raises(RuntimeError, match="unexpected"):
         config.load_cleaning_config()
@@ -60,7 +61,7 @@ def test_unexpected_cleaning_config_error_is_not_caught(monkeypatch, tmp_path) -
 def test_import_stops_before_progress_is_written_when_config_is_invalid(monkeypatch, tmp_path) -> None:
     from penpal.sources import importer
 
-    monkeypatch.setattr(config, "get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(penpal_config, "get_data_dir", lambda: tmp_path)
     (tmp_path / "cleaning.toml").write_text("[broken", encoding="utf-8")
     monkeypatch.setattr(importer, "get_source", lambda _name: object())
     monkeypatch.setattr(importer, "source_writes_allowed", lambda _name: True)

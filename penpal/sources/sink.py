@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from penpal.capture.capture_control import source_writes_allowed
-from penpal.privacy.desensitizer import redact_secrets
+from penpal.foundation.desensitizer import redact_secrets
 from penpal.sources.entity_extractor import extract_named_entities
 from penpal.sources.types import SemanticEvent
 from penpal.store.context_label import context_label

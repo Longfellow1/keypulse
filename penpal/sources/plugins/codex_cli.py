@@ -30,10 +30,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from penpal.utils.paths import get_codex_home
 from penpal.sources.plugins.claude_code import _parse_iso8601, _parse_json_line
+from penpal.foundation.transcript_noise import clean_message_part
 from penpal.sources.cleaning.noise import (
     advance_echo,
-    clean_message_part,
     is_penpal_call,
     resolve_server_names,
 )
@@ -54,7 +55,7 @@ _SESSION_ID_RE = re.compile(r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9
 
 def default_codex_home() -> Path:
     """Codex's home directory (``~/.codex``). Shared with migration v31 so both read the same history file."""
-    return Path.home() / ".codex"
+    return get_codex_home()
 
 
 class CodexCliSource(DataSource):

@@ -13,7 +13,8 @@ import pytest
 
 from penpal.mcp import auth, tools
 from penpal.search.engine import search_events, timeline_events
-from penpal.sources.cleaning.noise import clean_message_part, is_penpal_call, is_noise_part
+from penpal.foundation.transcript_noise import clean_message_part, is_noise_part
+from penpal.sources.cleaning.noise import is_penpal_call
 from penpal.sources.plugins.claude_code import ClaudeCodeSource
 from penpal.sources.plugins.codex_cli import CodexCliSource
 from penpal.sources.types import DataSourceInstance
@@ -365,7 +366,7 @@ def test_query_time_redaction_fails_closed(db, monkeypatch) -> None:
     def boom(_text):
         raise RuntimeError("detector crashed")
 
-    monkeypatch.setattr(tools.desensitizer, "redact_secrets", boom)
+    monkeypatch.setattr(tools, "redact_secrets", boom)
     calls = [tools.search_context(token, ["pelican"], **kw),
              tools.get_timeline(token, "2026-05-01", "2026-05-01", **kw),
              tools.get_evidence(token, eid, **kw)]
@@ -401,13 +402,13 @@ def test_penpal_default_server_names_accept_legacy_keypulse_tool_names() -> None
     ],
 )
 def test_claude_injected_turns_seen_in_real_transcripts_are_noise(text) -> None:
-    from penpal.sources.cleaning.noise import is_noise_part
+    from penpal.foundation.transcript_noise import is_noise_part
 
     assert is_noise_part(text)
 
 
 def test_user_content_wrappers_are_kept() -> None:
-    from penpal.sources.cleaning.noise import is_noise_part
+    from penpal.foundation.transcript_noise import is_noise_part
 
     assert not is_noise_part("<pasted_content>my notes</pasted_content>")
     assert not is_noise_part("<bash-input>git status</bash-input>")

@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from penpal.sources.approval import ApprovalStore
+from penpal.foundation.approval_store import ApprovalStore
 from penpal.sources.discoverers import CandidateSource
 from penpal.sources.plugins.approved_sqlite import ApprovedSqliteSource, parse_time_value
 from penpal.sources.registry import get_source

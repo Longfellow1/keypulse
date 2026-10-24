@@ -19,7 +19,7 @@ from penpal.capture.manager_events import _derive_speaker
 from penpal.capture.normalizer import normalize_manual_event
 from penpal.capture.policy import PolicyEngine
 from penpal.config import Config
-from penpal.runtime.record import Component, Progress, RuntimeRecord
+from penpal.foundation.runtime_record import Component, Progress, RuntimeRecord
 from penpal.store.models import RawEvent
 
 

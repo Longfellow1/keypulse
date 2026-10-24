@@ -25,8 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO, Any, Callable, Protocol
 
-from penpal.capture.hygiene import capture_gate, is_terminal_app
-from penpal.privacy.desensitizer import desensitize, truncate
+from penpal.foundation.capture_hygiene import capture_gate, is_terminal_app
+from penpal.foundation.desensitizer import desensitize, truncate
 from penpal.utils.paths import get_ax_spike_dir
 
 # Failure reasons (fixed strings, they end up in the summary line).

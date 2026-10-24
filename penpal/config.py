@@ -9,6 +9,32 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
 
+from penpal.foundation.chat_apps import normalize_opt_ins
+from penpal.foundation.capture_rules import DEFAULT_TITLE_DENY_PATTERNS
+from penpal.utils.atomic_io import atomic_write_text
+from penpal.utils.paths import get_data_dir, get_config_path
+
+
+_DEFAULT_USER_CONFIG = """# Penpal user config.
+# Homebrew installs the CLI. This file controls the local runtime.
+
+[app]
+db_path = "~/.penpal/penpal.db"
+log_path = "~/.penpal/penpal.log"
+flush_interval_sec = 5
+
+[watchers]
+window = true
+idle = true
+clipboard = true
+manual = true
+keyboard_chunk = true
+browser = false
+browser_url = true
+ax_text = false
+ocr = false
+"""
+_CONFIG_STRING_LINE_RE = re.compile(r'^(\s*[A-Za-z_][\w.-]*\s*=\s*)"([^"\\]*)"(.*)$')
 
 class AppConfig(BaseModel):
     db_path: str = "~/.penpal/penpal.db"
@@ -90,8 +116,6 @@ class BrowserHistoryConfig(BaseModel):
 
 
 def _default_title_deny():
-    from penpal.capture.hygiene import DEFAULT_TITLE_DENY_PATTERNS
-
     return DEFAULT_TITLE_DENY_PATTERNS
 
 
@@ -170,15 +194,13 @@ class PrivacyConfig(BaseModel):
             "1Password", "Keychain Access", "钥匙串", "密码",
         ]
     )
-    # Chat apps (penpal.capture.chat_apps) are excluded from capture by default. Listing one here
+    # Chat apps (penpal.foundation.chat_apps) are excluded from capture by default. Listing one here
     # opts it in: its rows are stored and bucketed as Private. Keys or listed names, e.g. ["WeChat", "Slack"].
     chat_apps_opt_in: list[str] = Field(default_factory=list)
 
     @field_validator("chat_apps_opt_in")
     @classmethod
     def _chat_apps_opt_in_known(cls, value: list[str]) -> list[str]:
-        from penpal.capture.chat_apps import normalize_opt_ins
-
         return normalize_opt_ins(value)
 
 
@@ -240,15 +262,10 @@ class Config(BaseModel):
         from penpal.utils.paths import get_config_path
 
         load_dotenv_quiet()
-        paths = [
-            get_config_path(),
-            Path("config.toml"),
-        ]
+        paths = [get_config_path(), Path("config.toml")]
         for p in paths:
             if p.exists():
-                with open(p, "rb") as f:
-                    data = tomllib.load(f)
-                config = cls.model_validate(data)
+                config = read_config(p)
                 # A path still under the legacy ~/.keypulse (the migration marker dir) resolves to ~/.penpal.
                 from penpal.utils.paths import resolve_legacy_data_path
 
@@ -268,6 +285,84 @@ class Config(BaseModel):
         path = Path(self.app.log_path).expanduser()
         legacy = path.with_name("keypulse.log") if path.name == "penpal.log" else None
         return legacy if legacy is not None and not path.exists() and legacy.exists() else path
+
+
+def read_toml(path: Path | str) -> dict:
+    """Read and parse TOML from an explicit path."""
+    config_path = Path(path)
+    with config_path.open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def read_config(path: Path | str) -> Config:
+    """Read and validate a Penpal config file from an explicit path."""
+    return Config.model_validate(read_toml(path))
+
+
+def read_cleaning_config(path: Path | None = None) -> dict:
+    """Read cleaning.toml, returning an empty mapping when the optional file is absent."""
+    config_path = path or (get_data_dir() / "cleaning.toml")
+    try:
+        return read_toml(config_path)
+    except FileNotFoundError:
+        return {}
+
+
+def write_default_config(path: Path | None = None, *, force: bool = False) -> str:
+    """Write the default user config if absent (or forced), then read it back for validation."""
+    config_path = path or get_config_path()
+    existed = config_path.exists()
+    if existed and not force:
+        return "exists"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(config_path, _DEFAULT_USER_CONFIG)
+    read_config(config_path)
+    return "updated" if existed else "created"
+
+
+def rewrite_legacy_config_paths(data_dir: Path, home: Path | None = None) -> bool:
+    """Rewrite legacy data paths in config.toml while preserving its formatting and a one-time backup."""
+    from penpal.utils.paths import (
+        CONFIG_BACKUP_NAME,
+        LEGACY_DATA_DIRNAME,
+        _guard_penpal_path,
+        resolve_legacy_data_path,
+    )
+
+    data_dir = _guard_penpal_path(data_dir)
+    config_path = _guard_penpal_path(data_dir / "config.toml")
+    try:
+        if config_path.is_symlink() or not config_path.is_file():
+            return False
+        original = config_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    if LEGACY_DATA_DIRNAME not in original:
+        return False
+
+    changed = False
+    lines: list[str] = []
+    for line in original.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        eol = line[len(body):]
+        match = _CONFIG_STRING_LINE_RE.match(body)
+        if match:
+            new_value = resolve_legacy_data_path(match.group(2), home)
+            if new_value != match.group(2):
+                body = f'{match.group(1)}"{new_value}"{match.group(3)}'
+                changed = True
+        lines.append(body + eol)
+    if not changed:
+        return False
+
+    rewritten = "".join(lines)
+    tomllib.loads(rewritten)
+    backup = _guard_penpal_path(data_dir / CONFIG_BACKUP_NAME)
+    if not backup.exists():
+        atomic_write_text(backup, original)
+    atomic_write_text(config_path, rewritten)
+    read_toml(config_path)
+    return True
 
 
 _TABLE_HEADER_RE = re.compile(r"^[ \t]*\[[^\]\n]+\][ \t]*(?:#.*)?$", re.M)
@@ -295,7 +390,10 @@ def _write_privacy_list(path: Path, key: str, values: list[str]) -> None:
     if getattr(parsed.privacy, key) != values:
         raise ValueError("could not update privacy." + key + " in " + str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(new, encoding="utf-8")
+    atomic_write_text(path, new)
+    persisted = read_config(path)
+    if getattr(persisted.privacy, key) != values:
+        raise ValueError("could not verify privacy." + key + " in " + str(path))
 
 
 def write_chat_apps_opt_in(path: Path, keys: list[str]) -> None:
@@ -340,9 +438,6 @@ def set_chat_app_opt_in(name: str, allowed: bool, *, path: Path | None = None) -
     Returns the canonical key and the new opt-in list. Raises ValueError for an unknown app name.
     The daemon reads the list at start, so a running daemon needs a restart to pick the change up.
     """
-    from penpal.capture.chat_apps import normalize_opt_ins
-    from penpal.utils.paths import get_config_path
-
     key = normalize_opt_ins([name])[0]
     current = list(Config.load().privacy.chat_apps_opt_in)
     if allowed and key not in current:

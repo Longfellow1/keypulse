@@ -7,7 +7,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from penpal.sources import discover as discover_module
-from penpal.sources.approval import ApprovalStore
+from penpal.foundation.approval_store import ApprovalStore
 from penpal.sources.discover import sources_group
 from penpal.sources.discoverers import CandidateSource
 

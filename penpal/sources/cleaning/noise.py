@@ -1,11 +1,6 @@
-"""Shared noise + self-echo helpers for the AI-transcript source plugins (claude_code, codex_cli).
+"""Self-echo helpers for the AI-transcript source plugins (claude_code, codex_cli).
 
-Two jobs, one module so both plugins behave the same (D27):
-
-* ``clean_message_part`` drops host-injected wrapper text that is not something the user or the
-  assistant said (system reminders, slash-command wrappers, local command output, interrupt
-  markers, Codex environment/instruction blocks).
-* ``advance_echo`` / ``is_penpal_call`` implement the ``via_penpal`` mark: an assistant text
+``advance_echo`` / ``is_penpal_call`` implement the ``via_penpal`` mark: an assistant text
   that follows a call to a Penpal MCP tool (same session, until the next real user message) is
   mostly a paraphrase of Penpal's own output, so it is stored but flagged and hidden from search
   by default.
@@ -14,73 +9,6 @@ from __future__ import annotations
 
 import re
 from typing import Iterable
-
-# Prefixes of host-injected wrapper text (after lstrip). Shared by every transcript plugin.
-NOISE_PREFIXES: tuple[str, ...] = (
-    # Codex
-    "<environment_context",
-    "<turn_aborted",
-    "<subagent_notification",
-    "<heartbeat",
-    "<recommended_plugins",
-    "<image name=",
-    "</image",
-    "<in-app-browser-context",
-    "<codex_internal_context",
-    "<user_instructions",
-    "<permissions",
-    "<collaboration_mode",
-    "<user_action",
-    # Claude Code
-    "<system-reminder",
-    "<command-name",
-    "<command-message",
-    "<command-args",
-    "<local-command-",  # -stdout / -stderr / -caveat
-    "Caveat:",
-    "[Request interrupted",
-    # Seen in real Claude Code transcripts: background-task notices, hook feedback and `!` command
-    # output are injected as user turns. (`<bash-input>` is what the user typed, so it is kept.)
-    "<task-notification",
-    "Stop hook feedback",
-    "PreToolUse:",
-    "PostToolUse:",
-    "<bash-stdout",
-    "<bash-stderr",
-)
-
-# Wrappers that carry the user's own content; never dropped by the generic wrapper rule.
-_USER_CONTENT_WRAPPERS = ("<pasted_content", "<bash-input")
-
-_WRAPPER_RE = re.compile(r"^<([A-Za-z_][\w\-.]*)(?:\s[^>]*)?>.*</\1>$", re.DOTALL)
-_INSTRUCTION_HEADER_RE = re.compile(r"^#\s*(AGENTS\.md|CLAUDE\.md)\b|^#\s*Instructions\s+from\b", re.IGNORECASE)
-_INLINE_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
-
-
-def is_noise_part(text: str) -> bool:
-    """True when ``text`` is host-injected wrapper content rather than conversation."""
-    head = text.lstrip()
-    if not head:
-        return True
-    if head.startswith(NOISE_PREFIXES):
-        return True
-    if _INSTRUCTION_HEADER_RE.match(head):
-        return True
-    if "<INSTRUCTIONS>" in head[:400] and head.startswith("#"):
-        return True
-    if head.startswith(_USER_CONTENT_WRAPPERS):
-        return False
-    return bool(_WRAPPER_RE.match(head.rstrip()))
-
-
-def clean_message_part(text: str) -> str:
-    """Cleaned text of one message part, or "" when the whole part is noise. System reminders glued
-    inside an otherwise real message are cut out."""
-    if "<system-reminder>" in text:
-        text = _INLINE_REMINDER_RE.sub("", text)
-    text = text.strip()
-    return "" if is_noise_part(text) else text
-
 
 # ── via_penpal (self-echo) ─────────────────────────────────────────────────────────────────
 

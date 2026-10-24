@@ -358,7 +358,7 @@ def test_keypulse_token_in_ingested_text_is_redacted() -> None:
     # A host transcript can contain the `claude mcp add -e PENPAL_TOKEN=...` command (B6).
     import secrets
 
-    from penpal.privacy.desensitizer import redact_secrets
+    from penpal.foundation.desensitizer import redact_secrets
 
     token = "kp_" + secrets.token_urlsafe(32)
     out = redact_secrets(f"claude mcp add penpal -e PENPAL_TOKEN={token} -- penpal mcp serve")

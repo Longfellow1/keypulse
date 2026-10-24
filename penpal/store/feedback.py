@@ -14,7 +14,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Optional, Sequence
 
-from penpal.privacy import desensitizer
+from penpal.foundation import desensitizer
 from penpal.store.db import get_conn
 
 RETURNED_TTL_DAYS = 7

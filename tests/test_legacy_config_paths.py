@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from penpal.config import Config
+from penpal.config import Config, rewrite_legacy_config_paths
 from penpal.utils import paths
 
 LEGACY_CONFIG = """\
@@ -42,7 +42,7 @@ def test_rewrites_legacy_values_and_keeps_backup(home):
     original = _legacy_text(home)
     (data / "config.toml").write_text(original, encoding="utf-8")
 
-    assert paths.rewrite_legacy_config_paths(data) is True
+    assert rewrite_legacy_config_paths(data) is True
 
     text = (data / "config.toml").read_text(encoding="utf-8")
     parsed = tomllib.loads(text)
@@ -60,12 +60,12 @@ def test_second_run_changes_nothing_and_backup_is_not_overwritten(home):
     data = home / ".penpal"
     data.mkdir()
     (data / "config.toml").write_text(_legacy_text(home), encoding="utf-8")
-    assert paths.rewrite_legacy_config_paths(data) is True
+    assert rewrite_legacy_config_paths(data) is True
     after_first = (data / "config.toml").read_text(encoding="utf-8")
     backup = data / paths.CONFIG_BACKUP_NAME
     backup.write_text("older backup, must stay", encoding="utf-8")
 
-    assert paths.rewrite_legacy_config_paths(data) is False
+    assert rewrite_legacy_config_paths(data) is False
 
     assert (data / "config.toml").read_text(encoding="utf-8") == after_first
     assert backup.read_text(encoding="utf-8") == "older backup, must stay"
@@ -76,7 +76,7 @@ def test_config_without_legacy_paths_is_left_alone(home):
     data.mkdir()
     (data / "config.toml").write_text('[app]\ndb_path = "~/.penpal/penpal.db"\n', encoding="utf-8")
 
-    assert paths.rewrite_legacy_config_paths(data) is False
+    assert rewrite_legacy_config_paths(data) is False
     assert not (data / paths.CONFIG_BACKUP_NAME).exists()
 
 

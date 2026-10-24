@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from penpal.sources.approval import ApprovalStore
-from penpal.sources.cleaning.file_whitelist import is_blocked_sqlite
+from penpal.foundation.approval_store import ApprovalStore
+from penpal.foundation.sqlite_rules import is_blocked_sqlite
 from penpal.store.locators import unresolvable_locator
 from penpal.sources.types import ContentShape, FIELD_HEURISTICS, DataSource, DataSourceInstance, SemanticEvent
 

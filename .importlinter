@@ -37,6 +37,7 @@ forbidden_modules =
     WebKit
 allow_indirect_imports = True
 ignore_imports =
+    # These capability probes directly check macOS permissions and runtime availability.
     penpal.capabilities.builtin.accessibility_permission -> ApplicationServices
     penpal.capabilities.builtin.appkit_runtime -> AppKit
     penpal.capabilities.builtin.screen_recording_permission -> Quartz
@@ -74,12 +75,24 @@ type = forbidden
 source_modules =
     penpal
 forbidden_modules =
-    penpal.runtime.record
-    penpal.runtime.launchd
+    penpal.foundation.runtime_record
+    penpal.foundation.runtime_launchd
+    penpal.foundation.runtime_identity
 allow_indirect_imports = True
 ignore_imports =
-    penpal.runtime.evaluate -> penpal.runtime.record
-    penpal.runtime.evaluate -> penpal.runtime.launchd
-    penpal.capture.manager -> penpal.runtime.record
-    penpal.capture.manager_runtime -> penpal.runtime.record
-    penpal.capture.manager_runtime -> penpal.runtime.launchd
+    # D36: runtime evaluator owns evidence reads; daemon manager is the sole evidence writer.
+    penpal.runtime.evaluate -> penpal.foundation.runtime_record
+    penpal.runtime.evaluate -> penpal.foundation.runtime_launchd
+    penpal.runtime.evaluate -> penpal.foundation.runtime_identity
+    penpal.capture.manager_runtime -> penpal.foundation.runtime_record
+    penpal.capture.manager_runtime -> penpal.foundation.runtime_launchd
+    penpal.capture.manager_runtime -> penpal.foundation.runtime_identity
+
+[importlinter:contract:layers]
+name = Penpal module layers
+type = layers
+layers =
+    penpal.feedback_cli : penpal.mcp.server : penpal.mcp.cli : penpal.hud : penpal.app : penpal.app_bundle : penpal.cli
+    penpal.health : penpal.capabilities : penpal.services : penpal.runtime
+    penpal.sources : penpal.capture : penpal.search : penpal.mcp.auth : penpal.mcp.audit : penpal.mcp.tools : penpal.privacy : penpal.permissions : penpal.observability
+    penpal.store : penpal.config : penpal.i18n : penpal.foundation : penpal.utils

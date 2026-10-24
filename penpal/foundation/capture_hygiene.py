@@ -28,7 +28,14 @@ from collections import Counter
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
-from penpal.capture.active_app import SYSTEM_OVERLAY_APPS
+from penpal.foundation.capture_rules import (
+    APP_CHROME_PLACEHOLDERS,
+    DEFAULT_TITLE_DENY_PATTERNS,
+    LOGIN_KEYWORDS as _LOGIN_KEYWORDS,
+    SYSTEM_OVERLAY_APPS,
+    is_placeholder_text,
+    is_system_overlay,
+)
 from penpal.utils.text_filters import looks_like_ime_composition, strip_invisible
 
 DROP = "drop"
@@ -49,19 +56,12 @@ _PRIVACY_RE = re.compile(
     re.IGNORECASE,
 )
 
-_LOGIN_KEYWORDS = (
-    "loginwindow", "password", "verification", "登录", "验证码",
-    "1password", "keychain", "lastpass", "bitwarden",
-    "sign in", "sign-in", "signin",
-)
 _LOGIN_CONTENT_OVERRIDE_LEN = 20
 
 # Private / incognito windows: stored as metadata-only (app + time) only.
 _PRIVATE_MARKERS = ("incognito", "无痕", "inprivate", "private browsing", "隐私浏览")
 _INTERNAL_SCHEMES = ("chrome://", "edge://", "about:", "chrome-extension://", "brave://", "vivaldi://", "arc://")
 
-# Default title deny regexes are seeded from the login-context keywords (PrivacyConfig uses this too).
-DEFAULT_TITLE_DENY_PATTERNS: tuple[str, ...] = tuple(re.escape(k) for k in _LOGIN_KEYWORDS)
 _title_re_cache: dict[tuple, list] = {}
 
 _L1_MIN_LEN = 5
@@ -80,34 +80,10 @@ TERMINAL_BUNDLE_IDS = frozenset({
     "org.alacritty", "net.kovidgoyal.kitty", "com.mitchellh.ghostty",
 })
 
-_OVERLAY_FOLDED = frozenset(name.casefold() for name in SYSTEM_OVERLAY_APPS)
-_OVERLAY_BUNDLE_PREFIXES = ("com.apple.setupassistant",)
-
 # Input placeholders and UI prompts rendered by chat / search boxes: AX reads them as the "text" of
 # the field, they are never something the user wrote. Matched against the whole stripped text,
 # case-insensitively, ignoring a trailing ellipsis / full stop. Extend by adding to this tuple.
-APP_CHROME_PLACEHOLDERS: tuple[str, ...] = (
-    "问问 ChatGPT", "发消息或按住空格说话", "Message ChatGPT", "Ask anything", "有问题，尽管问",
-    "输入消息", "Send a message", "Ask Claude", "Message Claude", "Reply to Claude",
-    "给 ChatGPT 发送消息", "问点什么", "Ask a follow-up", "Type a message",
-    "Search or ask a question", "Message Gemini", "Ask Gemini",
-)
-_PLACEHOLDER_TRIM = " \t\r\n…。.!！"
-_PLACEHOLDERS_FOLDED = frozenset(p.casefold().strip(_PLACEHOLDER_TRIM) for p in APP_CHROME_PLACEHOLDERS)
 _CONTENT_STREAMS = frozenset({"keyboard_chunk", "ax_text", "clipboard", "browser_url"})
-
-
-def is_system_overlay(app_name: str | None, process_name: str | None = None) -> bool:
-    """loginwindow / Setup Assistant / Dock & co: the foreground "app" is a system overlay."""
-    for value in (app_name, process_name):
-        folded = str(value or "").strip().casefold()
-        if folded and (folded in _OVERLAY_FOLDED or folded.startswith(_OVERLAY_BUNDLE_PREFIXES)):
-            return True
-    return False
-
-
-def is_placeholder_text(content: str | None) -> bool:
-    return str(content or "").strip().casefold().strip(_PLACEHOLDER_TRIM) in _PLACEHOLDERS_FOLDED
 
 
 def is_terminal_app(app_name: str | None, process_name: str | None = None) -> bool:

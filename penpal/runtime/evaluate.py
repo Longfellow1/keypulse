@@ -10,19 +10,11 @@ import sys
 from typing import Callable
 
 from penpal import __version__
-from penpal.runtime.identity import installed_fingerprint as _installed_fingerprint
-from penpal.runtime.launchd import is_installed, probe_daemon, probe_label, process_start_time
-from penpal.runtime.record import Component, RuntimeRecord, read_record
+from penpal.foundation.runtime_identity import installed_fingerprint as _installed_fingerprint
+from penpal.foundation.runtime_launchd import is_installed, probe_daemon, probe_label, process_start_time
+from penpal.foundation.runtime_record import RECORD_WRITE_INTERVAL_SEC, Component, RuntimeRecord, read_record
 from penpal.i18n import T
 
-def _interval_from_env() -> float:
-    try:
-        return max(0.05, float(os.getenv("PENPAL_RUNTIME_RECORD_INTERVAL_SEC", "10")))
-    except ValueError:
-        return 10.0
-
-
-RECORD_WRITE_INTERVAL_SEC = _interval_from_env()
 HUNG_AFTER_SEC = RECORD_WRITE_INTERVAL_SEC * 3
 STARTING_GRACE_SEC = RECORD_WRITE_INTERVAL_SEC * 3
 WATCHER_PERMISSION_EVIDENCE_SEC = 30 * 60

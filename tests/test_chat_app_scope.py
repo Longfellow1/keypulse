@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from penpal.capture.chat_apps import chat_app_key, normalize_opt_ins
+from penpal.foundation.chat_apps import chat_app_key, normalize_opt_ins
 from penpal.capture.manager import CaptureManager
 from penpal.capture.normalizer import (
     normalize_ax_text_event,

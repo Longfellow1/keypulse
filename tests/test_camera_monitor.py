@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from unittest.mock import MagicMock
 from unittest.mock import call
 
@@ -93,19 +91,18 @@ def test_camera_monitor_swallows_subprocess_start_failure(monkeypatch):
 def test_manager_pause_and_resume_only_existing_watchers():
     manager = CaptureManager(Config())
     ax_text = MagicMock()
-    ocr = MagicMock()
-    manager._watchers = {"ax_text": ax_text, "ocr": ocr}
+    browser = MagicMock()
+    manager._watchers = {"ax_text": ax_text, "browser": browser}
 
     manager.pause_watchers(["ax_text", "missing"])
-    manager.resume_watchers(["ocr", "missing"])
+    manager.resume_watchers(["browser", "missing"])
 
     ax_text.pause.assert_called_once_with()
     ax_text.resume.assert_not_called()
-    ocr.pause.assert_not_called()
-    ocr.resume.assert_called_once_with()
+    browser.pause.assert_not_called()
+    browser.resume.assert_called_once_with()
 
 
-@pytest.mark.skip(reason="OCR watcher disabled 2026-05-14")
 def test_manager_camera_monitor_wiring_pauses_and_resumes_watchers(monkeypatch):
     callbacks = {}
 
@@ -130,14 +127,12 @@ def test_manager_camera_monitor_wiring_pauses_and_resumes_watchers(monkeypatch):
                     "manual": False,
                     "browser": False,
                     "ax_text": True,
-                    "ocr": True,
                 }
             }
         )
     )
     ax_text = MagicMock()
-    ocr = MagicMock()
-    manager._watchers = {"ax_text": ax_text, "ocr": ocr}
+    manager._watchers = {"ax_text": ax_text}
     monkeypatch.setattr("penpal.capture.manager_lifecycle.CameraMonitor", _FakeCameraMonitor)
 
     manager._start_camera_monitor()
@@ -147,6 +142,4 @@ def test_manager_camera_monitor_wiring_pauses_and_resumes_watchers(monkeypatch):
     callbacks["on_change"](False)
 
     ax_text.pause.assert_called_once_with()
-    ocr.pause.assert_called_once_with()
     ax_text.resume.assert_called_once_with()
-    ocr.resume.assert_called_once_with()

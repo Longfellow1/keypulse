@@ -11,8 +11,8 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from penpal.capture.capture_control import source_writes_allowed
-from penpal.capture.chat_apps import chat_app_key
-from penpal.capture.hygiene import (
+from penpal.foundation.chat_apps import chat_app_key
+from penpal.foundation.capture_hygiene import (
     METADATA_ONLY,
     PAGE_SCOPED_STREAMS,
     capture_gate,
@@ -25,7 +25,7 @@ from penpal.capture.hygiene import (
 from penpal.capture.manager_storage import _is_disk_full
 from penpal.capture.normalizer import WINDOW_FOCUS_EVENT, WINDOW_TITLE_CHANGED_EVENT
 from penpal.capture.user_presence import is_user_present
-from penpal.privacy.desensitizer import desensitize, desensitize_json_value, truncate
+from penpal.foundation.desensitizer import desensitize, desensitize_json_value, truncate
 from penpal.store.models import RawEvent, SearchDoc
 from penpal.store.repository import insert_raw_event, insert_search_doc, set_state
 from penpal.utils.logging import get_logger

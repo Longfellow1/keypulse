@@ -17,7 +17,7 @@ REPLAYABLE = ("search_context", "get_timeline", "get_evidence")
 
 def scan_leaks(blob: str) -> list[str]:
     """Pattern names of sensitive content (secrets / ID / cards / ...) still present in tool output."""
-    from penpal.privacy.detectors import detect
+    from penpal.foundation.detectors import detect
 
     hits = {d.pattern_name for d in detect(blob)}
     if ID_NUMBER_RE.search(blob):

@@ -2,19 +2,10 @@ from __future__ import annotations
 
 from typing import Optional
 
+from penpal.foundation.capture_rules import SYSTEM_OVERLAY_APPS
 from penpal.utils.logging import get_logger
 
 logger = get_logger("capture.active_app")
-
-SYSTEM_OVERLAY_APPS = frozenset({
-    "loginwindow", "ScreenSaverEngine", "Dock",
-    "Notification Center", "Control Center",
-    # First-run / macOS setup overlay (en, zh-Hans, process name, bundle ids): never a real app.
-    "Setup Assistant", "SetupAssistant", "设置助理", "com.apple.SetupAssistant",
-    "com.apple.loginwindow",
-})
-# Backward-compatible alias for any internal usage.
-_SYSTEM_OVERLAY_APPS = SYSTEM_OVERLAY_APPS
 
 _last_known_app: Optional[str] = None
 _last_known_pid: Optional[int] = None
@@ -33,7 +24,7 @@ def get_active_app() -> tuple[Optional[str], Optional[int]]:
             return _last_known_app, _last_known_pid
         name = app.localizedName()
         pid = app.processIdentifier()
-        if name in _SYSTEM_OVERLAY_APPS:
+        if name in SYSTEM_OVERLAY_APPS:
             return _last_known_app, _last_known_pid
         _last_known_app = name
         _last_known_pid = pid
@@ -63,7 +54,7 @@ def is_system_overlay_active() -> bool:
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
         if not app:
             return True
-        return app.localizedName() in _SYSTEM_OVERLAY_APPS
+        return app.localizedName() in SYSTEM_OVERLAY_APPS
     except Exception:
         return False
 

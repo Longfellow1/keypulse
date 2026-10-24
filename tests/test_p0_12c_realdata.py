@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from penpal.capture.hygiene import DROP, capture_gate, is_placeholder_text, is_system_overlay
+from penpal.foundation.capture_hygiene import DROP, capture_gate, is_placeholder_text, is_system_overlay
 from penpal.capture.manager import CaptureManager
 from penpal.capture.normalizer import (
     normalize_ax_text_event,

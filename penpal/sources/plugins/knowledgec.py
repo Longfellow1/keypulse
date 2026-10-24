@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from penpal.sources.cleaning.file_whitelist import is_blocked_sqlite
+from penpal.foundation.sqlite_rules import is_blocked_sqlite
 from penpal.store.locators import unresolvable_locator
 from penpal.sources.types import DataSource, DataSourceInstance, SemanticEvent
 

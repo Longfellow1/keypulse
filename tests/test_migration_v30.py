@@ -1,5 +1,5 @@
-"""Migration v30: evidence for old markdown_vault rows, resolved via vault discovery. Synthetic fixtures:
-tmp dirs as fake vaults, and MarkdownVaultSource.discover monkeypatched (never the real approval store)."""
+"""Migration v30: evidence for old markdown_vault rows, resolved via approved vault roots.
+Synthetic fixtures use tmp dirs and an in-memory approval record."""
 from __future__ import annotations
 
 import json
@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from penpal.sources.plugins.markdown_vault import MarkdownVaultSource
-from penpal.sources.types import DataSourceInstance
+from penpal.foundation.approval_store import ApprovalRecord, ApprovalStore
 from penpal.store.db import close, get_conn, init_db
 from penpal.store.migration_v30 import migrate_v30
 from penpal.store.migrations import MIGRATIONS, SCHEMA_VERSION, run_migrations
@@ -26,16 +25,17 @@ def db(tmp_path, monkeypatch):
 
 
 def _discover_as(monkeypatch, roots: list[Path]) -> None:
-    """Stand-in for the plugin's discovery: one instance per existing root, labelled by its dir name."""
+    """Stand-in for approved vaults: one persisted approval record per existing root."""
     def fake(self):
         return [
-            DataSourceInstance(
-                plugin="markdown_vault", locator=str(root.resolve()), label=root.name,
-                metadata={"vault_name": root.name, "note_count": 0, "shape": "document_file"},
+            ApprovalRecord(
+                candidate_id=str(i), status="approved", timestamp=None,
+                metadata={"discoverer": "markdown_vault", "path": str(root.resolve()),
+                          "shape": "document_file"},
             )
-            for root in roots if root.is_dir()
+            for i, root in enumerate(roots) if root.is_dir()
         ]
-    monkeypatch.setattr(MarkdownVaultSource, "discover", fake)
+    monkeypatch.setattr(ApprovalStore, "list_approved", fake)
 
 
 def _old_row(vault: str, artifact: str | None, text: str = "old note") -> int:

@@ -7,7 +7,7 @@ from penpal.store.db import init_db
 from penpal.store.models import RawEvent
 from penpal.store.repository import insert_raw_event
 from penpal.runtime import RuntimeState, RuntimeStatus
-from penpal.runtime.record import Component
+from penpal.foundation.runtime_record import Component
 
 
 def _seed_event(source: str, ts_start: str) -> None:

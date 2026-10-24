@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from penpal.sources.approval import ApprovalStore
+from penpal.foundation.approval_store import ApprovalStore
 from penpal.sources.discoverers import CandidateSource
 from penpal.sources.plugins.leveldb_reader import LevelDbReaderSource
 from penpal.sources.registry import get_source

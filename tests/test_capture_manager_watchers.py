@@ -54,7 +54,7 @@ def test_manager_core_progress_is_written_to_atomic_runtime_record(monkeypatch, 
     from datetime import datetime, timezone
 
     from penpal import __version__
-    from penpal.runtime.record import Progress, RuntimeRecord, read_record
+    from penpal.foundation.runtime_record import Progress, RuntimeRecord, read_record
 
     monkeypatch.setenv("HOME", str(tmp_path))
     manager = CaptureManager(Config())

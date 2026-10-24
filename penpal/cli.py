@@ -20,7 +20,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-from penpal.config import Config
+from penpal.config import Config, read_config, read_toml, write_default_config
 from penpal.store.db import init_db, get_conn
 from penpal.store.repository import (
     get_sessions,
@@ -32,7 +32,6 @@ from penpal.store.repository import (
     insert_policy,
 )
 from penpal.store.models import Policy, RawEvent, SearchDoc
-from penpal.privacy.desensitizer import desensitize
 from penpal.utils.paths import (
     DataDirMigrationError,
     get_data_dir,
@@ -46,7 +45,6 @@ from penpal.utils.paths import (
 )
 from penpal.utils.env import get_env_compat
 from penpal.utils.paths import get_hud_pid_path
-from penpal.utils.atomic_io import atomic_write_text
 from penpal.utils.lock import SingleInstanceLock
 from penpal.utils.logging import setup_logging
 from penpal.runtime import RuntimeState, evaluate, launchd_label_loaded, state_message, state_text
@@ -205,27 +203,6 @@ def _launchd_bootstrap(plist_path: Path) -> bool:
         if result.returncode == 0:
             return True
     return False
-
-
-_DEFAULT_USER_CONFIG = """# Penpal user config.
-# Homebrew installs the CLI. This file controls the local runtime.
-
-[app]
-db_path = "~/.penpal/penpal.db"
-log_path = "~/.penpal/penpal.log"
-flush_interval_sec = 5
-
-[watchers]
-window = true
-idle = true
-clipboard = true
-manual = true
-keyboard_chunk = true
-browser = false
-browser_url = true
-ax_text = false
-ocr = false
-"""
 
 
 _LAUNCHD_LABELS = (
@@ -392,13 +369,7 @@ def _install_launchd_jobs(*, load: bool, force: bool) -> list[tuple[str, Path, s
 
 
 def _write_default_user_config(*, force: bool = False) -> str:
-    path = get_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existed = path.exists()
-    if path.exists() and not force:
-        return "exists"
-    atomic_write_text(path, _DEFAULT_USER_CONFIG)
-    return "updated" if existed else "created"
+    return write_default_config(get_config_path(), force=force)
 
 
 @click.group(
@@ -953,10 +924,7 @@ def serve(config_path):
 
 def _load_config_from(path: str) -> Config:
     """Load config from explicit path."""
-    import tomllib
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
-    return Config.model_validate(data)
+    return read_config(path)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1198,7 +1166,7 @@ def _legacy_mcp_config_findings(home: Path | None = None) -> list[str]:
 
     if codex_config.is_file():
         try:
-            payload = tomllib.loads(codex_config.read_text(encoding="utf-8"))
+            payload = read_toml(codex_config)
         except (OSError, UnicodeError, tomllib.TOMLDecodeError):
             payload = None
         findings.extend(_legacy_mcp_server_details(payload, "~/.codex/config.toml"))
@@ -2177,12 +2145,12 @@ def privacy_chat_apps():
 
 
 def _chat_app_key_or_error(name: str) -> str:
-    from penpal.capture.chat_apps import normalize_opt_ins
+    from penpal.foundation.chat_apps import normalize_opt_ins
 
     try:
         return normalize_opt_ins([name])[0]
     except ValueError:
-        from penpal.capture.chat_apps import CHAT_APPS
+        from penpal.foundation.chat_apps import CHAT_APPS
 
         valid = ", ".join(app.key for app in CHAT_APPS)
         raise click.ClickException(f"Unknown chat app {name!r}. Valid names: {valid}")
@@ -2205,7 +2173,7 @@ def _set_chat_app_opt_in(name: str, allowed: bool) -> list[str]:
 @click.option("--plain", is_flag=True, default=False, help=PLAIN_HELP)
 def privacy_chat_apps_list(plain):
     """List chat apps."""
-    from penpal.capture.chat_apps import CHAT_APPS
+    from penpal.foundation.chat_apps import CHAT_APPS
 
     allowed = set(get_config().privacy.chat_apps_opt_in)
     if plain:
@@ -2349,56 +2317,35 @@ def maintenance():
 @click.option("--apply", is_flag=True, default=False, help=T("应用脱敏（必须显式指定）", "Apply redaction (must be explicit)"))
 def maintenance_scrub_secrets(dry_run, apply):
     """Scrub secrets."""
-    from pathlib import Path
-    from penpal.privacy.desensitizer import desensitize
-    from penpal.utils.paths import get_data_dir
-
     cfg = get_config()
     require_db(cfg)
 
-    if apply and dry_run:
+    from penpal.services.secret_scrub import ScrubModeError, scrub_secrets
+
+    try:
+        result = scrub_secrets(get_conn(), dry_run=dry_run, apply=apply)
+    except ScrubModeError:
         err_console.print("[red]Cannot use both --dry-run and --apply together.[/red]")
         sys.exit(1)
-
-    if not apply and not dry_run:
+    if result.defaulted_to_dry_run:
         err_console.print("[yellow]Defaulting to dry-run. Use --dry-run explicitly or add --apply to redact.[/yellow]")
-        dry_run = True
-
-    conn = get_conn()
-
-    # Scan raw_events for secrets
     console.print("[cyan]Scanning raw_events for secrets...[/cyan]")
-    rows = conn.execute(
-        "SELECT id, content_text FROM raw_events WHERE content_text IS NOT NULL ORDER BY id"
-    ).fetchall()
-
-    affected_events = []
-    for row in rows:
-        event_id = row["id"]
-        text = row["content_text"]
-        redacted = desensitize(text)
-        if redacted != text:
-            affected_events.append((event_id, text, redacted))
-
-    if affected_events:
-        console.print(f"[yellow]Found {len(affected_events)} events with secrets[/yellow]")
-        if dry_run:
+    if result.changes:
+        console.print(f"[yellow]Found {len(result.changes)} events with secrets[/yellow]")
+        if result.dry_run:
             console.print("[cyan]Preview (dry-run):[/cyan]")
-            for event_id, original, redacted in affected_events[:5]:
-                console.print(f"  ID {event_id}:")
-                console.print(f"    Before: {original[:80]}")
-                console.print(f"    After:  {redacted[:80]}")
-            if len(affected_events) > 5:
-                console.print(f"  ... and {len(affected_events) - 5} more")
+            for change in result.changes[:5]:
+                console.print(f"  ID {change.event_id}:")
+                console.print(f"    Before: {change.before[:80]}")
+                console.print(f"    After:  {change.after[:80]}")
+            if len(result.changes) > 5:
+                console.print(f"  ... and {len(result.changes) - 5} more")
         else:
-            for event_id, _, redacted in affected_events:
-                conn.execute("UPDATE raw_events SET content_text=? WHERE id=?", (redacted, event_id))
-            conn.commit()
-            console.print(f"[green]Redacted {len(affected_events)} events in raw_events[/green]")
+            console.print(f"[green]Redacted {len(result.changes)} events in raw_events[/green]")
     else:
         console.print("[green]No secrets found in raw_events[/green]")
 
-    if dry_run:
+    if result.dry_run:
         console.print("\n[cyan]This was a dry-run. To apply redaction, run:[/cyan]")
         console.print("[bold]  penpal maintenance scrub-secrets --apply[/bold]")
 

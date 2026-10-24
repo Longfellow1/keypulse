@@ -8,7 +8,7 @@ from penpal.capabilities.builtin import _watcher_health
 from penpal.capabilities.builtin._watcher_health import WatcherHealthCapability, WatcherHealthSpec
 from penpal.capture.base import BaseWatcher, watcher_status
 from penpal.runtime import RuntimeState, RuntimeStatus
-from penpal.runtime.record import Component
+from penpal.foundation.runtime_record import Component
 
 SECRET = "secret window title 工资 1234"
 

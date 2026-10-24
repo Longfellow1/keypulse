@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from penpal.sources.approval import ApprovalStore
+from penpal.foundation.approval_store import ApprovalStore
 from penpal.sources.discoverers import CandidateSource
 from penpal.sources.plugins.markdown_vault import MarkdownVaultSource
 from penpal.sources.types import DataSourceInstance
