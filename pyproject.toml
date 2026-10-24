@@ -59,3 +59,4 @@ include = ["penpal*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]  # lets tests import the top-level evals/ harness
+markers = ["slow: opt-in performance benchmark (scripts/bench/perf_freshness.py); runs only with PENPAL_RUN_SLOW=1"]
