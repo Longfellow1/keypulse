@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 from penpal.capture.manager import CaptureManager
 from penpal.capture.normalizer import normalize_keyboard_chunk_event
 from penpal.capture.normalizer import normalize_manual_event
