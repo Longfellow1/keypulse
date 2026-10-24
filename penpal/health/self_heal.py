@@ -17,11 +17,11 @@ from penpal.capabilities.store import load_states_raw
 from penpal.store.db import get_conn
 from penpal.store.repository import get_state, set_state
 from penpal.utils.atomic_io import atomic_write_text
-from penpal.utils.paths import get_data_dir
+from penpal.utils.paths import get_capability_status_path, get_data_dir
 
 _SELF_HEAL_RUNNING_KEY = "self_heal_running"
 _SELF_HEAL_PROGRESS_KEY = "self_heal_progress"
-_CAPABILITY_STATUS_PATH = Path("~/.penpal/capability_status.json").expanduser()
+_CAPABILITY_STATUS_PATH = get_capability_status_path()
 _TOTAL_TIMEOUT_SEC = 8 * 60
 _CORE_SOURCES = ("keyboard_chunk", "clipboard")
 _DAEMON_LABEL = "com.penpal.daemon"

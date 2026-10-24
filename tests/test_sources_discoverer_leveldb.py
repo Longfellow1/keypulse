@@ -16,6 +16,10 @@ def _make_leveldb_instance(path: Path, *, ldb_files: int = 2) -> None:
 def test_discover_leveldb_candidates_detects_instances(monkeypatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(
+        "penpal.sources.discoverers.leveldb.is_excluded_path",
+        lambda _path: (False, ""),
+    )
 
     cursor_dir = home / "Library" / "Application Support" / "Cursor" / "Session Storage"
     unknown_dir = home / "Library" / "Application Support" / "SomeApp" / "Local Storage" / "leveldb"

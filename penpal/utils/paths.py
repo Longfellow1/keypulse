@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import os
+import pwd
 import re
 import subprocess
 import sys
@@ -20,6 +21,31 @@ _CONFIG_STRING_LINE_RE = re.compile(r'^(\s*[A-Za-z_][\w.-]*\s*=\s*)"([^"\\]*)"(.
 
 class DataDirMigrationError(RuntimeError):
     """The old data directory cannot be moved safely to the Penpal location."""
+
+
+def _guard_penpal_path(path: Path) -> Path:
+    """Reject Penpal-owned paths in the real user home during isolated work."""
+    if os.environ.get("PENPAL_ISOLATED") != "1":
+        return path
+    try:
+        real_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve(strict=False)
+    except (KeyError, OSError) as exc:
+        raise RuntimeError("PENPAL_ISOLATED=1 cannot verify the real user home") from exc
+
+    resolved = path.expanduser().resolve(strict=False)
+    if not resolved.is_relative_to(real_home):
+        return path
+
+    home_value = os.environ.get("HOME")
+    isolated_home = Path(home_value).resolve(strict=False) if home_value else None
+    if isolated_home is not None and isolated_home != real_home:
+        try:
+            real_home.relative_to(isolated_home)
+        except ValueError:
+            pass
+        else:
+            return path
+    raise RuntimeError(f"PENPAL_ISOLATED=1 refuses Penpal path inside the real user home: {resolved}")
 
 
 def _pid_is_alive(pid: int) -> bool:
@@ -128,9 +154,9 @@ def migrate_legacy_data_dir(home: Path | None = None) -> bool:
     replaces data. If marker creation fails, it attempts to put the moved directory
     back at the original path before reporting the error.
     """
-    home = home or Path.home()
-    old = home / ".keypulse"
-    new = home / ".penpal"
+    home = home if home is not None else Path.home()
+    old = _guard_penpal_path(home / ".keypulse")
+    new = _guard_penpal_path(home / ".penpal")
 
     if new.is_symlink():
         raise DataDirMigrationError(f"Cannot use {new}: expected a real Penpal data directory, not a symbolic link.")
@@ -226,13 +252,13 @@ def resolve_legacy_data_path(value: str, home: Path | None = None) -> str:
     Handles ``~/.keypulse/...`` and absolute ``<home>/.keypulse/...``. Any other value is returned unchanged.
     Applied when config is loaded, so a config that still names the legacy directory keeps working.
     """
-    home = home or Path.home()
+    home = home if home is not None else Path.home()
     tilde_old = f"~/{LEGACY_DATA_DIRNAME}"
     if value == tilde_old or value.startswith(tilde_old + "/"):
         return "~/.penpal" + value[len(tilde_old):]
-    absolute_old = str(home / LEGACY_DATA_DIRNAME)
+    absolute_old = str(_guard_penpal_path(home / LEGACY_DATA_DIRNAME))
     if value == absolute_old or value.startswith(absolute_old + "/"):
-        return str(home / ".penpal") + value[len(absolute_old):]
+        return str(_guard_penpal_path(home / ".penpal")) + value[len(absolute_old):]
     return value
 
 
@@ -242,7 +268,8 @@ def rewrite_legacy_config_paths(data_dir: Path, home: Path | None = None) -> boo
     Idempotent: a config without legacy paths is left alone. The first rewrite keeps the original text in
     ``config.toml.bak-pre-penpal``, which is never overwritten. Returns True only when this call changed the file.
     """
-    config = data_dir / "config.toml"
+    data_dir = _guard_penpal_path(data_dir)
+    config = _guard_penpal_path(data_dir / "config.toml")
     try:
         if config.is_symlink() or not config.is_file():
             return False
@@ -269,7 +296,7 @@ def rewrite_legacy_config_paths(data_dir: Path, home: Path | None = None) -> boo
 
     rewritten = "".join(lines)
     tomllib.loads(rewritten)  # never write a config that no longer parses
-    backup = data_dir / CONFIG_BACKUP_NAME
+    backup = _guard_penpal_path(data_dir / CONFIG_BACKUP_NAME)
     if not backup.exists():
         atomic_write_text(backup, original)
     atomic_write_text(config, rewritten)
@@ -277,8 +304,8 @@ def rewrite_legacy_config_paths(data_dir: Path, home: Path | None = None) -> boo
 
 
 def get_data_dir() -> Path:
+    d = _guard_penpal_path(Path.home() / ".penpal")
     moved = migrate_legacy_data_dir()
-    d = Path.home() / ".penpal"
     d.mkdir(parents=True, exist_ok=True)
     if moved:
         print(
@@ -290,40 +317,72 @@ def get_data_dir() -> Path:
         rewrite_legacy_config_paths(d)
     except Exception as exc:
         print(f"Warning: could not update legacy paths in {d / 'config.toml'} ({exc}); continuing.", file=sys.stderr)
-    return d
+    return _guard_penpal_path(d)
 
 
 def get_db_path() -> Path:
-    current = get_data_dir() / "penpal.db"
+    current = _guard_penpal_path(get_data_dir() / "penpal.db")
     legacy = current.with_name("keypulse.db")
-    return legacy if not current.exists() and legacy.exists() else current
+    return _guard_penpal_path(legacy if not current.exists() and legacy.exists() else current)
 
 
 def get_pid_path() -> Path:
-    return get_data_dir() / "penpal.pid"
+    return _guard_penpal_path(get_data_dir() / "penpal.pid")
 
 
 def get_hud_pid_path() -> Path:
-    return get_data_dir() / "penpal-hud.pid"
+    return _guard_penpal_path(get_data_dir() / "penpal-hud.pid")
 
 
 def get_run_dir() -> Path:
-    return Path.home() / ".penpal" / "run"
+    return _guard_penpal_path(Path.home() / ".penpal" / "run")
 
 
 def get_daemon_record_path() -> Path:
-    return get_run_dir() / "daemon.json"
+    return _guard_penpal_path(get_run_dir() / "daemon.json")
 
 
 def get_launchd_daemon_plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / "com.penpal.daemon.plist"
+    return _guard_penpal_path(get_launchd_plist_path("com.penpal.daemon"))
+
+
+def get_launchd_agents_dir() -> Path:
+    return _guard_penpal_path(Path.home() / "Library" / "LaunchAgents")
+
+
+def get_launchd_plist_path(label: str) -> Path:
+    return _guard_penpal_path(get_launchd_agents_dir() / f"{label}.plist")
 
 
 def get_log_path() -> Path:
-    current = get_data_dir() / "penpal.log"
+    current = _guard_penpal_path(get_data_dir() / "penpal.log")
     legacy = current.with_name("keypulse.log")
-    return legacy if not current.exists() and legacy.exists() else current
+    return _guard_penpal_path(legacy if not current.exists() and legacy.exists() else current)
 
 
 def get_config_path() -> Path:
-    return get_data_dir() / "config.toml"
+    return _guard_penpal_path(get_data_dir() / "config.toml")
+
+
+def get_health_report_path() -> Path:
+    return _guard_penpal_path(Path.home() / ".penpal" / "health.json")
+
+
+def get_capability_status_path() -> Path:
+    return _guard_penpal_path(Path.home() / ".penpal" / "capability_status.json")
+
+
+def get_apps_dir() -> Path:
+    return _guard_penpal_path(Path.home() / "Applications")
+
+
+def get_legacy_venv_dir() -> Path:
+    return _guard_penpal_path(Path.home() / ".keypulse" / "venv")
+
+
+def get_ax_spike_dir() -> Path:
+    return _guard_penpal_path(Path.home() / ".penpal" / "spike")
+
+
+def get_wechat_authorization_path() -> Path:
+    return _guard_penpal_path(Path.home() / ".penpal" / "wechat-authorized")

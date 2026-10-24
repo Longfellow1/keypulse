@@ -20,6 +20,10 @@ def _make_db(path: Path, table_names: list[str]) -> None:
 def test_discover_sqlite_candidates_confidence_and_hints(monkeypatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(
+        "penpal.sources.discoverers.sqlite.is_excluded_path",
+        lambda _path: (False, ""),
+    )
 
     high_db = home / "Library" / "Application Support" / "Cursor" / "state.vscdb"
     medium_db = home / "Library" / "Application Support" / "Warp" / "warp.sqlite"
@@ -58,6 +62,10 @@ def test_discover_sqlite_candidates_confidence_and_hints(monkeypatch, tmp_path: 
 def test_discover_sqlite_candidates_uses_column_heuristics(monkeypatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(
+        "penpal.sources.discoverers.sqlite.is_excluded_path",
+        lambda _path: (False, ""),
+    )
 
     db_path = home / "Library" / "Application Support" / "App" / "state.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,6 +86,10 @@ def test_discover_sqlite_candidates_uses_column_heuristics(monkeypatch, tmp_path
 def test_discover_sqlite_candidates_detects_kv_json_blob(monkeypatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(
+        "penpal.sources.discoverers.sqlite.is_excluded_path",
+        lambda _path: (False, ""),
+    )
 
     db_path = home / "Library" / "Application Support" / "Cursor" / "state.vscdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)

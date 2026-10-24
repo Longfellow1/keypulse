@@ -4,7 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+import ctypes
 import os
+import sys
 from typing import Callable
 
 from penpal import __version__
@@ -148,6 +150,64 @@ def _seconds_since(value: str | None, now: datetime) -> float | None:
     return None if then is None else max(0.0, (now - then).total_seconds())
 
 
+class _Timeval(ctypes.Structure):
+    _fields_ = [("tv_sec", ctypes.c_long), ("tv_usec", ctypes.c_int)]
+
+
+def _read_last_system_wake_time() -> datetime | None:
+    """Read macOS's last wake timestamp; unavailable platforms degrade to no wake evidence."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        sysctlbyname = ctypes.CDLL(None, use_errno=True).sysctlbyname
+        sysctlbyname.argtypes = [
+            ctypes.c_char_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_size_t),
+            ctypes.c_void_p, ctypes.c_size_t,
+        ]
+        sysctlbyname.restype = ctypes.c_int
+        value = _Timeval()
+        size = ctypes.c_size_t(ctypes.sizeof(value))
+        result = sysctlbyname(b"kern.waketime", ctypes.byref(value), ctypes.byref(size), None, 0)
+        if result != 0 or size.value < ctypes.sizeof(value) or not 0 <= value.tv_usec < 1_000_000:
+            return None
+        return datetime.fromtimestamp(value.tv_sec + value.tv_usec / 1_000_000, timezone.utc)
+    except (AttributeError, OSError, OverflowError, ValueError):
+        return None
+
+
+def _normalise_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _last_progress_age(last_done_at: str | None, last_wake: datetime | None, now: datetime) -> float | None:
+    anchors = [value for value in (_parse_time(last_done_at), _normalise_datetime(last_wake)) if value is not None]
+    return None if not anchors else max(0.0, (now - max(anchors)).total_seconds())
+
+
+def _process_started_at(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromtimestamp(float(value), timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        pass
+    try:
+        parsed = datetime.strptime(value, "%a %b %d %H:%M:%S %Y")
+    except ValueError:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _unrecorded_process_status(pid: int, started_at: str | None, now: datetime) -> RuntimeStatus:
+    started = _process_started_at(started_at)
+    age = None if started is None else max(0.0, (now - started).total_seconds())
+    state = RuntimeState.STARTING if age is None or age < STARTING_GRACE_SEC else RuntimeState.HUNG
+    issue = _state_issue(state)
+    return RuntimeStatus(state, (issue,) if issue else (), pid=pid, managed=True)
+
+
 def _paused() -> bool:
     from penpal.capture.capture_control import is_capture_paused
 
@@ -203,46 +263,50 @@ def evaluate(
     launchd_probe: Callable[[], dict] = probe_daemon,
     installed_fingerprint: Callable[[], str] = _installed_fingerprint,
     paused_reader: Callable[[], bool] = _paused,
+    wake_time_reader: Callable[[], datetime | None] = _read_last_system_wake_time,
 ) -> RuntimeStatus:
     """Evaluate installed code and daemon progress; idle event streams are healthy."""
     now = now or datetime.now(timezone.utc)
+    last_wake = _normalise_datetime(wake_time_reader())
     record = record_reader()
     launchd = launchd_probe()
     loaded = bool(launchd.get("loaded"))
     launchd_pid = launchd.get("pid")
 
-    if record is None:
-        if not is_installed():
-            state = RuntimeState.NOT_INSTALLED
-        elif loaded and isinstance(launchd_pid, int):
-            state = RuntimeState.STARTING
-        else:
-            state = RuntimeState.NOT_RUNNING
-        issue = _state_issue(state)
-        return RuntimeStatus(state, (issue,) if issue else (), pid=launchd_pid if isinstance(launchd_pid, int) else None, managed=loaded)
-
     if loaded:
         if not isinstance(launchd_pid, int):
-            state = RuntimeState.STARTING if (_seconds_since(record.started_at, now) or 0) < STARTING_GRACE_SEC else RuntimeState.NOT_RUNNING
-            issue = _state_issue(state)
-            return RuntimeStatus(state, (issue,) if issue else (), pid=record.pid, generation=record.generation, managed=loaded)
-        if launchd_pid != record.pid:
             state = RuntimeState.NOT_RUNNING
             issue = _state_issue(state)
-            return RuntimeStatus(state, (issue,) if issue else (), pid=launchd_pid, generation=record.generation, managed=loaded)
-
-    current_start = process_start_time(record.pid)
-    if not current_start or current_start != record.process_start_time:
-        state = RuntimeState.NOT_RUNNING
+            return RuntimeStatus(state, (issue,) if issue else (), managed=loaded)
+        launchd_start = process_start_time(launchd_pid)
+        if not launchd_start:
+            state = RuntimeState.NOT_RUNNING
+            issue = _state_issue(state)
+            return RuntimeStatus(state, (issue,) if issue else (), pid=launchd_pid, managed=loaded)
+        if record is None or launchd_pid != record.pid or launchd_start != record.process_start_time:
+            return _unrecorded_process_status(launchd_pid, launchd_start, now)
+    elif record is None:
+        state = RuntimeState.NOT_INSTALLED if not is_installed() else RuntimeState.NOT_RUNNING
         issue = _state_issue(state)
-        return RuntimeStatus(state, (issue,) if issue else (), pid=record.pid, generation=record.generation, managed=loaded)
+        return RuntimeStatus(state, (issue,) if issue else (), managed=loaded)
+
+    if not loaded:
+        current_start = process_start_time(record.pid)
+        if not current_start or current_start != record.process_start_time:
+            state = RuntimeState.NOT_RUNNING
+            issue = _state_issue(state)
+            return RuntimeStatus(state, (issue,) if issue else (), pid=record.pid, generation=record.generation, managed=loaded)
 
     if record.code_fingerprint != installed_fingerprint() or record.version != __version__:
         state = RuntimeState.OUTDATED
     elif paused_reader():
         state = RuntimeState.PAUSED
     else:
-        age = _seconds_since(record.progress.get(CORE_LOOP_NAME).last_done_at if CORE_LOOP_NAME in record.progress else None, now)
+        age = _last_progress_age(
+            record.progress.get(CORE_LOOP_NAME).last_done_at if CORE_LOOP_NAME in record.progress else None,
+            last_wake,
+            now,
+        )
         startup_age = _seconds_since(record.started_at, now)
         if age is None or age > HUNG_AFTER_SEC:
             state = RuntimeState.STARTING if startup_age is not None and startup_age < STARTING_GRACE_SEC else RuntimeState.HUNG

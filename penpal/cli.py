@@ -40,6 +40,9 @@ from penpal.utils.paths import (
     get_pid_path,
     get_log_path,
     get_config_path,
+    get_launchd_agents_dir,
+    get_launchd_daemon_plist_path,
+    get_legacy_venv_dir,
 )
 from penpal.utils.env import get_env_compat
 from penpal.utils.paths import get_hud_pid_path
@@ -128,11 +131,11 @@ def require_db(cfg: Config):
 
 
 def _launchd_daemon_plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / "com.penpal.daemon.plist"
+    return get_launchd_daemon_plist_path()
 
 
 def _launch_agents_dir() -> Path:
-    return Path.home() / "Library" / "LaunchAgents"
+    return get_launchd_agents_dir()
 
 
 def _install_logs_dir() -> Path:
@@ -482,7 +485,7 @@ def _show_keyboard_notice_once() -> None:
 
 def _stale_moved_dev_venv_script() -> tuple[Path, str] | None:
     bin_dir = get_data_dir() / "venv" / "bin"
-    old_venv = Path.home() / ".keypulse" / "venv"
+    old_venv = get_legacy_venv_dir()
     for name in ("penpal", "keypulse"):
         script = bin_dir / name
         try:

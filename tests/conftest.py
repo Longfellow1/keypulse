@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+_SESSION_HOME: str | None = None
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -19,6 +22,19 @@ _OPT_IN_MARKERS = {
         "opt-in system smoke; set PENPAL_RUN_SYSTEM_SMOKE=1",
     ),
 }
+
+
+def pytest_configure(config):
+    """Set the process-wide isolation boundary before test modules import Penpal."""
+    global _SESSION_HOME
+    _SESSION_HOME = tempfile.mkdtemp(prefix="penpal-pytest-home-")
+    os.environ["HOME"] = _SESSION_HOME
+    os.environ["PENPAL_ISOLATED"] = "1"
+
+
+def pytest_unconfigure(config):
+    if _SESSION_HOME is not None:
+        shutil.rmtree(_SESSION_HOME, ignore_errors=True)
 
 
 def pytest_collection_modifyitems(items):
@@ -34,6 +50,7 @@ def _isolated_home_and_launchd(tmp_path, monkeypatch):
     home = tmp_path / "_isolated_home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PENPAL_ISOLATED", "1")
     monkeypatch.setenv("PENPAL_RUNTIME_DISABLE_LAUNCHD_PROBE", "1")
 
 

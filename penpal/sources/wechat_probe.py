@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
 
+from penpal.utils.paths import get_wechat_authorization_path
 
-_AUTH_RELATIVE_PATH = Path(".penpal") / "wechat-authorized"
+
 _WECHAT_APP_CANDIDATES = (
     Path("/Applications/WeChat.app"),
     Path("/Applications/微信.app"),
@@ -71,7 +72,7 @@ def is_authorized(path: Path | None = None) -> bool:
 def _resolve_authorization_path(path: Path | None = None) -> Path:
     if path is not None:
         return Path(path).expanduser()
-    return Path.home() / _AUTH_RELATIVE_PATH
+    return get_wechat_authorization_path()
 
 
 def _probe_chatlog_path() -> str | None:

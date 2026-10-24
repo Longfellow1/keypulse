@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import itertools
 import importlib
 import os
@@ -81,9 +82,9 @@ def test_r1_state_matrix(monkeypatch, record_kind, launchd_state, progress, fing
     )
 
     if record is None:
-        expected = RuntimeState.STARTING if loaded else RuntimeState.NOT_RUNNING
+        expected = RuntimeState.HUNG if loaded else RuntimeState.NOT_RUNNING
     elif launchd_state == "pid_mismatch":
-        expected = RuntimeState.NOT_RUNNING
+        expected = RuntimeState.HUNG
     elif fingerprint == "different":
         expected = RuntimeState.OUTDATED
     elif paused:
@@ -95,6 +96,164 @@ def test_r1_state_matrix(monkeypatch, record_kind, launchd_state, progress, fing
     assert result.state is expected
     assert result.code == expected.value
     _assert_consumers_expose_same_runtime_state(result, monkeypatch, tmp_path)
+
+
+@pytest.mark.parametrize("record_kind", ["missing", "different_pid"])
+@pytest.mark.parametrize(
+    "process_age_sec,expected",
+    [(5, RuntimeState.STARTING), (5 * 60, RuntimeState.HUNG)],
+)
+def test_r1_unrecorded_launchd_generation_matrix_is_consistent(
+    monkeypatch, record_kind, process_age_sec, expected, tmp_path,
+):
+    record = None if record_kind == "missing" else make_record(last_done=NOW, pid=PID)
+    launchd_pid = PID if record is None else PID + 1
+    started_at = (NOW - timedelta(seconds=process_age_sec)).timestamp()
+    monkeypatch.setattr(EVALUATOR, "is_installed", lambda: True)
+    monkeypatch.setattr(EVALUATOR, "process_start_time", lambda _pid: str(started_at))
+
+    result = evaluate(
+        now=NOW,
+        record_reader=lambda: record,
+        launchd_probe=lambda: {"loaded": True, "pid": launchd_pid, "last_exit": None},
+        installed_fingerprint=lambda: FINGERPRINT,
+        paused_reader=lambda: False,
+        wake_time_reader=lambda: None,
+    )
+
+    assert result.state is expected
+    _assert_consumers_expose_same_runtime_state(result, monkeypatch, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "last_done_age_sec,wake_age_sec,expected",
+    [
+        (3 * 60 * 60, 5, RuntimeState.RUNNING),
+        (3 * 60 * 60, 5 * 60, RuntimeState.HUNG),
+        (1, 5 * 60, RuntimeState.RUNNING),
+    ],
+)
+def test_wake_time_is_the_core_progress_staleness_anchor(
+    monkeypatch, last_done_age_sec, wake_age_sec, expected,
+):
+    record = make_record(last_done=NOW - timedelta(seconds=last_done_age_sec))
+    monkeypatch.setattr(EVALUATOR, "is_installed", lambda: True)
+    monkeypatch.setattr(EVALUATOR, "process_start_time", lambda _pid: START)
+    calls = []
+
+    def wake_time_reader():
+        calls.append(None)
+        return NOW - timedelta(seconds=wake_age_sec)
+
+    result = evaluate(
+        now=NOW,
+        record_reader=lambda: record,
+        launchd_probe=lambda: {"loaded": False, "pid": None, "last_exit": None},
+        installed_fingerprint=lambda: FINGERPRINT,
+        paused_reader=lambda: False,
+        wake_time_reader=wake_time_reader,
+    )
+
+    assert result.state is expected
+    assert len(calls) == 1
+
+
+def test_system_wake_time_reader_uses_macos_sysctl(monkeypatch):
+    class Timeval(ctypes.Structure):
+        _fields_ = [("tv_sec", ctypes.c_long), ("tv_usec", ctypes.c_int)]
+
+    class FakeSysctl:
+        argtypes = None
+        restype = None
+
+        def __call__(self, name, old_value, old_size, _new_value, _new_size):
+            assert name == b"kern.waketime"
+            value = ctypes.cast(old_value, ctypes.POINTER(Timeval)).contents
+            value.tv_sec = int(NOW.timestamp())
+            value.tv_usec = 125_000
+            ctypes.cast(old_size, ctypes.POINTER(ctypes.c_size_t)).contents.value = ctypes.sizeof(Timeval)
+            return 0
+
+    monkeypatch.setattr(EVALUATOR.sys, "platform", "darwin")
+    monkeypatch.setattr(EVALUATOR.ctypes, "CDLL", lambda *_args, **_kwargs: SimpleNamespace(sysctlbyname=FakeSysctl()))
+    assert EVALUATOR._read_last_system_wake_time() == NOW.replace(microsecond=125_000)
+
+
+def test_system_wake_time_reader_is_unavailable_off_macos(monkeypatch):
+    monkeypatch.setattr(EVALUATOR.sys, "platform", "linux")
+    assert EVALUATOR._read_last_system_wake_time() is None
+
+
+def test_system_wake_time_reader_returns_none_when_sysctl_fails(monkeypatch):
+    class FailedSysctl:
+        argtypes = None
+        restype = None
+
+        def __call__(self, *_args):
+            return -1
+
+    monkeypatch.setattr(EVALUATOR.sys, "platform", "darwin")
+    monkeypatch.setattr(EVALUATOR.ctypes, "CDLL", lambda *_args, **_kwargs: SimpleNamespace(sysctlbyname=FailedSysctl()))
+    assert EVALUATOR._read_last_system_wake_time() is None
+
+
+def test_isolated_path_guard_covers_penpal_path_getters(monkeypatch, tmp_path):
+    from penpal.utils import paths
+
+    isolated_home = tmp_path / "isolated-home"
+    isolated_home.mkdir()
+    real_home = tmp_path / "passwd-home"
+    monkeypatch.setenv("HOME", str(isolated_home))
+    monkeypatch.setenv("PENPAL_ISOLATED", "1")
+    monkeypatch.setattr(paths.pwd, "getpwuid", lambda _uid: SimpleNamespace(pw_dir=str(real_home)))
+    monkeypatch.setattr(paths.Path, "home", lambda: real_home)
+
+    getters = (
+        paths.get_data_dir,
+        paths.get_db_path,
+        paths.get_pid_path,
+        paths.get_hud_pid_path,
+        paths.get_run_dir,
+        paths.get_daemon_record_path,
+        paths.get_launchd_daemon_plist_path,
+        paths.get_launchd_agents_dir,
+        lambda: paths.get_launchd_plist_path("com.penpal.test"),
+        paths.get_log_path,
+        paths.get_config_path,
+        paths.get_health_report_path,
+        paths.get_capability_status_path,
+        paths.get_apps_dir,
+        paths.get_legacy_venv_dir,
+        paths.get_ax_spike_dir,
+        paths.get_wechat_authorization_path,
+    )
+    for getter in getters:
+        with pytest.raises(RuntimeError, match="PENPAL_ISOLATED=1"):
+            getter()
+
+
+def test_isolated_path_guard_allows_fake_real_home_nested_in_temp_home(monkeypatch, tmp_path):
+    from penpal.utils import paths
+
+    isolated_home = tmp_path / "isolated-home"
+    real_home = isolated_home / "passwd-home"
+    real_home.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(isolated_home))
+    monkeypatch.setenv("PENPAL_ISOLATED", "1")
+    monkeypatch.setattr(paths.pwd, "getpwuid", lambda _uid: SimpleNamespace(pw_dir=str(real_home)))
+    monkeypatch.setattr(paths.Path, "home", lambda: real_home)
+    assert paths.get_run_dir() == real_home / ".penpal" / "run"
+
+
+def test_path_guard_is_inactive_without_isolated_environment(monkeypatch, tmp_path):
+    from penpal.utils import paths
+
+    real_home = tmp_path / "passwd-home"
+    monkeypatch.setenv("HOME", str(tmp_path / "isolated-home"))
+    monkeypatch.delenv("PENPAL_ISOLATED", raising=False)
+    monkeypatch.setattr(paths.pwd, "getpwuid", lambda _uid: SimpleNamespace(pw_dir=str(real_home)))
+    monkeypatch.setattr(paths.Path, "home", lambda: real_home)
+    assert paths.get_run_dir() == real_home / ".penpal" / "run"
 
 
 def test_record_read_write_is_atomic_and_corruption_is_absent(tmp_path):

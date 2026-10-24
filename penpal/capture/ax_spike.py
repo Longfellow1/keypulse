@@ -27,6 +27,7 @@ from typing import IO, Any, Callable, Protocol
 
 from penpal.capture.hygiene import capture_gate, is_terminal_app
 from penpal.privacy.desensitizer import desensitize, truncate
+from penpal.utils.paths import get_ax_spike_dir
 
 # Failure reasons (fixed strings, they end up in the summary line).
 R_PERMISSION = "permission"
@@ -373,7 +374,7 @@ _SLUG_RE = re.compile(r"[^A-Za-z0-9_-]+")
 def default_out_path(app: str, now: datetime | None = None) -> Path:
     stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
     slug = _SLUG_RE.sub("-", app).strip("-") or "app"
-    return Path("~/.penpal/spike").expanduser() / f"ax-{slug}-{stamp}.jsonl"
+    return get_ax_spike_dir() / f"ax-{slug}-{stamp}.jsonl"
 
 
 def git_worktree_root_for(path: Path) -> Path | None:

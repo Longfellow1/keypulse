@@ -14,6 +14,10 @@ def _write_json(path: Path, payload: object) -> None:
 def test_discover_json_files_candidates_uses_field_categories(monkeypatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(
+        "penpal.sources.discoverers.json_files.is_excluded_path",
+        lambda _path: (False, ""),
+    )
 
     high_file = home / "Library" / "Application Support" / "Cursor" / "session.json"
     medium_file = home / "Library" / "Application Support" / "Codex" / "note.json"
