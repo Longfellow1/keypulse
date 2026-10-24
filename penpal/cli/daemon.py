@@ -1,71 +1,30 @@
 from __future__ import annotations
-import os
 import sys
-import time
-import signal
 import click
 from rich.table import Table
 from penpal.config import Config, read_config
 from penpal.store.repository import get_state
-from penpal.utils.paths import get_pid_path
-from penpal.utils.lock import SingleInstanceLock
 from penpal.runtime import RuntimeState, evaluate, state_message, state_text
-from penpal.app import daemonize, run
+from penpal.app import run
 from penpal.capture.capture_control import disabled_sources, set_capture_paused
 from penpal.i18n import T
 from . import main
 from ._shared import PLAIN_HELP, _runtime_fix_command, _runtime_status_line, console, err_console, get_config, require_db
-from .install import _format_import_progress, _launchd_bootout, _launchd_bootstrap, _launchd_daemon_plist_path, _launchd_label_loaded
+from .install import _format_import_progress
+from penpal.runtime import restart as control_restart, start as control_start, stop as control_stop
 
-@main.command(help=T("启动 Penpal daemon。", "Start the Penpal daemon."))
-@click.option("--config", "config_path", default=None, help=T("配置文件路径（config.toml）", "Path to config.toml"))
-def start(config_path):
-    """Start daemon."""
-    cfg = Config.load() if not config_path else _load_config_from(config_path)
-    lock = SingleInstanceLock()
-    launchd_plist = _launchd_daemon_plist_path()
+def _control_command(result, success_zh: str, success_en: str) -> None:
+    if not result.ok:
+        err_console.print(T(result.error_zh, result.error_en))
+        raise click.exceptions.Exit(1)
+    suffix = f" generation={result.generation}" if result.generation else ""
+    console.print(T(f"{success_zh}（{result.action}{suffix}）", f"{success_en} ({result.action}{suffix})"))
 
-    if launchd_plist.exists():
-        if _launchd_label_loaded("com.penpal.daemon"):
-            err_console.print(f"[yellow]Already running under launchd (PID {lock.get_pid() or 'unknown'}).[/yellow]")
-            sys.exit(1)
-        if _launchd_bootstrap(launchd_plist):
-            time.sleep(0.5)
-            console.print(f"[green]Penpal started via launchd (PID {lock.get_pid() or 'unknown'}).[/green]")
-            return
 
-    if lock.is_running():
-        err_console.print(f"[red]Already running (PID {lock.get_pid()})[/red]")
-        sys.exit(1)
-
-    # Init DB in parent so errors surface here
-    require_db(cfg)
-
-    # Warn about Accessibility permission before forking (visible to user)
-    from penpal.app import _check_accessibility
-    if not _check_accessibility():
-        console.print(
-            "[yellow]⚠  Accessibility permission not granted.[/yellow]\n"
-            "   Window titles won't be captured until you allow access:\n"
-            "   System Settings → Privacy & Security → Accessibility → Penpal\n"
-            "   Run [bold]penpal doctor[/bold] to recheck."
-        )
-
-    # Fork to daemon
-    pid = os.fork()
-    if pid == 0:
-        # Child process: become daemon
-        daemonize(get_pid_path())
-        run(cfg)
-        sys.exit(0)
-    else:
-        # Parent process: wait briefly then report
-        time.sleep(0.5)
-        daemon_pid = lock.get_pid()
-        if daemon_pid:
-            console.print(f"[green]Penpal started (PID {daemon_pid})[/green]")
-        else:
-            console.print("[green]Penpal started[/green]")
+@main.command(help=T("通过 launchd 启动 Penpal daemon。", "Start the Penpal daemon through launchd."))
+def start():
+    """Start the managed daemon."""
+    _control_command(control_start(), "后台服务已启动", "Daemon started")
 
 @main.command(help=T("在前台运行 Penpal（常用于 launchd/supervisor）。", "Run Penpal in the foreground (for launchd/supervisor)."))
 @click.option("--config", "config_path", default=None, help=T("配置文件路径（config.toml）", "Path to config.toml"))
@@ -80,46 +39,14 @@ def _load_config_from(path: str) -> Config:
 
 @main.command(help=T("停止 Penpal daemon。", "Stop the Penpal daemon."))
 def stop():
-    """Stop daemon."""
-    lock = SingleInstanceLock()
-    pid = lock.get_pid()
-    launchd_plist = _launchd_daemon_plist_path()
+    """Stop the launchd-managed daemon."""
+    _control_command(control_stop(), "后台服务已停止", "Daemon stopped")
 
-    if launchd_plist.exists() and _launchd_label_loaded("com.penpal.daemon"):
-        if _launchd_bootout(launchd_plist):
-            if pid:
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-            for _ in range(50):
-                time.sleep(0.1)
-                if not lock.is_running():
-                    console.print("[green]Penpal stopped and launchd supervision disabled.[/green]")
-                    return
-            console.print("[yellow]launchd 已卸载，但旧进程仍在退出中。[/yellow]")
-            return
-        console.print("[yellow]Penpal is supervised by launchd, but unload failed.[/yellow]")
-        return
 
-    if not pid:
-        console.print("[yellow]Penpal is not running.[/yellow]")
-        return
-
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        console.print("[yellow]Penpal is not running.[/yellow]")
-        return
-
-    # Wait up to 5 seconds for process to exit
-    for _ in range(50):
-        time.sleep(0.1)
-        if not lock.is_running():
-            console.print("[green]Penpal stopped.[/green]")
-            return
-
-    console.print("[yellow]Stop signal sent (may still be shutting down).[/yellow]")
+@main.command(help=T("通过 launchd 安全重启 Penpal daemon。", "Restart the Penpal daemon through launchd."))
+def restart():
+    """Restart the launchd-managed daemon."""
+    _control_command(control_restart("cli"), "后台服务已重启", "Daemon restarted")
 
 @main.command(help=T("暂停活动采集。", "Pause activity monitoring."))
 def pause():

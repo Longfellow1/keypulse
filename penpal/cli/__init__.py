@@ -1,5 +1,6 @@
 from __future__ import annotations
 import click
+from click import Context
 from penpal.utils.paths import DataDirMigrationError, get_data_dir
 from penpal.i18n import T
 
@@ -30,7 +31,12 @@ from penpal.i18n import T
         "> Language: English (set PENPAL_LANG=zh to switch to Chinese)"
     )
 )
-def main():
+@click.pass_context
+def main(ctx: Context):
+    # install init must unload old KeyPulse jobs before path migration; its subgroup
+    # performs that preflight and then resolves the Penpal data directory.
+    if ctx.invoked_subcommand == "install":
+        return
     try:
         get_data_dir()
     except DataDirMigrationError as exc:

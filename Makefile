@@ -5,9 +5,6 @@ PYTHON := $(ROOT)/.venv/bin/python
 BOOTSTRAP_PYTHON := python3
 APP_DEST := /Applications/Penpal.app
 PLIST_DST := $(HOME)/Library/LaunchAgents
-LAUNCH_AGENTS := \
-	$(PLIST_DST)/com.penpal.daemon.plist \
-	$(PLIST_DST)/com.penpal.healthcheck.plist
 
 bootstrap:
 	rm -rf $(ROOT)/.venv
@@ -71,23 +68,11 @@ onboard:
 	@echo "--- permission onboard ---"
 	-$(APP_DEST)/Contents/MacOS/Penpal install onboard || true
 
-# post-onboard-kick: macOS daemons cache TCC state at process start. After the
-# user grants permissions during onboard, the still-running daemon won't see
-# the new state — capability monitor keeps reporting ax_denied even though
-# watchers can emit. A second kickstart forces the daemon to re-read TCC.
+# post-onboard-kick: route the final TCC refresh through the same runtime
+# controller used by the HUD, watchdog, and CLI.
 post-onboard-kick:
 	@echo "--- post-onboard daemon kick (refresh TCC cache) ---"
-	-@launchctl kickstart -k gui/$$(id -u)/com.penpal.daemon 2>/dev/null && echo "  daemon kicked" || true
+	$(ROOT)/.venv/bin/penpal restart
 
 reload:
-	@for plist in $(LAUNCH_AGENTS); do \
-		if [ ! -f "$$plist" ]; then \
-			echo "skipping $$plist (not installed)"; \
-			continue; \
-		fi; \
-		echo "reloading $$plist"; \
-		launchctl unload "$$plist" 2>/dev/null || true; \
-		launchctl load "$$plist"; \
-	done
-	@echo "--- launchctl list ---"
-	@launchctl list | grep penpal || true
+	PENPAL_EXECUTABLE=$(ROOT)/.venv/bin/penpal $(ROOT)/.venv/bin/penpal install launchd --force

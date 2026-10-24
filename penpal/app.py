@@ -1,12 +1,10 @@
 from __future__ import annotations
-import os
 import signal
 import sqlite3
 import sys
 import threading
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional, Callable, Any
 
 from penpal.capabilities.capture_facts import CAPTURE_FACT_CAPS as _CAPTURE_FACT_CAPS
@@ -14,7 +12,9 @@ from penpal.capabilities.registry import CapabilityRegistry, get_default_registr
 from penpal.capabilities.store import save_states as save_capability_states
 from penpal.capture.browser_automation_state import clear_browser_automation_denied_browsers_on_startup
 from penpal.config import Config
+from penpal.i18n import T
 from penpal.utils.lock import SingleInstanceLock
+from penpal.utils.paths import get_daemon_lock_path, get_pid_path
 from penpal.utils.logging import setup_logging, get_logger
 from penpal.store.db import init_db
 from penpal.sources.scheduler import SourcesScheduler
@@ -30,38 +30,6 @@ _CAPTURE_PROBE_CAPS = {
     "appkit_runtime",
 }
 _COMPAT_CAPTURE_CAPS = _CAPTURE_FACT_CAPS
-
-
-def daemonize(pid_path: Path):
-    """
-    Standard Unix double-fork daemonization.
-    After this call, the current process IS the daemon (new PID written to pid_path).
-    The calling process (parent) exits immediately after first fork.
-    """
-    # First fork
-    pid = os.fork()
-    if pid > 0:
-        # Parent: wait briefly then exit
-        sys.exit(0)
-
-    os.setsid()
-    os.umask(0o022)
-
-    # Second fork
-    pid = os.fork()
-    if pid > 0:
-        sys.exit(0)
-
-    # Redirect stdio to /dev/null
-    sys.stdout.flush()
-    sys.stderr.flush()
-    devnull = os.open(os.devnull, os.O_RDWR)
-    os.dup2(devnull, sys.stdin.fileno())
-    os.dup2(devnull, sys.stdout.fileno())
-    os.dup2(devnull, sys.stderr.fileno())
-    os.close(devnull)
-
-    # PID is written by the lock layer inside run().
 
 
 def _on_mac_wake(registry: CapabilityRegistry, scheduler: SourcesScheduler) -> None:
@@ -98,7 +66,7 @@ def _spawn_self_check_supervisor(interval_sec: float = 60.0, registry: Capabilit
 def run(config: Optional[Config] = None):
     """
     Main daemon execution: starts CaptureManager, blocks until SIGTERM/SIGINT.
-    Can run in the foreground or after daemonize().
+    Runs in the foreground under launchd or directly for diagnostics.
     """
     if config is None:
         config = Config.load()
@@ -106,10 +74,15 @@ def run(config: Optional[Config] = None):
     setup_logging(config.log_path_expanded)
     logger.info("Penpal daemon starting")
 
-    lock = SingleInstanceLock()
+    lock = SingleInstanceLock(get_daemon_lock_path(), get_pid_path())
     if not lock.acquire():
-        logger.error(f"Another Penpal instance is already running (PID {lock.get_pid()})")
-        sys.exit(1)
+        pid = lock.get_pid() or "unknown"
+        message = T(
+            f"Penpal 后台服务已经运行（PID {pid}）。",
+            f"Penpal daemon is already running (PID {pid}).",
+        )
+        sys.stderr.write(message + "\n")
+        sys.exit(73)
 
     try:
         from penpal.permissions import trigger_required_prompts
@@ -185,22 +158,3 @@ def run(config: Optional[Config] = None):
 
     finally:
         lock.release()
-
-
-def start_daemon(config: Optional[Config] = None):
-    """
-    Fork to background and start daemon.
-    Returns immediately in the original (parent) process.
-    The child becomes the daemon.
-    """
-    if config is None:
-        config = Config.load()
-
-    from penpal.utils.paths import get_pid_path
-    pid_path = get_pid_path()
-
-    # Double-fork: after this, parent exits, child continues as daemon
-    daemonize(pid_path)
-
-    # --- Only daemon process reaches here ---
-    run(config)

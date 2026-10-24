@@ -50,7 +50,7 @@ System Settings → Privacy & Security → Accessibility → add your terminal a
 
 ```bash
 penpal start
-# Expected: Penpal started (PID 12345)
+# Expected: daemon starts through its installed LaunchAgent
 ```
 
 ### Status
@@ -73,7 +73,7 @@ penpal status   # status=running
 
 ```bash
 penpal stop
-# Expected: Penpal stopped.
+# Expected: daemon LaunchAgent is unloaded
 penpal status   # running=no
 ```
 
@@ -221,25 +221,42 @@ penpal config path
 Edit `~/.penpal/config.toml` to toggle watchers or adjust thresholds, then restart:
 
 ```bash
-penpal stop && penpal start
+penpal restart
 ```
 
 ---
 
 ## 12. Single Instance Lock
 
-```bash
-penpal start
-penpal start   # Expected: "Already running (PID ...)"
-```
-
-Simulate crash recovery:
+Use a temporary HOME and run the foreground service directly:
 
 ```bash
-# Manually write a fake stale PID
-echo "99999" > ~/.penpal/penpal.pid
-penpal start   # Should detect stale lock, start normally
+PENPAL_TEST_HOME="$(mktemp -d)"
+mkdir -p "$PENPAL_TEST_HOME/.penpal"
+cat > "$PENPAL_TEST_HOME/.penpal/config.toml" <<'EOF'
+[app]
+flush_interval_sec = 1
+
+[watchers]
+window = false
+idle = false
+clipboard = false
+manual = false
+keyboard_chunk = false
+browser = false
+browser_url = false
+ax_text = false
+ocr = false
+
+[sources.scheduler]
+enabled = false
+EOF
+PENPAL_ISOLATED=1 HOME="$PENPAL_TEST_HOME" penpal serve
 ```
+
+In a second terminal, use the same `PENPAL_TEST_HOME` value and run `penpal serve` again. The second process exits with code `73` and an already-running message. Stop the first process with `Ctrl-C`; the kernel releases its flock when the process exits.
+
+PID files are diagnostics; changing one does not affect the lock.
 
 ---
 

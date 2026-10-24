@@ -65,7 +65,7 @@
 
 - **App**：在 `config.toml` 的 `[privacy]` 里设置 `blacklist_app_names` / `blacklist_bundle_ids`（匹配后整条丢弃）；或用 `penpal rules add --scope-type app --scope-value <名字> --mode deny`。
 - **域名**：用 `penpal privacy block-site <host>` 屏蔽网站，`penpal privacy unblock-site <host>` 取消屏蔽，`penpal privacy blocked-sites` 查看清单。命令会去掉 URL 的协议、路径、端口和开头的 `www.`，并统一转成小写；匹配覆盖该域名及其所有子域名（`hygiene.py` `host_matches_denylist`）。
-- 新的实时采集事件会在 daemon 重新加载配置后按新清单处理；更改后运行 `penpal stop && penpal start`。已有数据不会因此删除。
+- 新的实时采集事件会在 daemon 重新加载配置后按新清单处理；更改后运行 `penpal restart`。已有数据不会因此删除。
 - 域名排除现在覆盖三处：
   1. 实时采集的网址事件：丢弃。
   2. **浏览器历史导入**：命中的访问记录不入库（`sources/importer.py`、`sources/registry.py`）。测试：`tests/test_issue26_capture_chain.py::test_at18_browser_history_from_excluded_domain_is_not_stored`。

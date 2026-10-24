@@ -17,7 +17,6 @@ from penpal.i18n import T
 from penpal.search.backends import resolve_search_backend
 from . import main
 from ._shared import DATE_HELP_TEXT, PLAIN_HELP, console, err_console, get_config, require_db
-from .doctor import self_heal_command
 
 
 def _parse_date(arg: str) -> str:
@@ -379,14 +378,3 @@ def session_show(session_id, plain):
         for key, value in session_data.items():
             table.add_row(str(key), str(value))
         console.print(table)
-
-@main.group(help=T("开发者内部命令。", "Developer internal commands."))
-def dev():
-    """Dev group."""
-    pass
-
-@dev.command("self-heal", help=T("执行自愈流程（开发入口）。", "Run self-heal sequence (dev entry)."))
-@click.option("--dry-run", is_flag=True, help=T("仅演练步骤，不真正重启 daemon", "Dry run only; do not actually restart the daemon"))
-def dev_self_heal(dry_run):
-    """Dev self-heal."""
-    return self_heal_command.callback(dry_run)

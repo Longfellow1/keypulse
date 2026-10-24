@@ -12,6 +12,7 @@ from penpal.utils.paths import get_launchd_daemon_plist_path
 
 _PID_RE = re.compile(r"\bpid\s*=\s*(\d+)", re.IGNORECASE)
 _LAST_EXIT_RE = re.compile(r"\blast exit code\s*=\s*(-?\d+)", re.IGNORECASE)
+_DEFAULT_RUNNER = subprocess.run
 
 
 def is_installed() -> bool:
@@ -21,6 +22,8 @@ def is_installed() -> bool:
 def probe_label(label: str, *, runner: Callable = subprocess.run) -> dict[str, int | bool | None]:
     """Return launchd's current view for a label; tests inject the subprocess runner."""
     if os.getenv("PENPAL_RUNTIME_DISABLE_LAUNCHD_PROBE") == "1":
+        return {"loaded": False, "pid": None, "last_exit": None}
+    if os.getenv("PENPAL_ISOLATED") == "1" and runner is _DEFAULT_RUNNER:
         return {"loaded": False, "pid": None, "last_exit": None}
     if os.uname().sysname != "Darwin":
         return {"loaded": False, "pid": None, "last_exit": None}

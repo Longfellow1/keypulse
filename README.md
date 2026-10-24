@@ -116,7 +116,7 @@ penpal app uninstall        # 移除 App 和启动项，不影响后台服务与
 
 完整参考：`penpal --help`。
 
-网站屏蔽会覆盖该域名及其子域名。更改后运行 `penpal stop && penpal start`，新事件会在后台重新加载配置后按新清单处理。
+网站屏蔽会覆盖该域名及其子域名。更改后运行 `penpal restart`，新事件会在后台重新加载配置后按新清单处理。
 
 ## 现在做到哪
 

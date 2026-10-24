@@ -68,6 +68,7 @@ penpal status
 penpal doctor
 penpal start
 penpal stop
+penpal restart
 penpal healthcheck
 penpal obsidian sync --incremental
 penpal obsidian sync --yesterday
@@ -132,8 +133,8 @@ Requirements:
 - Write plists under `~/Library/LaunchAgents/`.
 - Be idempotent.
 - Preserve or warn before overwriting user-edited plists.
-- Support both `launchctl load/unload` fallback and modern `bootstrap/bootout`.
-- Make `penpal start`, `penpal stop`, and `penpal status` consistent with installed launchd jobs.
+- Route LaunchAgent changes through `penpal.runtime.control`; use `bootstrap` / `bootout` with bounded retries and waits.
+- Make `penpal start`, `penpal stop`, `penpal restart`, and `penpal status` consistent with installed launchd jobs.
 
 ### `penpal install uninstall`
 
@@ -274,6 +275,7 @@ and reach a state where:
 - `penpal doctor` gives actionable setup status.
 - `penpal start` starts the daemon through the same lifecycle model as launchd.
 - `penpal stop` stops the daemon cleanly.
+- `penpal restart` uses the single runtime control path and confirms progress in a new generation.
 - `penpal obsidian sync --yesterday` can run after sink setup.
 - launchd plists reference the installed `penpal` executable, not a developer checkout.
 - rerunning `penpal install init` is safe.

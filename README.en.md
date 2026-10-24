@@ -116,7 +116,7 @@ A checkable, line-by-line privacy boundary with code and test references: [docs/
 
 Full reference: `penpal --help`.
 
-Website blocking covers the host and its subdomains. After a change, run `penpal stop && penpal start`; new events use the updated list after the daemon reloads its config.
+Website blocking covers the host and its subdomains. After a change, run `penpal restart`; new events use the updated list after the daemon reloads its config.
 
 ## Where it stands
 

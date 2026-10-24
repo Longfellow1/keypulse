@@ -1,64 +1,85 @@
+from __future__ import annotations
+
+import errno
+import fcntl
 import os
 from pathlib import Path
 
-from penpal.utils.paths import get_pid_path
+from penpal.utils.paths import get_daemon_lock_path, get_pid_path
 
 
 class SingleInstanceLock:
-    def __init__(self, pid_path: Path | None = None):
-        self.pid_path = pid_path or get_pid_path()
+    """Advisory process lock; the recorded PID is diagnostic only."""
+
+    def __init__(self, lock_path: Path | None = None, pid_path: Path | None = None):
+        self.lock_path = lock_path or get_daemon_lock_path()
+        self.pid_path = pid_path or (get_pid_path() if lock_path is None else lock_path.with_suffix(".pid"))
+        self._fd: int | None = None
 
     def acquire(self) -> bool:
-        """
-        Atomically acquire lock using O_CREAT|O_EXCL.
-        Returns True if acquired, False if another instance is running.
-        Stale lock files (left after crash) are detected and removed automatically.
-        """
-        self.pid_path.parent.mkdir(parents=True, exist_ok=True)
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            # Atomic create — raises FileExistsError if file already exists
-            fd = os.open(
-                str(self.pid_path),
-                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-                0o644,
-            )
-            os.write(fd, str(os.getpid()).encode())
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
             os.close(fd)
-            return True
-        except FileExistsError:
-            # Lock file exists — check if owning process is still alive
-            try:
-                pid = int(self.pid_path.read_text(encoding="utf-8").strip())
-                os.kill(pid, 0)  # signal 0: probe only, no actual signal sent
-                return False  # Process alive → already running
-            except (ProcessLookupError, PermissionError):
-                # Stale lock (process gone) → clean up and retry
-                self.pid_path.unlink(missing_ok=True)
-                return self.acquire()
-            except ValueError:
-                # Corrupt PID file → clean up and retry
-                self.pid_path.unlink(missing_ok=True)
-                return self.acquire()
+            if exc.errno in (errno.EACCES, errno.EAGAIN):
+                return False
+            raise
+
+        self._fd = fd
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode())
+        try:
+            self.pid_path.parent.mkdir(parents=True, exist_ok=True)
+            self.pid_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+        except OSError:
+            # The kernel lock is authoritative; a diagnostic PID file is optional.
+            pass
+        return True
 
     def release(self):
-        if self.pid_path.exists():
-            try:
-                pid = int(self.pid_path.read_text(encoding="utf-8").strip())
-                if pid == os.getpid():
-                    self.pid_path.unlink()
-            except (ValueError, OSError):
-                pass
+        if self._fd is not None:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            os.close(self._fd)
+            self._fd = None
 
     def get_pid(self) -> int | None:
-        """Return PID of running instance, or None."""
-        if not self.pid_path.exists():
+        """Return the locked process's diagnostic PID, if the flock is held."""
+        try:
+            fd = os.open(str(self.lock_path), os.O_RDONLY)
+        except OSError:
             return None
         try:
-            pid = int(self.pid_path.read_text(encoding="utf-8").strip())
-            os.kill(pid, 0)
-            return pid
-        except (ProcessLookupError, ValueError, OSError):
-            return None
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                    return None
+                try:
+                    return int(os.read(fd, 64).decode().strip())
+                except (ValueError, UnicodeError, OSError):
+                    try:
+                        return int(self.pid_path.read_text(encoding="utf-8").strip())
+                    except (ValueError, UnicodeError, OSError):
+                        return None
+            else:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                return None
+        finally:
+            os.close(fd)
 
     def is_running(self) -> bool:
-        return self.get_pid() is not None
+        try:
+            fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+        except OSError:
+            return False
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                return exc.errno in (errno.EACCES, errno.EAGAIN)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return False
+        finally:
+            os.close(fd)

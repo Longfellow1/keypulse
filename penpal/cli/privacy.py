@@ -29,13 +29,13 @@ def _set_url_deny_host(host: str, blocked: bool) -> None:
         raise click.ClickException(T(f"无法识别网站地址 {host!r}。", f"Could not parse website address {host!r}.")) from exc
     if blocked:
         message = T(
-            f"已屏蔽网站 {key}（含其子域名）。新事件会在后台重新加载配置后生效；请运行 penpal stop && penpal start。",
-            f"Blocked {key} and its subdomains. This applies to new events after the daemon reloads its config; run penpal stop && penpal start.",
+            f"已屏蔽网站 {key}（含其子域名）。新事件会在后台重新加载配置后生效；请运行 penpal restart。",
+            f"Blocked {key} and its subdomains. This applies to new events after the daemon reloads its config; run penpal restart.",
         )
     else:
         message = T(
-            f"已取消屏蔽网站 {key}（含其子域名）。新事件会在后台重新加载配置后生效；请运行 penpal stop && penpal start。",
-            f"Unblocked {key} and its subdomains. This applies to new events after the daemon reloads its config; run penpal stop && penpal start.",
+            f"已取消屏蔽网站 {key}（含其子域名）。新事件会在后台重新加载配置后生效；请运行 penpal restart。",
+            f"Unblocked {key} and its subdomains. This applies to new events after the daemon reloads its config; run penpal restart.",
         )
     console.print(message, markup=False)
 
@@ -86,7 +86,7 @@ def _set_chat_app_opt_in(name: str, allowed: bool) -> list[str]:
     console.print(f"[green]{key} {verb}.[/green] Config: {get_config_path()}")
     if allowed:
         console.print("Note: an allowed chat app is captured into the Private bucket.")
-    console.print("Restart the daemon (`penpal stop && penpal start`) for this to take effect.")
+    console.print("Restart the daemon (`penpal restart`) for this to take effect.")
     return current
 
 @privacy_chat_apps.command("list", help=T("列出所有已知聊天 App 及是否放行。", "List known chat apps and whether each is allowed."))

@@ -42,23 +42,6 @@ def _guard_penpal_path(path: Path) -> Path:
     raise RuntimeError(f"PENPAL_ISOLATED=1 refuses Penpal path inside the real user home: {resolved}")
 
 
-def _pid_is_alive(pid: int) -> bool:
-    """Return whether a PID exists, including processes owned by another user."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError as exc:
-        if exc.errno == errno.ESRCH:
-            return False
-        if exc.errno == errno.EPERM:
-            return True
-        raise
-    return True
-
-
 def _find_legacy_mcp_serve_processes() -> list[str]:
     """Find identifiable old ``keypulse mcp serve`` processes when pgrep exists."""
     try:
@@ -96,35 +79,7 @@ def _find_legacy_mcp_serve_processes() -> list[str]:
 
 
 def _running_legacy_processes(old: Path) -> list[str]:
-    processes = []
-    for filename in ("keypulse.pid", "keypulse-hud.pid"):
-        pid_file = old / filename
-        try:
-            raw_pid = pid_file.read_text(encoding="utf-8").strip()
-        except FileNotFoundError:
-            continue
-        except OSError as exc:
-            print(f"Warning: could not read legacy PID file {pid_file} ({exc}); continuing.", file=sys.stderr)
-            continue
-
-        try:
-            pid = int(raw_pid)
-            if pid <= 0:
-                raise ValueError
-        except ValueError:
-            print(f"Warning: ignoring invalid legacy PID file {pid_file}; continuing.", file=sys.stderr)
-            continue
-
-        try:
-            alive = _pid_is_alive(pid)
-        except OSError as exc:
-            print(f"Warning: could not check legacy PID {pid} from {pid_file} ({exc}); continuing.", file=sys.stderr)
-            continue
-        if alive:
-            processes.append(f"{filename} PID {pid}")
-
-    processes.extend(_find_legacy_mcp_serve_processes())
-    return processes
+    return _find_legacy_mcp_serve_processes()
 
 
 def _is_migration_marker_dir(old: Path, new: Path) -> bool:
@@ -294,6 +249,14 @@ def get_hud_pid_path() -> Path:
     return _guard_penpal_path(get_data_dir() / "penpal-hud.pid")
 
 
+def get_daemon_lock_path() -> Path:
+    return _guard_penpal_path(get_run_dir() / "daemon.lock")
+
+
+def get_hud_lock_path() -> Path:
+    return _guard_penpal_path(get_run_dir() / "hud.lock")
+
+
 def get_run_dir() -> Path:
     return _guard_penpal_path(Path.home() / ".penpal" / "run")
 
@@ -326,10 +289,6 @@ def get_config_path() -> Path:
 
 def get_health_report_path() -> Path:
     return _guard_penpal_path(Path.home() / ".penpal" / "health.json")
-
-
-def get_capability_status_path() -> Path:
-    return _guard_penpal_path(Path.home() / ".penpal" / "capability_status.json")
 
 
 def get_apps_dir() -> Path:

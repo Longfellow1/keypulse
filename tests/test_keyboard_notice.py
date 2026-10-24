@@ -72,7 +72,7 @@ def test_onboard_shows_notice_only_if_init_did_not(install_env, monkeypatch):
     runner = CliRunner()
     notice = keyboard_notice.notice_text()
     monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(install_cli.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(install_cli, "control_restart", lambda *_a, **_k: type("R", (), {"ok": True, "action": "kickstart", "generation": "g", "error_zh": "", "error_en": ""})())
     monkeypatch.setattr("penpal.permissions.PERMISSION_SPECS", ())
 
     onboard = runner.invoke(cli.main, ["install", "onboard", "--non-interactive"])

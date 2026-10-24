@@ -61,18 +61,27 @@ def test_hud_start_invokes_hud_runner(monkeypatch, tmp_path):
 
 def test_hud_stop_terminates_running_instance(monkeypatch, tmp_path):
     pid_path = tmp_path / "hud.pid"
-    pid_path.write_text("4242")
     calls = []
+    state = {"running": True}
 
-    def fake_get_hud_pid_path():
-        return pid_path
+    class FakeLock:
+        def __init__(self):
+            self.pid_path = pid_path
+
+        def is_running(self):
+            return state["running"]
+
+        def get_pid(self):
+            return 4242 if state["running"] else None
+
+    monkeypatch.setattr("penpal.cli.app._hud_lock", FakeLock)
+    monkeypatch.setattr("penpal.cli.app._find_legacy_hud_pid", lambda: 4242)
 
     def fake_kill(pid, sig):
         calls.append((pid, sig))
         if sig == signal.SIGTERM:
-            pid_path.unlink(missing_ok=True)
+            state["running"] = False
 
-    monkeypatch.setattr("penpal.cli.app.get_hud_pid_path", fake_get_hud_pid_path)
     monkeypatch.setattr("penpal.cli.app.os.kill", fake_kill)
 
     result = CliRunner().invoke(main, ["hud", "stop"])
@@ -84,10 +93,18 @@ def test_hud_stop_terminates_running_instance(monkeypatch, tmp_path):
 
 def test_hud_status_reports_running_instance(monkeypatch, tmp_path):
     pid_path = tmp_path / "hud.pid"
-    pid_path.write_text("4242")
 
-    monkeypatch.setattr("penpal.cli.app.get_hud_pid_path", lambda: pid_path)
-    monkeypatch.setattr("penpal.cli.app.os.kill", lambda pid, sig: None)
+    class FakeLock:
+        def __init__(self):
+            self.pid_path = pid_path
+
+        def is_running(self):
+            return True
+
+        def get_pid(self):
+            return 4242
+
+    monkeypatch.setattr("penpal.cli.app._hud_lock", FakeLock)
 
     result = CliRunner().invoke(main, ["hud", "status", "--plain"])
 

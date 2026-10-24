@@ -7,17 +7,17 @@ import subprocess
 from pathlib import Path
 import click
 from rich.table import Table
-from penpal.utils.paths import get_hud_pid_path
+from penpal.utils.paths import get_hud_lock_path, get_hud_pid_path
 from penpal.utils.lock import SingleInstanceLock
 from penpal.hud import run_hud
 from penpal.i18n import T
 from . import main
 from ._shared import PLAIN_HELP, console, err_console, get_config, require_db
-from .install import _keypulse_executable_path
+from .install import _penpal_executable_path
 
 
 def _hud_lock() -> SingleInstanceLock:
-    return SingleInstanceLock(get_hud_pid_path())
+    return SingleInstanceLock(get_hud_lock_path(), get_hud_pid_path())
 
 def _find_legacy_hud_pid() -> int | None:
     try:
@@ -73,11 +73,14 @@ def _start_hud():
 
 def _stop_hud():
     lock = _hud_lock()
-    pid = lock.get_pid() or _find_legacy_hud_pid()
+    pid = _find_legacy_hud_pid()
 
-    if not pid:
+    if not lock.is_running() and not pid:
         console.print("[yellow]HUD is not running.[/yellow]")
         return
+    if not pid:
+        err_console.print("[yellow]HUD is running, but its process could not be identified safely.[/yellow]")
+        raise SystemExit(1)
 
     try:
         os.kill(pid, signal.SIGTERM)
@@ -96,7 +99,7 @@ def _stop_hud():
 def _show_hud_status(plain: bool = False):
     lock = _hud_lock()
     pid = lock.get_pid() or _find_legacy_hud_pid()
-    is_running = pid is not None
+    is_running = lock.is_running() or pid is not None
 
     if plain:
         print(f"running={is_running}")
@@ -158,7 +161,7 @@ def app_install(login, apps_dir, agents_dir):
     from penpal.app_bundle import AppBundleError, install_app
 
     try:
-        result = install_app(_keypulse_executable_path(), version=__version__, apps_dir=apps_dir,
+        result = install_app(_penpal_executable_path(), version=__version__, apps_dir=apps_dir,
                              agents_dir=agents_dir, login=login)
     except AppBundleError as exc:
         raise click.ClickException(str(exc)) from exc
