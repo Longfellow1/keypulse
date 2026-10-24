@@ -88,12 +88,17 @@ jobs:
           echo "doctor exit code=$rc (non-zero is expected on CI: TCC permissions are not granted)"
           if grep -q 'Traceback' "$RUNNER_TEMP/doctor.txt"; then echo "FAIL: doctor crashed"; exit 1; fi
           if [ "$rc" -gt 1 ]; then echo "FAIL: unexpected exit code $rc"; exit 1; fi
-          # Missing permissions must be named with a settings pane and a fix, not just "failed".
-          grep -q '权限' "$RUNNER_TEMP/doctor.txt" || { echo "FAIL: no permission rows"; exit 1; }
-          grep -q 'x-apple.systempreferences' "$RUNNER_TEMP/doctor.txt" \
-            || grep -q '打开设置面板' "$RUNNER_TEMP/doctor.txt" \
-            || { echo "FAIL: no settings pane / fix hint printed"; exit 1; }
-          echo "OK: doctor names missing permissions and the settings pane to fix them"
+          # Permission rows must be named whatever their state (CI may or may not have grants).
+          for perm in '辅助功能（Accessibility）' '输入监控（Input Monitoring）'; do
+            grep -q "$perm" "$RUNNER_TEMP/doctor.txt" || { echo "FAIL: no permission row for $perm"; exit 1; }
+          done
+          # Any missing permission must come with the settings pane to open.
+          if grep -q ': FAIL' "$RUNNER_TEMP/doctor.txt"; then
+            grep -q '打开设置面板' "$RUNNER_TEMP/doctor.txt" \
+              || { echo "FAIL: missing permission without a settings pane hint"; exit 1; }
+            echo "NOTE: some permissions are not granted on this runner (expected); fix hints printed"
+          fi
+          echo "OK: doctor names the permission rows and the fix for any that are missing"
 
       - name: 4. launchd plists point at the installed executable
         run: |
