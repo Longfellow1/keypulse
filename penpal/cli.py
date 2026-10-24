@@ -613,7 +613,7 @@ def _unlink_if_exists(path: Path) -> bool:
     return True
 
 
-def _remove_keypulse_path(path: Path) -> bool:
+def _remove_legacy_path(path: Path) -> bool:
     data_dir = get_data_dir().resolve()
     target = path.expanduser()
     try:
@@ -858,7 +858,7 @@ def install_uninstall(remove_runtime, remove_data, force, plain):
             get_data_dir() / "health.json",
             _install_logs_dir(),
         ):
-            if _remove_keypulse_path(path):
+            if _remove_legacy_path(path):
                 removed.append(str(path))
 
     if remove_data:
@@ -867,7 +867,7 @@ def install_uninstall(remove_runtime, remove_data, force, plain):
             cfg.db_path_expanded,
             get_config_path(),
         ):
-            if _remove_keypulse_path(path):
+            if _remove_legacy_path(path):
                 removed.append(str(path))
 
     if plain:

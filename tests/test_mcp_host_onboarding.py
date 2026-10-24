@@ -120,7 +120,7 @@ def test_host_config_uses_running_executable_when_argv0_is_keypulse(tmp_path, mo
     exe = tmp_path / "penpal"
     exe.write_text("#!/bin/sh\n")
     monkeypatch.setattr("sys.argv", [str(exe), "mcp", "grant"])
-    assert mcp_cli._keypulse_executable() == str(exe)
+    assert mcp_cli._penpal_executable() == str(exe)
 
 
 def test_server_reads_legacy_auth_environment_names(home, monkeypatch, capsys) -> None:

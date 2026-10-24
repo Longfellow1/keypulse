@@ -155,6 +155,58 @@ def test_time_filter_uses_occurred_at_not_ingest_time(env, token) -> None:
     assert bad["status"] == "invalid_argument"
 
 
+def test_mcp_echo_parameter_rename_accepts_deprecated_alias(env, token, monkeypatch) -> None:
+    from penpal.mcp import tools as mcp_tools
+
+    received: list[bool] = []
+
+    def search_context(_token, _keywords, _time_range=None, _sources=None, _limit=10,
+                       include_penpal_echoes=False, *, client=None):
+        received.append(include_penpal_echoes)
+        return {"status": "ok", "results": []}
+
+    def get_timeline(_token, _start, _end, _sources=None, _limit=50, _cursor=None,
+                     include_penpal_echoes=False, *, client=None):
+        received.append(include_penpal_echoes)
+        return {"status": "ok", "results": []}
+
+    monkeypatch.setattr(mcp_tools, "search_context", search_context)
+    monkeypatch.setattr(mcp_tools, "get_timeline", get_timeline)
+    server = server_for(token)
+
+    async def run():
+        async with create_connected_server_and_client_session(server._mcp_server) as client:
+            registered = {tool.name: tool for tool in (await client.list_tools()).tools}
+            search = registered["search_context"].inputSchema["properties"]
+            timeline = registered["get_timeline"].inputSchema["properties"]
+            search_new = await client.call_tool(
+                "search_context", {"keywords": ["zebrafish"], "include_penpal_echoes": True}
+            )
+            search_old = await client.call_tool(
+                "search_context", {"keywords": ["zebrafish"], "include_keypulse_echoes": True}
+            )
+            timeline_new = await client.call_tool(
+                "get_timeline", {"start": "2026-04-28", "end": "2026-04-28", "include_penpal_echoes": True}
+            )
+            timeline_old = await client.call_tool(
+                "get_timeline", {"start": "2026-04-28", "end": "2026-04-28", "include_keypulse_echoes": True}
+            )
+            return search, timeline, search_new, search_old, timeline_new, timeline_old
+
+    search_schema, timeline_schema, *results = asyncio.run(run())
+    for schema in (search_schema, timeline_schema):
+        assert schema["include_penpal_echoes"]["type"] == "boolean"
+        assert schema["include_keypulse_echoes"]["deprecated"] is True
+        assert "include_penpal_echoes" in schema["include_keypulse_echoes"]["description"]
+    assert received == [True, True, True, True]
+    assert all(json.loads(result.content[0].text) == {"status": "ok", "results": []} for result in results)
+
+
+def test_mcp_deprecated_echo_alias_keeps_boolean_validation(env, token) -> None:
+    data = _payload(_call(token, keywords=["zebrafish"], include_keypulse_echoes="yes"))
+    assert data == {"status": "invalid_argument", "message": "include_penpal_echoes must be a boolean"}
+
+
 def test_source_filter_and_short_cjk_terms(env, token) -> None:
     with env.session.open("a", encoding="utf-8") as fh:
         fh.write(_line("user", "u-3", "2026-04-28T02:00:00Z", "排查失败恢复流程的原因") + "\n")

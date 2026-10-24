@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional
 from penpal.privacy.desensitizer import redact_secrets
-from penpal.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, keypulse_locator
+from penpal.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, penpal_locator
 from penpal.store.db import get_conn
 from penpal.utils.text_filters import strip_invisible
 from penpal.store.models import RawEvent, Session, SearchDoc, Policy, AppState
@@ -60,7 +60,7 @@ def insert_raw_event(e: RawEvent) -> int:
         conn.execute(
             """INSERT INTO evidence(event_id, locator, offset_or_line, content_hash, available, created_at)
                VALUES (?,?,?,?,1,?)""",
-            (cur.lastrowid, keypulse_locator(cur.lastrowid), None, e.content_hash, _now()),
+            (cur.lastrowid, penpal_locator(cur.lastrowid), None, e.content_hash, _now()),
         )
     if cur.rowcount > 0:
         # Progressive-typing snapshots: the previous state of the same field is superseded (v33 rule).

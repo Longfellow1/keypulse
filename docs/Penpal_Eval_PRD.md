@@ -316,6 +316,12 @@ R1–R6 进 CI；R7 依赖真实桌面，发版前手测一次。
 3. 修复真实环境报告的问题时，先把现场写成一条会失败的场景用例，再修。
 4. 发版报告增加 E8 一节：R1–R7 的结果与失败明细。
 
+MCP 参数改名的契约矩阵：
+
+| 工具出口 | 新参数 | 过渡别名 | 用例与通过线 |
+|---|---|---|---|
+| `search_context`、`get_timeline` | `include_penpal_echoes` | `include_keypulse_echoes`（标记 deprecated，0.5.0 移除） | `tests/test_mainline_claude_to_mcp.py` 验证 schema 标记、新旧参数映射相同值和旧参数仍拒绝非布尔值；G1 schema 覆盖断言两种字段都已登记。 |
+
 ---
 
 ## 四、报告与发布判定

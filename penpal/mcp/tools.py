@@ -14,7 +14,7 @@ from penpal.search.engine import (
 from penpal.sources.registry import unavailable_sources
 from penpal.store import feedback
 from penpal.store.db import get_conn
-from penpal.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, is_keypulse_locator
+from penpal.store.capture_events import CAPTURE_SEARCHABLE_EVENT_TYPES, is_penpal_locator
 from penpal.store.evidence import (
     is_unresolvable_locator, refresh_availability, split_browser_locator, split_git_locator, unresolvable_source,
 )
@@ -151,7 +151,7 @@ def _coverage(grant: Grant, start: Optional[str], end: Optional[str]) -> dict[st
         spans = source_coverage(
             buckets=list(grant.buckets), sources=list(grant.sources) if grant.sources is not None else None,
             since=start, until=end, event_type=SEARCHABLE_EVENT_TYPES,
-            include_keypulse_echoes=True,  # recorded-data span: the echo filter would defeat the covering index
+            include_penpal_echoes=True,  # recorded-data span: the echo filter would defeat the covering index
         )
     except sqlite3.Error:
         coverage["by_source"] = None  # unknown; never an error text
@@ -196,7 +196,7 @@ def search_context(
     time_range: Any = None,
     sources: Any = None,
     limit: Any = 10,
-    include_keypulse_echoes: Any = False,
+    include_penpal_echoes: Any = False,
     *,
     client: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -205,7 +205,7 @@ def search_context(
         audit.record(client=decision.client, tool=TOOL_SEARCH_CONTEXT, allowed=False,
                      reason_code=decision.reason, scope=decision.scope)
         return permission_denied()
-    payload = _redact_payload(_search(decision.grant, keywords, time_range, sources, limit, include_keypulse_echoes))
+    payload = _redact_payload(_search(decision.grant, keywords, time_range, sources, limit, include_penpal_echoes))
     count = len(payload.get("results") or [])
     if payload.get("status") == "ok":
         _record_returned(decision.grant, payload, ", ".join(k.strip() for k in keywords))
@@ -223,7 +223,7 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
     if isinstance(limit, bool) or not isinstance(limit, int):
         return {"status": "invalid_argument", "message": "limit must be an integer between 1 and 100"}
     if not isinstance(include_echoes, bool):
-        return {"status": "invalid_argument", "message": "include_keypulse_echoes must be a boolean"}
+        return {"status": "invalid_argument", "message": "include_penpal_echoes must be a boolean"}
 
     try:
         start, end = _parse_time_range(time_range)
@@ -247,7 +247,7 @@ def _search(grant: Grant, keywords: Any, time_range: Any, sources: Any, limit: A
 
     scope = dict(
         since=start, until=end, sources=effective_sources, buckets=list(grant.buckets),
-        event_type=SEARCHABLE_EVENT_TYPES, include_keypulse_echoes=include_echoes,
+        event_type=SEARCHABLE_EVENT_TYPES, include_penpal_echoes=include_echoes,
     )
     # One feedback entry per normalised keyword, reported by its position in the caller's list (first
     # occurrence). The caller's text is never echoed back (B1 / G1), so the host maps index -> its own word.
@@ -405,7 +405,7 @@ def _get_evidence(grant: Grant, evidence_id: Any) -> dict[str, Any]:
         # AT21: keep the stored excerpt, give no path / commit that could look openable.
         return {"status": "source_unavailable", "message": SOURCE_UNAVAILABLE_MESSAGE, "evidence": evidence}
     parsed = split_git_locator(row["locator"])
-    if is_keypulse_locator(row["locator"]):
+    if is_penpal_locator(row["locator"]):
         # Penpal is the original record: point at the event itself, always available.
         evidence["locator"] = {"type": "penpal", "event_id": f"evt_{row['event_id']}"}
     elif parsed is not None:
@@ -448,14 +448,14 @@ def get_timeline(
     sources: Any = None,
     limit: Any = TIMELINE_DEFAULT_LIMIT,
     cursor: Any = None,
-    include_keypulse_echoes: Any = False,
+    include_penpal_echoes: Any = False,
     *,
     client: Optional[str] = None,
 ) -> dict[str, Any]:
     decision, denied = _gate(token, client, TOOL_GET_TIMELINE)
     if denied is not None:
         return denied
-    payload = _redact_payload(_get_timeline(decision.grant, start, end, sources, limit, cursor, include_keypulse_echoes))
+    payload = _redact_payload(_get_timeline(decision.grant, start, end, sources, limit, cursor, include_penpal_echoes))
     if payload.get("status") == "ok":
         span = (payload.get("coverage") or {}).get("time_range") or {}
         _record_returned(decision.grant, payload, f"timeline {span.get('start')} .. {span.get('end')}")
@@ -472,7 +472,7 @@ def _get_timeline(grant: Grant, start: Any, end: Any, sources: Any, limit: Any, 
     if isinstance(limit, bool) or not isinstance(limit, int):
         return {"status": "invalid_argument", "message": f"limit must be an integer between 1 and {TIMELINE_MAX_LIMIT}"}
     if not isinstance(include_echoes, bool):
-        return {"status": "invalid_argument", "message": "include_keypulse_echoes must be a boolean"}
+        return {"status": "invalid_argument", "message": "include_penpal_echoes must be a boolean"}
     bad_range = {"status": "invalid_argument",
                  "message": "start and end are required ISO dates or datetimes with start <= end; cursor must come from a previous call"}
     if not isinstance(start, str) or not isinstance(end, str):
@@ -488,7 +488,7 @@ def _get_timeline(grant: Grant, start: Any, end: Any, sources: Any, limit: Any, 
         rows, has_more = timeline_events(
             since=since, until=until, sources=_scope_sources(grant, sources), buckets=list(grant.buckets),
             after=after, event_type=SEARCHABLE_EVENT_TYPES, limit=limit,
-            include_keypulse_echoes=include_echoes,
+            include_penpal_echoes=include_echoes,
         )
     except sqlite3.Error:
         return {"status": "error", "message": "timeline failed"}

@@ -224,7 +224,7 @@ class HudController:
             self._say("授权失败")
             return False
         scope = f"buckets={','.join(buckets)}, sources=all in buckets, operations=read"
-        lines = mcp_cli.grant_output_lines(host, scope, token, host, mcp_cli._keypulse_executable())
+        lines = mcp_cli.grant_output_lines(host, scope, token, host, mcp_cli._penpal_executable())
         self.ui = replace(self.ui, page="reveal", reveal=Reveal("授权成功", "\n".join(lines), host), new_buckets=("Work",))
         return True
 
@@ -238,7 +238,7 @@ class HudController:
         except ValueError:
             self._say("没有可轮换的授权")
             return False
-        lines = mcp_cli.rotate_output_lines(client_id, token, mcp_cli._keypulse_executable())
+        lines = mcp_cli.rotate_output_lines(client_id, token, mcp_cli._penpal_executable())
         self.ui = replace(self.ui, page="reveal", reveal=Reveal("新的密钥", "\n".join(lines), client_id))
         return True
 

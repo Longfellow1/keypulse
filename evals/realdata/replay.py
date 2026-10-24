@@ -49,11 +49,11 @@ def _call(name: str, args: dict, token: str, client: str) -> dict:
 
     if name == "search_context":
         return tools.search_context(token, args.get("keywords"), args.get("time_range"), args.get("sources"),
-                                    args.get("limit", 10), args.get("include_keypulse_echoes", False), client=client)
+                                    args.get("limit", 10), args.get("include_penpal_echoes", False), client=client)
     if name == "get_timeline":
         return tools.get_timeline(token, args.get("start"), args.get("end"), args.get("sources"),
                                   args.get("limit", 50), args.get("cursor"),
-                                  args.get("include_keypulse_echoes", False), client=client)
+                                  args.get("include_penpal_echoes", False), client=client)
     return tools.get_evidence(token, args.get("evidence_id"), client=client)
 
 

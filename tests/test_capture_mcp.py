@@ -25,7 +25,7 @@ from penpal.config import Config
 from penpal.mcp import auth, tools
 from penpal.store import buckets
 from penpal.store.app_categories import classify_app
-from penpal.store.capture_events import is_keypulse_locator, keypulse_locator
+from penpal.store.capture_events import is_penpal_locator, penpal_locator
 from penpal.store.db import close, get_conn, init_db
 from penpal.store.migration_v23 import migrate_v23
 from penpal.store.migrations import MIGRATIONS, run_migrations
@@ -37,10 +37,10 @@ FAKE_KEY = "sk-test-FAKE0000000000000000000000"
 
 
 def test_new_capture_locator_uses_penpal_prefix_and_reads_legacy_prefix():
-    assert keypulse_locator(42) == "penpal://event/42"
-    assert is_keypulse_locator("penpal://event/42")
-    assert is_keypulse_locator("keypulse://event/42")
-    assert not is_keypulse_locator("other://event/42")
+    assert penpal_locator(42) == "penpal://event/42"
+    assert is_penpal_locator("penpal://event/42")
+    assert is_penpal_locator("keypulse://event/42")
+    assert not is_penpal_locator("other://event/42")
 
 
 @pytest.fixture(autouse=True)

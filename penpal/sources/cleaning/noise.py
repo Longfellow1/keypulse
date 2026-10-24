@@ -5,7 +5,7 @@ Two jobs, one module so both plugins behave the same (D27):
 * ``clean_message_part`` drops host-injected wrapper text that is not something the user or the
   assistant said (system reminders, slash-command wrappers, local command output, interrupt
   markers, Codex environment/instruction blocks).
-* ``advance_echo`` / ``is_keypulse_call`` implement the ``via_penpal`` mark: an assistant text
+* ``advance_echo`` / ``is_penpal_call`` implement the ``via_penpal`` mark: an assistant text
   that follows a call to a Penpal MCP tool (same session, until the next real user message) is
   mostly a paraphrase of Penpal's own output, so it is stored but flagged and hidden from search
   by default.
@@ -109,7 +109,7 @@ def _name_matches(value: object, names: tuple[str, ...]) -> bool:
     return any(v.startswith((f"mcp__{n}__", f"{n}__", f"{n}.", f"{n}/")) for n in names)
 
 
-def is_keypulse_call(payload: dict, names: tuple[str, ...]) -> bool:
+def is_penpal_call(payload: dict, names: tuple[str, ...]) -> bool:
     """Whether a tool-call record targets a Penpal MCP server.
 
     Covers Claude Code ``tool_use`` (``name: mcp__keypulse__search_context``) and the Codex
@@ -137,7 +137,7 @@ def is_keypulse_call(payload: dict, names: tuple[str, ...]) -> bool:
     return False
 
 
-def advance_echo(active: bool, role: str, has_text: bool, calls_keypulse: bool) -> tuple[bool, bool]:
+def advance_echo(active: bool, role: str, has_text: bool, calls_penpal: bool) -> tuple[bool, bool]:
     """One step of the per-session echo state machine. Returns ``(mark_this_message, new_active)``.
 
     A message is judged by the state *before* it (text that precedes a tool call in the same
@@ -146,6 +146,6 @@ def advance_echo(active: bool, role: str, has_text: bool, calls_keypulse: bool) 
     marked = active and role == "assistant" and has_text
     if role == "user" and has_text:
         active = False
-    if calls_keypulse:
+    if calls_penpal:
         active = True
     return marked, active

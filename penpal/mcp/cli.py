@@ -21,7 +21,7 @@ def mcp_group() -> None:
     pass
 
 
-def _keypulse_executable() -> str:
+def _penpal_executable() -> str:
     """Absolute path of the running penpal, so the written config works outside the shell PATH."""
     argv0 = sys.argv[0] if sys.argv else ""
     if argv0 and os.path.basename(argv0) == "penpal" and os.path.isfile(argv0):
@@ -132,7 +132,7 @@ def grant_command(client_id: str, buckets: str, sources: str | None, operations:
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     scope = f"buckets={buckets}, sources={sources or 'all in buckets'}, operations={operations}"
-    for line in grant_output_lines(client_id, scope, token, host, _keypulse_executable()):
+    for line in grant_output_lines(client_id, scope, token, host, _penpal_executable()):
         click.echo(line)
 
 

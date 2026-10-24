@@ -13,7 +13,7 @@ import pytest
 
 from penpal.mcp import auth, tools
 from penpal.search.engine import search_events, timeline_events
-from penpal.sources.cleaning.noise import clean_message_part, is_keypulse_call, is_noise_part
+from penpal.sources.cleaning.noise import clean_message_part, is_penpal_call, is_noise_part
 from penpal.sources.plugins.claude_code import ClaudeCodeSource
 from penpal.sources.plugins.codex_cli import CodexCliSource
 from penpal.sources.types import DataSourceInstance
@@ -252,11 +252,11 @@ def test_codex_message_mentioning_keypulse_is_not_swallowed(tmp_path) -> None:
     assert [e.intent for e in events] == ['explain the "function_call" record that penpal writes']
 
 
-def test_is_keypulse_call_shapes() -> None:
+def test_is_penpal_call_shapes() -> None:
     names = ("penpal",)
-    assert is_keypulse_call({"type": "tool_use", "name": "mcp__keypulse__get_evidence"}, names)
-    assert not is_keypulse_call({"type": "tool_use", "name": "mcp__keypulse2__x"}, names)
-    assert not is_keypulse_call({"type": "tool_use", "name": "Read"}, names)
+    assert is_penpal_call({"type": "tool_use", "name": "mcp__keypulse__get_evidence"}, names)
+    assert not is_penpal_call({"type": "tool_use", "name": "mcp__keypulse2__x"}, names)
+    assert not is_penpal_call({"type": "tool_use", "name": "Read"}, names)
 
 
 # ── search / timeline: default exclusion, switch, ranking ────────────────────────────────────
@@ -378,18 +378,18 @@ def test_query_time_redaction_fails_closed(db, monkeypatch) -> None:
 
 def test_codex_namespace_shape_matches_exact_server_only() -> None:
     # Shape observed in current Codex rollouts: namespace "mcp__<server>", bare tool name.
-    from penpal.sources.cleaning.noise import is_keypulse_call
+    from penpal.sources.cleaning.noise import is_penpal_call
 
     names = ("penpal",)
-    assert is_keypulse_call({"type": "function_call", "namespace": "mcp__keypulse", "name": "search_context"}, names)
-    assert not is_keypulse_call({"type": "function_call", "namespace": "mcp__keypulse_x", "name": "a"}, names)
-    assert not is_keypulse_call({"type": "function_call", "namespace": "mcp__cua_repl", "name": "js"}, names)
+    assert is_penpal_call({"type": "function_call", "namespace": "mcp__keypulse", "name": "search_context"}, names)
+    assert not is_penpal_call({"type": "function_call", "namespace": "mcp__keypulse_x", "name": "a"}, names)
+    assert not is_penpal_call({"type": "function_call", "namespace": "mcp__cua_repl", "name": "js"}, names)
 
 
 def test_penpal_default_server_names_accept_legacy_keypulse_tool_names() -> None:
-    from penpal.sources.cleaning.noise import is_keypulse_call
+    from penpal.sources.cleaning.noise import is_penpal_call
 
-    assert is_keypulse_call({"type": "tool_use", "name": "mcp__keypulse__search_context"}, ("penpal",))
+    assert is_penpal_call({"type": "tool_use", "name": "mcp__keypulse__search_context"}, ("penpal",))
 
 
 @pytest.mark.parametrize(

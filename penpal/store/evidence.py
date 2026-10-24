@@ -16,7 +16,7 @@ import re
 import subprocess
 from typing import Iterable, Optional
 
-from penpal.store.capture_events import is_keypulse_locator
+from penpal.store.capture_events import is_penpal_locator
 from penpal.store.db import get_conn
 from penpal.store.locators import (  # noqa: F401  (re-exported)
     UNRESOLVABLE_PREFIX, VISIT_MARKER, browser_locator, is_unresolvable_locator, split_browser_locator,
@@ -53,7 +53,7 @@ def _file_has_line(path: str, line: int) -> bool:
 def locator_exists(locator: str, line: Optional[int] = None, *, deep: bool = True) -> bool:
     """True when the original still exists. deep=False is path/directory existence only (cheap,
     used on every search); deep=True also verifies the line (files) or the commit (git)."""
-    if is_keypulse_locator(locator):
+    if is_penpal_locator(locator):
         return True  # Penpal's own record (capture events): nothing external to disappear
     if is_unresolvable_locator(locator):
         return False  # no openable original exists, by design
