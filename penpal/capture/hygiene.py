@@ -321,6 +321,20 @@ def capture_gate(
     return None
 
 
+def host_matches_denylist(host: str, deny_hosts: list[str]) -> bool:
+    """Exact host or any subdomain of a user deny-list entry (case-insensitive)."""
+    normalized_host = host.lower().strip()
+    if not normalized_host:
+        return False
+    for deny_host in deny_hosts:
+        candidate = str(deny_host or "").strip().lower()
+        if not candidate:
+            continue
+        if normalized_host == candidate or normalized_host.endswith(f".{candidate}"):
+            return True
+    return False
+
+
 def strip_url_query(url: str | None) -> str | None:
     """scheme://host/path without query or fragment (login pages carry tokens there)."""
     if not url:

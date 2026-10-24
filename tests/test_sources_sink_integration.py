@@ -90,6 +90,7 @@ class _SixSourceFixture(DataSource):
 def test_read_all_persists_source_events_to_raw_events(tmp_path, monkeypatch) -> None:
     close()
     init_db(tmp_path / "penpal.db")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # read_all reads the default config; keep it hermetic
     monkeypatch.setattr(registry, "_PLUGINS", {"fixture": _SixSourceFixture()})
     monkeypatch.setattr(
         registry,
@@ -101,13 +102,15 @@ def test_read_all_persists_source_events_to_raw_events(tmp_path, monkeypatch) ->
     until = datetime(2026, 5, 6, 23, 59, tzinfo=timezone.utc)
 
     events = list(registry.read_all(since, until, source="fixture"))
-    assert len(events) == 6
+    # apple.com is in the default url_deny_hosts (#26 B6): the safari visit is skipped before storage,
+    # as the capture path already does, so only five of the six fixture events remain.
+    assert len(events) == 5
 
     rows = get_conn().execute(
         "SELECT source, metadata_json FROM raw_events WHERE source IN (?,?,?,?,?,?) ORDER BY ts_start ASC",
         ("git_log", "claude_code", "codex_cli", "markdown_vault", "chrome_history", "safari_history"),
     ).fetchall()
-    assert len(rows) == 6
+    assert len(rows) == 5
 
     parsed = {row["source"]: json.loads(row["metadata_json"] or "{}") for row in rows}
     assert parsed["git_log"]["entities"]["commit_hash"] == "abc1234def"
@@ -115,7 +118,7 @@ def test_read_all_persists_source_events_to_raw_events(tmp_path, monkeypatch) ->
     assert parsed["codex_cli"]["entities"]["session_id"] == "codex-s1"
     assert parsed["markdown_vault"]["entities"]["file_paths"] == ["Daily/2026-05-06.md"]
     assert parsed["chrome_history"]["entities"]["urls"] == ["https://example.com/docs"]
-    assert parsed["safari_history"]["entities"]["urls"] == ["https://apple.com/cn"]
+    assert "safari_history" not in parsed  # excluded domain, never stored
 
     close()
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Iterable, Iterator
+from urllib.parse import urlsplit
 
 from penpal.sources.cleaning.config import PRIVACY_TIERS, load_cleaning_config
 from penpal.sources.cleaning.content_quality import is_low_signal_event
@@ -20,6 +21,8 @@ from penpal.sources.plugins.spotlight import SpotlightSource
 from penpal.sources.plugins.wechat import WechatSource
 from penpal.sources.plugins.zsh_history import ZshHistorySource
 from penpal.capture.capture_control import source_writes_allowed
+from penpal.capture.hygiene import host_matches_denylist
+from penpal.config import Config
 from penpal.sources.sink import persist_semantic_event
 from penpal.sources.types import DataSource, DataSourceInstance, SemanticEvent
 from penpal.utils.logging import get_logger
@@ -32,6 +35,26 @@ _UNKNOWN_TIER_RANK: int = len(PRIVACY_TIERS)  # strictly higher than any known t
 _DEFAULT_MAX_TIER_RANK: int = _TIER_RANK["yellow"]
 
 _PLUGINS: dict[str, DataSource] = {}
+
+
+def _event_url(event: SemanticEvent) -> str | None:
+    meta = event.metadata or {}
+    for value in (meta.get("url"), meta.get("full_url"), event.artifact):
+        if isinstance(value, str) and value.startswith(("http://", "https://")):
+            return value
+    return None
+
+
+def _is_excluded_domain(event: SemanticEvent, deny_hosts: list[str]) -> bool:
+    """#26 (B6): browsing on a user-excluded domain is skipped before storage or output, as in capture."""
+    url = _event_url(event)
+    if not url:
+        return False
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        return False
+    return bool(host) and host_matches_denylist(host, deny_hosts)
 
 
 def _is_tier_allowed(event_tier: str | None, max_tier: str) -> bool:
@@ -123,6 +146,7 @@ def read_all(
         # Paused or switched-off plugins are not read at all, so their cursors do not advance (#28).
         selected = [plugin for plugin in selected if source_writes_allowed(plugin.name)]
     cleaning_config = load_cleaning_config()
+    deny_hosts = Config.load().privacy.url_deny_hosts
 
     for plugin in selected:
         instances = discovered.get(plugin.name, [])
@@ -139,6 +163,8 @@ def read_all(
                             "privacy_tier dropped: %s actor=%s tier=%s max=%s",
                             plugin.name, event.actor, event.privacy_tier, cleaning_config.privacy_max_tier,
                         )
+                        continue
+                    if _is_excluded_domain(event, deny_hosts):
                         continue
                     try:
                         is_noise, _ = is_low_signal_event(event)

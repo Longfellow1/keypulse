@@ -27,6 +27,7 @@ from penpal.capture.hygiene import (
     is_blacklisted_app,
     is_system_overlay,
     is_terminal_app,
+    host_matches_denylist as _host_matches_denylist,
     strip_url_query,
 )
 from penpal.capture.policy import PolicyEngine
@@ -150,19 +151,6 @@ def _browser_host_from_metadata(metadata_json: str | None) -> str | None:
     if not host:
         return None
     return host.lower()
-
-
-def _host_matches_denylist(host: str, deny_hosts: list[str]) -> bool:
-    normalized_host = host.lower().strip()
-    if not normalized_host:
-        return False
-    for deny_host in deny_hosts:
-        candidate = str(deny_host or "").strip().lower()
-        if not candidate:
-            continue
-        if normalized_host == candidate or normalized_host.endswith(f".{candidate}"):
-            return True
-    return False
 
 
 def _should_drop_browser_event(event: RawEvent, deny_hosts: list[str]) -> bool:
