@@ -181,6 +181,15 @@ def _strip_metadata_urls(metadata_json: str | None) -> str | None:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _strip_metadata_title(metadata_json: str | None) -> str | None:
+    """Window session events also carry the title as metadata 'primary_title'. Drop it with window_title."""
+    payload = _metadata_payload(metadata_json)
+    if not isinstance(payload, dict) or "primary_title" not in payload:
+        return metadata_json
+    payload.pop("primary_title", None)
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def _is_disk_full(exc: BaseException) -> bool:
     return isinstance(exc, sqlite3.OperationalError) and "database or disk is full" in str(exc)
 
@@ -702,6 +711,8 @@ class CaptureManager:
                 result.window_title = None
             if result.source == "browser_url":
                 result.metadata_json = _strip_metadata_urls(result.metadata_json)
+            if result.source == "window":
+                result.metadata_json = _strip_metadata_title(result.metadata_json)
         if result.source == "ax_text" and _is_terminal_app(result.app_name):
             if self.config.privacy.drop_terminal_text:
                 result.content_text = None
