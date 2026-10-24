@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import threading
 import time
+
+import pytest
 
 from penpal.config import SourcesSchedulerConfig
 from penpal.sources.scheduler import SourcesScheduler
 from penpal.sources.types import DataSource, DataSourceInstance
+
+
+@pytest.fixture(autouse=True)
+def _allow_source_writes(monkeypatch):
+    monkeypatch.setattr("penpal.sources.scheduler.source_writes_allowed", lambda name: True)
 
 
 class _FakeSource(DataSource):
@@ -65,8 +73,14 @@ def _wait_for(predicate, *, timeout: float = 1.0, interval: float = 0.01) -> boo
 def test_scheduler_config_defaults() -> None:
     config = SourcesSchedulerConfig()
 
-    assert config.poll_interval_sec == 240
-    assert config.debounce_sec == 120
+    assert config.poll_interval_sec == 600
+    assert config.debounce_sec == 300
+    assert config.fast_poll_interval_sec == 120
+
+    scheduler = SourcesScheduler()
+    assert scheduler._poll_interval_sec == 600
+    assert scheduler._debounce_sec == 300
+    assert scheduler._fast_poll_interval_sec == 120
 
 
 def test_scheduler_polls_always_plugins() -> None:
@@ -84,6 +98,7 @@ def test_scheduler_polls_always_plugins() -> None:
         list_sources_fn=lambda: [_FakeSource(name="always_a", liveness="always")],
         read_all_fn=fake_read_all,
         event_source_factory=lambda: fake_event_source,
+        history_allowed_fn=lambda: True,
     )
 
     scheduler.start()
@@ -116,6 +131,7 @@ def test_scheduler_launch_event_triggers_app_running_only() -> None:
         ],
         read_all_fn=fake_read_all,
         event_source_factory=lambda: fake_event_source,
+        history_allowed_fn=lambda: True,
     )
 
     scheduler.start()
@@ -148,6 +164,7 @@ def test_scheduler_debounce_blocks_repeated_triggers(monkeypatch) -> None:
         ],
         read_all_fn=fake_read_all,
         event_source_factory=lambda: fake_event_source,
+        history_allowed_fn=lambda: True,
         monotonic_fn=lambda: clock["mono"],
     )
 
@@ -189,6 +206,7 @@ def test_scheduler_isolates_plugin_exceptions(monkeypatch) -> None:
         ],
         read_all_fn=fake_read_all,
         event_source_factory=lambda: fake_event_source,
+        history_allowed_fn=lambda: True,
     )
     monkeypatch.setattr(
         "penpal.sources.scheduler.LOGGER.exception",
@@ -223,6 +241,7 @@ def test_scheduler_quit_and_unlock_events_trigger_expected_plugins() -> None:
         ],
         read_all_fn=fake_read_all,
         event_source_factory=lambda: fake_event_source,
+        history_allowed_fn=lambda: True,
     )
 
     scheduler.start()
@@ -238,3 +257,82 @@ def test_scheduler_quit_and_unlock_events_trigger_expected_plugins() -> None:
         assert _wait_for(lambda: "wechat" in calls, timeout=0.5)
     finally:
         scheduler.stop()
+
+
+class _FastSource(_FakeSource):
+    fast_poll = True
+
+
+def test_scheduler_polls_fast_plugins_more_often() -> None:
+    calls: list[str] = []
+
+    def fake_read_all(since, until, *, source, persist_raw_events=True):
+        calls.append(source)
+        return iter(())
+
+    scheduler = SourcesScheduler(
+        poll_interval_sec=0.5,
+        fast_poll_interval_sec=0.05,
+        debounce_sec=300,
+        list_sources_fn=lambda: [
+            _FastSource(name="fast", liveness="always"),
+            _FakeSource(name="slow", liveness="always"),
+        ],
+        read_all_fn=fake_read_all,
+        history_allowed_fn=lambda: True,
+    )
+    scheduler.start()
+    try:
+        assert _wait_for(lambda: calls.count("slow") >= 2, timeout=2)
+        assert calls.count("fast") >= 6
+        assert calls.count("fast") > calls.count("slow")
+    finally:
+        scheduler.stop()
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_scheduler_single_flight_skips_blocked_scan(fails, monkeypatch) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+    fake_event_source = _FakeWorkspaceEventSource()
+
+    def fake_read_all(since, until, *, source, persist_raw_events=True):
+        calls.append(source)
+        entered.set()
+        assert release.wait(timeout=2)
+        if fails:
+            raise RuntimeError("test scan failure")
+        return iter(())
+
+    scheduler = SourcesScheduler(
+        debounce_sec=0,
+        list_sources_fn=lambda: [_FakeSource(name="blocked", liveness="after_unlock")],
+        read_all_fn=fake_read_all,
+        history_allowed_fn=lambda: True,
+        event_source_factory=lambda: fake_event_source,
+    )
+    scheduler.start()
+    executor = scheduler._executor
+    submissions: list[str] = []
+    original_submit = executor.submit
+
+    def recording_submit(fn, plugin_name, reason):
+        submissions.append(plugin_name)
+        return original_submit(fn, plugin_name, reason)
+
+    monkeypatch.setattr(executor, "submit", recording_submit)
+    try:
+        fake_event_source.emit_unlock()
+        assert entered.wait(timeout=1)
+        fake_event_source.emit_unlock()
+        assert submissions == ["blocked"]
+        release.set()
+        assert _wait_for(lambda: not scheduler._in_flight)
+        fake_event_source.emit_unlock()
+        assert _wait_for(lambda: len(calls) == 2)
+        assert submissions == ["blocked", "blocked"]
+    finally:
+        release.set()
+        scheduler.stop()
+        executor.shutdown(wait=True)

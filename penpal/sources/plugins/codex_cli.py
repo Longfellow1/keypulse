@@ -61,6 +61,7 @@ class CodexCliSource(DataSource):
     name = "codex_cli"
     privacy_tier = "green"
     liveness = "always"
+    fast_poll = True
     description = "Codex CLI session rollout reader"
 
     def __init__(

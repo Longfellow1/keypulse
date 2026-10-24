@@ -55,8 +55,9 @@ class SourcesScheduler:
         self,
         *,
         enabled: bool = True,
-        poll_interval_sec: int = 240,
-        debounce_sec: int = 120,
+        poll_interval_sec: int = 600,
+        debounce_sec: int = 300,
+        fast_poll_interval_sec: int = 120,
         list_sources_fn: Callable[[], list[DataSource]] = list_sources,
         read_all_fn: Callable[..., Iterator[SemanticEvent]] = read_all,
         history_allowed_fn: Callable[[], bool] = historical_imports_allowed,
@@ -66,6 +67,7 @@ class SourcesScheduler:
     ) -> None:
         self._enabled = bool(enabled)
         self._poll_interval_sec = max(float(poll_interval_sec), 0.05)
+        self._fast_poll_interval_sec = max(float(fast_poll_interval_sec), 0.05)
         self._debounce_sec = max(float(debounce_sec), 0.0)
         self._list_sources_fn = list_sources_fn
         self._read_all_fn = read_all_fn
@@ -84,6 +86,8 @@ class SourcesScheduler:
 
         self._all_plugins: set[str] = set()
         self._always_plugins: set[str] = set()
+        self._fast_plugins: set[str] = set()
+        self._in_flight: set[str] = set()
         self._unlock_plugins: set[str] = set()
         self._launch_routes: dict[str, set[str]] = {}
         self._quit_routes: dict[str, set[str]] = {}
@@ -129,10 +133,11 @@ class SourcesScheduler:
                 self._event_source = None
 
         LOGGER.info(
-            "sources scheduler started enabled=%s poll_interval_sec=%s debounce_sec=%s always=%s app_running_routes=%s after_quit_routes=%s after_unlock=%s",
+            "sources scheduler started enabled=%s poll_interval_sec=%s debounce_sec=%s fast_poll_interval_sec=%s always=%s app_running_routes=%s after_quit_routes=%s after_unlock=%s",
             self._enabled,
             self._poll_interval_sec,
             self._debounce_sec,
+            self._fast_poll_interval_sec,
             sorted(self._always_plugins),
             {k: sorted(v) for k, v in self._launch_routes.items()},
             {k: sorted(v) for k, v in self._quit_routes.items()},
@@ -176,6 +181,7 @@ class SourcesScheduler:
     def _rebuild_routes(self) -> None:
         self._all_plugins.clear()
         self._always_plugins.clear()
+        self._fast_plugins.clear()
         self._unlock_plugins.clear()
         self._launch_routes.clear()
         self._quit_routes.clear()
@@ -191,6 +197,8 @@ class SourcesScheduler:
             if not name:
                 continue
             self._all_plugins.add(name)
+            if getattr(plugin, "fast_poll", False):
+                self._fast_plugins.add(name)
             liveness = str(getattr(plugin, "liveness", "") or "").strip()
             app_hints = tuple(getattr(plugin, "app_hints", ()) or ())
 
@@ -210,14 +218,22 @@ class SourcesScheduler:
                 for token in _expand_app_tokens(str(hint)):
                     route_map.setdefault(token, set()).add(name)
 
+    def _plugin_interval(self, plugin_name: str) -> float:
+        return self._fast_poll_interval_sec if plugin_name in self._fast_plugins else self._poll_interval_sec
+
     def _always_loop(self) -> None:
+        next_due: dict[str, float] = {}
         while self._running.is_set():
             for plugin_name in sorted(self._always_plugins):
                 if not self._running.is_set():
                     break
-                self._schedule_scan(plugin_name, reason="always_interval")
+                now = self._monotonic_fn()
+                if now >= next_due.get(plugin_name, now):
+                    self._schedule_scan(plugin_name, reason="always_interval")
+                    next_due[plugin_name] = self._monotonic_fn() + self._plugin_interval(plugin_name)
 
-            if self._stop_event.wait(timeout=self._poll_interval_sec):
+            delay = min(next_due.values(), default=self._monotonic_fn()) - self._monotonic_fn()
+            if self._stop_event.wait(timeout=max(delay, 0.0)):
                 break
 
     def _on_app_launch(self, bundle_id: str, process_name: str) -> None:
@@ -263,13 +279,17 @@ class SourcesScheduler:
             # No scan while paused or switched off, so the since-window keeps growing and resumes after re-enable.
             LOGGER.debug("sources scheduler skip plugin=%s reason=%s (paused or disabled)", plugin_name, reason)
             return
-        if not self._check_and_mark_debounce(plugin_name):
-            LOGGER.debug("sources scheduler debounce skip plugin=%s reason=%s", plugin_name, reason)
+        executor = self._executor
+        if executor is None:
             return
-
-        if self._executor is None:
+        if not self._claim_scan(plugin_name, reason=reason):
             return
-        self._executor.submit(self._scan_plugin, plugin_name, reason)
+        try:
+            executor.submit(self._scan_plugin, plugin_name, reason)
+        except Exception:
+            with self._lock:
+                self._in_flight.discard(plugin_name)
+            raise
 
     @staticmethod
     def _writes_blocked(plugin_name: str) -> bool:
@@ -280,48 +300,57 @@ class SourcesScheduler:
             LOGGER.exception("capture switch read failed plugin=%s", plugin_name)
             return False
 
-    def _check_and_mark_debounce(self, plugin_name: str) -> bool:
+    def _claim_scan(self, plugin_name: str, *, reason: str) -> bool:
         now_mono = self._monotonic_fn()
         with self._lock:
-            last_mono = self._last_trigger_mono.get(plugin_name)
-            if last_mono is not None and (now_mono - last_mono) < self._debounce_sec:
+            if plugin_name in self._in_flight:
+                LOGGER.debug("sources scheduler in-flight skip plugin=%s reason=%s", plugin_name, reason)
                 return False
+            last_mono = self._last_trigger_mono.get(plugin_name)
+            if last_mono is not None and (now_mono - last_mono) < min(self._debounce_sec, self._plugin_interval(plugin_name)):
+                LOGGER.debug("sources scheduler debounce skip plugin=%s reason=%s", plugin_name, reason)
+                return False
+            self._in_flight.add(plugin_name)
             self._last_trigger_mono[plugin_name] = now_mono
         return True
 
     def _scan_plugin(self, plugin_name: str, reason: str) -> None:
-        # Historical sources stay off until onboarding (or an existing install is detected). Live capture is a
-        # separate watcher path and never goes through here (#32, D26).
-        if not self._history_allowed_fn():
-            LOGGER.debug("sources scheduler skip plugin=%s reason=%s (waiting for onboarding)", plugin_name, reason)
-            return
-        now = self._as_utc(self._now_fn())
-        with self._lock:
-            since = self._last_success_utc.get(plugin_name)
-        if since is None:
-            since = now - timedelta(seconds=self._poll_interval_sec)
-
-        events = 0
         try:
-            for _ in self._read_all_fn(
-                since,
-                now,
-                source=plugin_name,
-                persist_raw_events=True,
-            ):
-                events += 1
+            # Historical sources stay off until onboarding (or an existing install is detected). Live capture is a
+            # separate watcher path and never goes through here (#32, D26).
+            if not self._history_allowed_fn():
+                LOGGER.debug("sources scheduler skip plugin=%s reason=%s (waiting for onboarding)", plugin_name, reason)
+                return
+            now = self._as_utc(self._now_fn())
             with self._lock:
-                self._last_success_utc[plugin_name] = now
-            LOGGER.info(
-                "sources scheduler scan done plugin=%s reason=%s events=%s since=%s until=%s",
-                plugin_name,
-                reason,
-                events,
-                since.isoformat(),
-                now.isoformat(),
-            )
-        except Exception:
-            LOGGER.exception("sources scheduler scan failed plugin=%s reason=%s", plugin_name, reason)
+                since = self._last_success_utc.get(plugin_name)
+            if since is None:
+                since = now - timedelta(seconds=self._poll_interval_sec)
+
+            events = 0
+            try:
+                for _ in self._read_all_fn(
+                    since,
+                    now,
+                    source=plugin_name,
+                    persist_raw_events=True,
+                ):
+                    events += 1
+                with self._lock:
+                    self._last_success_utc[plugin_name] = now
+                LOGGER.info(
+                    "sources scheduler scan done plugin=%s reason=%s events=%s since=%s until=%s",
+                    plugin_name,
+                    reason,
+                    events,
+                    since.isoformat(),
+                    now.isoformat(),
+                )
+            except Exception:
+                LOGGER.exception("sources scheduler scan failed plugin=%s reason=%s", plugin_name, reason)
+        finally:
+            with self._lock:
+                self._in_flight.discard(plugin_name)
 
     @staticmethod
     def _as_utc(value: datetime) -> datetime:
