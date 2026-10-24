@@ -78,7 +78,7 @@ Read-only. Whatever is returned enters that AI's conversation and may be sent to
 - Apps on the default exclusion list, such as password managers, are not recorded. Private browsing windows record only the app and time, not content. Screen-text capture pauses while the camera is on.
 - Banking and payment content goes into the Financial category automatically; an AI without a Financial grant can't see it.
 - Chat apps (WeChat, Slack, Feishu, etc.) are not captured by default. Once enabled individually they go into the Private category, visible only to AIs granted Private.
-- Keyboard: individual keystrokes are not stored, only filtered text snippets. They are excluded from AI search by default and are searched only when the AI explicitly asks for that source.
+- Keyboard: individual keystrokes are not stored, only filtered text snippets. On by default; like other sources they are searchable by an AI within the categories it is granted. One command turns it off (`penpal source disable keyboard_chunk`).
 - The part of an email address before @ is masked (the domain is kept). Tokens, keys and card numbers are masked before storage.
 
 Data stays on your machine in `~/.penpal/`. No cloud, no telemetry. Nothing is deleted automatically; deletion is your call, and it removes the original text, index, source and related query records together.
