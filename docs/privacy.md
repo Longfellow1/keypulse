@@ -68,13 +68,13 @@
 - 域名排除现在覆盖三处：
   1. 实时采集的网址事件：丢弃。
   2. **浏览器历史导入**：命中的访问记录不入库（`sources/importer.py`、`sources/registry.py`）。测试：`tests/test_issue26_capture_chain.py::test_at18_browser_history_from_excluded_domain_is_not_stored`。
-  3. **该标签页里键入、读取、复制的文字**：只留 App 和时间（`denied_domain`）。测试：同文件 `test_typing_in_excluded_domain_tab_is_not_stored_as_content`、`test_switching_tabs_updates_the_page_used_for_the_check`。
+  3. **该标签页里键入、读取、复制的文字，以及前台窗口标题**：只留 App 和时间（`denied_domain`，窗口标题和元数据里的 `primary_title` 一并清空）。测试：同文件 `test_typing_in_excluded_domain_tab_is_not_stored_as_content`、`test_window_title_on_excluded_domain_tab_is_not_stored`。
 
 第 3 条有前提和缝隙，必须知道：
 
 - 它靠"浏览器网址监视器"知道你当前在哪个页面。**如果没有这个监视器在运行，Penpal 不知道你在哪个网站，这一条就不生效**，文字照常记（`test_unknown_page_is_not_blocked`）。代码里 `WatchersConfig.browser_url` 的默认值是关（`config.py`），但 `penpal` 安装时写出的 `~/.penpal/config.toml` 模板里把它设成了开（`cli.py` 的 `_DEFAULT_USER_CONFIG`）。所以正常安装的用户是开着的；你可以在 `penpal source list` 里确认。
 - 网址是每 3 秒轮询一次、网址变化时才上报，切换标签页后最多有约一个轮询周期的延迟，这几秒里的文字按上一个页面判断。
-- 窗口切换事件不做域名判断：在被排除网站里，浏览器作为前台 App 的时间和窗口标题（通常含页面标题）仍可能被记录。
+- 窗口切换事件也按同一个"最后已知网址"判断，但有两处缝隙：一是切到新标签页时，窗口事件可能先于网址监视器的上报到达，这几秒内会按上一个页面判断，所以从允许的网站切到被排除网站时，标题可能先被记一次；二是历史迁移（`store/migration_v24.py`）只处理文字，不处理已入库的历史窗口记录。
 
 ## 5. 键盘
 

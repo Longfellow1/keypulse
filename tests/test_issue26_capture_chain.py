@@ -367,3 +367,50 @@ def test_browser_tab_watcher_event_also_sets_the_page(db, monkeypatch):
                                             ts_start=TS.format(1))])
     _typed(mgr, "zebracorn tab watcher text", n=2)
     assert _content_for("tab watcher") == []
+
+
+# ── Window events: the foreground title of an excluded-domain browser tab is not stored ───────
+def _window_on(browser: dict, title: str, n: int):
+    """Session event as the window watcher emits it: the title is in window_title and in metadata."""
+    return normalize_window_event("window_focus_session", browser["app_name"], title, browser["process_name"],
+                                  ts_start=TS.format(n), ts_end=TS.format(n + 1),
+                                  metadata={"duration_sec": 1, "primary_title": title})
+
+
+def test_window_title_on_excluded_domain_tab_is_not_stored(db, monkeypatch):
+    cfg = _excluded_config()
+    _use_config(monkeypatch, cfg)
+    mgr = CaptureManager(cfg)
+    _page(mgr, f"https://{EXCLUDED_DOMAIN}/visit/1", "clinic booking")
+    _feed(mgr, [_window_on(CHROME, "zebracorn clinic booking", n=2)])
+
+    win = [r for r in _rows() if r["source"] == "window"]
+    assert len(win) == 1
+    assert win[0]["app_name"] == "Google Chrome"  # app and time kept, as for private windows
+    assert win[0]["window_title"] is None
+    assert "zebracorn" not in (win[0]["metadata_json"] or "")  # the watcher's primary_title copy is dropped too
+    assert json.loads(win[0]["metadata_json"])["text_dropped"] == "denied_domain"
+    assert _mcp_search(auth.create_grant("all-host", buckets=["Work", "Personal", "Private"]),
+                       ["zebracorn"])["status"] == "no_results"
+
+
+def test_window_title_on_allowed_domain_tab_is_stored(db, monkeypatch):
+    cfg = _excluded_config()
+    _use_config(monkeypatch, cfg)
+    mgr = CaptureManager(cfg)
+    _page(mgr, ALLOWED_URL, "zebracorn docs")
+    _feed(mgr, [_window_on(CHROME, "zebracorn sprint docs", n=2)])
+
+    win = [r for r in _rows() if r["source"] == "window"]
+    assert len(win) == 1 and win[0]["window_title"] == "zebracorn sprint docs"
+    host = auth.create_grant("work-host", buckets=WORK_PERSONAL_HOST)
+    assert "window" in {r["source"] for r in _hits(host, "sprint")}
+
+
+def test_window_title_with_unknown_page_is_not_blocked(db, monkeypatch):
+    cfg = _excluded_config()
+    _use_config(monkeypatch, cfg)
+    mgr = CaptureManager(cfg)
+    # No URL seen for Chrome yet: unknown, so the title is kept (same policy as typed text).
+    _feed(mgr, [_window_on(CHROME, "zebracorn before any url", n=2)])
+    assert [r["window_title"] for r in _rows() if r["source"] == "window"] == ["zebracorn before any url"]

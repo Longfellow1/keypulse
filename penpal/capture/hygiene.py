@@ -258,7 +258,7 @@ def is_internal_browser_page(source: str, window_title: str | None, url: str | N
     return False
 
 
-PAGE_SCOPED_STREAMS = frozenset({"keyboard_chunk", "ax_text", "clipboard"})
+PAGE_SCOPED_STREAMS = frozenset({"keyboard_chunk", "ax_text", "clipboard", "window"})
 
 
 def page_in_denied_domain(page_url: str | None, deny_hosts) -> bool:
@@ -293,7 +293,8 @@ def capture_gate(
 
     page_url: the URL the frontmost browser showed when this event was captured, resolved by the capture
     manager (None when no browser URL is known for the frontmost app). With url_deny_hosts it applies the
-    user's excluded-domain list to typed, read and copied text, the same way private windows are handled.
+    user's excluded-domain list to typed, read and copied text and to window titles, the same way private
+    windows are handled.
     """
     # Zero-width characters must not hide a keyword from the rules below.
     window_title = strip_invisible(window_title)

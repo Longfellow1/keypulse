@@ -68,13 +68,13 @@ Also: the code contains a WeChat message import source (`penpal/sources/plugins/
 - Domain exclusion now covers three places:
   1. Live URL events: dropped.
   2. **Browser-history import**: matching visits are not stored (`sources/importer.py`, `sources/registry.py`). Test: `tests/test_issue26_capture_chain.py::test_at18_browser_history_from_excluded_domain_is_not_stored`.
-  3. **Text typed, read or copied in that tab**: only app and time are kept (`denied_domain`). Tests: `test_typing_in_excluded_domain_tab_is_not_stored_as_content` and `test_switching_tabs_updates_the_page_used_for_the_check` in the same file.
+  3. **Text typed, read or copied in that tab, and the foreground window title**: only app and time are kept (`denied_domain`; the window title and the `primary_title` copy in metadata are cleared too). Tests: `test_typing_in_excluded_domain_tab_is_not_stored_as_content` and `test_window_title_on_excluded_domain_tab_is_not_stored` in the same file.
 
 Item 3 has a precondition and gaps you must know about:
 
 - It learns which page you are on from the **browser URL watcher. Without that watcher running, Penpal does not know the site and this protection does not apply**; text is stored as usual (`test_unknown_page_is_not_blocked`). The code default for `WatchersConfig.browser_url` is off (`config.py`), but the `~/.penpal/config.toml` template that Penpal writes at install turns it on (`_DEFAULT_USER_CONFIG` in `cli.py`). So a normal install has it on; confirm with `penpal source list`.
 - The URL is polled every 3 seconds and reported only when it changes, so right after you switch tabs there can be a delay of about one poll interval, during which text is judged against the previous page.
-- Window-switch events are not domain-checked: while an excluded site is in front, the browser's foreground time and window title (usually containing the page title) may still be recorded.
+- Window-switch events use the same "last known page" check, with two gaps. First, when you switch to a new tab the window event can arrive before the URL watcher reports it, so for up to one poll interval it is judged against the previous page: switching from an allowed site into an excluded one can store that title once. Second, history migration (`store/migration_v24.py`) only re-checks text, not window rows already stored.
 
 ## 5. Keyboard
 
