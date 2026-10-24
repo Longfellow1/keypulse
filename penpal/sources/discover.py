@@ -17,6 +17,7 @@ from penpal.capture.keyboard_notice import KEYBOARD_SOURCE, keyboard_capture_ena
 from penpal.config import Config
 from penpal.sources.approval import ApprovalRecord, ApprovalStore
 from penpal.sources.discoverers import CandidateSource, discover_all_candidates
+from penpal.sources.importer import DEFAULT_BATCH_SIZE
 from penpal.sources.registry import discover_all, get_source, list_sources, read_all, source_availability
 from penpal.sources.types import DataSourceInstance, SemanticEvent
 from penpal.sources.wechat_probe import (
@@ -310,6 +311,33 @@ def sync_command(source_name: str | None, lookback_hours: int) -> None:
         click.echo("no new events")
     for name, count in sorted(counts.items()):
         click.echo(f"{name}\t{count}")
+
+
+@sources_group.command("import")
+@click.option("--source", "source_name", default=None, help="Only import one source")
+@click.option("--days", default=30, show_default=True, type=int, help="Window for sources without a cursor")
+@click.option("--batch-size", default=DEFAULT_BATCH_SIZE, show_default=True, type=int, help="Events stored per batch")
+def import_command(source_name: str | None, days: int, batch_size: int) -> None:
+    """Import enabled sources in batches. After an interruption, rerunning resumes from the saved cursor (#32)."""
+    from datetime import timedelta
+
+    from penpal.capture.capture_control import source_writes_allowed
+    from penpal.sources import importer
+    from penpal.sources.onboarding import EXCLUDED_FROM_CHOICE, format_import_result
+
+    if source_name and get_source(source_name) is None:
+        raise click.ClickException(f"unknown source: {source_name}")
+    init_db(Config.load().db_path_expanded)
+    names = [source_name] if source_name else [
+        plugin.name for plugin in list_sources() if plugin.name not in EXCLUDED_FROM_CHOICE
+    ]
+    now = datetime.now(timezone.utc)
+    for name in names:
+        if not source_writes_allowed(name):
+            click.echo(f"{name}\toff")
+            continue
+        result = importer.import_source(name, since=now - timedelta(days=days), until=now, batch_size=batch_size)
+        click.echo(f"{name}\t{format_import_result(result)}")
 
 
 def _parse_bound(raw: str | None, *, is_since: bool) -> datetime:

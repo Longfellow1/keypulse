@@ -134,6 +134,9 @@ class ClaudeCodeSource(DataSource):
         locator = str(project_dir.resolve())
         source_id = ensure_source(self.name, locator)
         files_state: dict[str, dict[str, Any]] = dict(get_cursor(source_id).get("files") or {})
+        # Live view: the importer commits this between batches, so the saved position is the last event it
+        # stored (issue #32). Updated before every yield below, never ahead of the stream.
+        self._pending_cursors[source_id] = {"files": files_state}
 
         def _iter() -> Iterator[SemanticEvent]:
             names = resolve_server_names(self._penpal_server_names)
@@ -166,6 +169,13 @@ class ClaudeCodeSource(DataSource):
                             continue
                         event, echo = self._row_to_event(row, project_dir, jsonl_file, line_no, echo, names)
                         if event is not None:
+                            files_state[jsonl_file.name] = {
+                                "offset": offset,
+                                "line": line_no,
+                                "echo": echo,
+                                "mtime": stat.st_mtime,
+                                "size": stat.st_size,
+                            }
                             yield event
                 files_state[jsonl_file.name] = {
                     "offset": offset,
@@ -174,16 +184,17 @@ class ClaudeCodeSource(DataSource):
                     "mtime": stat.st_mtime,
                     "size": stat.st_size,
                 }
-            self._pending_cursors[source_id] = {"files": files_state}
 
         return _iter()
 
     def commit_cursors(self, *, failed: bool = False) -> None:
-        """Persist resume positions once the registry has stored the events."""
+        """Persist resume positions once the registry or importer has stored the events.
+
+        Entries stay pending: the importer commits after every batch, and each batch needs the live view.
+        """
         from penpal.store.sync_repo import record_sync_error, save_cursor
 
-        pending, self._pending_cursors = self._pending_cursors, {}
-        for source_id, cursor in pending.items():
+        for source_id, cursor in list(self._pending_cursors.items()):
             if failed:
                 record_sync_error(source_id, "persist failed; cursor not advanced")
             else:

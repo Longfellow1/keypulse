@@ -158,22 +158,8 @@ def read_all(
                 continue
             try:
                 for event in stream:
-                    if not _is_tier_allowed(event.privacy_tier, cleaning_config.privacy_max_tier):
-                        LOGGER.info(
-                            "privacy_tier dropped: %s actor=%s tier=%s max=%s",
-                            plugin.name, event.actor, event.privacy_tier, cleaning_config.privacy_max_tier,
-                        )
-                        continue
-                    if _is_excluded_domain(event, deny_hosts):
-                        continue
-                    try:
-                        is_noise, _ = is_low_signal_event(event)
-                    except Exception as exc:  # pragma: no cover - defensive
-                        LOGGER.warning("L3 filter failed for %s: %s", plugin.name, exc)
-                        is_noise = False
-                    if is_noise:
-                        continue
-                    events.append(event)
+                    if accept_event(plugin.name, event, cleaning_config, deny_hosts):
+                        events.append(event)
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.warning("read stream failed for %s (%s): %s", plugin.name, instance.locator, exc)
 
@@ -202,6 +188,24 @@ def read_all(
                 commit(failed=plugin.name in persist_failed)
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.warning("cursor commit failed for %s: %s", plugin.name, exc)
+
+
+def accept_event(source_name: str, event: SemanticEvent, cleaning_config, deny_hosts: list[str]) -> bool:
+    """Privacy tier, excluded-domain (#26) and low-signal filters shared by read_all and the batched importer (#32)."""
+    if _is_excluded_domain(event, deny_hosts):
+        return False
+    if not _is_tier_allowed(event.privacy_tier, cleaning_config.privacy_max_tier):
+        LOGGER.info(
+            "privacy_tier dropped: %s actor=%s tier=%s max=%s",
+            source_name, event.actor, event.privacy_tier, cleaning_config.privacy_max_tier,
+        )
+        return False
+    try:
+        is_noise, _ = is_low_signal_event(event)
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.warning("L3 filter failed for %s: %s", source_name, exc)
+        is_noise = False
+    return not is_noise
 
 
 def _select_sources(source: str | None) -> list[DataSource]:
