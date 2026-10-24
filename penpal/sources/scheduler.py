@@ -64,6 +64,7 @@ class SourcesScheduler:
         event_source_factory: Callable[[], WorkspaceEventSource | None] | None = None,
         now_fn: Callable[[], datetime] | None = None,
         monotonic_fn: Callable[[], float] = time.monotonic,
+        progress_callback: Callable[[], None] | None = None,
     ) -> None:
         self._enabled = bool(enabled)
         self._poll_interval_sec = max(float(poll_interval_sec), 0.05)
@@ -75,6 +76,7 @@ class SourcesScheduler:
         self._event_source_factory = event_source_factory or (_default_event_source)
         self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
         self._monotonic_fn = monotonic_fn
+        self._progress_callback = progress_callback or (lambda: None)
 
         self._running = threading.Event()
         self._stop_event = threading.Event()
@@ -111,13 +113,12 @@ class SourcesScheduler:
         self._stop_event.clear()
         self._running.set()
 
-        if self._always_plugins:
-            self._always_thread = threading.Thread(
-                target=self._always_loop,
-                daemon=True,
-                name="sources-always",
-            )
-            self._always_thread.start()
+        self._always_thread = threading.Thread(
+            target=self._always_loop,
+            daemon=True,
+            name="sources-always",
+        )
+        self._always_thread.start()
 
         if self._launch_routes or self._quit_routes or self._unlock_plugins:
             try:
@@ -168,6 +169,9 @@ class SourcesScheduler:
             self._executor = None
 
         LOGGER.info("sources scheduler stopped")
+
+    def set_progress_callback(self, callback: Callable[[], None]) -> None:
+        self._progress_callback = callback
 
     def rescan_all(self, *, reason: str) -> None:
         """Re-read every known source once (used after a Mac wake).
@@ -232,9 +236,10 @@ class SourcesScheduler:
                     self._schedule_scan(plugin_name, reason="always_interval")
                     next_due[plugin_name] = self._monotonic_fn() + self._plugin_interval(plugin_name)
 
-            delay = min(next_due.values(), default=self._monotonic_fn()) - self._monotonic_fn()
+            delay = min(next_due.values(), default=self._monotonic_fn() + 10.0) - self._monotonic_fn()
             if self._stop_event.wait(timeout=max(delay, 0.0)):
                 break
+            self._progress_callback()
 
     def _on_app_launch(self, bundle_id: str, process_name: str) -> None:
         matched = self._match_plugins(self._launch_routes, bundle_id=bundle_id, process_name=process_name)

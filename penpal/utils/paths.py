@@ -307,6 +307,18 @@ def get_hud_pid_path() -> Path:
     return get_data_dir() / "penpal-hud.pid"
 
 
+def get_run_dir() -> Path:
+    return Path.home() / ".penpal" / "run"
+
+
+def get_daemon_record_path() -> Path:
+    return get_run_dir() / "daemon.json"
+
+
+def get_launchd_daemon_plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / "com.penpal.daemon.plist"
+
+
 def get_log_path() -> Path:
     current = get_data_dir() / "penpal.log"
     legacy = current.with_name("keypulse.log")

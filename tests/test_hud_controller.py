@@ -19,6 +19,9 @@ from penpal.cli import main
 from penpal.config import Config
 from penpal.health import capture_health as ch
 from penpal.health import self_heal
+from penpal.runtime import RuntimeState, RuntimeStatus
+from penpal.runtime.evaluate import Issue
+from penpal.runtime.record import Component
 from penpal.hud.controller import HudController
 from penpal.mcp import auth
 from penpal.services import purge
@@ -74,41 +77,41 @@ def test_snapshot_reflects_core_state(hud, env):
     assert {n for n, _ in snap.delete_sources} == {"clipboard", "window"}
     assert ("Notes", 1) in snap.delete_apps
     assert snap.paused is False and snap.keyboard_on is True
-    assert snap.health["code"] == ch.CODE_DAEMON_NOT_RUNNING  # no daemon heartbeat in a temp DB
+    assert snap.health["code"] == RuntimeState.NOT_INSTALLED.value  # empty temporary HOME has no LaunchAgent
 
 
-def test_snapshot_flags_storage_error_and_lost_permission(hud, env):
+def test_snapshot_flags_runtime_component_error_and_lost_permission(hud, env, monkeypatch):
     now = datetime.now(timezone.utc)
-    set_state("status", "running")
-    set_state("capture_runtime", json.dumps({
-        "captured_at": now.isoformat(), "running": True, "watchers": {},
-        "storage": {"status": "error", "reason": "disk_full"}}))
-    assert hud.snapshot(fresh=True).health["code"] == ch.CODE_DISK_FULL
+    runtime = {"status": RuntimeStatus(
+        RuntimeState.RUNNING,
+        issues=(Issue("storage", "error", "磁盘已满", "disk is full", "penpal doctor", "采集存储", "Capture storage"),),
+        components={"storage": Component("storage_error", "disk_full")},
+    )}
+    monkeypatch.setattr("penpal.hud.snapshot.evaluate", lambda **_kwargs: runtime["status"])
+    assert hud.snapshot(fresh=True).health["code"] == RuntimeState.RUNNING.value
 
-    set_state("capture_runtime", json.dumps({"captured_at": now.isoformat(), "running": True, "watchers": {}}))
+    runtime["status"] = RuntimeStatus(RuntimeState.RUNNING)
     set_state(ch.DAEMON_PERMISSIONS_KEY, json.dumps({
         "checked_at": now.isoformat(), "pid": 1, "host_executable": "/opt/py/bin/python3.13",
         "permissions": {"accessibility": "denied", "input_monitoring": "granted"}}))
     snap = hud.snapshot(fresh=True)
-    assert snap.health["code"] == ch.CODE_PERMISSION_MISSING
+    assert snap.health is None
     assert [p.key for p in snap.perm_issues] == ["accessibility"]  # ax_text is off in config, keyboard needs it
     model = hud.model(fresh=True)
     assert any(r["title"].startswith("缺少「辅助功能」") for r in _tab_rows(model))
 
 
-def test_read_only_database_file_shows_the_storage_error_entry(hud, env):
-    now = datetime.now(timezone.utc)
-    set_state("status", "running")
-    set_state("capture_runtime", json.dumps({"captured_at": now.isoformat(), "running": True, "watchers": {}}))
-    db = env.db_path_expanded
-    db.chmod(0o444)
-    try:
-        model = hud.model(fresh=True)
-    finally:
-        db.chmod(0o644)
-    assert hud.snapshot().health["code"] == ch.CODE_STORAGE_ERROR
+def test_runtime_storage_component_shows_error_entry(hud, env, monkeypatch):
+    status = RuntimeStatus(
+        RuntimeState.RUNNING,
+        issues=(Issue("storage", "error", "采集存储发生错误", "Capture storage has an error.", label_zh="采集存储", label_en="Capture storage"),),
+        components={"storage": Component("storage_error", "read_only")},
+    )
+    monkeypatch.setattr("penpal.hud.snapshot.evaluate", lambda **_kwargs: status)
+    model = hud.model(fresh=True)
+    assert hud.snapshot().health["code"] == RuntimeState.RUNNING.value
     assert model["status"]["tone"] == "red"
-    assert any(r["title"] == "数据库无法写入" for r in _tab_rows(model))
+    assert any(r["title"] == "采集存储" for r in _tab_rows(model))
 
 
 def test_unreadable_database_does_not_crash_the_hud(hud, env, monkeypatch):
@@ -132,7 +135,11 @@ def test_pause_resume_use_the_cli_function(hud, env, monkeypatch):
     assert calls == [("core", True)] * 2 + [("core", False)] * 2
 
 
-def test_pause_persists_and_status_bar_follows(hud, env):
+def test_pause_persists_and_status_bar_follows(hud, env, monkeypatch):
+    monkeypatch.setattr(
+        "penpal.hud.snapshot.evaluate",
+        lambda **_kwargs: RuntimeStatus(RuntimeState.PAUSED if capture_control.is_capture_paused() else RuntimeState.RUNNING),
+    )
     m = hud.dispatch("capture.pause")
     assert get_state("status") == "paused" and m["status"]["text"] == "已暂停" and m["dim"]
     assert m["toast"]["text"].startswith("已暂停")
@@ -384,7 +391,6 @@ def test_open_settings_only_opens_known_panes(hud, env, monkeypatch):
     opened = []
     monkeypatch.setattr(permissions, "open_settings_url", opened.append)
     now = datetime.now(timezone.utc)
-    set_state("capture_runtime", json.dumps({"captured_at": now.isoformat(), "running": True, "watchers": {}}))
     set_state(ch.DAEMON_PERMISSIONS_KEY, json.dumps({
         "checked_at": now.isoformat(), "pid": 1, "host_executable": "/opt/py/bin/python3.13",
         "permissions": {"accessibility": "denied"}}))

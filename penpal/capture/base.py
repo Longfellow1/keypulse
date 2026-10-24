@@ -5,6 +5,7 @@ import queue
 import signal
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from penpal.store.models import RawEvent
@@ -111,6 +112,10 @@ class BaseWatcher(abc.ABC):
         # masquerading as a watcher silently losing macOS permissions.
         self._last_emit_at_mono: Optional[float] = None
         self._last_beat_at_mono: Optional[float] = None
+        self._beat_seq = 0
+        self._emit_seq = 0
+        self._last_beat_at: Optional[str] = None
+        self._last_emit_at: Optional[str] = None
         self._heartbeat_revival_count: int = 0
         self._heartbeat_gave_up: bool = False
 
@@ -178,6 +183,10 @@ class BaseWatcher(abc.ABC):
             ),
             "last_emit_age_sec": last_emit_age_sec,
             "last_beat_age_sec": last_beat_age_sec,
+            "beat_seq": self._beat_seq,
+            "last_beat_at": self._last_beat_at,
+            "emit_seq": self._emit_seq,
+            "last_emit_at": self._last_emit_at,
         }
 
     def emit(self, event: RawEvent):
@@ -185,6 +194,11 @@ class BaseWatcher(abc.ABC):
         now = time.monotonic()
         self._last_emit_at_mono = now
         self._last_beat_at_mono = now
+        timestamp = datetime.now(timezone.utc).isoformat()
+        self._last_beat_at = timestamp
+        self._last_emit_at = timestamp
+        self._beat_seq += 1
+        self._emit_seq += 1
         self._queue.put(event)
 
     def beat(self) -> None:
@@ -198,6 +212,8 @@ class BaseWatcher(abc.ABC):
         still trips when the watcher polls happily but produces nothing.
         """
         self._last_beat_at_mono = time.monotonic()
+        self._last_beat_at = datetime.now(timezone.utc).isoformat()
+        self._beat_seq += 1
 
     def is_heartbeat_dead(self, now_mono: Optional[float] = None) -> bool:
         """Return True if this watcher should be considered silently stuck.

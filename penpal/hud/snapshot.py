@@ -1,8 +1,7 @@
 """Read the core's current state into one plain snapshot for the HUD (no AppKit, no writes).
 
 Everything here is read through the same functions the CLI uses (``penpal status`` / ``doctor`` /
-``source list`` / ``mcp list`` / ``mcp audit``). The status codes are the ones ``health.capture_health``
-already defines; the HUD adds no status system of its own.
+``source list`` / ``mcp list`` / ``mcp audit``). Runtime state comes from ``penpal.runtime.evaluate``.
 """
 from __future__ import annotations
 
@@ -12,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+from penpal.runtime import RuntimeState, RuntimeStatus, evaluate, state_message
 from penpal.utils.logging import get_logger
 
 LOGGER = get_logger("hud.snapshot")
@@ -101,6 +101,7 @@ class Snapshot:
     now: datetime
     paused: bool = False
     health: Optional[dict] = None            # {"code", "message"} from capture_health, None = healthy
+    runtime_status: Optional[RuntimeStatus] = None
     read_error: bool = False                 # the HUD could not read the database at all
     last_write_ts: Optional[str] = None
     today_records: int = 0
@@ -144,7 +145,7 @@ def _chat_label(app) -> str:
 def collect_snapshot(cfg, *, now: Optional[datetime] = None) -> Snapshot:
     """Read the whole HUD state. Never raises: an unreadable part falls back to an empty value, and an
     unreadable database sets ``read_error`` (shown as a storage error)."""
-    from penpal.capture.capture_control import CAPTURE_SOURCES, disabled_sources, is_capture_paused
+    from penpal.capture.capture_control import CAPTURE_SOURCES, disabled_sources
     from penpal.capture.chat_apps import CHAT_APPS
     from penpal.capture.keyboard_notice import KEYBOARD_SOURCE, keyboard_capture_enabled
     from penpal.health import capture_health
@@ -157,14 +158,14 @@ def collect_snapshot(cfg, *, now: Optional[datetime] = None) -> Snapshot:
     now = now or datetime.now(timezone.utc)
     read_error = False
 
-    paused = _safe("paused", is_capture_paused, False)
     disabled = _safe("disabled", disabled_sources, frozenset())
-    health = _safe("health", lambda: capture_health.compute_capture_health(cfg, now=now), None)
+    runtime_status = _safe("health", lambda: evaluate(now=now), None)
+    paused = runtime_status is not None and runtime_status.state == RuntimeState.PAUSED
+    health = None
+    if runtime_status is not None and (runtime_status.state != RuntimeState.RUNNING or runtime_status.issues):
+        health = {"code": runtime_status.code, "message": state_message(runtime_status)}
 
     db_path = cfg.db_path_expanded
-    if health is None and db_path.exists() and not os.access(db_path, os.W_OK):
-        # Read-only database file: the daemon cannot write even if its heartbeat looks alive.
-        health = {"code": capture_health.CODE_STORAGE_ERROR, "message": "database is read-only"}
 
     day_start, _ = local_day_bounds(resolve_local_date(date="today"))
     try:
@@ -256,7 +257,8 @@ def collect_snapshot(cfg, *, now: Optional[datetime] = None) -> Snapshot:
     ai_today = sum(1 for r in audit_rows if r.allowed and r.ts >= day_start)
 
     return Snapshot(
-        now=now, paused=paused, health=health, read_error=read_error, last_write_ts=last_write,
+        now=now, paused=paused, health=health, runtime_status=runtime_status,
+        read_error=read_error, last_write_ts=last_write,
         today_records=sum(a["today"] for a in by_source.values()),
         sources=tuple(sources), perm_issues=perm_issues, hosts=tuple(hosts), audit=audit_rows[:5],
         ai_queries_today=ai_today,

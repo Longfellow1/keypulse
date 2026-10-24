@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
-
-from penpal.utils.atomic_io import atomic_write_text
-from penpal.utils.paths import get_data_dir
 
 AlertLevel = Literal["info", "warn", "critical"]
 
@@ -19,10 +14,6 @@ class ProductAlert:
     source: str
     message: str
     suggested_action: str
-
-
-def alerts_json_path() -> Path:
-    return get_data_dir() / "alerts.json"
 
 
 def now_iso() -> str:
@@ -44,39 +35,3 @@ def render_alert(
         message=message.strip(),
         suggested_action=suggested_action.strip(),
     )
-
-
-def write_alerts(alerts: list[ProductAlert], *, path: Path | None = None) -> None:
-    target = path or alerts_json_path()
-    payload = [asdict(item) for item in alerts]
-    rendered = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-    atomic_write_text(target, rendered, encoding="utf-8")
-
-
-def read_alerts(*, path: Path | None = None) -> list[dict[str, str]]:
-    target = path or alerts_json_path()
-    if not target.exists():
-        return []
-    try:
-        payload = json.loads(target.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    if not isinstance(payload, list):
-        return []
-    out: list[dict[str, str]] = []
-    for item in payload:
-        if not isinstance(item, dict):
-            continue
-        level = str(item.get("level") or "").strip()
-        if level not in {"info", "warn", "critical"}:
-            continue
-        out.append(
-            {
-                "ts": str(item.get("ts") or "").strip(),
-                "level": level,
-                "source": str(item.get("source") or "").strip(),
-                "message": str(item.get("message") or "").strip(),
-                "suggested_action": str(item.get("suggested_action") or "").strip(),
-            }
-        )
-    return out

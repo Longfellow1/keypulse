@@ -2,8 +2,10 @@
 and capture resumes once a write succeeds again. Synthetic events only."""
 from __future__ import annotations
 
-import json
+import os
 import sqlite3
+import uuid
+from datetime import datetime, timezone
 
 import pytest
 
@@ -14,7 +16,10 @@ from penpal.capture.normalizer import normalize_clipboard_event
 from penpal.config import Config
 from penpal.store import buckets
 from penpal.store.db import close, get_conn, init_db
-from penpal.store.repository import get_state
+from penpal import __version__
+from penpal.runtime.identity import code_fingerprint
+from penpal.runtime.launchd import process_start_time
+from penpal.runtime.record import Progress, RuntimeRecord, read_record
 
 FULL = sqlite3.OperationalError("database or disk is full")
 
@@ -26,7 +31,17 @@ def mgr(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     buckets.reset_cache()
     init_db(tmp_path / "kp.db")
-    yield CaptureManager(Config())
+    manager = CaptureManager(Config())
+    started = datetime.now(timezone.utc).isoformat()
+    manager._runtime_progress["core_loop"] = Progress(1, started)
+    manager._runtime_record = RuntimeRecord(
+        generation=str(uuid.uuid4()), pid=os.getpid(),
+        process_start_time=process_start_time(os.getpid()) or "unknown",
+        version=__version__, code_fingerprint=code_fingerprint(),
+        started_at=started, written_at=started, progress=dict(manager._runtime_progress),
+    )
+    manager._write_runtime_record(force=True)
+    yield manager
     close()
     buckets.reset_cache()
 
@@ -52,8 +67,10 @@ def _row_count() -> int:
     return get_conn().execute("SELECT COUNT(*) FROM raw_events").fetchone()[0]
 
 
-def _runtime_storage() -> dict:
-    return json.loads(get_state("capture_runtime"))["storage"]
+def _runtime_storage():
+    record = read_record()
+    assert record is not None
+    return record.components["storage"]
 
 
 def test_disk_full_stops_writes_and_reports_error(mgr, monkeypatch) -> None:
@@ -74,11 +91,15 @@ def test_disk_full_stops_writes_and_reports_error(mgr, monkeypatch) -> None:
 
     assert len(attempts) == 1, "one write attempt per probe interval, not one per event"
     assert _row_count() == 0
-    mgr._persist_runtime_state(force=True)  # the flush loop does this every few seconds
+    mgr.report_progress("core_loop")
+    mgr._write_runtime_record(force=True)
     storage = _runtime_storage()
-    assert storage["status"] == "error"
-    assert storage["reason"] == "disk_full"
-    assert storage["dropped_events"] == 4
+    assert storage.state == "storage_error"
+    assert storage.detail == "disk_full"
+
+    from penpal.capabilities.builtin import capture_storage
+    from penpal.runtime import RuntimeState, RuntimeStatus
+    monkeypatch.setattr(capture_storage, "evaluate", lambda: RuntimeStatus(RuntimeState.RUNNING, components={"storage": storage}))
 
     cap = CaptureStorageCapability()
     state = cap.monitor()
@@ -86,7 +107,7 @@ def test_disk_full_stops_writes_and_reports_error(mgr, monkeypatch) -> None:
     signal = cap.diagnose(state)
     assert signal.level == "err"
     assert "磁盘已满" in (signal.hint or "")
-    assert "kubectl" not in json.dumps(json.loads(get_state("capture_runtime"))["storage"])
+    assert "kubectl" not in storage.detail
 
 
 def test_capture_resumes_after_space_is_back(mgr, monkeypatch) -> None:
@@ -103,14 +124,19 @@ def test_capture_resumes_after_space_is_back(mgr, monkeypatch) -> None:
 
     mgr._process_event(_event(1))
     assert mgr._storage_error == "disk_full"
+    mgr._write_runtime_record(force=True)
     mgr._process_event(_event(2))  # probe still fails: stays in error, no crash
-    assert _runtime_storage()["status"] == "error"
+    mgr.report_progress("core_loop")
+    mgr._write_runtime_record(force=True)
+    assert _runtime_storage().state == "storage_error"
 
     full["on"] = False
     mgr._process_event(_event(3))  # probe succeeds
     assert _row_count() == 1
     assert mgr._storage_error is None
-    assert _runtime_storage() == {"status": "ok"}
+    mgr.report_progress("core_loop")
+    mgr._write_runtime_record(force=True)
+    assert _runtime_storage().state == "running"
     assert CaptureStorageCapability().monitor().ok
 
 

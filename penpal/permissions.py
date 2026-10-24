@@ -144,7 +144,7 @@ def spec_by_key(key: str) -> PermissionSpec | None:
     return None
 
 
-def trigger_required_prompts() -> dict[str, PermissionStatus]:
+def trigger_required_prompts(required_keys: set[str] | None = None) -> dict[str, PermissionStatus]:
     """Trigger native authorization prompts for any permission not yet granted.
 
     Safe to call on daemon startup: API returns silently when state is `granted`
@@ -152,6 +152,8 @@ def trigger_required_prompts() -> dict[str, PermissionStatus]:
     """
     results: dict[str, PermissionStatus] = {}
     for spec in PERMISSION_SPECS:
+        if required_keys is not None and spec.key not in required_keys:
+            continue
         current = spec.check()
         if current == PermissionStatus.GRANTED:
             results[spec.key] = PermissionStatus.GRANTED

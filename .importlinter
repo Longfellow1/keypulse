@@ -67,3 +67,18 @@ forbidden_modules =
     Vision
     WebKit
 allow_indirect_imports = True
+
+[importlinter:contract:runtime-evidence-boundary]
+name = Only the runtime evaluator and daemon writer may read runtime evidence
+type = forbidden
+source_modules =
+    penpal
+forbidden_modules =
+    penpal.runtime.record
+    penpal.runtime.launchd
+allow_indirect_imports = True
+ignore_imports =
+    penpal.runtime.evaluate -> penpal.runtime.record
+    penpal.runtime.evaluate -> penpal.runtime.launchd
+    penpal.capture.manager -> penpal.runtime.record
+    penpal.capture.manager -> penpal.runtime.launchd

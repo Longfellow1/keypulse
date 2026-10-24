@@ -54,7 +54,7 @@ class ScreenRecordingPermissionCapability(Capability):
             granted = False
 
         if not granted:
-            if watcher_healthy("ocr") and watcher_has_recent_emit("ocr", 3600.0):
+            if watcher_healthy("ocr") and watcher_has_recent_emit("ocr"):
                 return CheckResult(
                     ok=True,
                     code="ok",

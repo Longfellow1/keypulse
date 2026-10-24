@@ -1,14 +1,14 @@
-"""One collector crashes: the others keep running, and the crashed one shows status "warning"
-(error type only, never its message) in the health output the HUD reads."""
+"""A recovered watcher is healthy in the shared runtime record; other watchers keep running."""
 from __future__ import annotations
 
-import json
 import queue
 import time
 
 from penpal.capabilities.builtin import _watcher_health
 from penpal.capabilities.builtin._watcher_health import WatcherHealthCapability, WatcherHealthSpec
 from penpal.capture.base import BaseWatcher, watcher_status
+from penpal.runtime import RuntimeState, RuntimeStatus
+from penpal.runtime.record import Component
 
 SECRET = "secret window title 工资 1234"
 
@@ -55,7 +55,7 @@ def _wait(predicate, timeout: float = 3.0) -> bool:
     return False
 
 
-def test_crashed_collector_does_not_stop_others_and_reports_warning(monkeypatch) -> None:
+def test_recovered_collector_does_not_stop_others_or_report_failure(monkeypatch) -> None:
     q: queue.Queue = queue.Queue()
     flaky = _FlakyWatcher(q)
     steady = _SteadyWatcher(q)
@@ -70,11 +70,10 @@ def test_crashed_collector_does_not_stop_others_and_reports_warning(monkeypatch)
         assert steady.health()["status"] == "ok"
         assert watcher_status(crashes=0, gave_up=True, heartbeat_gave_up=False) == "error"
 
-        runtime = {"watchers": {"flaky_test": flaky.health(), "steady_test": steady.health()}}
-        monkeypatch.setattr(
-            "penpal.capabilities.builtin._watcher_health.get_state",
-            lambda _key: json.dumps(runtime, ensure_ascii=False),
-        )
+        status = RuntimeStatus(RuntimeState.RUNNING, components={
+            "flaky_test": Component("running"), "steady_test": Component("running"),
+        })
+        monkeypatch.setattr(_watcher_health, "evaluate", lambda: status)
         flaky_cap = WatcherHealthCapability(
             WatcherHealthSpec(watcher_name="flaky_test", capability_name="flaky_watcher")
         )
@@ -82,14 +81,7 @@ def test_crashed_collector_does_not_stop_others_and_reports_warning(monkeypatch)
             WatcherHealthSpec(watcher_name="steady_test", capability_name="steady_watcher")
         )
 
-        state = flaky_cap.monitor()
-        assert not state.ok
-        assert state.code == "flaky_test_watcher_crashed"
-        signal = flaky_cap.diagnose(state)
-        assert signal.level == "warn"
-        assert "RuntimeError" in (signal.hint or "")
-        assert "secret" not in (signal.hint or "") and "1234" not in (signal.hint or "")
-
+        assert flaky_cap.monitor().ok  # it recovered and is running; past exception text is not runtime state
         assert steady_cap.monitor().ok
     finally:
         flaky.stop()
@@ -102,8 +94,11 @@ def test_clean_watcher_is_ok_status_and_no_capability_failure(monkeypatch) -> No
     steady.start()
     try:
         assert _wait(lambda: steady.emitted >= 2)
-        runtime = {"watchers": {"steady_test": steady.health()}}
-        monkeypatch.setattr(_watcher_health, "get_state", lambda _key: json.dumps(runtime))
+        monkeypatch.setattr(
+            _watcher_health,
+            "evaluate",
+            lambda: RuntimeStatus(RuntimeState.RUNNING, components={"steady_test": Component("running")}),
+        )
         cap = WatcherHealthCapability(WatcherHealthSpec(watcher_name="steady_test", capability_name="steady_watcher"))
         assert cap.monitor().ok
     finally:

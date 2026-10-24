@@ -7,6 +7,7 @@ import signal
 import sqlite3
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Callable, Literal, Optional
 from urllib.parse import urlsplit
@@ -51,6 +52,11 @@ from penpal.store.repository import (
     set_state,
 )
 from penpal.utils.logging import get_logger
+from penpal import __version__
+from penpal.runtime.evaluate import RECORD_WRITE_INTERVAL_SEC
+from penpal.runtime.identity import code_fingerprint
+from penpal.runtime.launchd import process_start_time
+from penpal.runtime.record import Component, Progress, RuntimeRecord, utc_now, write_record
 
 logger = get_logger("manager")
 _USER_SOURCES = frozenset(
@@ -208,7 +214,11 @@ class CaptureManager:
         self._flush_thread: Optional[threading.Thread] = None
         self._heartbeat_thread: Optional[threading.Thread] = None
         self._camera_monitor: Optional[CameraMonitor] = None
-        self._runtime_state_last_persist = 0.0
+        self._runtime_record: RuntimeRecord | None = None
+        self._runtime_progress: dict[str, Progress] = {}
+        self._runtime_components: dict[str, Component] = {}
+        self._runtime_record_lock = threading.RLock()
+        self._runtime_last_written_mono = 0.0
         self._source_counts: dict[str, int] = {}
         self._source_last_event_at: dict[str, str] = {}
         # D27: gate hits by "source:reason" (counts only, never content)
@@ -238,6 +248,23 @@ class CaptureManager:
             w.start()
 
         self._running.set()
+        # A persisted pause survives restarts; only a non-paused daemon sets running.
+        if not is_capture_paused():
+            set_state("status", "running")
+        set_state("started_at", datetime.now(timezone.utc).isoformat())
+        started_at = utc_now()
+        self._runtime_progress["core_loop"] = Progress(0, started_at)
+        self._runtime_record = RuntimeRecord(
+            generation=str(uuid.uuid4()),
+            pid=os.getpid(),
+            process_start_time=process_start_time(os.getpid()) or "unknown",
+            version=__version__,
+            code_fingerprint=code_fingerprint(),
+            started_at=started_at,
+            written_at=started_at,
+            progress=dict(self._runtime_progress),
+        )
+        self._write_runtime_record(force=True)
         self._flush_thread = threading.Thread(
             target=self._flush_loop, daemon=True, name="flush-loop"
         )
@@ -246,11 +273,6 @@ class CaptureManager:
             target=self._heartbeat_loop, daemon=True, name="heartbeat-loop"
         )
         self._heartbeat_thread.start()
-        # A persisted pause (penpal pause, HUD) survives restarts; only a non-paused daemon sets running.
-        if not is_capture_paused():
-            set_state("status", "running")
-        set_state("started_at", datetime.now(timezone.utc).isoformat())
-        self._persist_runtime_state(force=True)
         logger.info("CaptureManager started")
         self._start_camera_monitor()
 
@@ -271,7 +293,6 @@ class CaptureManager:
             self._heartbeat_thread.join(timeout=5)
         if not is_capture_paused():  # keep a persisted pause across daemon restarts
             set_state("status", "stopped")
-        self._persist_runtime_state(force=True)
         logger.info("CaptureManager stopped")
 
     def pause(self):
@@ -459,10 +480,6 @@ class CaptureManager:
         except Exception as exc:
             logger.error("recording wake time failed: %s", exc)
         self._restart_watchers_after_wake()
-        try:
-            self._persist_runtime_state(force=True)
-        except Exception as exc:  # e.g. disk full: the flush loop reports it
-            logger.error("runtime state not persisted after wake: %s", type(exc).__name__)
         handler = self._wake_handler
         if handler is not None:
             try:
@@ -495,8 +512,9 @@ class CaptureManager:
             # Always drain: while paused or source-disabled, _process_event drops events at write time,
             # so nothing queued during a pause is replayed after resume.
             self._drain_queue()
+            self.report_progress("core_loop")
             try:
-                self._persist_runtime_state()
+                self._write_runtime_record()
             except Exception as exc:  # e.g. disk full: keep the flush loop alive, report once
                 if not self._runtime_persist_failed:
                     logger.error("capture runtime state not persisted: %s", type(exc).__name__)
@@ -824,11 +842,8 @@ class CaptureManager:
         self._persist_storage_state()
 
     def _persist_storage_state(self) -> None:
-        # Best effort: when the disk is really full this write can fail too; the in-process state is authoritative.
-        try:
-            self._persist_runtime_state(force=True)
-        except Exception as exc:
-            logger.warning("capture storage state not persisted: %s", type(exc).__name__)
+        # The flush loop publishes this state; a full database may not accept another write.
+        return
 
     def _storage_status(self) -> dict:
         if self._storage_error is None:
@@ -840,38 +855,78 @@ class CaptureManager:
             "dropped_events": self._storage_dropped,
         }
 
-    def _runtime_snapshot(self) -> dict:
-        multi_source_counts = {
-            source: self._source_counts.get(source, 0)
-            for source in ("ax_text", "ocr_text", "clipboard", "manual", "keyboard_chunk")
-        }
-        last_seen = {
-            source: self._source_last_event_at.get(source)
-            for source in ("ax_text", "ocr_text", "clipboard", "manual", "keyboard_chunk")
-            if self._source_last_event_at.get(source)
-        }
-        return {
-            "captured_at": datetime.now(timezone.utc).isoformat(),
-            "pid": os.getpid(),
-            "host_executable": os.path.realpath(os.sys.executable),
-            "running": self._running.is_set(),
-            "paused": self._paused.is_set(),
-            "disabled_sources": sorted(disabled_sources()),
-            "watchers": {
-                name: watcher.health() | {"heartbeat_timeout_sec": watcher.HEARTBEAT_TIMEOUT_SEC}
-                for name, watcher in self._watchers.items()
-            },
-            "queue_size": self._queue.qsize(),
-            "multi_source_counts": multi_source_counts,
-            "gate_hits": dict(self._gate_hits),
-            "last_seen": last_seen,
-            "storage": self._storage_status(),
-        }
+    def report_progress(self, name: str) -> None:
+        """Let a daemon loop report completion without writing the shared record."""
+        with self._runtime_record_lock:
+            previous = self._runtime_progress.get(name)
+            self._runtime_progress[name] = Progress((previous.seq if previous else 0) + 1, utc_now())
 
-    def _persist_runtime_state(self, force: bool = False) -> None:
-        now = time.monotonic()
-        if not force and (now - self._runtime_state_last_persist) < 2.0:
+    def set_runtime_component(self, name: str, state: str, detail: str = "") -> None:
+        with self._runtime_record_lock:
+            self._runtime_components[name] = Component(state, detail)
+
+    def _component_snapshot(self) -> dict[str, Component]:
+        components = dict(self._runtime_components)
+        paused = is_capture_paused()
+        disabled = disabled_sources()
+        for name, watcher in self._watchers.items():
+            health = watcher.health()
+            beat_at = health.get("last_beat_at")
+            if isinstance(beat_at, str):
+                self._runtime_progress[f"watcher.{name}"] = Progress(int(health.get("beat_seq") or 0), beat_at)
+            emit_at = health.get("last_emit_at")
+            if isinstance(emit_at, str):
+                self._runtime_progress[f"emit.{name}"] = Progress(int(health.get("emit_seq") or 0), emit_at)
+            if name in disabled:
+                state = "disabled"
+            elif paused or health.get("paused"):
+                state = "idle"
+            elif health.get("gave_up") or health.get("heartbeat_gave_up"):
+                state = "gave_up"
+            elif not health.get("running"):
+                state = "idle"
+            else:
+                state = "running"
+            detail = ""
+            if state == "gave_up":
+                detail = "heartbeat_retries_exhausted" if health.get("heartbeat_gave_up") else "crash_retries_exhausted"
+            components[name] = Component(state, detail)
+        components["storage"] = Component("storage_error", self._storage_error) if self._storage_error else Component("running")
+        components["core_loop"] = Component("running" if self._running.is_set() else "idle")
+        try:
+            raw = get_state("daemon_permissions") or ""
+            permission_snapshot = json.loads(raw) if raw else {}
+            permission_sources = {
+                "input_monitoring": ("keyboard_chunk",),
+                "accessibility": ("ax_text", "keyboard_chunk"),
+            }
+            for name, value in (permission_snapshot.get("permissions") or {}).items():
+                affected = permission_sources.get(name, ())
+                if value == "denied" and any(source in self._watchers and source not in disabled for source in affected):
+                    components[f"permission.{name}"] = Component("missing_permission")
+        except (TypeError, ValueError):
+            pass
+        return components
+
+    def _write_runtime_record(self, force: bool = False) -> None:
+        now_mono = time.monotonic()
+        if not force and now_mono - self._runtime_last_written_mono < RECORD_WRITE_INTERVAL_SEC:
             return
-        snapshot = self._runtime_snapshot()
-        set_state("capture_runtime", json.dumps(snapshot, ensure_ascii=False))
-        self._runtime_state_last_persist = now
+        with self._runtime_record_lock:
+            previous = self._runtime_record
+            if previous is None:
+                return
+            record = RuntimeRecord(
+                generation=previous.generation,
+                pid=previous.pid,
+                process_start_time=previous.process_start_time,
+                version=previous.version,
+                code_fingerprint=previous.code_fingerprint,
+                started_at=previous.started_at,
+                written_at=utc_now(),
+                progress=dict(self._runtime_progress),
+                components=self._component_snapshot(),
+            )
+            write_record(record)
+            self._runtime_record = record
+            self._runtime_last_written_mono = now_mono

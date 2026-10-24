@@ -14,6 +14,28 @@ from penpal.health.product_delivery import DeliveryHealth
 from penpal.store.db import close, init_db
 from penpal.store.models import RawEvent
 from penpal.store.repository import insert_raw_event
+from penpal.runtime import RuntimeState, RuntimeStatus
+from penpal.runtime.evaluate import Issue
+
+
+@pytest.fixture(autouse=True)
+def _runtime_status(monkeypatch):
+    import penpal.health.check as check
+
+    status = RuntimeStatus(RuntimeState.RUNNING, pid=69943)
+    monkeypatch.setattr(check, "evaluate", lambda **_kwargs: status)
+    return status
+
+
+def _set_runtime(monkeypatch, state: RuntimeState, pid: int | None = 69943):
+    import penpal.health.check as check
+
+    issues = () if state in {RuntimeState.RUNNING, RuntimeState.PAUSED, RuntimeState.STARTING} else (
+        Issue("daemon", "error", "后台服务未运行。", "The background service is not running.", "penpal start"),
+    )
+    status = RuntimeStatus(state, issues=issues, pid=pid)
+    monkeypatch.setattr(check, "evaluate", lambda **_kwargs: status)
+    return status
 
 
 def _utc_iso(delta: timedelta = timedelta(0)) -> str:
@@ -63,58 +85,41 @@ def test_healthcheck_reports_alive_daemon_and_writes_atomic_json(monkeypatch, tm
     config = _make_config(db_path, vault_path, window=True)
     out_path = tmp_path / "health.json"
 
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 69943\n"
-        stderr = ""
-
-    kills: list[tuple[int, int]] = []
-
     monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
     monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda pid, sig: kills.append((pid, sig)))
 
     result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
     assert result["overall"] in {"ok", "alert"}
     assert result["daemon"]["alive"] is True
     assert result["daemon"]["pid"] == 69943
+    assert result["daemon"]["state"] == "running"
     assert result["integrity"]["key_watchers_enabled"] == ["window"]
     assert "product_status" in result
     assert out_path.exists()
     assert json.loads(out_path.read_text()) == result
     assert not out_path.with_name(out_path.name + ".tmp").exists()
-    assert (out_path.parent / "alerts.json").exists()
-    assert kills == [(69943, 0)]
+    assert not (out_path.parent / "alerts.json").exists()
 
 
-def test_healthcheck_marks_dead_daemon_when_launchctl_pid_missing(monkeypatch, tmp_path):
+def test_healthcheck_reports_shared_not_running_state(monkeypatch, tmp_path):
     db_path = tmp_path / "penpal.db"
     vault_path = tmp_path / "vault"
     config = _make_config(db_path, vault_path, window=True)
     out_path = tmp_path / "health.json"
 
-    class FakeRun:
-        returncode = 0
-        stdout = "something without pid"
-        stderr = ""
-
+    _set_runtime(monkeypatch, RuntimeState.NOT_RUNNING, None)
     monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
     monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr(
-        "penpal.health.check.os.kill",
-        lambda pid, sig: (_ for _ in ()).throw(ProcessLookupError()) if sig == 0 else None,
-    )
 
     result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
     assert result["daemon"]["alive"] is False
-    assert any(alert["code"] == "DAEMON_DEAD" for alert in result["alerts"])
+    assert result["daemon"]["state"] == "not_running"
+    assert any(alert["code"] == "not_running" for alert in result["alerts"])
 
 
-def test_healthcheck_detects_stale_stream_without_killing_daemon(monkeypatch, tmp_path):
+def test_healthcheck_does_not_treat_quiet_event_stream_as_daemon_failure(monkeypatch, tmp_path):
     db_path = tmp_path / "penpal.db"
     vault_path = tmp_path / "vault"
     daily_dir = vault_path / "Daily"
@@ -122,121 +127,18 @@ def test_healthcheck_detects_stale_stream_without_killing_daemon(monkeypatch, tm
     (daily_dir / "2026-04-22.md").write_text("daily note")
     config = _make_config(db_path, vault_path, window=True)
     out_path = tmp_path / "health.json"
-    stale_ts = _utc_iso(timedelta(minutes=11))
+    stale_ts = _utc_iso(timedelta(hours=30))
 
     _seed_event(db_path, source="window", event_type="window_focus", ts_start=stale_ts)
 
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 11111\n"
-        stderr = ""
-
-    kills: list[tuple[int, int]] = []
-
     monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
     monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda pid, sig: kills.append((pid, sig)))
 
     result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
     assert result["daemon"]["alive"] is True
-    assert result["daemon"]["events_last_10min"] == 0
-    assert result["daemon"]["age_sec_since_last_event"] >= 660
-    assert any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
-    assert kills == [(11111, 0)]
-
-
-def test_healthcheck_skips_kill_when_user_currently_idle(monkeypatch, tmp_path):
-    """Long idle period (e.g. user asleep): last idle event is idle_start
-    older than the 10-min window, no new events. Daemon must NOT be killed."""
-    db_path = tmp_path / "penpal.db"
-    vault_path = tmp_path / "vault"
-    daily_dir = vault_path / "Daily"
-    daily_dir.mkdir(parents=True)
-    (daily_dir / "2026-04-22.md").write_text("daily note")
-    config = _make_config(db_path, vault_path, window=True, idle=True)
-    out_path = tmp_path / "health.json"
-
-    _seed_event(db_path, source="window", event_type="window_focus", ts_start=_utc_iso(timedelta(minutes=45)))
-    _seed_event(db_path, source="idle", event_type="idle_start", ts_start=_utc_iso(timedelta(minutes=40)))
-
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 22222\n"
-        stderr = ""
-
-    kills: list[tuple[int, int]] = []
-    monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
-    monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda pid, sig: kills.append((pid, sig)))
-
-    result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
-
-    assert result["daemon"]["alive"] is True
-    assert result["daemon"]["events_last_10min"] == 0
-    assert not any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
-    assert (22222, 9) not in kills
-
-
-def test_healthcheck_alerts_when_idle_ended_but_stream_silent(monkeypatch, tmp_path):
-    """User came back from idle (idle_end is the last idle event) but no events
-    have flowed for 11 min: emit warning only, no daemon kill."""
-    db_path = tmp_path / "penpal.db"
-    vault_path = tmp_path / "vault"
-    daily_dir = vault_path / "Daily"
-    daily_dir.mkdir(parents=True)
-    (daily_dir / "2026-04-22.md").write_text("daily note")
-    config = _make_config(db_path, vault_path, window=True, idle=True)
-    out_path = tmp_path / "health.json"
-
-    _seed_event(db_path, source="idle", event_type="idle_start", ts_start=_utc_iso(timedelta(minutes=30)))
-    _seed_event(db_path, source="idle", event_type="idle_end", ts_start=_utc_iso(timedelta(minutes=15)))
-    _seed_event(db_path, source="window", event_type="window_focus", ts_start=_utc_iso(timedelta(minutes=12)))
-
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 33333\n"
-        stderr = ""
-
-    kills: list[tuple[int, int]] = []
-    monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
-    monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda pid, sig: kills.append((pid, sig)))
-
-    result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
-
-    assert any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
-    assert (33333, 9) not in kills
-
-
-def test_healthcheck_ignores_stale_stream_when_idle_recent(monkeypatch, tmp_path):
-    db_path = tmp_path / "penpal.db"
-    vault_path = tmp_path / "vault"
-    daily_dir = vault_path / "Daily"
-    daily_dir.mkdir(parents=True)
-    (daily_dir / "2026-04-22.md").write_text("daily note")
-    config = _make_config(db_path, vault_path, window=True)
-    out_path = tmp_path / "health.json"
-
-    _seed_event(db_path, source="window", event_type="window_focus", ts_start=_utc_iso(timedelta(minutes=11)))
-    _seed_event(db_path, source="idle", event_type="idle_start", ts_start=_utc_iso(timedelta(minutes=5)))
-
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 11111\n"
-        stderr = ""
-
-    monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
-    monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda *args, **kwargs: None)
-
-    result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
-
-    assert not any(alert["code"] == "STALE_EVENT_STREAM" for alert in result["alerts"])
+    assert result["daemon"]["state"] == "running"
+    assert not any(alert["code"] in {"STALE_EVENT_STREAM", "not_running", "hung"} for alert in result["alerts"])
 
 
 def test_healthcheck_flags_speaker_mislabel_spike_and_ignores_low_ratio(monkeypatch, tmp_path):
@@ -258,15 +160,8 @@ def test_healthcheck_flags_speaker_mislabel_spike_and_ignores_low_ratio(monkeypa
             speaker="system" if index < 3 else "user",
         )
 
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 22222\n"
-        stderr = ""
-
     monkeypatch.setattr("penpal.health.check.Config.load", lambda: high_ratio_config)
     monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda *args, **kwargs: None)
 
     result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
     assert result["integrity"]["speaker_ratio_system_in_user_source_last_1h"] > 0.10
@@ -300,15 +195,8 @@ def test_healthcheck_reports_config_load_failure(monkeypatch, tmp_path):
     config = _make_config(db_path, vault_path, window=True)
     out_path = tmp_path / "health.json"
 
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 33333\n"
-        stderr = ""
-
     monkeypatch.setattr("penpal.health.check.Config.load", lambda: (_ for _ in ()).throw(RuntimeError("bad config")))
     monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda *args, **kwargs: None)
 
     result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
@@ -322,37 +210,13 @@ def test_healthcheck_flags_missing_watchers(monkeypatch, tmp_path):
     config = _make_config(db_path, vault_path)
     out_path = tmp_path / "health.json"
 
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 44444\n"
-        stderr = ""
-
     monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
     monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda *args, **kwargs: None)
 
     result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
     assert result["integrity"]["key_watchers_enabled"] == []
     assert any(alert["code"] == "CRITICAL_WATCHERS_DISABLED" for alert in result["alerts"])
-
-
-def test_launchctl_pid_parses_quoted_key():
-    from penpal.health.check import _launchctl_pid
-    import penpal.health.check as check_mod
-
-    class FakeResult:
-        returncode = 0
-        stdout = '{\n\t"Label" = "com.penpal.daemon";\n\t"PID" = 69943;\n};\n'
-        stderr = ""
-
-    original = check_mod.subprocess.run
-    check_mod.subprocess.run = lambda *a, **kw: FakeResult()
-    try:
-        assert _launchctl_pid() == 69943
-    finally:
-        check_mod.subprocess.run = original
 
 
 def test_healthcheck_cli_exit_policy(monkeypatch, tmp_path):
@@ -362,7 +226,7 @@ def test_healthcheck_cli_exit_policy(monkeypatch, tmp_path):
             "schema_version": 1,
             "checked_at": "2026-04-22T10:50:00+00:00",
             "overall": "alert",
-            "daemon": {"alive": True, "pid": 1, "last_event_at": None, "events_last_10min": 0, "age_sec_since_last_event": None},
+            "daemon": {"alive": True, "pid": 1, "state": "running"},
             "integrity": {"schema_version": 11, "config_loadable": True, "key_watchers_enabled": ["window"], "speaker_ratio_system_in_user_source_last_1h": 0.02},
             "sync": {"last_daily_sync_at": None, "last_daily_file_date": None},
             "alerts": [{"severity": "warn", "code": "ONLY_WARN", "message": "warn"}],
@@ -378,7 +242,7 @@ def test_healthcheck_cli_exit_policy(monkeypatch, tmp_path):
             "schema_version": 1,
             "checked_at": "2026-04-22T10:50:00+00:00",
             "overall": "alert",
-            "daemon": {"alive": False, "pid": None, "last_event_at": None, "events_last_10min": 0, "age_sec_since_last_event": None},
+            "daemon": {"alive": False, "pid": None, "state": "not_running"},
             "integrity": {"schema_version": 11, "config_loadable": False, "key_watchers_enabled": [], "speaker_ratio_system_in_user_source_last_1h": 0.0},
             "sync": {"last_daily_sync_at": None, "last_daily_file_date": None},
             "alerts": [{"severity": "error", "code": "BAD", "message": "bad"}],
@@ -389,38 +253,24 @@ def test_healthcheck_cli_exit_policy(monkeypatch, tmp_path):
     assert result.exit_code == 1
 
 
-def test_healthcheck_does_not_trigger_self_heal_after_two_degraded_checks(monkeypatch, tmp_path):
+def test_healthcheck_reports_delivery_alerts_without_self_heal_state(monkeypatch, tmp_path):
     db_path = tmp_path / "penpal.db"
     vault_path = tmp_path / "vault"
     config = _make_config(db_path, vault_path, window=True)
     out_path = tmp_path / "health.json"
 
-    class FakeRun:
-        returncode = 0
-        stdout = "PID = 55555\n"
-        stderr = ""
-
     monkeypatch.setattr("penpal.health.check.Config.load", lambda: config)
     monkeypatch.setattr("penpal.health.check.HEALTH_JSON_PATH", out_path)
-    monkeypatch.setattr("penpal.health.check.subprocess.run", lambda *args, **kwargs: FakeRun())
-    monkeypatch.setattr("penpal.health.check.os.kill", lambda *args, **kwargs: None)
 
     monkeypatch.setattr(
         "penpal.health.check.evaluate_delivery_health",
-        lambda: DeliveryHealth(
+        lambda **_kwargs: DeliveryHealth(
             alerts=[render_alert(level="critical", source="daily", message="今日日报未生成", suggested_action="补跑")],
             watcher_counts={"keyboard_chunk": 0, "clipboard": 0},
             degraded=True,
         ),
     )
-    monkeypatch.setattr("penpal.health.check._update_degraded_streak", lambda is_degraded: 2)
-    monkeypatch.setattr(
-        "penpal.health.check._trigger_self_heal",
-        lambda: (_ for _ in ()).throw(AssertionError("_trigger_self_heal should not be called")),
-    )
-
     result = __import__("penpal.health.check", fromlist=["run_healthcheck"]).run_healthcheck()
 
-    assert result["product_status"]["self_heal_triggered"] is False
-    assert result["self_heal"]["status"] == "disabled"
-    assert result["self_heal"]["reason"] == "degraded_streak_detected_no_daemon_kill"
+    assert any(alert["code"] == "PRODUCT_DAILY" for alert in result["alerts"])
+    assert "self_heal" not in result

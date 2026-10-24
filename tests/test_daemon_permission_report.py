@@ -35,9 +35,7 @@ def _env(tmp_path, monkeypatch):
     default_db = home / ".penpal" / "penpal.db"
     default_db.parent.mkdir(parents=True)
     init_db(default_db)
-    ch.reset_cache()
     yield
-    ch.reset_cache()
 
 
 def _fake_specs(monkeypatch, status_by_key):

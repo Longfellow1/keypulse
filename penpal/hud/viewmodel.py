@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from penpal.health import capture_health as ch
+from penpal.i18n import T
+from penpal.runtime import RuntimeState, state_message, state_text
 from penpal.hud.snapshot import (
     BUCKET_LABELS,
     GROUPS,
@@ -194,26 +195,33 @@ def has_issue(src: SourceInfo) -> bool:
 
 
 def alerts(snap: Snapshot) -> list[tuple[str, dict]]:
-    """(tone, row) for everything that needs attention, red first. Codes are capture_health's."""
+    """(tone, row) for runtime and source issues, red first."""
     out: list[tuple[str, dict]] = []
-    code = (snap.health or {}).get("code")
+    status = snap.runtime_status
     if snap.read_error:
         out.append(("red", row("无法读取数据库", dot="red", sub="运行 penpal doctor 查看详情", sub_tone="red")))
-    if code in (ch.CODE_DAEMON_NOT_RUNNING, ch.CODE_HEARTBEAT_STALE):
-        title = "后台记录进程停止了" if code == ch.CODE_DAEMON_NOT_RUNNING else "后台记录进程没有响应"
-        out.append(("red", row(title, dot="red", sub="重启不会重复记录", sub_tone="red", value="重启",
-                               value_tone="blue", action="daemon.restart")))
-    elif code == ch.CODE_DISK_FULL:
-        out.append(("red", row("磁盘空间已满", dot="red", sub="已暂停写入，腾出空间后自动继续", sub_tone="red")))
-    elif code == ch.CODE_STORAGE_ERROR:
-        out.append(("red", row("数据库无法写入", dot="red", sub="可能是只读或已损坏 · 运行 penpal doctor 查看",
-                               sub_tone="red")))
+    if status is not None and status.state in {
+        RuntimeState.NOT_INSTALLED, RuntimeState.NOT_RUNNING, RuntimeState.HUNG, RuntimeState.OUTDATED,
+    }:
+        out.append(("red", row(
+            state_text(status.state), dot="red", sub=state_message(status), sub_tone="red",
+            value="修复" if status.fix_command else "", value_tone="blue",
+            action="daemon.restart" if status.fix_command else None,
+        )))
+    elif status is not None and status.state == RuntimeState.STARTING:
+        out.append(("amber", row(state_text(status.state), dot="amber", sub=state_message(status), sub_tone="amber")))
+    if status is not None:
+        for issue in status.issues:
+            if issue.component == "daemon":
+                continue
+            tone = "red" if issue.severity == "error" else "amber"
+            message = T(issue.message_zh, issue.message_en)
+            label = T(issue.label_zh or issue.component, issue.label_en or issue.component)
+            out.append((tone, row(label, dot=tone, sub=message, sub_tone=tone)))
     for issue in snap.perm_issues:
         names = "、".join(source_label(s) for s in issue.sources)
         out.append(("amber", row(f"缺少「{short_perm(issue.label)}」权限", dot="amber", sub=f"影响：{names} · 点按处理",
                                  sub_tone="amber", nav=True, action="nav.page", args={"page": f"perm:{issue.key}"})))
-    if code == ch.CODE_PERMISSION_MISSING and not snap.perm_issues:
-        out.append(("amber", row("缺少系统权限", dot="amber", sub="运行 penpal doctor 查看是哪一项", sub_tone="amber")))
     for src in snap.sources:
         if has_issue(src) and src.unavailable_reason:
             out.append(("amber", row(f"{src.label} 不可用", dot="amber", sub=REASON_TEXT.get(src.unavailable_reason, "不可用") + " · 点按处理",
@@ -223,17 +231,21 @@ def alerts(snap: Snapshot) -> list[tuple[str, dict]]:
 
 
 def status_bar(snap: Snapshot) -> dict:
-    if snap.paused:
-        return {"tone": "grey", "text": "已暂停", "sub": "重启后仍保持暂停 · 不会补记"}
+    status = snap.runtime_status
+    if status is not None and status.state == RuntimeState.PAUSED:
+        return {"code": status.code, "tone": "grey", "text": state_text(status.state), "sub": "重启后仍保持暂停 · 不会补记"}
     found = alerts(snap)
     reds = [t for t in found if t[0] == "red"]
     last = rel_time(snap.now, snap.last_write_ts)
+    label = state_text(status.state) if status is not None else "未知"
     if reds:
         sub = f"{len(found)} 个问题" + (f" · {last}最后写入" if last else "")
-        return {"tone": "red", "text": "已停止记录", "sub": sub}
+        return {"code": status.code if status else "unknown", "tone": "red", "text": label, "sub": sub}
     if found:
-        return {"tone": "amber", "text": "正在记录", "sub": f"{len(found)} 个来源需要处理"}
-    return {"tone": "ok", "text": "正在记录", "sub": f"一切正常 · {last}写入" if last else "一切正常 · 还没有记录"}
+        return {"code": status.code if status else "unknown", "tone": "amber", "text": label,
+                "sub": f"{len(found)} 个问题需要处理"}
+    return {"code": status.code if status else "unknown", "tone": "ok", "text": label,
+            "sub": f"一切正常 · {last}写入" if last else "一切正常 · 还没有记录"}
 
 
 # ── pages ────────────────────────────────────────────────────────────────────────
@@ -402,7 +414,8 @@ def page_reveal(reveal: Reveal) -> tuple[str, list[dict]]:
 
 def page_privacy(snap: Snapshot) -> list[dict]:
     chat_on = sum(1 for _, _, allowed in snap.chat_apps if allowed)
-    full = (snap.health or {}).get("code") == ch.CODE_DISK_FULL
+    storage = snap.runtime_status.components.get("storage") if snap.runtime_status else None
+    full = storage is not None and storage.state == "storage_error" and storage.detail == "disk_full"
     disk = fmt_bytes(snap.disk_free_bytes) if snap.disk_free_bytes is not None else "—"
     return [
         lst([

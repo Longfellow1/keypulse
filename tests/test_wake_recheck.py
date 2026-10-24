@@ -21,6 +21,8 @@ from penpal.capture.manager import CaptureManager
 from penpal.capture.wake import LAST_WAKE_STATE_KEY, detect_wake
 from penpal.config import Config
 from penpal.health import capture_health as ch
+from penpal.runtime import RuntimeState, RuntimeStatus
+from penpal.runtime.evaluate import Issue
 from penpal.permissions import PermissionSpec, PermissionStatus
 from penpal.sources.scheduler import SourcesScheduler
 from penpal.sources.types import DataSource, DataSourceInstance
@@ -40,9 +42,7 @@ def _env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     buckets.reset_cache()
     init_db(tmp_path / "kp.db")
-    ch.reset_cache()
     yield
-    ch.reset_cache()
     close()
     buckets.reset_cache()
 
@@ -79,12 +79,6 @@ def _install_permission_stubs(monkeypatch, status_by_key: dict, counter: dict):
     sr = spec("screen_recording", "屏幕录制（Screen Recording）", "x-apple.systempreferences:fake?sr")
     monkeypatch.setattr(permissions, "PERMISSION_SPECS", (ax, im))
     monkeypatch.setattr(permissions, "SCREEN_RECORDING_SPEC", sr)
-
-
-def _set_heartbeat(age_sec: float) -> None:
-    captured = datetime.now(timezone.utc) - timedelta(seconds=age_sec)
-    set_state("capture_runtime", json.dumps({"captured_at": captured.isoformat(), "running": True, "watchers": {}}))
-    set_state("status", "running")
 
 
 def _keyboard_cfg() -> Config:
@@ -174,7 +168,8 @@ def test_permission_revoked_during_sleep_shows_as_missing_after_wake(monkeypatch
     manager._running.set()  # the daemon is up (the heartbeat loop that calls handle_wake runs only then)
     manager.set_wake_handler(lambda: app._on_mac_wake(registry, SourcesScheduler(enabled=False)))
     cfg = _keyboard_cfg()
-    _set_heartbeat(age_sec=1)
+    runtime = {"status": RuntimeStatus(RuntimeState.RUNNING)}
+    monkeypatch.setattr(ch, "evaluate", lambda **_kwargs: runtime["status"])
     assert ch.compute_capture_health(cfg) is None
 
     status["input_monitoring"] = D
@@ -185,8 +180,12 @@ def test_permission_revoked_during_sleep_shows_as_missing_after_wake(monkeypatch
     assert findings["input_monitoring"].status == "missing"
     assert findings["input_monitoring"].checked_by == "daemon"
 
+    runtime["status"] = RuntimeStatus(
+        RuntimeState.RUNNING,
+        issues=(Issue("permission.input_monitoring", "warning", "keyboard_chunk 缺少输入监控权限。", "keyboard_chunk is missing input monitoring permission", "penpal doctor"),),
+    )
     health = ch.compute_capture_health(cfg)
-    assert health is not None and health["code"] == ch.CODE_PERMISSION_MISSING
+    assert health is not None and health["code"] == RuntimeState.RUNNING.value
     assert "keyboard_chunk" in health["message"]
 
 
@@ -285,21 +284,10 @@ def test_wake_rescan_plus_reimport_adds_no_duplicate_rows():
         scheduler.stop()
 
 
-# ── MCP capture_health grace window ────────────────────────────────────────────
+# ── MCP capture_health liveness follows core-loop progress, not emitted events ──
 
-def test_no_heartbeat_stale_inside_the_wake_grace_window():
-    _set_heartbeat(age_sec=ch.HEARTBEAT_STALE_SEC + 60)  # the sleep left the heartbeat old
-    set_state(LAST_WAKE_STATE_KEY, datetime.now(timezone.utc).isoformat())
+@pytest.mark.parametrize("quiet_hours", [1, 24, 720])
+def test_quiet_event_stream_is_healthy_when_core_loop_progresses(monkeypatch, quiet_hours):
+    del quiet_hours  # event age is deliberately not part of runtime liveness
+    monkeypatch.setattr(ch, "evaluate", lambda **_kwargs: RuntimeStatus(RuntimeState.RUNNING))
     assert ch.compute_capture_health(_keyboard_cfg()) is None
-
-
-def test_heartbeat_stale_again_once_the_grace_window_has_passed():
-    _set_heartbeat(age_sec=ch.HEARTBEAT_STALE_SEC + 60)
-    woke = datetime.now(timezone.utc) - timedelta(seconds=ch.WAKE_GRACE_SEC + 30)
-    set_state(LAST_WAKE_STATE_KEY, woke.isoformat())
-    assert ch.compute_capture_health(_keyboard_cfg())["code"] == ch.CODE_HEARTBEAT_STALE
-
-
-def test_real_stale_heartbeat_still_alarms_without_a_wake():
-    _set_heartbeat(age_sec=ch.HEARTBEAT_STALE_SEC + 60)
-    assert ch.compute_capture_health(_keyboard_cfg())["code"] == ch.CODE_HEARTBEAT_STALE
