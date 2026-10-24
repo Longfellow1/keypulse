@@ -5,7 +5,7 @@ category: decision
 status: active
 tags: [runtime, health, hud, doctor, launchd, mcp]
 created: "2026-10-24T23:46:07"
-updated: "2026-10-25T01:17:24"
+updated: "2026-10-25T03:10:23"
 ---
 
 <!-- compiled_truth -->
@@ -39,4 +39,10 @@ Decision (D36, 2026-10-24, owner accepted all recommendations after a deep-fix a
   kind: decision
   summary: "PR1 evaluator rules settled: core-loop staleness is measured from max(last progress, last system wake via kern.waketime) so sleep/wake never reads as hung; a live launchd pid without a matching record is starting within the grace window, then hung (alive but not progressing) — not_running only when no live daemon process exists; PENPAL_ISOLATED=1 makes utils.paths refuse real-home Penpal paths and conftest sets it session-wide."
   source: D36 PR1 review 2026-10-25
+  affects: [runtime-contract]
+
+- time: 2026-10-25T03:10:23
+  kind: decision
+  summary: "PR2 control rules settled: penpal.runtime.control is the only launchd mutator (kickstart -k when plist unchanged, else bootout → bounded wait → bootstrap ×3); restart succeeds only when a new generation's core loop progresses. Watchdog acts on hung / outdated / not_running ONLY while launchd still manages the job (penpal stop boots it out, so a user stop is never undone); 2 consecutive failures, 15-min cooldown, 3 restarts/hour, then report-only. Single instance via flock on run/daemon.lock (second serve exits 73); PID files are diagnostics only."
+  source: D36 PR2 review 2026-10-25
   affects: [runtime-contract]

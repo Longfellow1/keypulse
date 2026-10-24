@@ -24,10 +24,12 @@ def test_install_script_unloads_legacy_services_before_data_migration():
     install_script = Path(__file__).parents[1] / "install.sh"
     source = install_script.read_text(encoding="utf-8")
     main_start = source.index("# Select Python before unloading old jobs")
-    unload_call = source.index("\nremove_legacy_obsidian_plists\n", main_start)
+    unload_call = source.index("unload_legacy_jobs()", main_start)
     migration_call = source.index("get_data_dir()", unload_call)
 
     assert unload_call < migration_call
+    assert "launchctl" not in source
+    assert '"$VENV_DIR/bin/penpal" install init' in source
 
 
 def test_install_script_homebrew_path_uses_qualified_names_and_uninstalls_old_formula_first():
@@ -59,7 +61,7 @@ def test_install_launchd_writes_plists_with_absolute_keypulse_path(monkeypatch, 
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._penpal_executable_path", lambda: executable)
 
     result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
 
@@ -97,17 +99,17 @@ def test_install_launchd_removes_legacy_obsidian_plists(monkeypatch, tmp_path):
     for path in legacy:
         path.write_text("legacy", encoding="utf-8")
 
-    booted_out: list[Path] = []
+    control_preflights: list[str] = []
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
-    monkeypatch.setattr("penpal.cli.install._launchd_bootout", lambda path: booted_out.append(path) or True)
+    monkeypatch.setattr("penpal.cli.install._penpal_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install.unload_legacy_jobs", lambda: control_preflights.append("control") or [])
 
     result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
 
     assert result.exit_code == 0
     assert all(not path.exists() for path in legacy)
-    assert sorted(booted_out) == sorted(legacy)
+    assert control_preflights == ["control"]
 
 
 def test_install_doctor_reports_old_launchd_and_stale_moved_venv(monkeypatch, tmp_path):
@@ -121,7 +123,7 @@ def test_install_doctor_reports_old_launchd_and_stale_moved_venv(monkeypatch, tm
     executable.parent.mkdir()
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     executable.chmod(0o755)
-    monkeypatch.setattr(cli, "_keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr(cli, "_penpal_executable_path", lambda: executable)
     monkeypatch.setattr(cli, "get_config_path", lambda: tmp_path / ".penpal" / "config.toml")
     monkeypatch.setattr(cli.Config, "load", lambda: SimpleNamespace(db_path_expanded=tmp_path / ".penpal" / "penpal.db", watchers=SimpleNamespace(keyboard_chunk=True)))
     monkeypatch.setattr(cli, "_launchd_label_loaded", lambda _label: False)
@@ -238,7 +240,7 @@ def test_install_launchd_preserves_custom_plist_without_force(monkeypatch, tmp_p
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._penpal_executable_path", lambda: executable)
 
     result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
 
@@ -258,7 +260,7 @@ def test_install_init_creates_runtime_without_overwriting_config(monkeypatch, tm
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._penpal_executable_path", lambda: executable)
 
     result = CliRunner().invoke(main, ["install", "init", "--no-launchd"])
 
@@ -279,7 +281,7 @@ def test_executable_path_keeps_homebrew_symlink_not_versioned_cellar(monkeypatch
     link.symlink_to(cellar)
     monkeypatch.setenv("PENPAL_EXECUTABLE", str(link))
 
-    assert cli._keypulse_executable_path() == link
+    assert cli._penpal_executable_path() == link
 
 
 def test_install_launchd_replaces_own_plist_pinned_to_cellar_without_force(monkeypatch, tmp_path):
@@ -297,7 +299,7 @@ def test_install_launchd_replaces_own_plist_pinned_to_cellar_without_force(monke
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr("penpal.cli.install._keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr("penpal.cli.install._penpal_executable_path", lambda: executable)
 
     result = CliRunner().invoke(main, ["install", "launchd", "--no-load"])
 

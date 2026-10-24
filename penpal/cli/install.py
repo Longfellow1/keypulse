@@ -1,9 +1,7 @@
 from __future__ import annotations
-import os
 import plistlib
 import shutil
 import sys
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,165 +9,58 @@ import click
 from rich.table import Table
 from penpal.config import Config, write_default_config
 from penpal.store.db import init_db
-from penpal.utils.paths import get_data_dir, get_pid_path, get_log_path, get_config_path, get_launchd_agents_dir, get_launchd_daemon_plist_path, get_legacy_venv_dir
-from penpal.utils.env import get_env_compat
-from penpal.utils.paths import get_hud_pid_path
+from penpal.utils.paths import get_data_dir, get_pid_path, get_hud_pid_path, get_log_path, get_config_path, get_launchd_plist_path, get_legacy_venv_dir
 from penpal.runtime import evaluate, launchd_label_loaded
+from penpal.runtime.control import LEGACY_LAUNCHD_LABELS, load_job, restart as control_restart, unload_job, unload_legacy_jobs
+from penpal.foundation.runtime_plist import launchd_jobs, resolve_penpal_executable
 from penpal.capture.keyboard_notice import mark_notice_shown, notice_pending, notice_text
 from penpal.i18n import T
 from . import main
 from ._shared import _runtime_fix_command, _runtime_status_line, console
 
 
-def _launchd_daemon_plist_path() -> Path:
-    return get_launchd_daemon_plist_path()
-
-def _launch_agents_dir() -> Path:
-    return get_launchd_agents_dir()
-
 def _install_logs_dir() -> Path:
     return get_data_dir() / "logs"
 
-def _keypulse_executable_path() -> Path:
-    override = (get_env_compat("PENPAL_EXECUTABLE", "") or "").strip()
-    candidates = [override, shutil.which("penpal") or ""]
-    for candidate in candidates:
-        if not candidate:
-            continue
-        path = Path(candidate).expanduser()
-        if not path.is_absolute():
-            resolved = shutil.which(str(path))
-            path = Path(resolved) if resolved else path
-        if path.exists():
-            # Keep Homebrew's stable symlink (/opt/homebrew/bin/penpal): resolving it would pin the versioned
-            # Cellar path, which `brew upgrade` removes, leaving launchd jobs pointing at a deleted binary.
-            return path.absolute()
-    raise click.ClickException(
-        "Could not find the installed `penpal` executable. "
-        "Install with Homebrew first, or set PENPAL_EXECUTABLE=/absolute/path/to/penpal."
-    )
+def _penpal_executable_path() -> Path:
+    try:
+        return resolve_penpal_executable()
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _launchd_jobs(executable: Path) -> dict[str, dict[str, Any]]:
+    return launchd_jobs(executable)
 
 def _launchd_label_loaded(label: str) -> bool:
     return launchd_label_loaded(label)
 
 def _launchd_bootout(plist_path: Path) -> bool:
-    commands = [
-        ["launchctl", "bootout", f"gui/{os.getuid()}", str(plist_path)],
-        ["launchctl", "unload", str(plist_path)],
-    ]
-    for cmd in commands:
-        try:
-            result = subprocess.run(cmd, check=False, capture_output=True, text=True)
-        except Exception:
-            continue
-        if result.returncode == 0:
-            return True
-    return False
-
-def _launchd_bootstrap(plist_path: Path) -> bool:
-    commands = [
-        ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist_path)],
-        ["launchctl", "load", str(plist_path)],
-        ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.penpal.daemon"],
-    ]
-    for cmd in commands:
-        try:
-            result = subprocess.run(cmd, check=False, capture_output=True, text=True)
-        except Exception:
-            continue
-        if result.returncode == 0:
-            return True
-    return False
+    return unload_job(plist_path.stem, plist_path)
 
 _LAUNCHD_LABELS = (
     "com.penpal.daemon",
     "com.penpal.healthcheck",
 )
 
-_LEGACY_LAUNCHD_LABELS = (
-    "com.keypulse.daemon",
-    "com.keypulse.healthcheck",
-    "com.keypulse.hud",
-    "com.keypulse.obsidian-sync",
-    "com.keypulse.obsidian-sync-hourly",
-)
-
-def _launchd_bootout_label(label: str) -> bool:
-    commands = [
-        ["launchctl", "bootout", f"gui/{os.getuid()}/{label}"],
-        ["launchctl", "remove", label],
-    ]
-    for command in commands:
-        try:
-            result = subprocess.run(command, check=False, capture_output=True, text=True)
-        except Exception:
-            continue
-        if result.returncode == 0:
-            return True
-    return False
 
 def _remove_legacy_launchd_jobs() -> list[str]:
     removed: list[str] = []
-    for label in _LEGACY_LAUNCHD_LABELS:
+    failures = unload_legacy_jobs()
+    if failures:
+        details = "; ".join(failures)
+        raise click.ClickException(T(
+            f"无法卸载旧版 launchd 服务：{details}",
+            f"Could not unload legacy launchd jobs: {details}",
+        ))
+    for label in LEGACY_LAUNCHD_LABELS:
         path = _launchd_plist_path(label)
-        try:
-            loaded = _launchd_label_loaded(label)
-            booted_out = _launchd_bootout(path) if path.exists() else _launchd_bootout_label(label) if loaded else True
-            if loaded and not booted_out and _launchd_label_loaded(label):
-                raise click.ClickException(
-                    f"Could not unload legacy launchd service {label}; stop it manually before installing Penpal."
-                )
-            if _unlink_if_exists(path):
-                removed.append(str(path))
-        except click.ClickException:
-            raise
-        except Exception:
-            continue
+        if _unlink_if_exists(path):
+            removed.append(str(path))
     return removed
 
-def _default_path_env(executable: Path) -> str:
-    parts = [
-        str(executable.parent),
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        "/usr/sbin",
-        "/sbin",
-    ]
-    deduped: list[str] = []
-    for item in parts:
-        if item not in deduped:
-            deduped.append(item)
-    return ":".join(deduped)
-
-def _launchd_jobs(executable: Path) -> dict[str, dict[str, Any]]:
-    logs = _install_logs_dir()
-    env = {"PATH": _default_path_env(executable)}
-    return {
-        "com.penpal.daemon": {
-            "Label": "com.penpal.daemon",
-            "ProgramArguments": [str(executable), "serve"],
-            "RunAtLoad": True,
-            "KeepAlive": True,
-            "ThrottleInterval": 10,
-            "StandardOutPath": str(logs / "daemon.log"),
-            "StandardErrorPath": str(logs / "daemon.err"),
-            "EnvironmentVariables": env,
-        },
-        "com.penpal.healthcheck": {
-            "Label": "com.penpal.healthcheck",
-            "ProgramArguments": [str(executable), "healthcheck"],
-            "StartInterval": 600,
-            "RunAtLoad": True,
-            "StandardOutPath": str(logs / "healthcheck.log"),
-            "StandardErrorPath": str(logs / "healthcheck.err"),
-            "EnvironmentVariables": env,
-        },
-    }
-
 def _launchd_plist_path(label: str) -> Path:
-    return _launch_agents_dir() / f"{label}.plist"
+    return get_launchd_plist_path(label)
 
 def _is_own_versioned_plist(existing: Any, label: str) -> bool:
     """Our own plist from an earlier install that pinned a versioned Homebrew Cellar path (or a binary that is
@@ -201,45 +92,51 @@ def _write_launchd_plist(label: str, payload: dict[str, Any], *, force: bool = F
     return status
 
 def _launchd_load_plist(path: Path) -> bool:
-    for command in (
-        ["launchctl", "bootout", f"gui/{os.getuid()}", str(path)],
-        ["launchctl", "unload", str(path)],
-    ):
-        try:
-            subprocess.run(command, check=False, capture_output=True, text=True)
-        except OSError:
-            pass
-    for command in (
-        ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(path)],
-        ["launchctl", "load", str(path)],
-    ):
-        try:
-            result = subprocess.run(command, check=False, capture_output=True, text=True)
-        except OSError:
-            continue
-        if result.returncode == 0:
-            return True
-    return False
+    return load_job(path.stem, path)
 
 def _install_launchd_jobs(*, load: bool, force: bool) -> list[tuple[str, Path, str, bool]]:
-    executable = _keypulse_executable_path()
+    executable = _penpal_executable_path()
     _install_logs_dir().mkdir(parents=True, exist_ok=True)
     _remove_legacy_launchd_jobs()
     results: list[tuple[str, Path, str, bool]] = []
+    pending: list[tuple[str, Path, str]] = []
     for label, payload in _launchd_jobs(executable).items():
         status = _write_launchd_plist(label, payload, force=force)
         path = _launchd_plist_path(label)
-        loaded = _launchd_load_plist(path) if load else False
-        results.append((label, path, status, loaded))
+        pending.append((label, path, status))
+    if load:
+        daemon_status = next(status for label, _path, status in pending if label == "com.penpal.daemon")
+        result = control_restart("install", force_reload=daemon_status != "unchanged")
+        if not result.ok:
+            raise click.ClickException(T(result.error_zh, result.error_en))
+    for label, path, status in pending:
+        if load and label == "com.penpal.healthcheck" and not _launchd_load_plist(path):
+            raise click.ClickException(T(f"無法載入健康檢查工作：{path}", f"Could not load healthcheck job: {path}"))
+        results.append((label, path, status, launchd_label_loaded(label) if load else False))
     return results
 
 def _write_default_user_config(*, force: bool = False) -> str:
     return write_default_config(get_config_path(), force=force)
 
 @main.group("install", help="Install, initialize, launchd, and uninstall management.")
-def install_group():
+@click.pass_context
+def install_group(ctx):
     """Install lifecycle group."""
-    pass
+    if ctx.invoked_subcommand == "init":
+        failures = unload_legacy_jobs()
+        if failures:
+            raise click.ClickException(T(
+                f"無法卸載舊版 launchd 服務：{'; '.join(failures)}",
+                f"Could not unload legacy launchd jobs: {'; '.join(failures)}",
+            ))
+    try:
+        get_data_dir()
+    except Exception as exc:
+        from penpal.utils.paths import DataDirMigrationError
+
+        if isinstance(exc, DataDirMigrationError):
+            raise click.ClickException(str(exc)) from exc
+        raise
 
 def _echo_launchd_results(results: list[tuple[str, Path, str, bool]], *, plain: bool = False) -> None:
     for label, path, status_text, loaded in results:
@@ -360,7 +257,7 @@ def install_doctor(plain):
         runtime_detail += f"; fix=`{runtime_fix}`"
     checks["runtime"] = (not runtime_status.failed, runtime_detail)
     try:
-        executable = _keypulse_executable_path()
+        executable = _penpal_executable_path()
         checks["executable"] = (executable.exists(), str(executable))
     except click.ClickException as exc:
         checks["executable"] = (False, str(exc))
@@ -374,7 +271,7 @@ def install_doctor(plain):
         path = _launchd_plist_path(label)
         loaded = runtime_status.managed if label == "com.penpal.daemon" else _launchd_label_loaded(label)
         checks[f"launchd.{label}"] = (path.exists() and loaded, f"path={path},loaded={loaded}")
-    for label in _LEGACY_LAUNCHD_LABELS:
+    for label in LEGACY_LAUNCHD_LABELS:
         path = _launchd_plist_path(label)
         loaded = _launchd_label_loaded(label)
         checks[f"legacy_launchd.{label}"] = (not path.exists() and not loaded, f"path={path},loaded={loaded}")
@@ -506,16 +403,11 @@ def install_onboard(non_interactive: bool, sources_opt: str | None, yes_all: boo
         console.print("来源：未启用任何来源，之后可用 `penpal source enable NAME` 打开。\n")
 
     console.print("\n[bold]权限引导完成，正在重启 daemon 让 TCC 缓存刷新...[/bold]")
-    try:
-        subprocess.run(
-            ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.penpal.daemon"],
-            check=False,
-            capture_output=True,
-        )
-        console.print("[green]daemon 已重启。[/green]运行 `penpal healthcheck` 验证各项状态。")
-    except Exception as exc:
-        console.print(f"[yellow]daemon 重启失败：{exc}[/yellow]")
-        console.print("  请手动执行：launchctl kickstart -k gui/$(id -u)/com.penpal.daemon")
+    restart_result = control_restart("onboarding")
+    if restart_result.ok:
+        console.print(T("daemon 已重启。运行 `penpal healthcheck` 验证状态。", "Daemon restarted. Run `penpal healthcheck` to verify status."))
+    else:
+        console.print(T(restart_result.error_zh, restart_result.error_en))
 
 def _onboard_choose_sources(*, non_interactive: bool, sources_opt: str | None, yes_all: bool) -> list[str] | None:
     """Ask about each source found, one by one (or take the scripted choice). Returns the chosen names, or None
@@ -624,12 +516,12 @@ def install_uninstall(remove_runtime, remove_data, force, plain):
         raise click.ClickException("--remove-data requires --force.")
 
     removed: list[str] = []
-    for label in (*_LAUNCHD_LABELS, *_LEGACY_LAUNCHD_LABELS):
+    for label in (*_LAUNCHD_LABELS, *LEGACY_LAUNCHD_LABELS):
         path = _launchd_plist_path(label)
         if path.exists():
             _launchd_bootout(path)
         else:
-            _launchd_bootout_label(label)
+            unload_job(label)
         if _unlink_if_exists(path):
             removed.append(str(path))
 

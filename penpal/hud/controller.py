@@ -8,7 +8,7 @@ time so one monkeypatch covers both shells):
     chat.toggle                     -> config.set_chat_app_opt_in           (penpal privacy chat-apps allow / deny)
     grant.create / rotate / revoke  -> mcp.auth.create_grant / rotate_grant / revoke_grants (penpal mcp ...)
     purge preview / run             -> services.purge.run_purge             (penpal purge [--dry-run])
-    daemon.restart                  -> health.self_heal.run_self_heal       (penpal self-heal)
+    daemon.restart                  -> penpal.runtime.control.restart
     settings.open                   -> permissions.open_settings_url        (pane shown by penpal doctor)
 
 A freshly created token is held in ``UiState.reveal`` (memory only) until the user leaves the page; it is
@@ -295,10 +295,10 @@ class HudController:
 
     # recovery
     def _do_daemon_restart(self, args: dict) -> bool:
-        from penpal.health import self_heal
+        from penpal.runtime.control import restart
 
-        self._spawn(lambda: self_heal.run_self_heal(dry_run=False, source="hud"))
-        self._say("正在重启后台，约需几十秒")
+        self._spawn(lambda: restart("hud"))
+        self._say("正在重启后台服务")
         return False
 
     def _do_settings_open(self, args: dict) -> bool:

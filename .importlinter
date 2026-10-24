@@ -84,6 +84,7 @@ ignore_imports =
     penpal.runtime.evaluate -> penpal.foundation.runtime_record
     penpal.runtime.evaluate -> penpal.foundation.runtime_launchd
     penpal.runtime.evaluate -> penpal.foundation.runtime_identity
+    penpal.runtime.control -> penpal.foundation.runtime_launchd
     penpal.capture.manager_runtime -> penpal.foundation.runtime_record
     penpal.capture.manager_runtime -> penpal.foundation.runtime_launchd
     penpal.capture.manager_runtime -> penpal.foundation.runtime_identity

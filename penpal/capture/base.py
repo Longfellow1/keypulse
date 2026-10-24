@@ -1,12 +1,9 @@
 from __future__ import annotations
 import abc
-import os
 import queue
-import signal
 import threading
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 from penpal.store.models import RawEvent
 from penpal.utils.logging import get_logger
@@ -27,47 +24,6 @@ def watcher_status(*, crashes: int, gave_up: bool, heartbeat_gave_up: bool) -> s
     if crashes > 0:
         return "warning"
     return "ok"
-
-
-def reconcile_orphan_lock(lock_path: str | Path, current_pid: int) -> bool:
-    """Ensure stale/orphan lock files do not block watcher startup.
-
-    Returns True when the file was removed or did not exist; False when the
-    file exists and points to the current PID.
-    """
-    path = Path(lock_path).expanduser()
-    if not path.exists():
-        return True
-    try:
-        owner_pid = int(path.read_text(encoding="utf-8").strip())
-    except Exception:
-        path.unlink(missing_ok=True)
-        return True
-    if owner_pid == current_pid:
-        return False
-    try:
-        os.kill(owner_pid, 0)
-    except Exception:
-        path.unlink(missing_ok=True)
-        return True
-    try:
-        os.kill(owner_pid, signal.SIGTERM)
-    except Exception:
-        pass
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
-        try:
-            os.kill(owner_pid, 0)
-        except Exception:
-            path.unlink(missing_ok=True)
-            return True
-        time.sleep(0.1)
-    try:
-        os.kill(owner_pid, signal.SIGKILL)
-    except Exception:
-        pass
-    path.unlink(missing_ok=True)
-    return True
 
 
 class BaseWatcher(abc.ABC):
@@ -122,12 +78,6 @@ class BaseWatcher(abc.ABC):
     def start(self):
         if self._thread and self._thread.is_alive():
             return
-        lock_path = getattr(self, "lock_path", None)
-        if lock_path:
-            try:
-                reconcile_orphan_lock(lock_path, os.getpid())
-            except Exception:
-                _LOGGER.exception("watcher %s lock reconcile failed", self.name)
         self._running.set()
         self._paused.clear()
         self._crash_count = 0

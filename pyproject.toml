@@ -62,4 +62,5 @@ pythonpath = ["."]  # lets tests import the top-level evals/ harness
 markers = [
     "slow: opt-in performance benchmarks; set PENPAL_RUN_SLOW=1",
     "system_smoke: opt-in tests that call real macOS system commands; set PENPAL_RUN_SYSTEM_SMOKE=1",
+    "integration: real local-process runtime scenarios in isolated HOME",
 ]

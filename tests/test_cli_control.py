@@ -1,57 +1,34 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from click.testing import CliRunner
 
 from penpal.cli import main
+from penpal.runtime.control import ControlResult
 
 
-def test_stop_uses_launchd_bootout_when_supervised(monkeypatch, tmp_path):
-    plist_path = tmp_path / "com.penpal.daemon.plist"
-    plist_path.write_text("plist")
+def test_start_and_stop_commands_delegate_to_runtime_control(monkeypatch):
     calls = []
-
-    class FakeLock:
-        def get_pid(self):
-            return 4242
-
-        def is_running(self):
-            return False
-
-    monkeypatch.setattr("penpal.cli.daemon._launchd_daemon_plist_path", lambda: plist_path)
-    monkeypatch.setattr("penpal.cli.daemon._launchd_label_loaded", lambda label: True)
-    monkeypatch.setattr("penpal.cli.daemon._launchd_bootout", lambda path: True)
-    monkeypatch.setattr("penpal.cli.daemon.SingleInstanceLock", lambda: FakeLock())
-    monkeypatch.setattr("penpal.cli.daemon.os.kill", lambda pid, sig: calls.append((pid, sig)))
-
+    monkeypatch.setattr("penpal.cli.daemon.control_start", lambda: calls.append("start") or ControlResult(True, "bootstrap", "g1"))
+    monkeypatch.setattr("penpal.cli.daemon.control_stop", lambda: calls.append("stop") or ControlResult(True, "bootout"))
+    runner = CliRunner()
+    started = runner.invoke(main, ["start"])
     result = CliRunner().invoke(main, ["stop"])
 
+    assert started.exit_code == 0
     assert result.exit_code == 0
-    assert calls == [(4242, 15)]
-    assert "launchd supervision disabled" in result.output
+    assert calls == ["start", "stop"]
+    assert "bootstrap" in started.output
+    assert "bootout" in result.output
 
 
-def test_start_uses_launchd_bootstrap_when_plist_exists(monkeypatch, tmp_path):
-    plist_path = tmp_path / "com.penpal.daemon.plist"
-    plist_path.write_text("plist")
-
-    class FakeLock:
-        def get_pid(self):
-            return 4242
-
-        def is_running(self):
-            return False
-
-    monkeypatch.setattr("penpal.cli.daemon._launchd_daemon_plist_path", lambda: plist_path)
-    monkeypatch.setattr("penpal.cli.daemon._launchd_label_loaded", lambda label: False)
-    monkeypatch.setattr("penpal.cli.daemon._launchd_bootstrap", lambda path: True)
-    monkeypatch.setattr("penpal.cli.daemon.SingleInstanceLock", lambda: FakeLock())
-
-    result = CliRunner().invoke(main, ["start"])
-
-    assert result.exit_code == 0
-    assert "started via launchd" in result.output
+def test_restart_command_reports_control_failure_with_nonzero_exit(monkeypatch):
+    monkeypatch.setattr(
+        "penpal.cli.daemon.control_restart",
+        lambda _reason: ControlResult(False, "bootstrap", error_zh="重启失败", error_en="restart failed"),
+    )
+    result = CliRunner().invoke(main, ["restart"])
+    assert result.exit_code != 0
+    assert "重启失败" in result.output or "restart failed" in result.output
 
 
 def test_status_plain_includes_runtime_state_and_watcher_component(monkeypatch, tmp_path):

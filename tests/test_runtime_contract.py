@@ -179,6 +179,11 @@ def test_system_wake_time_reader_uses_macos_sysctl(monkeypatch):
     assert EVALUATOR._read_last_system_wake_time() == NOW.replace(microsecond=125_000)
 
 
+def test_hung_and_outdated_fix_commands_use_restart():
+    assert RuntimeStatus(RuntimeState.HUNG).fix_command == "penpal restart"
+    assert RuntimeStatus(RuntimeState.OUTDATED).fix_command == "penpal restart"
+
+
 def test_system_wake_time_reader_is_unavailable_off_macos(monkeypatch):
     monkeypatch.setattr(EVALUATOR.sys, "platform", "linux")
     assert EVALUATOR._read_last_system_wake_time() is None
@@ -221,7 +226,8 @@ def test_isolated_path_guard_covers_penpal_path_getters(monkeypatch, tmp_path):
         paths.get_log_path,
         paths.get_config_path,
         paths.get_health_report_path,
-        paths.get_capability_status_path,
+        paths.get_daemon_lock_path,
+        paths.get_hud_lock_path,
         paths.get_apps_dir,
         paths.get_legacy_venv_dir,
         paths.get_ax_spike_dir,
@@ -390,7 +396,7 @@ def _assert_consumers_expose_same_runtime_state(runtime, monkeypatch, tmp_path):
     monkeypatch.setattr(install_cli, "_stale_moved_dev_venv_script", lambda: None)
     monkeypatch.setattr(install_cli, "_launchd_label_loaded", lambda _label: False)
     monkeypatch.setattr(install_cli, "_launchd_plist_path", lambda label: tmp_path / f"{label}.plist")
-    monkeypatch.setattr(install_cli, "_keypulse_executable_path", lambda: executable)
+    monkeypatch.setattr(install_cli, "_penpal_executable_path", lambda: executable)
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: Config()))
     install_result = CliRunner().invoke(cli.main, ["install", "doctor", "--plain"])
     assert f"runtime={'OK' if not runtime.failed else 'FAIL'} state={runtime.code}" in install_result.output

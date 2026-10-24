@@ -47,22 +47,19 @@ def test_existing_keypulse_directory_moves_atomically_and_leaves_marker(tmp_path
     assert f"new_path={data_dir}" in marker_text
 
 
-def test_live_legacy_pid_refuses_migration_without_changing_directories(tmp_path, monkeypatch):
+def test_legacy_pid_file_is_diagnostic_and_does_not_block_migration(tmp_path, monkeypatch):
     _set_home(monkeypatch, tmp_path)
     old_dir = tmp_path / ".keypulse"
     old_dir.mkdir()
     old_file = old_dir / "keypulse.db"
     old_file.write_bytes(b"legacy data")
     (old_dir / "keypulse.pid").write_text("4567\n", encoding="utf-8")
-    monkeypatch.setattr(paths, "_pid_is_alive", lambda pid: pid == 4567)
     monkeypatch.setattr(paths, "_find_legacy_mcp_serve_processes", lambda: [])
 
-    with pytest.raises(paths.DataDirMigrationError, match="old KeyPulse process is running"):
-        paths.get_data_dir()
+    data_dir = paths.get_data_dir()
 
-    assert old_file.read_bytes() == b"legacy data"
-    assert (old_dir / "keypulse.pid").read_text(encoding="utf-8") == "4567\n"
-    assert not (tmp_path / ".penpal").exists()
+    assert data_dir == tmp_path / ".penpal"
+    assert (data_dir / "keypulse.db").read_bytes() == b"legacy data"
 
 
 def test_stale_legacy_pid_allows_migration(tmp_path, monkeypatch):
@@ -70,7 +67,6 @@ def test_stale_legacy_pid_allows_migration(tmp_path, monkeypatch):
     old_dir = tmp_path / ".keypulse"
     old_dir.mkdir()
     (old_dir / "keypulse-hud.pid").write_text("4567\n", encoding="utf-8")
-    monkeypatch.setattr(paths, "_pid_is_alive", lambda _pid: False)
     monkeypatch.setattr(paths, "_find_legacy_mcp_serve_processes", lambda: [])
 
     data_dir = paths.get_data_dir()
@@ -98,7 +94,6 @@ def test_missing_pgrep_warns_but_does_not_block_migration(tmp_path, monkeypatch,
     old_dir = tmp_path / ".keypulse"
     old_dir.mkdir()
     (old_dir / "keypulse.pid").write_text("4567\n", encoding="utf-8")
-    monkeypatch.setattr(paths, "_pid_is_alive", lambda _pid: False)
 
     def missing_pgrep(*_args, **_kwargs):
         raise FileNotFoundError("pgrep")

@@ -8,7 +8,6 @@ Every location is a parameter (apps dir, LaunchAgents dir, subprocess runner) so
 """
 from __future__ import annotations
 
-import os
 import plistlib
 import shlex
 import shutil
@@ -16,6 +15,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
+
+from penpal.runtime.control import load_job, unload_job
 
 from penpal.utils.paths import get_apps_dir, get_launchd_agents_dir
 
@@ -126,7 +127,7 @@ def install_app(
         plist.write_bytes(plistlib.dumps(hud_agent_plist(bundle), sort_keys=False))
         _bootout(plist, run)
         if not _bootstrap(plist, run):
-            raise AppBundleError(f"wrote {plist} but launchctl could not load it; log in again or run `launchctl bootstrap`.")
+            raise AppBundleError(f"wrote {plist} but could not register the login item; retry with `penpal app install --login`.")
         result.actions.append(f"login item registered ({HUD_LABEL})")
     return result
 
@@ -155,19 +156,8 @@ def uninstall_app(
 
 
 def _bootout(plist: Path, run: Runner) -> None:
-    for cmd in (["launchctl", "bootout", f"gui/{os.getuid()}", str(plist)], ["launchctl", "unload", str(plist)]):
-        try:
-            if run(cmd).returncode == 0:
-                return
-        except OSError:
-            continue
+    unload_job(plist.stem, plist, runner=lambda command, **_kwargs: run(command))
 
 
 def _bootstrap(plist: Path, run: Runner) -> bool:
-    for cmd in (["launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist)], ["launchctl", "load", str(plist)]):
-        try:
-            if run(cmd).returncode == 0:
-                return True
-        except OSError:
-            continue
-    return False
+    return load_job(plist.stem, plist, runner=lambda command, **_kwargs: run(command))

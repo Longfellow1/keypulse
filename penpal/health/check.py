@@ -13,6 +13,7 @@ from penpal.health.product_delivery import evaluate_delivery_health
 from penpal.health.report import HEALTH_JSON_PATH, write_health_report
 from penpal.store.db import get_conn, init_db
 from penpal.runtime import RuntimeState, evaluate
+from penpal.health.self_heal import run_watchdog
 
 
 HEALTH_SCHEMA_VERSION = 1
@@ -72,12 +73,27 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
     conn = get_conn()
 
     runtime_status = evaluate(now=checked_at)
+    watchdog = run_watchdog(runtime_status, now=checked_at)
+    if watchdog.get("action") == "restart":
+        runtime_status = evaluate(now=checked_at)
     alerts: list[dict[str, str]] = []
     for issue in runtime_status.issues:
         alerts.append({
             "severity": issue.severity,
             "code": runtime_status.code if issue.component == "daemon" else issue.component,
             "message": issue.message_zh,
+        })
+    if watchdog.get("budget_exhausted"):
+        alerts.append({
+            "severity": "error",
+            "code": "WATCHDOG_RESTART_BUDGET_EXHAUSTED",
+            "message": "后台服务仍异常；过去 1 小时的自动重启额度已用完，暂不再重启。",
+        })
+    elif watchdog.get("action") == "restart_failed":
+        alerts.append({
+            "severity": "error",
+            "code": "WATCHDOG_RESTART_FAILED",
+            "message": watchdog.get("error_zh") or "后台服务自动重启失败。",
         })
 
     schema_row = conn.execute("SELECT MAX(version) AS version FROM _schema_version").fetchone()
@@ -132,6 +148,7 @@ def run_healthcheck(config_path: str | None = None) -> dict[str, Any]:
             "pid": runtime_status.pid,
             "state": runtime_status.code,
         },
+        "watchdog": watchdog,
         "integrity": {
             "schema_version": schema_version,
             "config_loadable": config_loadable,

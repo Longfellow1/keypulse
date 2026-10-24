@@ -14,7 +14,8 @@ from penpal.capture.keyboard_notice import DISABLE_COMMAND, ENABLE_COMMAND, KEYB
 from penpal.i18n import T
 from . import main
 from ._shared import PLAIN_HELP, _runtime_fix_command, _runtime_status_line, console, get_config, require_db
-from .install import _LEGACY_LAUNCHD_LABELS, _launchd_label_loaded, _launchd_plist_path, _stale_moved_dev_venv_script
+from penpal.runtime.control import LEGACY_LAUNCHD_LABELS
+from .install import _launchd_label_loaded, _launchd_plist_path, _stale_moved_dev_venv_script
 
 
 def _is_legacy_mcp_command(command: Any) -> bool:
@@ -84,7 +85,7 @@ def doctor(plain):
         checks["开发 venv 入口仍指向旧目录"] = False
 
     legacy_services = []
-    for label in _LEGACY_LAUNCHD_LABELS:
+    for label in LEGACY_LAUNCHD_LABELS:
         path = _launchd_plist_path(label)
         loaded = _launchd_label_loaded(label)
         if path.exists() or loaded:
@@ -251,16 +252,3 @@ def healthcheck(config_path):
         raise SystemExit(1)
 
 main.add_command(healthcheck, name="health")  # D33: the short, discoverable spelling; `healthcheck` stays (launchd uses it)
-
-@main.command("self-heal", hidden=True, help=T("执行自愈流程（HUD/手动恢复）。", "Run product self-heal sequence for HUD/manual recovery."))
-@click.option("--dry-run", is_flag=True, help=T("仅演练步骤，不真正重启 daemon", "Dry run only; do not actually restart the daemon"))
-def self_heal_command(dry_run):
-    """Self-heal."""
-    from penpal.health.self_heal import run_self_heal
-
-    cfg = get_config()
-    require_db(cfg)
-    result = run_self_heal(dry_run=bool(dry_run), source="cli")
-    click.echo(json.dumps(result, indent=2, ensure_ascii=False))
-    if result.get("status") == "failed":
-        raise SystemExit(1)

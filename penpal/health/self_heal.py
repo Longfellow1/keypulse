@@ -1,253 +1,132 @@
+"""Persistent restart policy used by the periodic healthcheck job."""
 from __future__ import annotations
 
 import json
-import os
-import re
-import signal
-import subprocess
-import time
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Callable, Any
 
-from penpal.capabilities.registry import get_default_registry
-from penpal.capabilities.store import load_states_raw
-from penpal.services.capability_monitor import run_capability_self_check
-from penpal.store.db import get_conn
-from penpal.store.repository import get_state, set_state
+from penpal.runtime import RuntimeState, RuntimeStatus, evaluate
+from penpal.runtime.control import ControlResult, restart
 from penpal.utils.atomic_io import atomic_write_text
-from penpal.utils.paths import get_capability_status_path, get_data_dir
+from penpal.utils.paths import get_run_dir
 
-_SELF_HEAL_RUNNING_KEY = "self_heal_running"
-_SELF_HEAL_PROGRESS_KEY = "self_heal_progress"
-_CAPABILITY_STATUS_PATH = get_capability_status_path()
-_TOTAL_TIMEOUT_SEC = 8 * 60
-_CORE_SOURCES = ("keyboard_chunk", "clipboard")
-_DAEMON_LABEL = "com.penpal.daemon"
-
-
-@dataclass(frozen=True)
-class StepResult:
-    name: str
-    ok: bool
-    message: str
-    suggested_action: str = ""
+CONSECUTIVE_FAILURE_THRESHOLD = 2
+RESTART_COOLDOWN_SEC = 15 * 60
+RESTART_BUDGET_PER_HOUR = 3
+RESTART_BUDGET_WINDOW_SEC = 60 * 60
+RESTART_STATES = frozenset({RuntimeState.NOT_RUNNING, RuntimeState.HUNG, RuntimeState.OUTDATED})
 
 
-def reset_transient_error_state() -> None:
-    """清掉重启前的临时错误状态，让 daemon 起来后 capability 从干净状态开始探测。"""
-    set_state("capture_error_code", "")
+def _empty_state() -> dict[str, Any]:
+    return {"consecutive_failures": 0, "cooldown_until": "", "restart_times": []}
 
 
-def run_self_heal(*, dry_run: bool = False, source: str = "hud") -> dict[str, Any]:
-    now = int(time.time())
-    if str(get_state(_SELF_HEAL_RUNNING_KEY) or "").strip() == "1":
-        return {"started": False, "status": "busy", "failed_step": ""}
-    set_state(_SELF_HEAL_RUNNING_KEY, "1")
-    if not dry_run:
-        reset_transient_error_state()
-    deadline = time.monotonic() + _TOTAL_TIMEOUT_SEC
-    steps: list[StepResult] = []
+def _read_state(path: Path) -> tuple[dict[str, Any], bool]:
     try:
-        _publish_progress("自愈开始：检查锁文件")
-        steps.append(step_reconcile_locks(dry_run=dry_run))
-        _ensure_ok(steps[-1], deadline)
-
-        _publish_progress("自愈进行中：刷新权限能力状态")
-        steps.append(step_refresh_capabilities(dry_run=dry_run))
-        _ensure_ok(steps[-1], deadline)
-
-        _publish_progress("自愈进行中：平滑重启后台服务")
-        # 必须用 UTC，因为 raw_events.ts_start 存的是 UTC ISO8601（见 store/models.py _now）。
-        # 之前 datetime.now() 是本地时间无 tz 字段，字符串比较时本地 19:xx > UTC 11:xx，导致 cutoff
-        # 永远比所有 ts_start 大，step_wait_core_emit 5 分钟超时失败 → self_heal 反复 SIGTERM daemon。
-        kickstart_ts = datetime.now(timezone.utc).isoformat()
-        steps.append(step_restart_daemon(dry_run=dry_run))
-        _ensure_ok(steps[-1], deadline)
-
-        _publish_progress("自愈进行中：等待后台就绪")
-        steps.append(step_wait_daemon_ready(deadline=deadline, dry_run=dry_run))
-        _ensure_ok(steps[-1], deadline)
-
-        _publish_progress("自愈进行中：等待核心数据恢复")
-        steps.append(step_wait_core_emit(deadline=deadline, baseline_ts=kickstart_ts, dry_run=dry_run))
-        _ensure_ok(steps[-1], deadline)
-
-        _publish_progress("自愈完成：系统已恢复")
-        return {
-            "started": True,
-            "status": "ok",
-            "failed_step": "",
-            "steps": [asdict(item) for item in steps],
-            "source": source,
-        }
-    except RuntimeError as exc:
-        failed_step = str(exc).split(":", 1)[0]
-        _publish_progress("自愈失败，请查看提示后重试")
-        return {
-            "started": True,
-            "status": "failed",
-            "failed_step": failed_step,
-            "reason": str(exc),
-            "steps": [asdict(item) for item in steps],
-            "source": source,
-        }
-    finally:
-        set_state(_SELF_HEAL_RUNNING_KEY, "0")
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return _empty_state(), False
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return _empty_state(), True
+    if not isinstance(raw, dict):
+        return _empty_state(), True
+    failures = raw.get("consecutive_failures")
+    cooldown = raw.get("cooldown_until")
+    restart_times = raw.get("restart_times")
+    if not isinstance(failures, int) or failures < 0 or not isinstance(cooldown, str) or not isinstance(restart_times, list):
+        return _empty_state(), True
+    if any(not isinstance(item, str) for item in restart_times):
+        return _empty_state(), True
+    return {
+        "consecutive_failures": failures,
+        "cooldown_until": cooldown,
+        "restart_times": restart_times,
+    }, False
 
 
-def step_reconcile_locks(*, dry_run: bool) -> StepResult:
-    data_dir = get_data_dir()
-    removed = 0
-    terminated = 0
-    current_pid = os.getpid()
-    for path in sorted(list(data_dir.glob("*.lock")) + list(data_dir.glob("*.pid"))):
-        try:
-            pid = _read_pid(path)
-            if pid is None:
-                if not dry_run:
-                    path.unlink(missing_ok=True)
-                removed += 1
-                continue
-            if pid == current_pid:
-                continue
-            if not _process_alive(pid):
-                if not dry_run:
-                    path.unlink(missing_ok=True)
-                removed += 1
-                continue
-            if not dry_run:
-                _terminate_process(pid, timeout_sec=5.0)
-            terminated += 1
-        except Exception:
-            # Skip individual lock files we cannot access.
-            continue
-    return StepResult("step1_locks", True, f"清理完成：移除 {removed} 个，终止 {terminated} 个进程")
-
-
-def step_refresh_capabilities(*, dry_run: bool) -> StepResult:
-    if dry_run:
-        return StepResult("step2_capabilities", True, "dry-run: 跳过权限刷新")
-    registry = get_default_registry()
-    run_capability_self_check(registry)
-    payload = load_states_raw()
-    rendered = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-    atomic_write_text(_CAPABILITY_STATUS_PATH, rendered, encoding="utf-8")
-    return StepResult("step2_capabilities", True, "能力状态已刷新")
-
-
-def step_restart_daemon(*, dry_run: bool) -> StepResult:
-    if dry_run:
-        return StepResult("step3_restart", True, "dry-run: 跳过 daemon 重启")
-    target = f"gui/{os.getuid()}/{_DAEMON_LABEL}"
-    result = subprocess.run(["launchctl", "kickstart", "-k", target], check=False, capture_output=True, text=True)
-    if result.returncode != 0:
-        return StepResult(
-            "step3_restart",
-            False,
-            "daemon 重启失败",
-            "请确认 Penpal 已在登录会话下安装并允许 launchd 管理",
-        )
-    return StepResult("step3_restart", True, "daemon 已发送重启指令")
-
-
-def step_wait_daemon_ready(*, deadline: float, dry_run: bool) -> StepResult:
-    if dry_run:
-        return StepResult("step4_ready", True, "dry-run: 跳过就绪等待")
-    timeout_deadline = min(deadline, time.monotonic() + 30.0)
-    while time.monotonic() < timeout_deadline:
-        pid = _launchctl_pid()
-        if _process_alive(pid):
-            return StepResult("step4_ready", True, f"daemon ready (pid={pid})")
-        time.sleep(1.0)
-    return StepResult(
-        "step4_ready",
-        False,
-        "30 秒内 daemon 未就绪",
-        "请到 System Settings → Privacy & Security 检查 Penpal 权限并重试",
-    )
-
-
-def step_wait_core_emit(*, deadline: float, baseline_ts: str, dry_run: bool) -> StepResult:
-    if dry_run:
-        return StepResult("step5_core_emit", True, "dry-run: 跳过核心数据验证")
-    timeout_deadline = min(deadline, time.monotonic() + 5 * 60.0)
-    while time.monotonic() < timeout_deadline:
-        if _core_emit_count_since(baseline_ts) > 0:
-            return StepResult("step5_core_emit", True, "核心数据源已恢复")
-        time.sleep(2.0)
-    return StepResult(
-        "step5_core_emit",
-        False,
-        "核心数据源仍未恢复",
-        "请到 System Settings → Privacy & Security → Accessibility / Input Monitoring 检查 Penpal 是否开启",
-    )
-
-
-def _read_pid(path: Path) -> int | None:
+def _parse_time(value: str) -> datetime | None:
     try:
-        return int(path.read_text(encoding="utf-8").strip())
-    except Exception:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
         return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
 
 
-def _process_alive(pid: int | None) -> bool:
-    if pid is None:
-        return False
-    try:
-        os.kill(pid, 0)
-    except Exception:
-        return False
-    return True
+def _persist(path: Path, state: dict[str, Any]) -> None:
+    rendered = json.dumps(state, ensure_ascii=False, sort_keys=True) + "\n"
+    atomic_write_text(path, rendered)
 
 
-def _terminate_process(pid: int, *, timeout_sec: float) -> None:
-    os.kill(pid, signal.SIGTERM)
-    deadline = time.monotonic() + timeout_sec
-    while time.monotonic() < deadline:
-        if not _process_alive(pid):
-            return
-        time.sleep(0.1)
-    if _process_alive(pid):
-        os.kill(pid, signal.SIGKILL)
+def run_watchdog(
+    status: RuntimeStatus | None = None,
+    *,
+    now: datetime | None = None,
+    restart_control: Callable[..., ControlResult] = restart,
+    state_path: Path | None = None,
+) -> dict[str, Any]:
+    """Restart unhealthy managed runtime only after the persisted policy allows it."""
+    checked = now or datetime.now(timezone.utc)
+    checked = checked.replace(tzinfo=timezone.utc) if checked.tzinfo is None else checked.astimezone(timezone.utc)
+    runtime_status = status or evaluate(now=checked)
+    path = state_path or (get_run_dir() / "watchdog.json")
+    state, corrupt_state = _read_state(path)
+    cutoff = checked - timedelta(seconds=RESTART_BUDGET_WINDOW_SEC)
+    restart_times = [
+        value for raw in state["restart_times"]
+        if (value := _parse_time(raw)) is not None and value > cutoff
+    ]
+    state["restart_times"] = [value.isoformat() for value in restart_times]
 
+    # `penpal stop` boots the job out of launchd; only a job launchd still manages is ours to restart.
+    unmanaged = not runtime_status.managed
+    if runtime_status.state not in RESTART_STATES or unmanaged:
+        state["consecutive_failures"] = 0
+        _persist(path, state)
+        return {
+            "state": runtime_status.code,
+            "action": "report_only",
+            "reason": "not_managed_by_launchd" if unmanaged and runtime_status.state in RESTART_STATES else "runtime_healthy_or_paused",
+            "consecutive_failures": 0,
+            "restarts_in_window": len(restart_times),
+            "budget_exhausted": False,
+            "state_recovered": corrupt_state,
+        }
 
-def _launchctl_pid() -> int | None:
-    try:
-        result = subprocess.run(["launchctl", "list", _DAEMON_LABEL], check=False, capture_output=True, text=True)
-    except Exception:
-        return None
-    text = "\n".join([result.stdout or "", result.stderr or ""])
-    match = re.search(r'"?PID"?\s*=\s*(\d+)', text)
-    if match:
-        return int(match.group(1))
-    for token in text.replace("=", " ").replace(";", " ").split():
-        if token.isdigit() and int(token) > 1:
-            return int(token)
-    return None
+    state["consecutive_failures"] += 1
+    base = {
+        "state": runtime_status.code,
+        "consecutive_failures": state["consecutive_failures"],
+        "restarts_in_window": len(restart_times),
+        "state_recovered": corrupt_state,
+    }
+    if len(restart_times) >= RESTART_BUDGET_PER_HOUR:
+        _persist(path, state)
+        return {**base, "action": "report_only", "reason": "restart_budget_exhausted", "budget_exhausted": True}
 
+    cooldown_until = _parse_time(state["cooldown_until"])
+    if cooldown_until is not None and checked < cooldown_until:
+        _persist(path, state)
+        return {**base, "action": "report_only", "reason": "cooldown_active", "budget_exhausted": False}
 
-def _core_emit_count_since(cutoff_iso: str) -> int:
-    conn = get_conn()
-    total = 0
-    for source in _CORE_SOURCES:
-        row = conn.execute(
-            "SELECT COUNT(*) AS c FROM raw_events WHERE source=? AND ts_start>=?",
-            (source, cutoff_iso),
-        ).fetchone()
-        total += int(row["c"] or 0) if row is not None else 0
-    return total
+    if state["consecutive_failures"] < CONSECUTIVE_FAILURE_THRESHOLD:
+        _persist(path, state)
+        return {**base, "action": "observe", "reason": "consecutive_failure_threshold", "budget_exhausted": False}
 
-
-def _publish_progress(message: str) -> None:
-    payload = {"ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "message": message}
-    set_state(_SELF_HEAL_PROGRESS_KEY, json.dumps(payload, ensure_ascii=False))
-
-
-def _ensure_ok(step: StepResult, deadline: float) -> None:
-    if time.monotonic() > deadline:
-        raise RuntimeError("timeout:自愈总超时 8 分钟")
-    if step.ok:
-        return
-    raise RuntimeError(f"{step.name}:{step.message}:{step.suggested_action}")
+    result = restart_control("watchdog")
+    restart_times.append(checked)
+    state["restart_times"] = [value.isoformat() for value in restart_times]
+    state["cooldown_until"] = (checked + timedelta(seconds=RESTART_COOLDOWN_SEC)).isoformat()
+    if result.ok:
+        state["consecutive_failures"] = 0
+    _persist(path, state)
+    return {
+        **base,
+        "action": "restart" if result.ok else "restart_failed",
+        "reason": "control_completed" if result.ok else "control_failed",
+        "budget_exhausted": False,
+        "generation": result.generation,
+        "error_zh": result.error_zh,
+        "error_en": result.error_en,
+        "restarts_in_window": len(restart_times),
+    }

@@ -58,9 +58,9 @@ def home(tmp_path, monkeypatch):
     # Install-time side effects: no launchctl, no real plists, no real MCP host configs.
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr("penpal.permissions.PERMISSION_SPECS", ())
-    monkeypatch.setattr(install_cli.subprocess, "run", lambda *a, **k: None)
     monkeypatch.setattr(install_cli, "_launchd_label_loaded", lambda label: False)
     monkeypatch.setattr(install_cli, "_launchd_plist_path", lambda label: fake_home / "Library" / f"{label}.plist")
+    monkeypatch.setattr(install_cli, "control_restart", lambda *_a, **_k: type("R", (), {"ok": True, "action": "kickstart", "generation": "g", "error_zh": "", "error_en": ""})())
     monkeypatch.setattr(doctor_cli, "_legacy_mcp_config_findings", lambda home=None: [])
     yield fake_home
     close()

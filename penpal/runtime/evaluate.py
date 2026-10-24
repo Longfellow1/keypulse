@@ -36,8 +36,8 @@ STATE_COPY: dict[RuntimeState, tuple[str, str, str, str, str]] = {
     RuntimeState.NOT_RUNNING: ("未运行", "not running", "后台服务未运行。", "The background service is not running.", "penpal start"),
     RuntimeState.STARTING: ("正在启动", "starting", "后台服务正在启动。", "The background service is starting.", ""),
     RuntimeState.RUNNING: ("正在记录", "recording", "后台服务运行正常。", "The background service is running.", ""),
-    RuntimeState.HUNG: ("后台无响应", "not responding", "后台服务核心循环没有推进。", "The daemon core loop has stopped making progress.", "penpal start"),
-    RuntimeState.OUTDATED: ("后台代码已过期", "daemon code is outdated", "后台服务仍在运行旧版本代码。", "The daemon is running outdated code.", "penpal start"),
+    RuntimeState.HUNG: ("后台无响应", "not responding", "后台服务核心循环没有推进。", "The daemon core loop has stopped making progress.", "penpal restart"),
+    RuntimeState.OUTDATED: ("后台代码已过期", "daemon code is outdated", "后台服务仍在运行旧版本代码。", "The daemon is running outdated code.", "penpal restart"),
     RuntimeState.PAUSED: ("已暂停", "paused", "采集已暂停。", "Capture is paused.", "penpal resume"),
 }
 _FAILED_STATES = frozenset({

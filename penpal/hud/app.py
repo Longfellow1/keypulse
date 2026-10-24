@@ -227,7 +227,7 @@ class PenpalHUDApp(NSObject):
         else:
             self._set_badge(self.controller.model(fresh=True)["tabs"][0].get("badge"))
 
-    # ── right-click menu (candidate approval, self-heal, quit) ───────────────
+    # ── right-click menu (candidate approval, daemon restart, quit) ─────────
 
     @objc.python_method
     def _setup_status_menu(self) -> None:
@@ -235,7 +235,7 @@ class PenpalHUDApp(NSObject):
         self.approval_menu_item = self._menu_item("候选审批", self.openApprovalWindow_)
         self.status_menu.addItem_(self.approval_menu_item)
         self.status_menu.addItem_(AppKit.NSMenuItem.separatorItem())
-        self.status_menu.addItem_(self._menu_item("启动一键自愈", self.restartDaemon_))
+        self.status_menu.addItem_(self._menu_item("重启后台服务", self.restartDaemon_))
         self.status_menu.addItem_(self._menu_item("退出 HUD", self.confirmQuit_))
 
     @objc.python_method
@@ -299,19 +299,19 @@ class PenpalHUDApp(NSObject):
     def restartDaemon_(self, _sender):
         self.popover.performClose_(None)
         alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("启动一键自愈？")
-        alert.setInformativeText_("会自动清理锁、重测权限、重启后台并验证核心数据恢复")
-        alert.addButtonWithTitle_("开始自愈")
+        alert.setMessageText_("重启后台服务？")
+        alert.setInformativeText_("Penpal 会通过 launchd 重启后台服务并确认新代次开始推进。")
+        alert.addButtonWithTitle_("重启")
         alert.addButtonWithTitle_("取消")
         if alert.runModal() != AppKit.NSAlertFirstButtonReturn:
             return
 
-        def _run_heal() -> None:
-            from penpal.health.self_heal import run_self_heal
+        def _run_restart() -> None:
+            from penpal.runtime.control import restart
 
-            run_self_heal(dry_run=False, source="hud")
+            restart("hud")
 
-        threading.Thread(target=_run_heal, daemon=True, name="hud-self-heal").start()
+        threading.Thread(target=_run_restart, daemon=True, name="hud-daemon-restart").start()
 
     @objc.IBAction
     def confirmQuit_(self, _sender):

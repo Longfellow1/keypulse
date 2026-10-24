@@ -65,8 +65,6 @@ if [[ "$DEV_MODE" == true && -z "$REPO_DIR" ]]; then
   error "--dev needs a checkout. Run: git clone https://github.com/Longfellow1/penpal.git && cd penpal && bash install.sh --dev"
   exit 1
 fi
-LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.penpal.daemon.plist"
-HEALTHCHECK_PLIST="$HOME/Library/LaunchAgents/com.penpal.healthcheck.plist"
 CONFIG_FILE="$PENPAL_DIR/config.toml"
 
 # ── Detect shell profile ───────────────────────────────────────────────────────
@@ -78,66 +76,6 @@ detect_profile() {
   else
     echo "$HOME/.profile"
   fi
-}
-
-write_plist_if_needed() {
-  local path="$1"
-  local content="$2"
-  local label="$3"
-
-  if [[ -f "$path" ]] && grep -qF "$label" "$path" && cmp -s <(printf '%s' "$content") "$path"; then
-    return 0
-  fi
-
-  mkdir -p "$(dirname "$path")"
-  printf '%s' "$content" > "$path"
-}
-
-reload_launchd_plist() {
-  local path="$1"
-  local success_message="$2"
-  local bootstrap_success_message="$3"
-  local fallback_message="$4"
-
-  launchctl unload "$path" 2>/dev/null || true
-  launchctl bootout "gui/$(id -u)" "$path" 2>/dev/null || true
-
-  if launchctl load "$path" 2>/dev/null; then
-    success "$success_message"
-  else
-    warn "launchd load failed (may need macOS 13+ syntax)"
-    info "Trying bootstrap…"
-    launchctl bootstrap "gui/$(id -u)" "$path" 2>/dev/null && \
-      success "$bootstrap_success_message" || \
-      warn "$fallback_message"
-  fi
-}
-
-# Old KeyPulse daemon/healthcheck labels and removed Obsidian jobs must be gone before install.
-remove_legacy_obsidian_plists() {
-  local label path
-  for label in \
-    com.keypulse.daemon \
-    com.keypulse.healthcheck \
-    com.keypulse.hud \
-    com.keypulse.obsidian-sync \
-    com.keypulse.obsidian-sync-hourly; do
-    path="$HOME/Library/LaunchAgents/$label.plist"
-    if [[ -e "$path" ]]; then
-      launchctl bootout "gui/$(id -u)" "$path" 2>/dev/null || true
-      launchctl unload "$path" 2>/dev/null || true
-      rm -f "$path" 2>/dev/null || true
-      info "Removed legacy launchd job: $(basename "$path")"
-    else
-      launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-      launchctl remove "$label" 2>/dev/null || true
-    fi
-    if launchctl list 2>/dev/null | grep -qF "$label"; then
-      error "Legacy launchd service $label is still loaded; unload it before continuing."
-      return 1
-    fi
-  done
-  return 0
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,15 +125,16 @@ if [[ -z "$PYTHON" ]]; then
 fi
 success "Python $($PYTHON --version 2>&1 | awk '{print $2}')  ($PYTHON)"
 
-# Stop old services before get_data_dir() can rename their working directory.
-remove_legacy_obsidian_plists
-
-# Runs the data-dir migration through the given Python. It only imports penpal.utils.paths and never
-# copies on EXDEV. It must run before anything creates ~/.penpal.
+# Runs the legacy-job preflight and data-dir migration through Penpal's runtime modules.
 check_data_dir_migration() {
   local py="$1"
   if ! "$py" -c '
 import sys
+from penpal.runtime.control import unload_legacy_jobs
+failures = unload_legacy_jobs()
+if failures:
+    print("Could not unload legacy launchd jobs: " + "; ".join(failures), file=sys.stderr)
+    sys.exit(1)
 from penpal.utils.paths import DataDirMigrationError, get_data_dir
 try:
     get_data_dir()
@@ -387,118 +326,12 @@ else
   success "Default config written to $CONFIG_FILE"
 fi
 
-# ── 7. launchd (auto-start on login) ─────────────────────────────────────────
-header "6/7  launchd auto-start"
-
+# ── 6. Runtime initialization and managed service restart ─────────────────────
+header "6/7  Initializing runtime"
 if [[ "$INSTALL_LAUNCHD" == false ]]; then
-  warn "Skipped (--no-launchd)"
+  "$VENV_DIR/bin/penpal" install init --no-launchd
 else
-  DAEMON_PLIST_CONTENT=$(cat <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.penpal.daemon</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>$BIN_DIR/penpal</string>
-        <string>serve</string>
-    </array>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <true/>
-
-    <key>ThrottleInterval</key>
-    <integer>10</integer>
-
-    <key>StandardOutPath</key>
-    <string>$PENPAL_DIR/launchd.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>$PENPAL_DIR/launchd.err</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>$BIN_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
-</dict>
-</plist>
-PLIST
-)
-
-  if [[ -f "$LAUNCHD_PLIST" ]]; then
-    warn "launchd plist already exists — refreshing managed contents"
-  fi
-  write_plist_if_needed "$LAUNCHD_PLIST" "$DAEMON_PLIST_CONTENT" "com.penpal.daemon"
-
-  if launchctl load "$LAUNCHD_PLIST" 2>/dev/null; then
-    success "launchd plist installed — Penpal will start on login"
-  else
-    warn "launchd load failed (may need macOS 13+ syntax)"
-    info "Trying bootstrap…"
-    launchctl bootstrap "gui/$(id -u)" "$LAUNCHD_PLIST" 2>/dev/null && \
-      success "launchd bootstrap succeeded" || \
-      warn "Try manually: launchctl load '$LAUNCHD_PLIST'"
-  fi
-fi
-
-# ── 8. launchd healthcheck job ───────────────────────────────────────────────
-header "7/7  launchd healthcheck job"
-
-if [[ "$INSTALL_LAUNCHD" == false ]]; then
-  warn "Skipped healthcheck job (--no-launchd)"
-else
-  HEALTHCHECK_PLIST_CONTENT=$(cat <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.penpal.healthcheck</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>$BIN_DIR/penpal</string>
-        <string>healthcheck</string>
-    </array>
-
-    <key>StartInterval</key>
-    <integer>600</integer>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>StandardOutPath</key>
-    <string>$PENPAL_DIR/healthcheck.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>$PENPAL_DIR/healthcheck.err</string>
-</dict>
-</plist>
-PLIST
-)
-  if [[ -f "$HEALTHCHECK_PLIST" ]]; then
-    warn "healthcheck plist already exists — refreshing managed contents"
-  fi
-  write_plist_if_needed "$HEALTHCHECK_PLIST" "$HEALTHCHECK_PLIST_CONTENT" "com.penpal.healthcheck"
-
-  if launchctl load "$HEALTHCHECK_PLIST" 2>/dev/null; then
-    success "healthcheck plist installed — will run every 10 minutes"
-  else
-    warn "launchd load failed (may need macOS 13+ syntax)"
-    info "Trying bootstrap…"
-    launchctl bootstrap "gui/$(id -u)" "$HEALTHCHECK_PLIST" 2>/dev/null && \
-      success "launchd bootstrap succeeded for healthcheck" || \
-      warn "Try manually: launchctl load '$HEALTHCHECK_PLIST'"
-  fi
+  "$VENV_DIR/bin/penpal" install init
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────

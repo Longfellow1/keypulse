@@ -18,8 +18,8 @@ from penpal.capture import capture_control
 from penpal.cli import main
 from penpal.config import Config
 from penpal.health import capture_health as ch
-from penpal.health import self_heal
 from penpal.runtime import RuntimeState, RuntimeStatus
+from penpal.runtime import control
 from penpal.runtime.evaluate import Issue
 from penpal.foundation.runtime_record import Component
 from penpal.hud.controller import HudController
@@ -372,19 +372,13 @@ def test_confirm_purge_needs_the_delete_page(hud, env):
 
 # ── recovery actions ────────────────────────────────────────────────────────────
 
-def test_daemon_restart_runs_the_cli_self_heal(hud, env, monkeypatch):
+def test_daemon_restart_uses_runtime_control(hud, env, monkeypatch):
     runs = []
-    monkeypatch.setattr(self_heal, "run_self_heal", lambda **kw: runs.append(kw) or {"status": "ok"})
+    monkeypatch.setattr(control, "restart", lambda reason: runs.append(reason))
     m = hud.dispatch("daemon.restart")
     assert m["toast"]["text"].startswith("正在重启后台") and len(hud.spawned) == 1
     hud.spawned[0]()
-    assert runs == [{"dry_run": False, "source": "hud"}]
-
-
-def test_self_heal_clears_the_transient_error_state(env):
-    set_state("capture_error_code", "capture_failed")
-    self_heal.reset_transient_error_state()
-    assert get_state("capture_error_code") == ""
+    assert runs == ["hud"]
 
 
 def test_open_settings_only_opens_known_panes(hud, env, monkeypatch):
