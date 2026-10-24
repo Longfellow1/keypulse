@@ -1,0 +1,142 @@
+name: clean-install
+
+# Validates the public install path on a fresh macOS VM (= clean Mac).
+# Deliberately NOT on push: each run takes ~20-30 min of macOS minutes.
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  schedule:
+    - cron: "17 3 * * 1"  # weekly, Monday 03:17 UTC
+  # TEMPORARY: lets this file's own PR run the workflow before it exists on main
+  # (workflow_dispatch only sees workflows on the default branch). Remove before merge.
+  pull_request:
+    paths:
+      - ".github/workflows/clean-install.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  clean-install:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      # Transcript lives outside the workspace so it is not picked up by anything else.
+      TRANSCRIPT: ${{ runner.temp }}/clean-install-transcript.txt
+      # Commit whose install.sh the curl line fetches (README says /main/; this pins it to the commit under test).
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      # No actions/checkout: the install must work from the public URL alone, the way a user runs it.
+
+      - name: 1. Install via README quick start (curl install.sh)
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$TRANSCRIPT") 2>&1
+          echo "\$ curl -fsSL https://raw.githubusercontent.com/Longfellow1/penpal/\$TESTED_SHA/install.sh | bash"
+          echo "(README uses /main/; pinned to the tested commit so this run tests this commit)"
+          # Run from an empty directory: the runner's workspace has no checkout, like a user's home.
+          cd "$HOME"
+          curl -fsSL "https://raw.githubusercontent.com/Longfellow1/penpal/${TESTED_SHA}/install.sh" | bash
+
+      - name: 1b. penpal is the brew binary, not a checkout
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$TRANSCRIPT") 2>&1
+          echo "\$ which penpal"; which penpal
+          PENPAL_BIN="$(readlink -f "$(which penpal)")"
+          BREW_PREFIX="$(brew --prefix)"
+          echo "resolved=$PENPAL_BIN brew_prefix=$BREW_PREFIX"
+          case "$PENPAL_BIN" in
+            "$BREW_PREFIX"/*) echo "OK: penpal resolves inside the Homebrew prefix" ;;
+            *) echo "FAIL: penpal is not under Homebrew prefix"; exit 1 ;;
+          esac
+          brew list --versions penpal
+          echo "\$ penpal --help"
+          penpal --help > /dev/null
+          echo "OK: penpal --help exits 0"
+
+      - name: 2. penpal install init (explicit, plists generated but not loaded)
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$TRANSCRIPT") 2>&1
+          # --no-load: CI has no logged-in GUI session, so launchctl load is not reliable here.
+          # Plists are still written, which is what this step asserts.
+          echo "\$ penpal install init --no-load"
+          out="$(penpal install init --no-load --plain)"
+          echo "$out"
+          grep -q '^data_dir=' <<<"$out" || { echo "FAIL: no data_dir line"; exit 1; }
+          test -f "$HOME/.penpal/config.toml" || { echo "FAIL: config.toml missing"; exit 1; }
+          test -d "$HOME/.penpal/logs" || { echo "FAIL: logs dir missing"; exit 1; }
+          test -f "$HOME/Library/LaunchAgents/com.penpal.daemon.plist" || { echo "FAIL: daemon plist missing"; exit 1; }
+          test -f "$HOME/Library/LaunchAgents/com.penpal.healthcheck.plist" || { echo "FAIL: healthcheck plist missing"; exit 1; }
+          echo "OK: runtime initialised under $HOME/.penpal, plists generated"
+
+      - name: 3. penpal doctor prints actionable lines
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$TRANSCRIPT") 2>&1
+          echo "\$ penpal doctor --plain"
+          set +e
+          penpal doctor --plain > "$RUNNER_TEMP/doctor.txt" 2>&1
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/doctor.txt"
+          echo "doctor exit code=$rc (non-zero is expected on CI: TCC permissions are not granted)"
+          if grep -q 'Traceback' "$RUNNER_TEMP/doctor.txt"; then echo "FAIL: doctor crashed"; exit 1; fi
+          if [ "$rc" -gt 1 ]; then echo "FAIL: unexpected exit code $rc"; exit 1; fi
+          # Missing permissions must be named with a settings pane and a fix, not just "failed".
+          grep -q '权限' "$RUNNER_TEMP/doctor.txt" || { echo "FAIL: no permission rows"; exit 1; }
+          grep -q 'x-apple.systempreferences' "$RUNNER_TEMP/doctor.txt" \
+            || grep -q '打开设置面板' "$RUNNER_TEMP/doctor.txt" \
+            || { echo "FAIL: no settings pane / fix hint printed"; exit 1; }
+          echo "OK: doctor names missing permissions and the settings pane to fix them"
+
+      - name: 4. launchd plists point at the installed executable
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$TRANSCRIPT") 2>&1
+          expected="$(readlink -f "$(which penpal)")"
+          echo "expected executable=$expected"
+          for label in com.penpal.daemon com.penpal.healthcheck; do
+            plist="$HOME/Library/LaunchAgents/$label.plist"
+            args="$(python3 -c 'import plistlib,sys; print("\n".join(plistlib.load(open(sys.argv[1],"rb"))["ProgramArguments"]))' "$plist")"
+            echo "--- $label ProgramArguments:"
+            echo "$args"
+            first="$(head -n1 <<<"$args")"
+            if [ "$first" != "$expected" ]; then
+              echo "FAIL: $label runs '$first', expected '$expected'"; exit 1
+            fi
+            if grep -qE 'python|/checkout|/workspace|/Users/runner/work' <<<"$first"; then
+              echo "FAIL: $label points at python or a checkout"; exit 1
+            fi
+          done
+          echo "OK: both plists run the brew-installed penpal"
+
+      - name: 5. mcp grant prints config, status works
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$TRANSCRIPT") 2>&1
+          echo "\$ penpal mcp grant ci --host claude --buckets Work"
+          out="$(penpal mcp grant ci --host claude --buckets Work)"
+          # The token is shown once and must not end up in the uploaded transcript.
+          token="$(awk '/shown once/{f=1;next} f && NF {print $1; exit}' <<<"$out")"
+          [ -n "$token" ] || { echo "FAIL: no token parsed from grant output"; exit 1; }
+          echo "${out//$token/<redacted-token>}"
+          grep -q "Granted client 'ci'" <<<"$out" || { echo "FAIL: grant did not succeed"; exit 1; }
+          grep -q 'mcpServers' <<<"$out" || { echo "FAIL: no Claude config printed"; exit 1; }
+          echo "OK: grant printed the connection config"
+
+          echo "\$ penpal status"
+          penpal status
+          echo "OK: penpal status ran"
+
+      - name: Upload command transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-install-transcript
+          path: ${{ runner.temp }}/clean-install-transcript.txt
+          if-no-files-found: warn
+          retention-days: 30
