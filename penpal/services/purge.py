@@ -22,7 +22,9 @@ def purge_selector(
     now = now or datetime.now(timezone.utc)
     since = until = None
     if today:
-        since = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        # "Today" is the user's local day; stored timestamps are UTC, so convert local midnight back to UTC.
+        local_midnight = now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+        since = local_midnight.astimezone(timezone.utc).isoformat()
         until = now.isoformat()
     elif last_hours is not None:
         since = (now - timedelta(hours=last_hours)).isoformat()

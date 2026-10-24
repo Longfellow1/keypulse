@@ -341,9 +341,17 @@ def test_purge_preview_and_run_use_the_cli_functions(hud, env, monkeypatch):
     assert dry and ("clipboard", False) in runs and len(runs) == 2  # one real run from the HUD, one from the CLI
 
 
-def test_purge_selector_is_the_clis(env):
-    sel = purge.purge_selector(today=True, now=datetime(2026, 10, 24, 6, 0, tzinfo=timezone.utc))
-    assert sel["since"].startswith("2026-10-24T00:00:00") and sel["until"].startswith("2026-10-24T06:00:00")
+def test_purge_selector_is_the_clis(env, monkeypatch):
+    import time
+    monkeypatch.setenv("TZ", "Asia/Shanghai")
+    time.tzset()
+    try:
+        # 06:00 UTC is 14:00 in Shanghai: "today" starts at local midnight, stored as UTC (16:00 the day before).
+        sel = purge.purge_selector(today=True, now=datetime(2026, 10, 24, 6, 0, tzinfo=timezone.utc))
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+    assert sel["since"] == "2026-10-23T16:00:00+00:00" and sel["until"].startswith("2026-10-24T06:00:00")
     assert purge.purge_selector() is None
     assert purge.purge_selector(app="Notes")["app_name"] == "Notes"
 

@@ -410,7 +410,7 @@ def page_privacy(snap: Snapshot) -> list[dict]:
                 action="keyboard.toggle", args={"enable": not snap.keyboard_on}),
             row("聊天 App", value=f"{chat_on} 个开启", nav=True, action="nav.page", args={"page": "chat"}),
             row("不记录的 App 和网站", value=f"{len(snap.exclusions)} 项", nav=True, action="nav.page", args={"page": "exclude"}),
-        ], "采集范围", "只存过滤后的文字片段，不存逐个按键；搜索默认不包含键盘片段。"),
+        ], "采集范围", "只存过滤后的文字片段，不存逐个按键；和其他来源一样，只有获得对应分类授权的 AI 能查到。"),
         lst([
             row("已存储", value=f"{fmt_records(snap.total_records)} · {fmt_bytes(snap.db_bytes)}"),
             row("保留时间", value="永久保留"),
